@@ -24,6 +24,8 @@ import MapContextMenu, { type MapContextAction } from "./map/MapContextMenu";
 import AssetMarkersLayer from "./map/AssetMarkersLayer";
 import CableLinesLayer from "./map/CableLinesLayer";
 import CableDetailsModal from "./map/CableDetailsModal";
+import LayersPanel from "./map/LayersPanel";
+import MapSidebar from "./map/MapSidebar";
 import PoleDetailsModal from "./map/modals/PoleDetailsModal";
 import DistributionPointDetailsModal from "./map/modals/DistributionPointDetailsModal";
 import ChamberDetailsModal, {
@@ -33,7 +35,7 @@ import { snapPointToAssets } from "./map/utils/snapToAssets";
 import { routePointsToRoads } from "./map/utils/routeToRoads";
 import { loadOsmBuildingsAsHomes, type OsmBounds } from "./map/utils/loadOsmBuildings";
 import StreetCabDesigner from "./streetcab/StreetCabDesigner";
-import GpsLocationControl from "./map/GpsLocationControl";
+
 import type {
   AssetType,
   CableType,
@@ -68,6 +70,15 @@ type Props = {
 type MapMode = "pick" | "measure" | "draw-cable" | "draw-area";
 
 type BasemapType = "street" | "satellite" | "hybrid" | "dark";
+type PolygonLevel = "L0" | "L1" | "L2" | "L3";
+
+function normalizePolygonLevel(asset: SavedMapAsset): PolygonLevel {
+  const raw = String((asset as any).polygonLevel || asset.jointType || "L0").toUpperCase();
+  if (raw.includes("L1")) return "L1";
+  if (raw.includes("L2")) return "L2";
+  if (raw.includes("L3")) return "L3";
+  return "L0";
+}
 
 type LayerVisibility = {
   agJoints: boolean;
@@ -79,6 +90,29 @@ type LayerVisibility = {
   areas: boolean;
   measurements: boolean;
   homes: boolean;
+  l0: boolean;
+  l1: boolean;
+  l2: boolean;
+  l3: boolean;
+  newPoles: boolean;
+  orPoles: boolean;
+  fw2: boolean;
+  fw4: boolean;
+  fw6: boolean;
+  fw10: boolean;
+  homesSdu: boolean;
+  homesMdu: boolean;
+  homesFlats: boolean;
+  feeders: boolean;
+  links: boolean;
+  ulw48: boolean;
+  ulw36: boolean;
+  ulw24: boolean;
+  ulw12: boolean;
+  live: boolean;
+  bwip: boolean;
+  unserviceable: boolean;
+  liveNotReady: boolean;
 };
 
 function MapClickHandler({
@@ -230,61 +264,6 @@ function inferAssetTypeFromName(name: string): AssetType {
   return "ag-joint";
 }
 
-function getPolygonAreaSquareMeters(points: [number, number][]): number {
-  if (points.length < 3) return 0;
-
-  const radius = 6378137;
-  const toRad = (value: number) => (value * Math.PI) / 180;
-  let area = 0;
-
-  for (let i = 0; i < points.length; i += 1) {
-    const [lat1, lng1] = points[i];
-    const [lat2, lng2] = points[(i + 1) % points.length];
-    area += toRad(lng2 - lng1) * (2 + Math.sin(toRad(lat1)) + Math.sin(toRad(lat2)));
-  }
-
-  return Math.abs((area * radius * radius) / 2);
-}
-
-function formatAreaLabel(areaSquareMeters: number): string {
-  if (areaSquareMeters < 10000) {
-    return `${areaSquareMeters.toFixed(0)} m²`;
-  }
-
-  return `${(areaSquareMeters / 10000).toFixed(2)} ha`;
-}
-
-function getPolygonCenter(points: [number, number][]): [number, number] | null {
-  if (points.length === 0) return null;
-
-  const total = points.reduce(
-    (acc, [lat, lng]) => ({ lat: acc.lat + lat, lng: acc.lng + lng }),
-    { lat: 0, lng: 0 }
-  );
-
-  return [total.lat / points.length, total.lng / points.length];
-}
-
-function AreaSearchFlyTo({
-  area,
-}: {
-  area: SavedMapAsset | null;
-}) {
-  const map = useMap();
-
-  useEffect(() => {
-    if (!area || area.geometry?.type !== "Polygon") return;
-
-    const ring = area.geometry.coordinates[0] || [];
-    const center = getPolygonCenter(ring);
-    if (!center) return;
-
-    map.flyTo(center, Math.max(map.getZoom(), 17), { duration: 0.7 });
-  }, [area, map]);
-
-  return null;
-}
-
 export default function JointMapManager({
   currentJointName,
   currentJointType,
@@ -324,6 +303,7 @@ export default function JointMapManager({
   const [measurePoints, setMeasurePoints] = useState<LatLngLiteral[]>([]);
   const [draftCablePoints, setDraftCablePoints] = useState<LatLngLiteral[]>([]);
   const [draftAreaPoints, setDraftAreaPoints] = useState<LatLngLiteral[]>([]);
+  const [polygonLevel, setPolygonLevel] = useState<PolygonLevel>("L0");
 
   const [visibleLayers, setVisibleLayers] = useState<LayerVisibility>({
     agJoints: true,
@@ -335,7 +315,32 @@ export default function JointMapManager({
     areas: true,
     measurements: true,
     homes: false,
+    l0: true,
+    l1: true,
+    l2: true,
+    l3: true,
+    newPoles: true,
+    orPoles: true,
+    fw2: true,
+    fw4: true,
+    fw6: true,
+    fw10: true,
+    homesSdu: false,
+    homesMdu: false,
+    homesFlats: false,
+    feeders: true,
+    links: true,
+    ulw48: true,
+    ulw36: true,
+    ulw24: true,
+    ulw12: true,
+    live: true,
+    bwip: true,
+    unserviceable: true,
+    liveNotReady: true,
   });
+  const [layersOpen, setLayersOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [isRoutingCable, setIsRoutingCable] = useState(false);
@@ -360,9 +365,6 @@ export default function JointMapManager({
   const [showChamberModal, setShowChamberModal] = useState(false);
 
   const [openStreetCabAsset, setOpenStreetCabAsset] = useState<SavedMapAsset | null>(null);
-  const [areaSearchQuery, setAreaSearchQuery] = useState("");
-  const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
-  const [layersPanelOpen, setLayersPanelOpen] = useState(false);
 
   useEffect(() => {
     setJointName(currentJointName || "");
@@ -393,27 +395,6 @@ export default function JointMapManager({
     return [54.5, -3.0];
   }, [pickedLocation, draftCablePoints, draftAreaPoints, measurePoints, savedJoints]);
 
-  const polygonAreas = useMemo(() => {
-    return (savedJoints ?? []).filter(
-      (asset) => asset.assetType === "area" && asset.geometry?.type === "Polygon"
-    );
-  }, [savedJoints]);
-
-  const matchingAreas = useMemo(() => {
-    const query = areaSearchQuery.trim().toLowerCase();
-    if (!query) return polygonAreas.slice(0, 8);
-
-    return polygonAreas
-      .filter((asset) =>
-        `${asset.name || ""} ${asset.notes || ""}`.toLowerCase().includes(query)
-      )
-      .slice(0, 8);
-  }, [areaSearchQuery, polygonAreas]);
-
-  const selectedArea = useMemo(() => {
-    return polygonAreas.find((asset) => asset.id === selectedAreaId) || null;
-  }, [polygonAreas, selectedAreaId]);
-
   const measuredDistance = useMemo(() => {
     return getPathDistanceMeters(measurePoints);
   }, [measurePoints]);
@@ -429,6 +410,7 @@ export default function JointMapManager({
     setMapMode("pick");
     setDraftCablePoints([]);
     setDraftAreaPoints([]);
+    setPolygonLevel("L0");
     setCableType("Feeder Cable");
     setFibreCount("12F");
     setInstallMethod("Underground");
@@ -487,6 +469,9 @@ export default function JointMapManager({
       }
     );
     setChamberDetails(asset.chamberDetails || {});
+    if (asset.assetType === "area") {
+      setPolygonLevel(normalizePolygonLevel(asset));
+    }
 
     if (asset.geometry?.type === "Point") {
       const [lat, lng] = asset.geometry.coordinates;
@@ -545,9 +530,10 @@ export default function JointMapManager({
           return {
             ...asset,
             name: jointName.trim() || asset.name,
-            jointType: "Polygon Area",
+            jointType: `Polygon Area ${polygonLevel}`,
             notes: notes.trim(),
             assetType: "area",
+            ...( { polygonLevel } as any ),
             geometry: {
               type: "Polygon",
               coordinates: [draftAreaPoints.map((p) => [p.lat, p.lng])],
@@ -689,9 +675,10 @@ export default function JointMapManager({
       id: crypto.randomUUID(),
       name: areaName,
       assetType: "area",
-      jointType: "Polygon Area",
+      jointType: `Polygon Area ${polygonLevel}`,
       notes: notes.trim(),
       mappingRows: [],
+      ...( { polygonLevel } as any ),
       geometry: {
         type: "Polygon",
         coordinates: [draftAreaPoints.map((p) => [p.lat, p.lng])],
@@ -810,7 +797,8 @@ export default function JointMapManager({
 
   if (type === "area") {
     setAssetType("area");
-    setJointType("Polygon Area");
+    setJointType("Polygon Area L0");
+    setPolygonLevel("L0");
     setJointName(`Area ${(savedJoints ?? []).filter((asset) => asset.assetType === "area").length + 1}`);
     setNotes("");
     setPickedLocation(null);
@@ -851,7 +839,7 @@ export default function JointMapManager({
 
   if (type === "pole") {
     setJointType("Pole");
-    setPoleDetails({});
+    setPoleDetails({ poleType: "new" });
     setShowPoleModal(true);
   }
 
@@ -867,7 +855,7 @@ export default function JointMapManager({
 
   if (type === "chamber") {
     setJointType("Chamber");
-    setChamberDetails({});
+    setChamberDetails({ chamberType: "fw2" });
     setShowChamberModal(true);
   }
 
@@ -879,12 +867,6 @@ export default function JointMapManager({
   handleCloseContextMenu();
 };
 
-  const toggleLayer = (key: keyof LayerVisibility) => {
-    setVisibleLayers((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
-  };
 
   const handleCablePoint = (point: LatLngLiteral) => {
     const snapped = snapPointToAssets(point, (savedJoints ?? []).filter((asset) => asset.assetType !== "area"), snapEnabled, 8);
@@ -1064,14 +1046,13 @@ export default function JointMapManager({
       style={{
         height: "100vh",
         width: "100vw",
-        display: "grid",
-        gridTemplateColumns: "360px 1fr",
+        display: "flex",
         position: "relative",
         background: "#1f2937",
         color: "white",
       }}
     >
-      <div style={panel}>
+      <MapSidebar open={sidebarOpen} onToggle={() => setSidebarOpen((open) => !open)}>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
           <h2 style={{ margin: 0 }}>Joint Map Manager</h2>
           <button onClick={onClose} style={btnSecondary}>
@@ -1122,6 +1103,24 @@ export default function JointMapManager({
                 <option>CMJ (12 trays)</option>
                 <option>MMJ (20 trays)</option>
                 <option>LMJ (40 trays)</option>
+              </select>
+            </>
+          ) : null}
+
+
+
+          {assetType === "area" ? (
+            <>
+              <div style={{ ...label, marginTop: 10 }}>Polygon Layer</div>
+              <select
+                value={polygonLevel}
+                onChange={(e) => setPolygonLevel(e.target.value as PolygonLevel)}
+                style={input}
+              >
+                <option value="L0">L0</option>
+                <option value="L1">L1</option>
+                <option value="L2">L2</option>
+                <option value="L3">L3</option>
               </select>
             </>
           ) : null}
@@ -1392,14 +1391,12 @@ export default function JointMapManager({
             Zoom into the estate/road first, then load buildings. Imported buildings become shared Home assets.
           </div>
         </div>
-      </div>
+      </MapSidebar>
 
-      <div style={{ position: "relative", height: "100%" }}>
+      <div style={{ position: "relative", height: "100%", flex: 1, minWidth: 0 }}>
         <MapContainer center={mapCenter} zoom={6} style={{ height: "100%" }}>
           <MapBaseLayers basemap={basemap} roadOverlayVisible={roadOverlayVisible} />
           <MapBoundsTracker onBoundsChange={setMapBounds} />
-          <GpsLocationControl />
-          <AreaSearchFlyTo area={selectedArea} />
 
           <MapClickHandler
             mode={mapMode}
@@ -1447,40 +1444,37 @@ export default function JointMapManager({
           
 
           {visibleLayers.areas &&
-            polygonAreas.map((asset) => {
-                const areaPoints = (asset.geometry as {
-                  type: "Polygon";
-                  coordinates: [number, number][][];
-                }).coordinates[0].map(([lat, lng]) => [lat, lng] as [number, number]);
+            (savedJoints ?? [])
+              .filter((asset) => {
+                if (asset.assetType !== "area" || asset.geometry?.type !== "Polygon") return false;
 
-                const areaSquareMeters = getPolygonAreaSquareMeters(areaPoints);
-                const areaLabel = formatAreaLabel(areaSquareMeters);
-                const isSelectedArea = selectedAreaId === asset.id;
+                const level = normalizePolygonLevel(asset);
+                if (level === "L0" && !visibleLayers.l0) return false;
+                if (level === "L1" && !visibleLayers.l1) return false;
+                if (level === "L2" && !visibleLayers.l2) return false;
+                if (level === "L3" && !visibleLayers.l3) return false;
+
+                return true;
+              })
+              .map((asset) => {
+                const level = normalizePolygonLevel(asset);
+                const areaPoints = (asset.geometry as { type: "Polygon"; coordinates: [number, number][][] }).coordinates[0].map(
+                  ([lat, lng]) => [lat, lng] as [number, number]
+                );
 
                 return (
                   <Polygon
                     key={asset.id}
                     positions={areaPoints}
-                    pathOptions={{
-                      color: isSelectedArea ? "#facc15" : "#a855f7",
-                      weight: isSelectedArea ? 5 : 3,
-                      fillOpacity: isSelectedArea ? 0.26 : 0.18,
-                    }}
+                    pathOptions={{ color: "#a855f7", weight: 3, fillOpacity: 0.18 }}
                     eventHandlers={{
-                      click: () => {
-                        setSelectedAreaId(asset.id);
-                        handleEditAsset(asset);
-                      },
+                      click: () => handleEditAsset(asset),
                     }}
                   >
                     <Popup>
                       <b>{asset.name}</b>
                       <br />
-                      Polygon Area
-                      <br />
-                      Area: {areaLabel}
-                      <br />
-                      Points: {areaPoints.length}
+                      Polygon Area {level}
                       {asset.notes ? (
                         <>
                           <br />
@@ -1492,13 +1486,8 @@ export default function JointMapManager({
                       <button onClick={() => handleDeleteAsset(asset.id)}>Delete</button>
                     </Popup>
 
-                    <Tooltip
-                      permanent
-                      direction="center"
-                      opacity={0.9}
-                      className="area-size-label"
-                    >
-                      {asset.name || "Unnamed Area"}
+                    <Tooltip permanent direction="center" opacity={0.9} className="area-size-label">
+                      {asset.name || level}
                     </Tooltip>
                   </Polygon>
                 );
@@ -1507,6 +1496,7 @@ export default function JointMapManager({
           <CableLinesLayer
             assets={savedJoints}
             cablesVisible={visibleLayers.cables}
+            visibleLayers={visibleLayers}
             onDeleteAsset={handleDeleteAsset}
             onEditAsset={handleEditAsset}
           />
@@ -1698,170 +1688,38 @@ export default function JointMapManager({
         />
       </div>
 
+
       <button
-        onClick={() => setLayersPanelOpen((open) => !open)}
+        onClick={() => setLayersOpen((open) => !open)}
         style={{
           position: "absolute",
           top: 16,
           right: 16,
-          zIndex: 1200,
+          zIndex: 1100,
           background: "#2563eb",
           color: "white",
           border: "none",
-          borderRadius: 10,
-          padding: "0.6rem 0.9rem",
+          borderRadius: 8,
+          padding: "0.55rem 0.8rem",
           fontWeight: 700,
           cursor: "pointer",
-          boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
+          boxShadow: "0 8px 20px rgba(0,0,0,0.3)",
         }}
       >
         Layers
       </button>
 
-      {layersPanelOpen && (
-        <div
-          style={{
-            position: "absolute",
-            top: 62,
-            right: 16,
-            width: 320,
-            zIndex: 1100,
-            background: "#1f2937",
-            padding: "1rem",
-            display: "flex",
-            flexDirection: "column",
-            gap: "1rem",
-            border: "1px solid #374151",
-            borderRadius: 14,
-            boxShadow: "0 12px 34px rgba(0,0,0,0.42)",
-            maxHeight: "calc(100vh - 86px)",
-            overflowY: "auto",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-            <h3 style={{ margin: 0 }}>Map View</h3>
-            <button onClick={() => setLayersPanelOpen(false)} style={btnSecondary}>
-              Close
-            </button>
-          </div>
-
-          <div style={card}>
-            <div style={label}>Basemap</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <button onClick={() => setBasemap("street")} style={basemap === "street" ? btnPrimary : btnSecondary}>Street</button>
-              <button onClick={() => setBasemap("satellite")} style={basemap === "satellite" ? btnPrimary : btnSecondary}>Satellite</button>
-              <button onClick={() => setBasemap("hybrid")} style={basemap === "hybrid" ? btnPrimary : btnSecondary}>Hybrid</button>
-              <button onClick={() => setBasemap("dark")} style={basemap === "dark" ? btnPrimary : btnSecondary}>Dark</button>
-            </div>
-
-            <label style={{ ...layerRow, marginTop: 10 }}>
-              <input
-                type="checkbox"
-                checked={roadOverlayVisible}
-                onChange={() => setRoadOverlayVisible((v) => !v)}
-                disabled={basemap === "hybrid"}
-              />
-              <span>Road Overlay {basemap === "hybrid" ? "(included)" : ""}</span>
-            </label>
-
-            <div style={{ fontSize: "0.82rem", color: "#cbd5e1", marginTop: 8 }}>
-              Hybrid = satellite with road/label overlays. Dark is useful when fibre routes need to stand out.
-            </div>
-          </div>
-
-          <div style={card}>
-            <div style={label}>Search Areas</div>
-            <input
-              value={areaSearchQuery}
-              onChange={(e) => setAreaSearchQuery(e.target.value)}
-              placeholder="Search area name"
-              style={input}
-            />
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 180, overflowY: "auto" }}>
-              {matchingAreas.length > 0 ? (
-                matchingAreas.map((area) => (
-                  <button
-                    key={area.id}
-                    onClick={() => {
-                      setSelectedAreaId(area.id);
-                      setAreaSearchQuery(area.name || "");
-                    }}
-                    style={selectedAreaId === area.id ? btnPrimary : btnSecondary}
-                  >
-                    {area.name || "Unnamed Area"}
-                  </button>
-                ))
-              ) : (
-                <div style={{ fontSize: "0.85rem", color: "#cbd5e1" }}>
-                  No matching polygon areas.
-                </div>
-              )}
-            </div>
-          </div>
-
-          <h3 style={{ margin: 0 }}>Layers</h3>
-
-          <div style={card}>
-            <label style={layerRow}>
-              <input type="checkbox" checked={visibleLayers.agJoints} onChange={() => toggleLayer("agJoints")} />
-              <span>AG Joints</span>
-            </label>
-
-            <label style={layerRow}>
-              <input type="checkbox" checked={visibleLayers.streetCabs} onChange={() => toggleLayer("streetCabs")} />
-              <span>Street Cabs</span>
-            </label>
-
-            <label style={layerRow}>
-              <input type="checkbox" checked={visibleLayers.poles} onChange={() => toggleLayer("poles")} />
-              <span>Poles</span>
-            </label>
-
-            <label style={layerRow}>
-              <input type="checkbox" checked={visibleLayers.distributionPoints} onChange={() => toggleLayer("distributionPoints")} />
-              <span>Distribution Points</span>
-            </label>
-
-            <label style={layerRow}>
-              <input type="checkbox" checked={visibleLayers.chambers} onChange={() => toggleLayer("chambers")} />
-              <span>Chambers</span>
-            </label>
-
-            <label style={layerRow}>
-              <input type="checkbox" checked={visibleLayers.homes} onChange={() => toggleLayer("homes")} />
-              <span>Homes</span>
-            </label>
-
-            <label style={layerRow}>
-              <input type="checkbox" checked={visibleLayers.cables} onChange={() => toggleLayer("cables")} />
-              <span>Cables</span>
-            </label>
-
-            <label style={layerRow}>
-              <input type="checkbox" checked={visibleLayers.areas} onChange={() => toggleLayer("areas")} />
-              <span>Polygon Areas</span>
-            </label>
-
-            <label style={layerRow}>
-              <input type="checkbox" checked={visibleLayers.measurements} onChange={() => toggleLayer("measurements")} />
-              <span>Measurements</span>
-            </label>
-          </div>
-
-          <div style={card}>
-            <div style={label}>Snapping</div>
-
-            <div style={{ fontSize: "0.9rem", color: "#d1d5db" }}>
-              Asset placement and cable points snap to nearby poles, DPs, joints, chambers, and street cabs when enabled.
-            </div>
-
-            <label style={{ ...layerRow, marginTop: 8 }}>
-              <input type="checkbox" checked={snapEnabled} onChange={() => setSnapEnabled((v) => !v)} />
-              <span>Enable Snap</span>
-            </label>
-          </div>
-        </div>
+      {layersOpen && (
+        <LayersPanel
+          visibleLayers={visibleLayers}
+          setVisibleLayers={setVisibleLayers}
+          basemap={basemap}
+          setBasemap={setBasemap}
+          roadOverlayVisible={roadOverlayVisible}
+          setRoadOverlayVisible={setRoadOverlayVisible}
+          snapEnabled={snapEnabled}
+          setSnapEnabled={setSnapEnabled}
+        />
       )}
     </div>
   );

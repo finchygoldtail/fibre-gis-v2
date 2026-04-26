@@ -21,7 +21,10 @@ export type FibreCount =
 
 export type InstallMethod = "OH" | "Underground";
 
+export type AreaLevel = "L0" | "L1" | "L2" | "L3";
+
 export type PoleDetails = {
+  poleType?: "new" | "or";
   size?: string;
   year?: string;
   specialMarkings?: string;
@@ -65,6 +68,10 @@ export type SavedMapAsset = {
   dpDetails?: DistributionPointDetails;
   chamberDetails?: ChamberDetails;
   streetCabDetails?: any;
+
+  areaLevel?: AreaLevel;
+  homeType?: "SDU" | "MDU" | "Flats";
+  status?: "Live" | "BWIP" | "Unserviceable" | "Live Not Ready";
 
   source?: "manual" | "osm" | string;
   osmId?: string;

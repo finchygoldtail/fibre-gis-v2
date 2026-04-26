@@ -12,6 +12,15 @@ type LayerVisibility = {
   cables: boolean;
   measurements: boolean;
   homes?: boolean;
+  newPoles?: boolean;
+  orPoles?: boolean;
+  fw2?: boolean;
+  fw4?: boolean;
+  fw6?: boolean;
+  fw10?: boolean;
+  homesSdu?: boolean;
+  homesMdu?: boolean;
+  homesFlats?: boolean;
 };
 
 type Props = {
@@ -116,23 +125,97 @@ const agJointIcon = createCircleIcon("#10b981", "#ffffff");
 const poleIcon = createCircleIcon("#8b5a2b", "#ffffff");
 const homeIcon = createHomeIcon();
 
+function getNormalisedPoleType(asset: SavedMapAsset): "new" | "or" | null {
+  const raw = String(
+    asset.poleDetails?.poleType || asset.name || ""
+  ).toLowerCase();
+
+  if (raw.includes("or") || raw.includes("existing")) return "or";
+  if (raw.includes("new")) return "new";
+
+  return asset.poleDetails?.poleType || null;
+}
+
+function getNormalisedChamberType(
+  asset: SavedMapAsset
+): "fw2" | "fw4" | "fw6" | "fw10" | null {
+  const raw = String(
+    asset.chamberDetails?.chamberType || asset.name || ""
+  )
+    .toLowerCase()
+    .replace(/\s+/g, "");
+
+  if (raw.includes("fw10")) return "fw10";
+  if (raw.includes("fw6")) return "fw6";
+  if (raw.includes("fw4")) return "fw4";
+  if (raw.includes("fw2")) return "fw2";
+
+  return null;
+}
+
+function getNormalisedHomeType(asset: SavedMapAsset): "SDU" | "MDU" | "Flats" | null {
+  const raw = String((asset as any).homeType || asset.name || "").toLowerCase();
+
+  if (raw.includes("mdu")) return "MDU";
+  if (raw.includes("flat")) return "Flats";
+  if (raw.includes("sdu")) return "SDU";
+
+  return null;
+}
+
 function isVisible(asset: SavedMapAsset, visibleLayers: LayerVisibility): boolean {
   switch (asset.assetType) {
     case "street-cab":
-      return visibleLayers.streetCabs;
-    case "pole":
-      return visibleLayers.poles;
+      return visibleLayers.streetCabs !== false;
+
+    case "pole": {
+      if (visibleLayers.poles === false) return false;
+
+      const poleType = getNormalisedPoleType(asset);
+
+      if (poleType === "new" && visibleLayers.newPoles === false) return false;
+      if (poleType === "or" && visibleLayers.orPoles === false) return false;
+
+      // Old pole assets with no type stay visible under the main Poles toggle.
+      return true;
+    }
+
     case "distribution-point":
-      return visibleLayers.distributionPoints;
-    case "chamber":
-      return visibleLayers.chambers;
-    case "home":
-      return visibleLayers.homes !== false;
+      return visibleLayers.distributionPoints !== false;
+
+    case "chamber": {
+      if (visibleLayers.chambers === false) return false;
+
+      const chamberType = getNormalisedChamberType(asset);
+
+      if (chamberType === "fw2" && visibleLayers.fw2 === false) return false;
+      if (chamberType === "fw4" && visibleLayers.fw4 === false) return false;
+      if (chamberType === "fw6" && visibleLayers.fw6 === false) return false;
+      if (chamberType === "fw10" && visibleLayers.fw10 === false) return false;
+
+      // Old chamber assets with no FW type stay visible under the main Chambers toggle.
+      return true;
+    }
+
+    case "home": {
+      if (visibleLayers.homes === false) return false;
+
+      const homeType = getNormalisedHomeType(asset);
+
+      if (homeType === "SDU" && visibleLayers.homesSdu === false) return false;
+      if (homeType === "MDU" && visibleLayers.homesMdu === false) return false;
+      if (homeType === "Flats" && visibleLayers.homesFlats === false) return false;
+
+      // Old home assets with no type stay visible under the main Homes toggle.
+      return true;
+    }
+
     case "cable":
       return false;
+
     case "ag-joint":
     default:
-      return visibleLayers.agJoints;
+      return visibleLayers.agJoints !== false;
   }
 }
 
@@ -301,6 +384,7 @@ export default function AssetMarkersLayer({
 
                   {asset.assetType === "pole" ? (
                     <>
+                      {infoRow("Pole Type", asset.poleDetails?.poleType === "or" ? "OR Pole" : asset.poleDetails?.poleType === "new" ? "New Pole" : undefined)}
                       {infoRow("Size", asset.poleDetails?.size)}
                       {infoRow("Year", asset.poleDetails?.year)}
                       {infoRow("Location", asset.poleDetails?.locationType)}
