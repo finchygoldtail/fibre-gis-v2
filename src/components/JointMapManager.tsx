@@ -33,7 +33,7 @@ import { snapPointToAssets } from "./map/utils/snapToAssets";
 import { routePointsToRoads } from "./map/utils/routeToRoads";
 import { loadOsmBuildingsAsHomes, type OsmBounds } from "./map/utils/loadOsmBuildings";
 import StreetCabDesigner from "./streetcab/StreetCabDesigner";
-
+import GpsLocationControl from "./map/GpsLocationControl";
 import type {
   AssetType,
   CableType,
@@ -1397,6 +1397,7 @@ export default function JointMapManager({
         <MapContainer center={mapCenter} zoom={6} style={{ height: "100%" }}>
           <MapBaseLayers basemap={basemap} roadOverlayVisible={roadOverlayVisible} />
           <MapBoundsTracker onBoundsChange={setMapBounds} />
+          <GpsLocationControl />
           <AreaSearchFlyTo area={selectedArea} />
 
           <MapClickHandler
