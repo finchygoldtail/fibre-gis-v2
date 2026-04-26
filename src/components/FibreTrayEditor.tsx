@@ -6,6 +6,9 @@ import React, {
   useState,
 } from "react";
 
+import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { db, auth } from "../firebase";
+
 import { buildJoint, JOINT_TYPES } from "../logic/jointConfig";
 import type { FibreCell, JointTypeLabel } from "../logic/jointConfig";
 
@@ -35,6 +38,7 @@ import StreetCabEditor from "./StreetCabEditor";
   Persistence
 ------------------------------------------------------------- */
 const STORAGE_KEY = "fibre-tray-project-v1";
+const FIRESTORE_REF = doc(db, "businesses", "fibre-gis-v2");
 
 type PersistedProject = {
   assetType: "ag-joint" | "street-cab";
@@ -180,6 +184,8 @@ export const FibreTrayEditor: React.FC = () => {
   const [originalFile, setOriginalFile] = useState<File | null>(null);
 
   const [savedJoints, setSavedJoints] = useState<SavedJoint[]>([]);
+  const [firebaseLoaded, setFirebaseLoaded] = useState(false);
+  const lastSavedJsonRef = useRef("");
   const [selectedJointId, setSelectedJointId] = useState<string | null>(null);
 
   const [jointType, setJointType] =
@@ -212,70 +218,146 @@ export const FibreTrayEditor: React.FC = () => {
       ? deriveJointNameFromRows(mappingRows)
       : "UNKNOWN-JOINT");
 
+  function applyPersistedProject(parsed: Partial<PersistedProject>) {
+    if (parsed.assetType === "ag-joint" || parsed.assetType === "street-cab") {
+      setAssetType(parsed.assetType);
+    }
+
+    if (isValidJointType(parsed.jointType)) {
+      setJointType(parsed.jointType);
+    }
+
+    if (Array.isArray(parsed.model) && parsed.model.length > 0) {
+      setModel(parsed.model);
+    }
+
+    if (Array.isArray(parsed.mappingRows)) {
+      setMappingRows(parsed.mappingRows);
+    }
+
+    if (Array.isArray(parsed.savedJoints)) {
+      setSavedJoints(parsed.savedJoints);
+    }
+
+    if (
+      parsed.selectedFibre === null ||
+      typeof parsed.selectedFibre === "number"
+    ) {
+      setSelectedFibre(parsed.selectedFibre);
+    }
+
+    if (typeof parsed.loadedFileName === "string") {
+      setLoadedFileName(parsed.loadedFileName);
+    }
+  }
+
+  function buildPersistedProject(): PersistedProject {
+    return {
+      assetType,
+      jointType,
+      model,
+      mappingRows,
+      savedJoints,
+      selectedFibre,
+      loadedFileName,
+    };
+  }
+
   /* -------------------------------------------------------------
-    Load persisted project
+    Load persisted project from Firestore. If Firestore is empty,
+    seed it once from localStorage so existing local work is not lost.
   ------------------------------------------------------------- */
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
+    const unsub = onSnapshot(
+      FIRESTORE_REF,
+      async (snap) => {
+        try {
+          if (snap.exists()) {
+            const data = snap.data() as Partial<PersistedProject>;
+            lastSavedJsonRef.current = JSON.stringify(data);
+            applyPersistedProject(data);
+          } else {
+            let seed: Partial<PersistedProject> = { savedJoints: [] };
 
-      const parsed: PersistedProject = JSON.parse(raw);
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (raw) {
+              seed = JSON.parse(raw) as PersistedProject;
+            }
 
-      if (parsed.assetType === "ag-joint" || parsed.assetType === "street-cab") {
-        setAssetType(parsed.assetType);
+            const now = new Date().toISOString();
+            const user = auth.currentUser;
+            const seedWithMeta = {
+              ...seed,
+              createdAt: now,
+              updatedAt: now,
+              updatedByUid: user?.uid || "unknown",
+              updatedByEmail: user?.email || "unknown",
+            };
+
+            await setDoc(FIRESTORE_REF, seedWithMeta, { merge: true });
+            lastSavedJsonRef.current = JSON.stringify(seedWithMeta);
+            applyPersistedProject(seed);
+            console.log("Created Firestore document: businesses/fibre-gis-v2");
+          }
+        } catch (err) {
+          console.error("Failed to load/create Firestore project:", err);
+        } finally {
+          setFirebaseLoaded(true);
+        }
+      },
+      (err) => {
+        console.error("Firestore listener failed:", err);
+
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (raw) applyPersistedProject(JSON.parse(raw));
+        } catch (localErr) {
+          console.error("Failed to load local fallback:", localErr);
+        }
+
+        setFirebaseLoaded(true);
       }
+    );
 
-      if (isValidJointType(parsed.jointType)) {
-        setJointType(parsed.jointType);
-      }
-
-      if (Array.isArray(parsed.model) && parsed.model.length > 0) {
-        setModel(parsed.model);
-      }
-
-      if (Array.isArray(parsed.mappingRows)) {
-        setMappingRows(parsed.mappingRows);
-      }
-
-      if (Array.isArray(parsed.savedJoints)) {
-        setSavedJoints(parsed.savedJoints);
-      }
-
-      if (
-        parsed.selectedFibre === null ||
-        typeof parsed.selectedFibre === "number"
-      ) {
-        setSelectedFibre(parsed.selectedFibre);
-      }
-
-      if (typeof parsed.loadedFileName === "string") {
-        setLoadedFileName(parsed.loadedFileName);
-      }
-    } catch (err) {
-      console.error("Failed to load saved project:", err);
-    }
+    return () => unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* -------------------------------------------------------------
-    Persist project
+    Persist project locally and to Firestore
   ------------------------------------------------------------- */
   useEffect(() => {
-    try {
-      const project: PersistedProject = {
-        assetType,
-        jointType,
-        model,
-        mappingRows,
-        savedJoints,
-        selectedFibre,
-        loadedFileName,
-      };
+    const project = buildPersistedProject();
 
+    try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
     } catch (err) {
-      console.error("Failed to save project:", err);
+      console.error("Failed to save project locally:", err);
     }
+
+    if (!firebaseLoaded) return;
+
+    const user = auth.currentUser;
+    const projectWithMeta = {
+      ...project,
+      updatedAt: new Date().toISOString(),
+      updatedByUid: user?.uid || "unknown",
+      updatedByEmail: user?.email || "unknown",
+    };
+
+    const json = JSON.stringify(projectWithMeta);
+    if (json === lastSavedJsonRef.current) return;
+
+    setDoc(FIRESTORE_REF, projectWithMeta, { merge: true })
+      .then(() => {
+        lastSavedJsonRef.current = json;
+        console.log(
+          `Saved ${project.savedJoints.length} map items to businesses/fibre-gis-v2`
+        );
+      })
+      .catch((err) => {
+        console.error("Firestore save failed:", err);
+      });
   }, [
     assetType,
     jointType,
@@ -284,6 +366,7 @@ export const FibreTrayEditor: React.FC = () => {
     savedJoints,
     selectedFibre,
     loadedFileName,
+    firebaseLoaded,
   ]);
 
   /* -------------------------------------------------------------
