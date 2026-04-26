@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useState } from "react";
+
 export type MapContextAction =
   | "joint"
   | "pole"
@@ -16,6 +17,8 @@ type Props = {
   onClose: () => void;
 };
 
+type SubmenuKey = "assets" | "draw" | null;
+
 export default function MapContextMenu({
   visible,
   x,
@@ -23,7 +26,14 @@ export default function MapContextMenu({
   onSelect,
   onClose,
 }: Props) {
+  const [openSubmenu, setOpenSubmenu] = useState<SubmenuKey>(null);
+
   if (!visible) return null;
+
+  const select = (action: MapContextAction) => {
+    onClose();
+    onSelect(action);
+  };
 
   return (
     <>
@@ -42,60 +52,138 @@ export default function MapContextMenu({
           left: x,
           top: y,
           zIndex: 9999,
-          minWidth: 220,
-          background: "#111827",
-          border: "1px solid #374151",
-          borderRadius: 10,
-          boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
-          overflow: "hidden",
+          width: 165,
+          background: "#0f172a",
+          border: "1px solid #1f2937",
+          borderRadius: 8,
+          boxShadow: "0 10px 28px rgba(0,0,0,0.45)",
+          padding: "4px 0",
+          color: "#e5e7eb",
+          fontSize: 13,
         }}
       >
-        <button onClick={() => onSelect("joint")} style={menuButton}>
-          Add Joint
-        </button>
+        <MenuRow
+          label="Add Asset"
+          hasSubmenu
+          active={openSubmenu === "assets"}
+          onMouseEnter={() => setOpenSubmenu("assets")}
+        />
 
-        <button onClick={() => onSelect("pole")} style={menuButton}>
-          Add Pole
-        </button>
+        <MenuRow
+          label="Draw"
+          hasSubmenu
+          active={openSubmenu === "draw"}
+          onMouseEnter={() => setOpenSubmenu("draw")}
+        />
 
-        <button
-          onClick={() => onSelect("distribution-point")}
-          style={menuButton}
-        >
-          Add Distribution Point
-        </button>
+        <Divider />
 
-        <button onClick={() => onSelect("chamber")} style={menuButton}>
-          Add Chamber
-        </button>
+        <MenuRow label="Cancel" danger onClick={onClose} />
 
-        <button onClick={() => onSelect("street-cab")} style={menuButton}>
-          Add Street Cab
-        </button>
+        {openSubmenu === "assets" && (
+          <Submenu top={4}>
+            <MenuRow label="Joint" onClick={() => select("joint")} />
+            <MenuRow label="Pole" onClick={() => select("pole")} />
+            <MenuRow
+              label="Distribution Point"
+              onClick={() => select("distribution-point")}
+            />
+            <MenuRow label="Chamber" onClick={() => select("chamber")} />
+            <MenuRow label="Street Cab" onClick={() => select("street-cab")} />
+          </Submenu>
+        )}
 
-        <button onClick={() => onSelect("cable")} style={menuButton}>
-          Add Cable
-        </button>
-
-        <button onClick={() => onSelect("area")} style={menuButton}>
-          Draw Polygon Area
-        </button>
-
-        <button onClick={onClose} style={menuButton}>
-          Cancel
-        </button>
+        {openSubmenu === "draw" && (
+          <Submenu top={34}>
+            <MenuRow label="Cable" onClick={() => select("cable")} />
+            <MenuRow label="Polygon Area" onClick={() => select("area")} />
+          </Submenu>
+        )}
       </div>
     </>
   );
 }
 
-const menuButton: React.CSSProperties = {
-  width: "100%",
-  textAlign: "left",
-  padding: "0.75rem 0.9rem",
-  background: "#111827",
-  color: "white",
-  border: "none",
-  borderBottom: "1px solid #1f2937",
-  cursor: "pointer",
-};
+function Submenu({
+  children,
+  top,
+}: {
+  children: React.ReactNode;
+  top: number;
+}) {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 168,
+        top,
+        width: 175,
+        background: "#0f172a",
+        border: "1px solid #1f2937",
+        borderRadius: 8,
+        boxShadow: "0 10px 28px rgba(0,0,0,0.45)",
+        padding: "4px 0",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function MenuRow({
+  label,
+  onClick,
+  onMouseEnter,
+  hasSubmenu = false,
+  active = false,
+  danger = false,
+}: {
+  label: string;
+  onClick?: () => void;
+  onMouseEnter?: () => void;
+  hasSubmenu?: boolean;
+  active?: boolean;
+  danger?: boolean;
+}) {
+  const [hover, setHover] = useState(false);
+
+  const bg = active || hover ? "#1f2937" : "transparent";
+
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={(e) => {
+        setHover(true);
+        onMouseEnter?.();
+      }}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        height: 28,
+        padding: "0 10px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        background: bg,
+        color: danger ? "#f87171" : "#e5e7eb",
+        cursor: "pointer",
+        userSelect: "none",
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span>{label}</span>
+      {hasSubmenu && <span style={{ opacity: 0.65 }}>›</span>}
+    </div>
+  );
+}
+
+function Divider() {
+  return (
+    <div
+      style={{
+        height: 1,
+        background: "#1f2937",
+        margin: "4px 0",
+      }}
+    />
+  );
+}
