@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { CircleMarker, Marker, Polyline, Popup } from "react-leaflet";
+import { CircleMarker, Marker, Polyline, Popup, Tooltip } from "react-leaflet";
 import type { SavedMapAsset } from "../JointMapManager";
 
 type Props = {
@@ -80,6 +80,7 @@ export default function CableLinesLayer({
   onEditAsset,
 }: Props) {
   const [editingCableId, setEditingCableId] = useState<string | null>(null);
+  const [hoveredCableId, setHoveredCableId] = useState<string | null>(null);
 
   if (!cablesVisible) return null;
 
@@ -141,6 +142,8 @@ export default function CableLinesLayer({
             : [];
 
         const length = getCableLengthMeters(points);
+        const isHovered = hoveredCableId === asset.id;
+        const isEditing = editingCableId === asset.id;
 
         return (
           <React.Fragment key={asset.id}>
@@ -148,11 +151,14 @@ export default function CableLinesLayer({
               positions={points}
               pathOptions={{
                 color: getCableColor(asset),
-                weight: 4,
+                weight: isHovered || isEditing ? 6 : 4,
+                opacity: isHovered || isEditing ? 1 : 0.85,
                 dashArray: getDashArray(asset),
               }}
               eventHandlers={{
                 click: () => setEditingCableId(asset.id),
+                mouseover: () => setHoveredCableId(asset.id),
+                mouseout: () => setHoveredCableId(null),
               }}
             >
               <Popup>
@@ -190,9 +196,17 @@ export default function CableLinesLayer({
                   </div>
                 </div>
               </Popup>
+              <Tooltip
+                permanent
+                direction="center"
+                opacity={0.9}
+                className="cable-length-label"
+              >
+                {formatCableLength(length)}
+              </Tooltip>
             </Polyline>
 
-            {editingCableId === asset.id &&
+            {isEditing &&
               points
                 .map((coord, index) => ({ coord, index }))
                 .filter(({ index }) => shouldShowEditHandle(index, points.length))
@@ -210,7 +224,7 @@ export default function CableLinesLayer({
                   />
                 ))}
 
-            {editingCableId === asset.id &&
+            {isEditing &&
               points.slice(0, -1).map((coord, index) => {
                 if (!shouldShowEditHandle(index, points.length)) return null;
 
