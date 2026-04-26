@@ -6,6 +6,7 @@ import {
   Popup,
   Polyline,
   Polygon,
+  Tooltip,
   useMapEvents,
   useMap,
 } from "react-leaflet";
@@ -229,6 +230,61 @@ function inferAssetTypeFromName(name: string): AssetType {
   return "ag-joint";
 }
 
+function getPolygonAreaSquareMeters(points: [number, number][]): number {
+  if (points.length < 3) return 0;
+
+  const radius = 6378137;
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  let area = 0;
+
+  for (let i = 0; i < points.length; i += 1) {
+    const [lat1, lng1] = points[i];
+    const [lat2, lng2] = points[(i + 1) % points.length];
+    area += toRad(lng2 - lng1) * (2 + Math.sin(toRad(lat1)) + Math.sin(toRad(lat2)));
+  }
+
+  return Math.abs((area * radius * radius) / 2);
+}
+
+function formatAreaLabel(areaSquareMeters: number): string {
+  if (areaSquareMeters < 10000) {
+    return `${areaSquareMeters.toFixed(0)} m²`;
+  }
+
+  return `${(areaSquareMeters / 10000).toFixed(2)} ha`;
+}
+
+function getPolygonCenter(points: [number, number][]): [number, number] | null {
+  if (points.length === 0) return null;
+
+  const total = points.reduce(
+    (acc, [lat, lng]) => ({ lat: acc.lat + lat, lng: acc.lng + lng }),
+    { lat: 0, lng: 0 }
+  );
+
+  return [total.lat / points.length, total.lng / points.length];
+}
+
+function AreaSearchFlyTo({
+  area,
+}: {
+  area: SavedMapAsset | null;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!area || area.geometry?.type !== "Polygon") return;
+
+    const ring = area.geometry.coordinates[0] || [];
+    const center = getPolygonCenter(ring);
+    if (!center) return;
+
+    map.flyTo(center, Math.max(map.getZoom(), 17), { duration: 0.7 });
+  }, [area, map]);
+
+  return null;
+}
+
 export default function JointMapManager({
   currentJointName,
   currentJointType,
@@ -304,6 +360,8 @@ export default function JointMapManager({
   const [showChamberModal, setShowChamberModal] = useState(false);
 
   const [openStreetCabAsset, setOpenStreetCabAsset] = useState<SavedMapAsset | null>(null);
+  const [areaSearchQuery, setAreaSearchQuery] = useState("");
+  const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
 
   useEffect(() => {
     setJointName(currentJointName || "");
@@ -333,6 +391,27 @@ export default function JointMapManager({
 
     return [54.5, -3.0];
   }, [pickedLocation, draftCablePoints, draftAreaPoints, measurePoints, savedJoints]);
+
+  const polygonAreas = useMemo(() => {
+    return (savedJoints ?? []).filter(
+      (asset) => asset.assetType === "area" && asset.geometry?.type === "Polygon"
+    );
+  }, [savedJoints]);
+
+  const matchingAreas = useMemo(() => {
+    const query = areaSearchQuery.trim().toLowerCase();
+    if (!query) return polygonAreas.slice(0, 8);
+
+    return polygonAreas
+      .filter((asset) =>
+        `${asset.name || ""} ${asset.notes || ""}`.toLowerCase().includes(query)
+      )
+      .slice(0, 8);
+  }, [areaSearchQuery, polygonAreas]);
+
+  const selectedArea = useMemo(() => {
+    return polygonAreas.find((asset) => asset.id === selectedAreaId) || null;
+  }, [polygonAreas, selectedAreaId]);
 
   const measuredDistance = useMemo(() => {
     return getPathDistanceMeters(measurePoints);
@@ -1318,6 +1397,7 @@ export default function JointMapManager({
         <MapContainer center={mapCenter} zoom={6} style={{ height: "100%" }}>
           <MapBaseLayers basemap={basemap} roadOverlayVisible={roadOverlayVisible} />
           <MapBoundsTracker onBoundsChange={setMapBounds} />
+          <AreaSearchFlyTo area={selectedArea} />
 
           <MapClickHandler
             mode={mapMode}
@@ -1365,35 +1445,62 @@ export default function JointMapManager({
           
 
           {visibleLayers.areas &&
-            (savedJoints ?? [])
-              .filter((asset) => asset.assetType === "area" && asset.geometry?.type === "Polygon")
-              .map((asset) => (
-                <Polygon
-                  key={asset.id}
-                  positions={(asset.geometry as { type: "Polygon"; coordinates: [number, number][][] }).coordinates[0].map(
-                    ([lat, lng]) => [lat, lng] as [number, number]
-                  )}
-                  pathOptions={{ color: "#a855f7", weight: 3, fillOpacity: 0.18 }}
-                  eventHandlers={{
-                    click: () => handleEditAsset(asset),
-                  }}
-                >
-                  <Popup>
-                    <b>{asset.name}</b>
-                    <br />
-                    Polygon Area
-                    {asset.notes ? (
-                      <>
-                        <br />
-                        {asset.notes}
-                      </>
-                    ) : null}
-                    <br />
-                    <button onClick={() => handleEditAsset(asset)}>Edit</button>{" "}
-                    <button onClick={() => handleDeleteAsset(asset.id)}>Delete</button>
-                  </Popup>
-                </Polygon>
-              ))}
+            polygonAreas.map((asset) => {
+                const areaPoints = (asset.geometry as {
+                  type: "Polygon";
+                  coordinates: [number, number][][];
+                }).coordinates[0].map(([lat, lng]) => [lat, lng] as [number, number]);
+
+                const areaSquareMeters = getPolygonAreaSquareMeters(areaPoints);
+                const areaLabel = formatAreaLabel(areaSquareMeters);
+                const isSelectedArea = selectedAreaId === asset.id;
+
+                return (
+                  <Polygon
+                    key={asset.id}
+                    positions={areaPoints}
+                    pathOptions={{
+                      color: isSelectedArea ? "#facc15" : "#a855f7",
+                      weight: isSelectedArea ? 5 : 3,
+                      fillOpacity: isSelectedArea ? 0.26 : 0.18,
+                    }}
+                    eventHandlers={{
+                      click: () => {
+                        setSelectedAreaId(asset.id);
+                        handleEditAsset(asset);
+                      },
+                    }}
+                  >
+                    <Popup>
+                      <b>{asset.name}</b>
+                      <br />
+                      Polygon Area
+                      <br />
+                      Area: {areaLabel}
+                      <br />
+                      Points: {areaPoints.length}
+                      {asset.notes ? (
+                        <>
+                          <br />
+                          {asset.notes}
+                        </>
+                      ) : null}
+                      <br />
+                      <button onClick={() => handleEditAsset(asset)}>Edit</button>{" "}
+                      <button onClick={() => handleDeleteAsset(asset.id)}>Delete</button>
+                    </Popup>
+
+                    <Tooltip
+                      permanent
+                      direction="center"
+                      opacity={0.9}
+                      className="area-size-label"
+                    >
+                      {asset.name || "Unnamed Area"}
+                    </Tooltip>
+                  </Polygon>
+                );
+              })}
 
           <CableLinesLayer
             assets={savedJoints}
@@ -1678,6 +1785,38 @@ export default function JointMapManager({
 
     <div style={{ fontSize: "0.82rem", color: "#cbd5e1", marginTop: 8 }}>
       Hybrid = satellite with road/label overlays. Dark is useful when fibre routes need to stand out.
+    </div>
+  </div>
+
+
+  <div style={card}>
+    <div style={label}>Search Areas</div>
+    <input
+      value={areaSearchQuery}
+      onChange={(e) => setAreaSearchQuery(e.target.value)}
+      placeholder="Search area name"
+      style={input}
+    />
+
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 180, overflowY: "auto" }}>
+      {matchingAreas.length > 0 ? (
+        matchingAreas.map((area) => (
+          <button
+            key={area.id}
+            onClick={() => {
+              setSelectedAreaId(area.id);
+              setAreaSearchQuery(area.name || "");
+            }}
+            style={selectedAreaId === area.id ? btnPrimary : btnSecondary}
+          >
+            {area.name || "Unnamed Area"}
+          </button>
+        ))
+      ) : (
+        <div style={{ fontSize: "0.85rem", color: "#cbd5e1" }}>
+          No matching polygon areas.
+        </div>
+      )}
     </div>
   </div>
 
