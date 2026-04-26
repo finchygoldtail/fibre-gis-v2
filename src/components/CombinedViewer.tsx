@@ -139,7 +139,7 @@ const CombinedViewer: React.FC = () => {
   // FIREBASE LOAD — SHARED BUSINESS NETWORK
   // ---------------------------------------------------------
   useEffect(() => {
-    const ref = doc(db, "businesses", "fibre-gis");
+    const ref = doc(db, "businesses", "fibre-gis-v2");
 
     const unsub = onSnapshot(ref, (snap) => {
       if (snap.exists()) {
@@ -177,7 +177,7 @@ const CombinedViewer: React.FC = () => {
 
     lastSavedJsonRef.current = json;
 
-    const ref = doc(db, "businesses", "fibre-gis");
+    const ref = doc(db, "businesses", "fibre-gis-v2");
     const user = auth.currentUser;
     const now = new Date().toISOString();
 
