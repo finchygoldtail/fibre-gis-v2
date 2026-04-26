@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Marker, Polyline, Popup } from "react-leaflet";
+import { CircleMarker, Marker, Polyline, Popup } from "react-leaflet";
 import type { SavedMapAsset } from "../JointMapManager";
 
 type Props = {
@@ -57,6 +57,22 @@ function getDashArray(asset: SavedMapAsset): string | undefined {
   return undefined;
 }
 
+function shouldShowEditHandle(index: number, totalPoints: number): boolean {
+  if (index === 0 || index === totalPoints - 1) return true;
+
+  // Keep dense generated/snap-to-road routes usable without flooding the map.
+  if (totalPoints <= 80) return true;
+  if (totalPoints <= 200) return index % 10 === 0;
+  return index % 25 === 0;
+}
+
+function getMidpoint(
+  start: [number, number],
+  end: [number, number]
+): [number, number] {
+  return [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2];
+}
+
 export default function CableLinesLayer({
   assets,
   cablesVisible,
@@ -74,6 +90,19 @@ export default function CableLinesLayer({
       Array.isArray(asset.geometry.coordinates)
   );
 
+  const updateCableCoordinates = (
+    asset: SavedMapAsset,
+    coordinates: [number, number][]
+  ) => {
+    onEditAsset({
+      ...asset,
+      geometry: {
+        ...asset.geometry,
+        coordinates,
+      },
+    });
+  };
+
   const handleMovePoint = (
     asset: SavedMapAsset,
     pointIndex: number,
@@ -85,13 +114,22 @@ export default function CableLinesLayer({
     const newCoordinates = [...asset.geometry.coordinates];
     newCoordinates[pointIndex] = [lat, lng];
 
-    onEditAsset({
-      ...asset,
-      geometry: {
-        ...asset.geometry,
-        coordinates: newCoordinates,
-      },
-    });
+    updateCableCoordinates(asset, newCoordinates);
+  };
+
+  const handleInsertMidpoint = (asset: SavedMapAsset, afterIndex: number) => {
+    if (asset.geometry.type !== "LineString") return;
+
+    const coordinates = asset.geometry.coordinates;
+    const start = coordinates[afterIndex];
+    const end = coordinates[afterIndex + 1];
+
+    if (!start || !end) return;
+
+    const newCoordinates = [...coordinates];
+    newCoordinates.splice(afterIndex + 1, 0, getMidpoint(start, end));
+
+    updateCableCoordinates(asset, newCoordinates);
   };
 
   return (
@@ -155,26 +193,46 @@ export default function CableLinesLayer({
             </Polyline>
 
             {editingCableId === asset.id &&
-  points
-    .map((coord, index) => ({ coord, index }))
-    .filter(({ index }) =>
-      index === 0 ||
-      index === points.length - 1 ||
-      index % 25 === 0
-    )
-    .map(({ coord, index }) => (
-      <Marker
-        key={`${asset.id}-${index}`}
-        position={coord}
-        draggable
-        eventHandlers={{
-          dragend: (e) => {
-            const newPos = e.target.getLatLng();
-            handleMovePoint(asset, index, newPos.lat, newPos.lng);
-          },
-        }}
-      />
-    ))}
+              points
+                .map((coord, index) => ({ coord, index }))
+                .filter(({ index }) => shouldShowEditHandle(index, points.length))
+                .map(({ coord, index }) => (
+                  <Marker
+                    key={`${asset.id}-drag-${index}`}
+                    position={coord}
+                    draggable
+                    eventHandlers={{
+                      dragend: (e) => {
+                        const newPos = e.target.getLatLng();
+                        handleMovePoint(asset, index, newPos.lat, newPos.lng);
+                      },
+                    }}
+                  />
+                ))}
+
+            {editingCableId === asset.id &&
+              points.slice(0, -1).map((coord, index) => {
+                if (!shouldShowEditHandle(index, points.length)) return null;
+
+                const nextCoord = points[index + 1];
+                if (!nextCoord) return null;
+
+                return (
+                  <CircleMarker
+                    key={`${asset.id}-insert-${index}`}
+                    center={getMidpoint(coord, nextCoord)}
+                    radius={5}
+                    pathOptions={{
+                      color: getCableColor(asset),
+                      weight: 2,
+                      fillOpacity: 0.85,
+                    }}
+                    eventHandlers={{
+                      click: () => handleInsertMidpoint(asset, index),
+                    }}
+                  />
+                );
+              })}
           </React.Fragment>
         );
       })}
