@@ -9,7 +9,9 @@ import React, {
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { db, auth } from "../firebase";
 
-import JointMapManager, { type SavedMapAsset } from "./JointMapManager";
+import JointMapManager, {
+  type SavedMapAsset,
+} from "./JointMapManager";
 
 import {
   buildJoint,
@@ -26,8 +28,6 @@ import {
 } from "../logic/fibreColours";
 
 import { loadMappingFile } from "../logic/mappingParser";
-
-const FIRESTORE_REF = doc(db, "businesses", "fibre-gis-v2");
 
 function cleanCell(v: any): string {
   if (v === null || v === undefined) return "";
@@ -87,15 +87,6 @@ function cleanForFirebase(value: SavedMapAsset[]): any[] {
   });
 }
 
-function restoreFromFirebase(value: any[]): SavedMapAsset[] {
-  return value.map((asset: any) => ({
-    ...asset,
-    mappingRows: asset.mappingRowsJson
-      ? JSON.parse(asset.mappingRowsJson)
-      : asset.mappingRows || [],
-  }));
-}
-
 function withTracking(asset: SavedMapAsset, isNew: boolean): SavedMapAsset {
   const user = auth.currentUser;
   const now = new Date().toISOString();
@@ -122,7 +113,6 @@ const CombinedViewer: React.FC = () => {
   const [savedJoints, setSavedJoints] = useState<SavedMapAsset[]>([]);
   const [firebaseLoaded, setFirebaseLoaded] = useState(false);
   const lastSavedJsonRef = useRef("");
-  const saveTimerRef = useRef<number | null>(null);
 
   const [selectedJoint, setSelectedJoint] = useState<SavedMapAsset | null>(
     null
@@ -149,28 +139,28 @@ const CombinedViewer: React.FC = () => {
   // FIREBASE LOAD — SHARED BUSINESS NETWORK
   // ---------------------------------------------------------
   useEffect(() => {
+    const ref = doc(db, "businesses", "fibre-gis-v2");
+
     const unsub = onSnapshot(
-      FIRESTORE_REF,
+      ref,
       async (snap) => {
         if (snap.exists()) {
           const data = snap.data();
 
           const loadedJoints = Array.isArray(data.savedJoints)
-            ? restoreFromFirebase(data.savedJoints)
+            ? data.savedJoints.map((asset: any) => ({
+                ...asset,
+                mappingRows: asset.mappingRowsJson
+                  ? JSON.parse(asset.mappingRowsJson)
+                  : asset.mappingRows || [],
+              }))
             : [];
 
-          lastSavedJsonRef.current = JSON.stringify(
-            cleanForFirebase(loadedJoints)
-          );
-
+          lastSavedJsonRef.current = JSON.stringify(cleanForFirebase(loadedJoints));
           setSavedJoints(loadedJoints);
         } else {
-          // Create the Firestore document immediately so we know writes work.
-          const emptyJson = JSON.stringify([]);
-          lastSavedJsonRef.current = emptyJson;
-
           await setDoc(
-            FIRESTORE_REF,
+            ref,
             {
               savedJoints: [],
               createdAt: new Date().toISOString(),
@@ -180,7 +170,7 @@ const CombinedViewer: React.FC = () => {
             },
             { merge: true }
           );
-
+          lastSavedJsonRef.current = JSON.stringify([]);
           console.log("Created Firestore document: businesses/fibre-gis-v2");
         }
 
@@ -196,7 +186,7 @@ const CombinedViewer: React.FC = () => {
   }, []);
 
   // ---------------------------------------------------------
-  // FIREBASE AUTO SAVE — DEBOUNCED + LOOP SAFE
+  // FIREBASE AUTO SAVE — LOOP SAFE
   // ---------------------------------------------------------
   useEffect(() => {
     if (!firebaseLoaded) return;
@@ -206,40 +196,24 @@ const CombinedViewer: React.FC = () => {
 
     if (json === lastSavedJsonRef.current) return;
 
-    if (saveTimerRef.current) {
-      window.clearTimeout(saveTimerRef.current);
-    }
+    lastSavedJsonRef.current = json;
 
-    saveTimerRef.current = window.setTimeout(() => {
-      const user = auth.currentUser;
-      const now = new Date().toISOString();
+    const ref = doc(db, "businesses", "fibre-gis-v2");
+    const user = auth.currentUser;
+    const now = new Date().toISOString();
 
-      setDoc(
-        FIRESTORE_REF,
-        {
-          savedJoints: cleanedJoints,
-          updatedAt: now,
-          updatedByUid: user?.uid || "unknown",
-          updatedByEmail: user?.email || "unknown",
-        },
-        { merge: true }
-      )
-        .then(() => {
-          lastSavedJsonRef.current = json;
-          console.log(
-            `Saved ${cleanedJoints.length} map items to businesses/fibre-gis-v2`
-          );
-        })
-        .catch((err) => {
-          console.error("Firebase save failed:", err);
-        });
-    }, 500);
-
-    return () => {
-      if (saveTimerRef.current) {
-        window.clearTimeout(saveTimerRef.current);
-      }
-    };
+    setDoc(
+      ref,
+      {
+        savedJoints: cleanedJoints,
+        updatedAt: now,
+        updatedByUid: user?.uid || "unknown",
+        updatedByEmail: user?.email || "unknown",
+      },
+      { merge: true }
+    ).catch((err) => {
+      console.error("Firebase save failed:", err);
+    });
   }, [savedJoints, firebaseLoaded]);
 
   function openJoint(joint: SavedMapAsset) {
@@ -529,7 +503,9 @@ const CombinedViewer: React.FC = () => {
                       cx={fx}
                       cy={fy}
                       r={6}
-                      fill={match ? SEARCH_HIGHLIGHT : getColourForFibre(pos)}
+                      fill={
+                        match ? SEARCH_HIGHLIGHT : getColourForFibre(pos)
+                      }
                       stroke="#333"
                       onClick={() => handleFibreClick(cell)}
                       style={{ cursor: "pointer" }}
