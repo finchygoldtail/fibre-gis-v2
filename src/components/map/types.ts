@@ -23,6 +23,12 @@ export type InstallMethod = "OH" | "Underground";
 
 export type AreaLevel = "L0" | "L1" | "L2" | "L3";
 
+export type AssetStatus =
+  | "Live"
+  | "BWIP"
+  | "Unserviceable"
+  | "Live not ready for service";
+
 export type PoleDetails = {
   poleType?: "new" | "or";
   size?: string;
@@ -35,7 +41,7 @@ export type PoleDetails = {
 };
 
 export type DistributionPointDetails = {
-  buildStatus?: string;
+  buildStatus?: AssetStatus | "";
   image?: string;
   powerReadings?: [string, string, string, string];
   closureType?: "CBT" | "AFN";
@@ -71,7 +77,7 @@ export type SavedMapAsset = {
 
   areaLevel?: AreaLevel;
   homeType?: "SDU" | "MDU" | "Flats";
-  status?: "Live" | "BWIP" | "Unserviceable" | "Live Not Ready";
+  status?: AssetStatus | "";
 
   source?: "manual" | "osm" | string;
   osmId?: string;

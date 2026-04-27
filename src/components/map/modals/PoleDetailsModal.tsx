@@ -1,4 +1,6 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { storage } from "../../../firebase";
 import type { PoleDetails } from "../types";
 
 type Props = {
@@ -7,9 +9,26 @@ type Props = {
   details: PoleDetails;
   onChangeName: (v: string) => void;
   onChange: (v: PoleDetails) => void;
-  onSave: () => void;
+  onSave: (nextDetails?: PoleDetails) => void;
   onCancel: () => void;
 };
+
+function safeFileName(name: string) {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+async function uploadAssetFile(assetFolder: string, file: File) {
+  const fileRef = ref(
+    storage,
+    `asset-uploads/${assetFolder}/${Date.now()}_${crypto.randomUUID()}_${safeFileName(file.name)}`
+  );
+  await uploadBytes(fileRef, file, { contentType: file.type || undefined });
+  return getDownloadURL(fileRef);
+}
+
+function keepSavedUrls(values: string[] = []) {
+  return values.filter((value) => value && !value.startsWith("blob:") && !value.startsWith("data:"));
+}
 
 export default function PoleDetailsModal({
   visible,
@@ -20,24 +39,77 @@ export default function PoleDetailsModal({
   onSave,
   onCancel,
 }: Props) {
+  const [selectedPhotos, setSelectedPhotos] = useState<File[]>([]);
+  const [selectedDocuments, setSelectedDocuments] = useState<File[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  const photoPreviews = useMemo(
+    () => selectedPhotos.map((file) => URL.createObjectURL(file)),
+    [selectedPhotos]
+  );
+
   if (!visible) return null;
 
   const update = (key: keyof PoleDetails, value: any) => {
     onChange({ ...details, [key]: value });
   };
 
-  const photos = details.photos || [];
-  const documents = details.documents || [];
+  const savedPhotos = keepSavedUrls(details.photos || []);
+  const photos = [...savedPhotos, ...photoPreviews].slice(0, 4);
+  const savedDocuments = details.documents || [];
+  const documents = [
+    ...savedDocuments,
+    ...selectedDocuments.map((file) => file.name),
+  ];
+
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+
+      const uploadedPhotos = await Promise.all(
+        selectedPhotos.slice(0, Math.max(0, 4 - savedPhotos.length)).map((file) =>
+          uploadAssetFile("poles/photos", file)
+        )
+      );
+
+      const uploadedDocuments = await Promise.all(
+        selectedDocuments.map((file) => uploadAssetFile("poles/documents", file))
+      );
+
+      const nextDetails: PoleDetails = {
+        ...details,
+        photos: [...savedPhotos, ...uploadedPhotos].slice(0, 4),
+        documents: [...savedDocuments, ...uploadedDocuments],
+      };
+
+      onChange(nextDetails);
+      onSave(nextDetails);
+    } catch (err) {
+      console.error("Pole upload failed", err);
+      alert("Upload failed. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <>
-      <div className="modal-bg" onClick={onCancel} />
+      <div className="modal-bg" onClick={saving ? undefined : onCancel} />
 
       <div className="modal">
         <h3>Pole</h3>
 
         <label>Name</label>
         <input value={name} onChange={(e) => onChangeName(e.target.value)} />
+
+        <label>Pole Type</label>
+        <select
+          value={details.poleType || "new"}
+          onChange={(e) => update("poleType", e.target.value)}
+        >
+          <option value="new">New Pole</option>
+          <option value="or">OR Pole</option>
+        </select>
 
         <label>Size</label>
         <input
@@ -76,15 +148,13 @@ export default function PoleDetailsModal({
         <label>Photos (max 4)</label>
         <input
           type="file"
+          accept="image/*"
           multiple
-          onChange={(e) =>
-            update(
-              "photos",
-              Array.from(e.target.files || [])
-                .slice(0, 4)
-                .map((f) => URL.createObjectURL(f))
-            )
-          }
+          disabled={saving}
+          onChange={(e) => {
+            const files = Array.from(e.target.files || []).slice(0, Math.max(0, 4 - savedPhotos.length));
+            setSelectedPhotos(files);
+          }}
         />
 
         {photos.length > 0 ? (
@@ -95,12 +165,18 @@ export default function PoleDetailsModal({
                 <button
                   type="button"
                   className="remove-btn"
-                  onClick={() =>
-                    update(
-                      "photos",
-                      photos.filter((_, i) => i !== index)
-                    )
-                  }
+                  disabled={saving}
+                  onClick={() => {
+                    if (index < savedPhotos.length) {
+                      update(
+                        "photos",
+                        savedPhotos.filter((_, i) => i !== index)
+                      );
+                    } else {
+                      const selectedIndex = index - savedPhotos.length;
+                      setSelectedPhotos((prev) => prev.filter((_, i) => i !== selectedIndex));
+                    }
+                  }}
                 >
                   Remove
                 </button>
@@ -113,28 +189,30 @@ export default function PoleDetailsModal({
         <input
           type="file"
           multiple
-          onChange={(e) =>
-            update(
-              "documents",
-              Array.from(e.target.files || []).map((f) => f.name)
-            )
-          }
+          disabled={saving}
+          onChange={(e) => setSelectedDocuments(Array.from(e.target.files || []))}
         />
 
         {documents.length > 0 ? (
           <div className="doc-list">
             {documents.map((doc, index) => (
               <div key={`${doc}-${index}`} className="doc-row">
-                <span>{doc}</span>
+                <span>{doc.startsWith("http") ? decodeURIComponent(doc.split("/").pop()?.split("?")[0] || "Document") : doc}</span>
                 <button
                   type="button"
                   className="remove-btn small"
-                  onClick={() =>
-                    update(
-                      "documents",
-                      documents.filter((_, i) => i !== index)
-                    )
-                  }
+                  disabled={saving}
+                  onClick={() => {
+                    if (index < savedDocuments.length) {
+                      update(
+                        "documents",
+                        savedDocuments.filter((_, i) => i !== index)
+                      );
+                    } else {
+                      const selectedIndex = index - savedDocuments.length;
+                      setSelectedDocuments((prev) => prev.filter((_, i) => i !== selectedIndex));
+                    }
+                  }}
                 >
                   Remove
                 </button>
@@ -144,8 +222,10 @@ export default function PoleDetailsModal({
         ) : null}
 
         <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={onSave}>Save</button>
-          <button onClick={onCancel}>Cancel</button>
+          <button onClick={handleSave} disabled={saving}>
+            {saving ? "Uploading..." : "Save"}
+          </button>
+          <button onClick={onCancel} disabled={saving}>Cancel</button>
         </div>
       </div>
 

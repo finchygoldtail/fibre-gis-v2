@@ -1,4 +1,6 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { storage } from "../../../firebase";
 import type { DistributionPointDetails } from "../types";
 
 type Props = {
@@ -7,9 +9,22 @@ type Props = {
   details: DistributionPointDetails;
   onChangeName: (v: string) => void;
   onChange: (v: DistributionPointDetails) => void;
-  onSave: () => void;
+  onSave: (nextDetails?: DistributionPointDetails) => void;
   onCancel: () => void;
 };
+
+function safeFileName(name: string) {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+async function uploadAssetFile(assetFolder: string, file: File) {
+  const fileRef = ref(
+    storage,
+    `asset-uploads/${assetFolder}/${Date.now()}_${crypto.randomUUID()}_${safeFileName(file.name)}`
+  );
+  await uploadBytes(fileRef, file, { contentType: file.type || undefined });
+  return getDownloadURL(fileRef);
+}
 
 export default function DistributionPointDetailsModal({
   visible,
@@ -20,6 +35,14 @@ export default function DistributionPointDetailsModal({
   onSave,
   onCancel,
 }: Props) {
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const previewImage = useMemo(() => {
+    if (!selectedImage) return details.image || "";
+    return URL.createObjectURL(selectedImage);
+  }, [selectedImage, details.image]);
+
   if (!visible) return null;
 
   const update = (key: keyof DistributionPointDetails, value: any) => {
@@ -37,9 +60,29 @@ export default function DistributionPointDetailsModal({
     onChange({ ...details, powerReadings: readings });
   };
 
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      let imageUrl = details.image || "";
+
+      if (selectedImage) {
+        imageUrl = await uploadAssetFile("distribution-points", selectedImage);
+      }
+
+      const nextDetails = { ...details, image: imageUrl };
+      onChange(nextDetails);
+      onSave(nextDetails);
+    } catch (err) {
+      console.error("Distribution point image upload failed", err);
+      alert("Image upload failed. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <>
-      <div className="modal-bg" onClick={onCancel} />
+      <div className="modal-bg" onClick={saving ? undefined : onCancel} />
 
       <div className="modal">
         <h3>Distribution Point</h3>
@@ -48,10 +91,16 @@ export default function DistributionPointDetailsModal({
         <input value={name} onChange={(e) => onChangeName(e.target.value)} />
 
         <label>Build Status</label>
-        <input
+        <select
           value={details.buildStatus || ""}
           onChange={(e) => update("buildStatus", e.target.value)}
-        />
+        >
+          <option value="">Not set</option>
+          <option value="Live">Live</option>
+          <option value="BWIP">BWIP</option>
+          <option value="Unserviceable">Unserviceable</option>
+          <option value="Live not ready for service">Live not ready for service</option>
+        </select>
 
         <label>Closure Type</label>
         <select
@@ -90,24 +139,29 @@ export default function DistributionPointDetailsModal({
         <label>Image</label>
         <input
           type="file"
+          accept="image/*"
+          disabled={saving}
           onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (!file) return;
-            update("image", URL.createObjectURL(file));
+            const file = e.target.files?.[0] || null;
+            setSelectedImage(file);
           }}
         />
 
-        {details.image ? (
+        {previewImage ? (
           <div className="dp-preview-card">
             <img
-              src={details.image}
+              src={previewImage}
               alt="Distribution point"
               className="dp-preview-img"
             />
             <button
               type="button"
               className="remove-btn"
-              onClick={() => update("image", "")}
+              disabled={saving}
+              onClick={() => {
+                setSelectedImage(null);
+                update("image", "");
+              }}
             >
               Remove Image
             </button>
@@ -115,8 +169,10 @@ export default function DistributionPointDetailsModal({
         ) : null}
 
         <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
-          <button onClick={onSave}>Save</button>
-          <button onClick={onCancel}>Cancel</button>
+          <button onClick={handleSave} disabled={saving}>
+            {saving ? "Uploading..." : "Save"}
+          </button>
+          <button onClick={onCancel} disabled={saving}>Cancel</button>
         </div>
       </div>
 

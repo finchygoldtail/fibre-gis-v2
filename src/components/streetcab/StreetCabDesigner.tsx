@@ -105,6 +105,40 @@ function findPortByDisplayedNumber(
   return panel.ports.find((p) => p.number === fibreNumber) || null;
 }
 
+function getPanelCableRef(panel: StreetCabPanel): string {
+  return panel.name.split(" - P")[0].trim();
+}
+
+function isConnectionTouchingPort(
+  connection: StreetCabConnection,
+  panelId: string,
+  portId: string
+): boolean {
+  return (
+    (connection.fromPanelId === panelId && connection.fromPortId === portId) ||
+    (connection.toPanelId === panelId && connection.toPortId === portId)
+  );
+}
+
+function moveConnectionPort(
+  connection: StreetCabConnection,
+  fromPanelId: string,
+  fromPortId: string,
+  toPanelId: string,
+  toPortId: string
+): StreetCabConnection {
+  const fromMatches = connection.fromPanelId === fromPanelId && connection.fromPortId === fromPortId;
+  const toMatches = connection.toPanelId === fromPanelId && connection.toPortId === fromPortId;
+
+  return {
+    ...connection,
+    fromPanelId: fromMatches ? toPanelId : connection.fromPanelId,
+    fromPortId: fromMatches ? toPortId : connection.fromPortId,
+    toPanelId: toMatches ? toPanelId : connection.toPanelId,
+    toPortId: toMatches ? toPortId : connection.toPortId,
+  };
+}
+
 function addPortAnnotation(
   map: PortAnnotations,
   panelId: string,
@@ -480,6 +514,7 @@ export default function StreetCabDesigner({
 
   const [selectedPanelId, setSelectedPanelId] = useState<string | null>(null);
   const [selectedPort, setSelectedPort] = useState<SelectedPort>(null);
+  const [moveTargetFibre, setMoveTargetFibre] = useState("");
   const [pendingConnectionStart, setPendingConnectionStart] =
     useState<SelectedPort>(null);
   const [dragStartPort, setDragStartPort] = useState<SelectedPort>(null);
@@ -491,6 +526,24 @@ export default function StreetCabDesigner({
     () => panels.find((p) => p.id === selectedPanelId) || null,
     [panels, selectedPanelId]
   );
+
+  const selectedPortPanel = useMemo(
+    () =>
+      selectedPort
+        ? panels.find((panel) => panel.id === selectedPort.panelId) || null
+        : null,
+    [panels, selectedPort]
+  );
+
+  const selectedPortDetails = useMemo(() => {
+    if (!selectedPortPanel || !selectedPort || !("ports" in selectedPortPanel)) return null;
+    return selectedPortPanel.ports.find((port) => port.id === selectedPort.portId) || null;
+  }, [selectedPortPanel, selectedPort]);
+
+  const canMoveSelectedFibre =
+    !!selectedPortPanel &&
+    !!selectedPortDetails &&
+    (selectedPortPanel.type === "96f-panel" || selectedPortPanel.type === "link-cable-panel");
 
   const selectedPortConnectionCount = useMemo(() => {
     if (!selectedPort) return 0;
@@ -597,6 +650,7 @@ export default function StreetCabDesigner({
       portId: port.id,
       label: port.label || `${port.number}`,
     });
+    setMoveTargetFibre("");
   };
 
   const handleStartConnection = () => {
@@ -661,6 +715,119 @@ export default function StreetCabDesigner({
           )
       )
     );
+  };
+
+
+  const handleMoveSelectedFibre = () => {
+    if (!selectedPort || !selectedPortPanel || !selectedPortDetails) return;
+
+    if (!("ports" in selectedPortPanel)) {
+      alert("Only feeder/link fibre ports can be moved.");
+      return;
+    }
+
+    if (selectedPortPanel.type !== "96f-panel" && selectedPortPanel.type !== "link-cable-panel") {
+      alert("Move fibre is only for feeder/link cable panels, not splitter ports.");
+      return;
+    }
+
+    const targetNumber = parseNumber(moveTargetFibre);
+    if (!targetNumber) {
+      alert("Enter the new fibre number to move this mapping to.");
+      return;
+    }
+
+    if (targetNumber === selectedPortDetails.number) {
+      alert("The new fibre number is the same as the current fibre number.");
+      return;
+    }
+
+    const targetPort = findPortByDisplayedNumber(selectedPortPanel, targetNumber);
+    if (!targetPort) {
+      alert(`Fibre ${targetNumber} does not exist on this panel.`);
+      return;
+    }
+
+    const targetHasConnections = connections.some((connection) =>
+      isConnectionTouchingPort(connection, selectedPortPanel.id, targetPort.id)
+    );
+
+    if (targetHasConnections) {
+      const ok = window.confirm(
+        `Fibre ${targetNumber} already has a connection. Move anyway and merge the mapping onto that fibre?`
+      );
+      if (!ok) return;
+    }
+
+    const fromKey = `${selectedPort.panelId}:${selectedPort.portId}`;
+    const toKey = `${selectedPortPanel.id}:${targetPort.id}`;
+    const cableRef = getPanelCableRef(selectedPortPanel);
+    const oldNumber = selectedPortDetails.number;
+
+    setConnections((prev) =>
+      prev.map((connection) =>
+        isConnectionTouchingPort(connection, selectedPort.panelId, selectedPort.portId)
+          ? moveConnectionPort(
+              connection,
+              selectedPort.panelId,
+              selectedPort.portId,
+              selectedPortPanel.id,
+              targetPort.id
+            )
+          : connection
+      )
+    );
+
+    setPortAnnotations((prev) => {
+      const next = { ...prev };
+      const fromNotes = next[fromKey] || [];
+      const toNotes = next[toKey] || [];
+      const merged = [...toNotes];
+
+      fromNotes.forEach((note) => {
+        if (!merged.includes(note)) merged.push(note);
+      });
+
+      if (merged.length) next[toKey] = merged;
+      delete next[fromKey];
+      return next;
+    });
+
+    setImportMappingRows((prev) =>
+      prev.map((row) => {
+        if (selectedPortPanel.type === "96f-panel") {
+          const sameCable = !row.feederCable || row.feederCable === cableRef;
+          if (sameCable && row.feederFibre === oldNumber) {
+            return { ...row, feederCable: row.feederCable || cableRef, feederFibre: targetNumber };
+          }
+        }
+
+        if (selectedPortPanel.type === "link-cable-panel") {
+          const sameCable = !row.linkCable || row.linkCable === cableRef;
+          if (sameCable && row.linkFibre === oldNumber) {
+            return { ...row, linkCable: row.linkCable || cableRef, linkFibre: targetNumber };
+          }
+        }
+
+        return row;
+      })
+    );
+
+    setUsedPortKeys((prev) => {
+      const next = new Set(prev);
+      next.delete(fromKey);
+      next.add(toKey);
+      return next;
+    });
+
+    setSelectedPort({
+      panelId: selectedPortPanel.id,
+      portId: targetPort.id,
+      label: targetPort.label || `${targetPort.number}`,
+    });
+    setMoveTargetFibre("");
+
+    alert(`Moved ${cableRef} fibre ${oldNumber} to fibre ${targetNumber}.`);
   };
 
   const handleStartDragConnection = (panelId: string, port: StreetCabPort) => {
@@ -1197,6 +1364,28 @@ export default function StreetCabDesigner({
               >
                 Delete Port Connections
               </button>
+
+
+              {canMoveSelectedFibre ? (
+                <div style={moveFibreBox}>
+                  <div style={label}>Broken fibre move</div>
+                  <div style={{ fontSize: "0.78rem", color: "#cbd5e1" }}>
+                    Moves this fibre&apos;s mapping and connections to another fibre on the same panel.
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input
+                      value={moveTargetFibre}
+                      onChange={(e) => setMoveTargetFibre(e.target.value)}
+                      placeholder="New fibre no."
+                      inputMode="numeric"
+                      style={input}
+                    />
+                    <button type="button" onClick={handleMoveSelectedFibre} style={btnWarning}>
+                      Move
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
         ) : (
@@ -1369,4 +1558,23 @@ const mappingRow: React.CSSProperties = {
   padding: 8,
   fontSize: "0.75rem",
   lineHeight: 1.4,
+};
+const btnWarning: React.CSSProperties = {
+  background: "#f59e0b",
+  color: "#111827",
+  border: "none",
+  borderRadius: 8,
+  padding: "8px 12px",
+  cursor: "pointer",
+  fontWeight: 800,
+};
+
+const moveFibreBox: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 8,
+  background: "#111827",
+  border: "1px solid #f59e0b",
+  borderRadius: 8,
+  padding: 10,
 };
