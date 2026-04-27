@@ -139,6 +139,36 @@ function moveConnectionPort(
   };
 }
 
+
+function isFibreMovePanel(panel: StreetCabPanel | null): panel is StreetCabPanel & { ports: StreetCabPort[] } {
+  if (!panel || !("ports" in panel)) return false;
+
+  const type = String(panel.type || "").toLowerCase();
+  const name = String(panel.name || "").toLowerCase();
+
+  if (type.includes("splitter") || name.includes("splitter")) return false;
+
+  return (
+    type === "96f-panel" ||
+    type === "link-cable-panel" ||
+    type.includes("96") ||
+    type.includes("feeder") ||
+    type.includes("link") ||
+    type.includes("cable") ||
+    name.includes("feeder") ||
+    name.includes("link") ||
+    name.includes("cable")
+  );
+}
+
+function getFibreMovePanelKind(panel: StreetCabPanel): "feeder" | "link" {
+  const type = String(panel.type || "").toLowerCase();
+  const name = String(panel.name || "").toLowerCase();
+
+  if (type.includes("link") || name.includes("link")) return "link";
+  return "feeder";
+}
+
 function addPortAnnotation(
   map: PortAnnotations,
   panelId: string,
@@ -543,7 +573,7 @@ export default function StreetCabDesigner({
   const canMoveSelectedFibre =
     !!selectedPortPanel &&
     !!selectedPortDetails &&
-    (selectedPortPanel.type === "96f-panel" || selectedPortPanel.type === "link-cable-panel");
+    isFibreMovePanel(selectedPortPanel);
 
   const selectedPortConnectionCount = useMemo(() => {
     if (!selectedPort) return 0;
@@ -721,12 +751,7 @@ export default function StreetCabDesigner({
   const handleMoveSelectedFibre = () => {
     if (!selectedPort || !selectedPortPanel || !selectedPortDetails) return;
 
-    if (!("ports" in selectedPortPanel)) {
-      alert("Only feeder/link fibre ports can be moved.");
-      return;
-    }
-
-    if (selectedPortPanel.type !== "96f-panel" && selectedPortPanel.type !== "link-cable-panel") {
+    if (!isFibreMovePanel(selectedPortPanel)) {
       alert("Move fibre is only for feeder/link cable panels, not splitter ports.");
       return;
     }
@@ -763,6 +788,7 @@ export default function StreetCabDesigner({
     const toKey = `${selectedPortPanel.id}:${targetPort.id}`;
     const cableRef = getPanelCableRef(selectedPortPanel);
     const oldNumber = selectedPortDetails.number;
+    const fibreMovePanelKind = getFibreMovePanelKind(selectedPortPanel);
 
     setConnections((prev) =>
       prev.map((connection) =>
@@ -795,14 +821,14 @@ export default function StreetCabDesigner({
 
     setImportMappingRows((prev) =>
       prev.map((row) => {
-        if (selectedPortPanel.type === "96f-panel") {
+        if (fibreMovePanelKind === "feeder") {
           const sameCable = !row.feederCable || row.feederCable === cableRef;
           if (sameCable && row.feederFibre === oldNumber) {
             return { ...row, feederCable: row.feederCable || cableRef, feederFibre: targetNumber };
           }
         }
 
-        if (selectedPortPanel.type === "link-cable-panel") {
+        if (fibreMovePanelKind === "link") {
           const sameCable = !row.linkCable || row.linkCable === cableRef;
           if (sameCable && row.linkFibre === oldNumber) {
             return { ...row, linkCable: row.linkCable || cableRef, linkFibre: targetNumber };
