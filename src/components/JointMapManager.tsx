@@ -21,6 +21,8 @@ import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { formatDistance, getPathDistanceMeters } from "../utils/mapMeasure";
 import { getNextAssetName } from "../utils/mapAssetNames";
 import MapContextMenu, { type MapContextAction } from "./map/MapContextMenu";
+import LayersPanel from "./map/LayersPanel";
+import GpsLocationControl from "./map/GpsLocationControl";
 import AssetMarkersLayer from "./map/AssetMarkersLayer";
 import CableLinesLayer from "./map/CableLinesLayer";
 import CableDetailsModal from "./map/CableDetailsModal";
@@ -79,6 +81,29 @@ type LayerVisibility = {
   areas: boolean;
   measurements: boolean;
   homes: boolean;
+  l0: boolean;
+  l1: boolean;
+  l2: boolean;
+  l3: boolean;
+  newPoles: boolean;
+  orPoles: boolean;
+  fw2: boolean;
+  fw4: boolean;
+  fw6: boolean;
+  fw10: boolean;
+  homesSdu: boolean;
+  homesMdu: boolean;
+  homesFlats: boolean;
+  feeders: boolean;
+  links: boolean;
+  ulw48: boolean;
+  ulw36: boolean;
+  ulw24: boolean;
+  ulw12: boolean;
+  live: boolean;
+  bwip: boolean;
+  unserviceable: boolean;
+  liveNotReady: boolean;
 };
 
 function MapClickHandler({
@@ -304,6 +329,29 @@ export default function JointMapManager({
     areas: true,
     measurements: true,
     homes: true,
+    l0: true,
+    l1: true,
+    l2: true,
+    l3: true,
+    newPoles: true,
+    orPoles: true,
+    fw2: true,
+    fw4: true,
+    fw6: true,
+    fw10: true,
+    homesSdu: true,
+    homesMdu: true,
+    homesFlats: true,
+    feeders: true,
+    links: true,
+    ulw48: true,
+    ulw36: true,
+    ulw24: true,
+    ulw12: true,
+    live: true,
+    bwip: true,
+    unserviceable: true,
+    liveNotReady: true,
   });
 
   const [snapEnabled, setSnapEnabled] = useState(true);
@@ -1562,6 +1610,8 @@ export default function JointMapManager({
               }}
             />
           )}
+
+          <GpsLocationControl />
         </MapContainer>
 
         <MapContextMenu
@@ -1643,200 +1693,16 @@ export default function JointMapManager({
         />
       </div>
 
-      <div
-  style={{
-    position: "absolute",
-    top: 0,
-    right: 0,
-    height: "100%",
-    width: 300,
-    zIndex: 1000,
-    transform: "translateX(260px)",
-    transition: "transform 0.25s ease",
-    background: "#1f2937",
-    padding: "1rem",
-    display: "flex",
-    flexDirection: "column",
-    gap: "1rem",
-    borderLeft: "1px solid #374151",
-  }}
-  onMouseEnter={(e) => {
-    e.currentTarget.style.transform = "translateX(0)";
-  }}
-  onMouseLeave={(e) => {
-    e.currentTarget.style.transform = "translateX(260px)";
-  }}
->
-  <div
-    style={{
-      position: "absolute",
-      left: -34,
-      top: 20,
-      width: 34,
-      height: 110,
-      background: "#1f2937",
-      border: "1px solid #374151",
-      borderRight: "none",
-      borderRadius: "8px 0 0 8px",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      writingMode: "vertical-rl",
-      fontWeight: 700,
-      cursor: "pointer",
-    }}
-  >
-    Layers
-  </div>
-
-  <h3 style={{ margin: 0 }}>Map View</h3>
-
-  <div style={card}>
-    <div style={label}>Basemap</div>
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-      <button
-        onClick={() => setBasemap("street")}
-        style={basemap === "street" ? btnPrimary : btnSecondary}
-      >
-        Street
-      </button>
-      <button
-        onClick={() => setBasemap("satellite")}
-        style={basemap === "satellite" ? btnPrimary : btnSecondary}
-      >
-        Satellite
-      </button>
-      <button
-        onClick={() => setBasemap("hybrid")}
-        style={basemap === "hybrid" ? btnPrimary : btnSecondary}
-      >
-        Hybrid
-      </button>
-      <button
-        onClick={() => setBasemap("dark")}
-        style={basemap === "dark" ? btnPrimary : btnSecondary}
-      >
-        Dark
-      </button>
-    </div>
-
-    <label style={{ ...layerRow, marginTop: 10 }}>
-      <input
-        type="checkbox"
-        checked={roadOverlayVisible}
-        onChange={() => setRoadOverlayVisible((v) => !v)}
-        disabled={basemap === "hybrid"}
+      <LayersPanel
+        visibleLayers={visibleLayers}
+        setVisibleLayers={setVisibleLayers}
+        basemap={basemap}
+        setBasemap={setBasemap}
+        roadOverlayVisible={roadOverlayVisible}
+        setRoadOverlayVisible={setRoadOverlayVisible}
+        snapEnabled={snapEnabled}
+        setSnapEnabled={setSnapEnabled}
       />
-      <span>Road Overlay {basemap === "hybrid" ? "(included)" : ""}</span>
-    </label>
-
-    <div style={{ fontSize: "0.82rem", color: "#cbd5e1", marginTop: 8 }}>
-      Hybrid = satellite with road/label overlays. Dark is useful when fibre routes need to stand out.
-    </div>
-  </div>
-
-  <h3 style={{ margin: 0 }}>Layers</h3>
-
-  <div style={card}>
-    <label style={layerRow}>
-      <input
-        type="checkbox"
-        checked={visibleLayers.agJoints}
-        onChange={() => toggleLayer("agJoints")}
-      />
-      <span>AG Joints</span>
-    </label>
-
-    <label style={layerRow}>
-      <input
-        type="checkbox"
-        checked={visibleLayers.streetCabs}
-        onChange={() => toggleLayer("streetCabs")}
-      />
-      <span>Street Cabs</span>
-    </label>
-
-    <label style={layerRow}>
-      <input
-        type="checkbox"
-        checked={visibleLayers.poles}
-        onChange={() => toggleLayer("poles")}
-      />
-      <span>Poles</span>
-    </label>
-
-    <label style={layerRow}>
-      <input
-        type="checkbox"
-        checked={visibleLayers.distributionPoints}
-        onChange={() => toggleLayer("distributionPoints")}
-      />
-      <span>Distribution Points</span>
-    </label>
-
-    <label style={layerRow}>
-      <input
-        type="checkbox"
-        checked={visibleLayers.chambers}
-        onChange={() => toggleLayer("chambers")}
-      />
-      <span>Chambers</span>
-    </label>
-
-    <label style={layerRow}>
-      <input
-        type="checkbox"
-        checked={visibleLayers.homes}
-        onChange={() => toggleLayer("homes")}
-      />
-      <span>Homes</span>
-    </label>
-
-    <label style={layerRow}>
-      <input
-        type="checkbox"
-        checked={visibleLayers.cables}
-        onChange={() => toggleLayer("cables")}
-      />
-      <span>Cables</span>
-    </label>
-
-    <label style={layerRow}>
-      <input
-        type="checkbox"
-        checked={visibleLayers.areas}
-        onChange={() => toggleLayer("areas")}
-      />
-      <span>Polygon Areas</span>
-    </label>
-
-    <label style={layerRow}>
-      <input
-        type="checkbox"
-        checked={visibleLayers.measurements}
-        onChange={() => toggleLayer("measurements")}
-      />
-      <span>Measurements</span>
-    </label>
-  </div>
-
-  <div style={card}>
-    <div style={label}>Snapping</div>
-
-    <div style={{ fontSize: "0.9rem", color: "#d1d5db" }}>
-      Asset placement and cable points snap to nearby poles, DPs, joints, chambers, and street cabs when enabled.
-    </div>
-
-    <label style={{ ...layerRow, marginTop: 8 }}>
-      <input
-        type="checkbox"
-        checked={snapEnabled}
-        onChange={() => setSnapEnabled((v) => !v)}
-      />
-      <span>Enable Snap</span>
-    </label>
-  </div>
-</div>
     </div>
   );
 }
