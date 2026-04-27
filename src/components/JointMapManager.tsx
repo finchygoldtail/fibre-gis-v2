@@ -21,8 +21,6 @@ import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { formatDistance, getPathDistanceMeters } from "../utils/mapMeasure";
 import { getNextAssetName } from "../utils/mapAssetNames";
 import MapContextMenu, { type MapContextAction } from "./map/MapContextMenu";
-import LayersPanel from "./map/LayersPanel";
-import GpsLocationControl from "./map/GpsLocationControl";
 import AssetMarkersLayer from "./map/AssetMarkersLayer";
 import CableLinesLayer from "./map/CableLinesLayer";
 import CableDetailsModal from "./map/CableDetailsModal";
@@ -35,7 +33,8 @@ import { snapPointToAssets } from "./map/utils/snapToAssets";
 import { routePointsToRoads } from "./map/utils/routeToRoads";
 import { loadOsmBuildingsAsHomes, type OsmBounds } from "./map/utils/loadOsmBuildings";
 import StreetCabDesigner from "./streetcab/StreetCabDesigner";
-
+import GpsLocationControl from "./map/GpsLocationControl";
+import LayersPanel from "./map/LayersPanel";
 import type {
   AssetType,
   CableType,
@@ -81,29 +80,6 @@ type LayerVisibility = {
   areas: boolean;
   measurements: boolean;
   homes: boolean;
-  l0: boolean;
-  l1: boolean;
-  l2: boolean;
-  l3: boolean;
-  newPoles: boolean;
-  orPoles: boolean;
-  fw2: boolean;
-  fw4: boolean;
-  fw6: boolean;
-  fw10: boolean;
-  homesSdu: boolean;
-  homesMdu: boolean;
-  homesFlats: boolean;
-  feeders: boolean;
-  links: boolean;
-  ulw48: boolean;
-  ulw36: boolean;
-  ulw24: boolean;
-  ulw12: boolean;
-  live: boolean;
-  bwip: boolean;
-  unserviceable: boolean;
-  liveNotReady: boolean;
 };
 
 function MapClickHandler({
@@ -279,6 +255,24 @@ function formatAreaLabel(areaSquareMeters: number): string {
   return `${(areaSquareMeters / 10000).toFixed(2)} ha`;
 }
 
+function getAreaLevel(asset: SavedMapAsset): "l0" | "l1" | "l2" | "l3" | null {
+  const text = `${asset.name || ""} ${asset.jointType || ""} ${asset.notes || ""}`.toLowerCase();
+  if (/\bl0\b/.test(text)) return "l0";
+  if (/\bl1\b/.test(text)) return "l1";
+  if (/\bl2\b/.test(text)) return "l2";
+  if (/\bl3\b/.test(text)) return "l3";
+  return null;
+}
+
+function getAreaDisplayLabel(asset: SavedMapAsset): string {
+  const level = getAreaLevel(asset);
+  const cleanName = String(asset.name || "Polygon Area").trim();
+  if (level && !new RegExp(`\\b${level}\\b`, "i").test(cleanName)) {
+    return `${cleanName} ${level.toUpperCase()}`;
+  }
+  return cleanName;
+}
+
 export default function JointMapManager({
   currentJointName,
   currentJointType,
@@ -355,6 +349,7 @@ export default function JointMapManager({
   });
 
   const [snapEnabled, setSnapEnabled] = useState(true);
+  const [layersDrawerOpen, setLayersDrawerOpen] = useState(true);
   const [isRoutingCable, setIsRoutingCable] = useState(false);
   const [isLoadingOsmHomes, setIsLoadingOsmHomes] = useState(false);
   const [mapBounds, setMapBounds] = useState<OsmBounds | null>(null);
@@ -1072,6 +1067,21 @@ export default function JointMapManager({
         color: "white",
       }}
     >
+      <style>{`
+        .transparent-area-label {
+          background: transparent !important;
+          border: 0 !important;
+          box-shadow: none !important;
+          color: #ffffff !important;
+          font-weight: 800 !important;
+          font-size: 16px !important;
+          text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 0 2px rgba(88,28,135,0.9) !important;
+          pointer-events: none !important;
+        }
+        .transparent-area-label::before {
+          display: none !important;
+        }
+      `}</style>
       <div style={panel}>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
           <h2 style={{ margin: 0 }}>Joint Map Manager</h2>
@@ -1399,6 +1409,7 @@ export default function JointMapManager({
         <MapContainer center={mapCenter} zoom={6} style={{ height: "100%" }}>
           <MapBaseLayers basemap={basemap} roadOverlayVisible={roadOverlayVisible} />
           <MapBoundsTracker onBoundsChange={setMapBounds} />
+          <GpsLocationControl/>
 
           <MapClickHandler
             mode={mapMode}
@@ -1447,7 +1458,12 @@ export default function JointMapManager({
 
           {visibleLayers.areas &&
             (savedJoints ?? [])
-              .filter((asset) => asset.assetType === "area" && asset.geometry?.type === "Polygon")
+              .filter((asset) => {
+                if (asset.assetType !== "area" || asset.geometry?.type !== "Polygon") return false;
+                if (!visibleLayers.areas) return false;
+                const level = getAreaLevel(asset);
+                return !level || visibleLayers[level] !== false;
+              })
               .map((asset) => {
                 const areaPoints = (asset.geometry as {
                   type: "Polygon";
@@ -1456,6 +1472,7 @@ export default function JointMapManager({
 
                 const areaSquareMeters = getPolygonAreaSquareMeters(areaPoints);
                 const areaLabel = formatAreaLabel(areaSquareMeters);
+                const displayLabel = getAreaDisplayLabel(asset);
 
                 return (
                   <Polygon
@@ -1489,9 +1506,9 @@ export default function JointMapManager({
                       permanent
                       direction="center"
                       opacity={0.9}
-                      className="area-size-label"
+                      className="transparent-area-label"
                     >
-                      {areaLabel}
+                      {displayLabel}
                     </Tooltip>
                   </Polygon>
                 );
@@ -1610,9 +1627,59 @@ export default function JointMapManager({
               }}
             />
           )}
-
-          <GpsLocationControl />
         </MapContainer>
+
+        <button
+          type="button"
+          onClick={() => setLayersDrawerOpen((open) => !open)}
+          style={{
+            position: "absolute",
+            top: 16,
+            right: layersDrawerOpen ? 396 : 16,
+            zIndex: 1200,
+            background: "#2563eb",
+            color: "white",
+            border: "1px solid rgba(255,255,255,0.25)",
+            borderRadius: 10,
+            padding: "0.65rem 0.85rem",
+            fontWeight: 900,
+            cursor: "pointer",
+            boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
+            transition: "right 220ms ease",
+          }}
+          aria-label={layersDrawerOpen ? "Hide layers menu" : "Show layers menu"}
+        >
+          {layersDrawerOpen ? "Hide Layers" : "Layers"}
+        </button>
+
+        <aside
+          style={{
+            position: "absolute",
+            top: 16,
+            right: layersDrawerOpen ? 16 : -390,
+            bottom: 16,
+            width: 360,
+            zIndex: 1150,
+            background: "#1f2937",
+            border: "1px solid rgba(148,163,184,0.35)",
+            borderRadius: 14,
+            boxShadow: "0 18px 40px rgba(0,0,0,0.45)",
+            padding: "1rem",
+            overflowY: "auto",
+            transition: "right 220ms ease",
+          }}
+        >
+          <LayersPanel
+            visibleLayers={visibleLayers}
+            setVisibleLayers={setVisibleLayers}
+            basemap={basemap}
+            setBasemap={setBasemap}
+            roadOverlayVisible={roadOverlayVisible}
+            setRoadOverlayVisible={setRoadOverlayVisible}
+            snapEnabled={snapEnabled}
+            setSnapEnabled={setSnapEnabled}
+          />
+        </aside>
 
         <MapContextMenu
           visible={contextMenu.visible}
@@ -1692,17 +1759,6 @@ export default function JointMapManager({
           onCancel={resetEditor}
         />
       </div>
-
-      <LayersPanel
-        visibleLayers={visibleLayers}
-        setVisibleLayers={setVisibleLayers}
-        basemap={basemap}
-        setBasemap={setBasemap}
-        roadOverlayVisible={roadOverlayVisible}
-        setRoadOverlayVisible={setRoadOverlayVisible}
-        snapEnabled={snapEnabled}
-        setSnapEnabled={setSnapEnabled}
-      />
     </div>
   );
 }
