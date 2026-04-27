@@ -1,5 +1,5 @@
-import React from "react";
-import { Marker, Popup } from "react-leaflet";
+import React, { useMemo, useState } from "react";
+import { Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import type { SavedMapAsset } from "./types";
 
@@ -12,6 +12,9 @@ type LayerVisibility = {
   cables: boolean;
   measurements: boolean;
   homes?: boolean;
+  homesSdu?: boolean;
+  homesMdu?: boolean;
+  homesFlats?: boolean;
 };
 
 type Props = {
@@ -138,6 +141,40 @@ function getDistributionPointColor(asset: SavedMapAsset): string {
   return "#111111";
 }
 
+function getHomeLayerType(asset: SavedMapAsset): "sdu" | "mdu" | "flats" {
+  const raw = String(
+    (asset as any).homeType ||
+      (asset as any).propertyType ||
+      (asset as any).buildingType ||
+      (asset as any).building ||
+      (asset as any).tags?.building ||
+      asset.notes ||
+      asset.name ||
+      ""
+  ).toLowerCase();
+
+  if (raw.includes("flat") || raw.includes("apartment")) return "flats";
+  if (raw.includes("mdu") || raw.includes("multi") || raw.includes("residential")) return "mdu";
+  return "sdu";
+}
+
+function getPointLatLng(asset: SavedMapAsset): [number, number] | null {
+  const coordinates = asset.geometry?.coordinates;
+
+  if (Array.isArray(coordinates) && coordinates.length >= 2) {
+    const lat = Number(coordinates[0]);
+    const lng = Number(coordinates[1]);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) return [lat, lng];
+  }
+
+  const lat = Number((asset as any).lat);
+  const lng = Number((asset as any).lng);
+  if (Number.isFinite(lat) && Number.isFinite(lng)) return [lat, lng];
+
+  return null;
+}
+
+
 const streetCabIcon = createSquareIcon("#2563eb", "#ffffff");
 const chamberIcon = createSquareIcon("#6b7280", "#ffffff");
 const agJointIcon = createCircleIcon("#10b981", "#ffffff");
@@ -181,8 +218,14 @@ function isVisible(asset: SavedMapAsset, visibleLayers: LayerVisibility): boolea
       return true;
     }
 
-    case "home":
-      return visibleLayers.homes !== false;
+    case "home": {
+      if (visibleLayers.homes === false) return false;
+
+      const homeType = getHomeLayerType(asset);
+      if (homeType === "mdu") return layers.homesMdu !== false;
+      if (homeType === "flats") return layers.homesFlats !== false;
+      return layers.homesSdu !== false;
+    }
 
     case "cable":
       return false;
@@ -342,14 +385,48 @@ export default function AssetMarkersLayer({
   onEditAsset,
   onMoveAsset,
 }: Props) {
-  const pointAssets = assets.filter(
-    (asset) => asset.geometry.type === "Point" && isVisible(asset, visibleLayers)
-  );
+  const map = useMap();
+  const [mapView, setMapView] = useState(() => ({
+    zoom: map.getZoom(),
+    bounds: map.getBounds(),
+  }));
+
+  useMapEvents({
+    moveend: () => setMapView({ zoom: map.getZoom(), bounds: map.getBounds() }),
+    zoomend: () => setMapView({ zoom: map.getZoom(), bounds: map.getBounds() }),
+  });
+
+  const pointAssets = useMemo(() => {
+    const homesEnabled =
+      visibleLayers.homes !== false &&
+      ((visibleLayers as any).homesSdu !== false ||
+        (visibleLayers as any).homesMdu !== false ||
+        (visibleLayers as any).homesFlats !== false);
+
+    return assets.filter((asset) => {
+      if (asset.geometry?.type !== "Point") return false;
+      if (!isVisible(asset, visibleLayers)) return false;
+
+      if (asset.assetType === "home") {
+        if (!homesEnabled) return false;
+        const latLng = getPointLatLng(asset);
+        if (!latLng) return false;
+
+        // Homes are the heavy layer: only render visible homes when zoomed in.
+        if (mapView.zoom < 17) return false;
+        return mapView.bounds.pad(0.2).contains(latLng);
+      }
+
+      return true;
+    });
+  }, [assets, visibleLayers, mapView]);
 
   return (
     <>
       {pointAssets.map((asset) => {
-        const [lat, lng] = asset.geometry.coordinates;
+        const latLng = getPointLatLng(asset);
+        if (!latLng) return null;
+        const [lat, lng] = latLng;
         const icon = getIconForAsset(asset);
 
         return (
