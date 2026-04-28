@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { CircleMarker, Marker, Polyline, Popup, Tooltip } from "react-leaflet";
 import type { SavedMapAsset } from "../JointMapManager";
-import { routeToRoads } from "./utils/routeToRoads";
 
 type Props = {
   assets: SavedMapAsset[];
@@ -15,6 +14,7 @@ function getCableLengthMeters(points: [number, number][]): number {
   if (points.length < 2) return 0;
 
   let total = 0;
+
   for (let i = 1; i < points.length; i++) {
     const [lat1, lng1] = points[i - 1];
     const [lat2, lng2] = points[i];
@@ -44,7 +44,10 @@ function formatCableLength(length: number): string {
 }
 
 function getCableColor(asset: SavedMapAsset): string {
-  return asset.cableType === "ULW Cable" ? "#22c55e" : "#f59e0b";
+  if (asset.cableType === "ULW Cable") return "#22c55e";
+  if (asset.cableType === "Link Cable") return "#3b82f6";
+  if (String(asset.cableType || "").toLowerCase() === "drop") return "#a855f7";
+  return "#f59e0b";
 }
 
 function getDashArray(asset: SavedMapAsset): string | undefined {
@@ -65,6 +68,102 @@ function getMidpoint(
   return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
 }
 
+function getDistanceMeters(a: [number, number], b: [number, number]): number {
+  return getCableLengthMeters([a, b]);
+}
+
+function getAssetPoint(asset: SavedMapAsset): [number, number] | null {
+  if (asset.geometry?.type !== "Point") return null;
+
+  const [lat, lng] = asset.geometry.coordinates;
+  if (typeof lat !== "number" || typeof lng !== "number") return null;
+
+  return [lat, lng];
+}
+
+function findConnectedAssetAtCableEnd(
+  assets: SavedMapAsset[],
+  point: [number, number]
+): SavedMapAsset | null {
+  const candidates = assets
+    .filter((asset) => {
+      if (asset.assetType === "area") return false;
+      if (asset.assetType === "cable") return false;
+
+      const assetPoint = getAssetPoint(asset);
+      if (!assetPoint) return false;
+
+      return getDistanceMeters(assetPoint, point) <= 10;
+    })
+    .sort((a, b) => {
+      const pointA = getAssetPoint(a);
+      const pointB = getAssetPoint(b);
+      if (!pointA || !pointB) return 0;
+
+      return getDistanceMeters(pointA, point) - getDistanceMeters(pointB, point);
+    });
+
+  return candidates[0] || null;
+}
+
+function getCableUsedFibres(
+  cable: SavedMapAsset,
+  allAssets: SavedMapAsset[]
+): number {
+  const cableName = String(cable.name || "").trim().toLowerCase();
+  const cableId = String(cable.id || "");
+
+  if (String(cable.cableType || "").toLowerCase() === "drop") {
+    return 1;
+  }
+
+  const linkedDrops = allAssets.filter((asset) => {
+    if (asset.assetType !== "cable") return false;
+    if (String(asset.cableType || "").toLowerCase() !== "drop") return false;
+
+    return (
+      String((asset as any).parentCableId || "") === cableId ||
+      String((asset as any).feederCableId || "") === cableId ||
+      String((asset as any).parentCableName || "").toLowerCase() === cableName
+    );
+  });
+
+  if (linkedDrops.length > 0) return linkedDrops.length;
+
+  if (cable.geometry?.type !== "LineString") return 0;
+
+  const points = cable.geometry.coordinates;
+  if (points.length < 2) return 0;
+
+  const startAsset = findConnectedAssetAtCableEnd(allAssets, points[0]);
+  const endAsset = findConnectedAssetAtCableEnd(
+    allAssets,
+    points[points.length - 1]
+  );
+
+  const connectedAssets = [startAsset, endAsset].filter(
+    Boolean
+  ) as SavedMapAsset[];
+
+  let used = 0;
+
+  connectedAssets.forEach((asset) => {
+    const rows = asset.mappingRows || [];
+
+    rows.forEach((row: any[]) => {
+      const rowText = row
+        .map((cell) => String(cell || "").trim().toLowerCase())
+        .join(" ");
+
+      if (cableName && rowText.includes(cableName)) {
+        used += 1;
+      }
+    });
+  });
+
+  return used;
+}
+
 export default function CableLinesLayer({
   assets,
   cablesVisible,
@@ -79,17 +178,17 @@ export default function CableLinesLayer({
 
   const isLayerOn = (key: string) => visibleLayers[key] !== false;
 
-  const cableAssets = assets.filter((a) => {
+  const cableAssets = assets.filter((asset) => {
     if (
-      a.assetType !== "cable" ||
-      a.geometry?.type !== "LineString" ||
-      !Array.isArray(a.geometry.coordinates)
+      asset.assetType !== "cable" ||
+      asset.geometry?.type !== "LineString" ||
+      !Array.isArray(asset.geometry.coordinates)
     ) {
       return false;
     }
 
-    const cableType = String(a.cableType || "").toLowerCase();
-    const fibreCount = String(a.fibreCount || "").toLowerCase();
+    const cableType = String(asset.cableType || "").toLowerCase();
+    const fibreCount = String(asset.fibreCount || "").toLowerCase();
 
     if (cableType.includes("feeder") && !isLayerOn("feeders")) return false;
     if (cableType.includes("link") && !isLayerOn("links")) return false;
@@ -112,47 +211,33 @@ export default function CableLinesLayer({
       ...asset,
       geometry: {
         ...asset.geometry,
+        type: "LineString",
         coordinates,
       },
     });
   };
 
-  const handleMovePoint = async (
+  const handleMovePoint = (
     asset: SavedMapAsset,
     index: number,
     lat: number,
     lng: number
   ) => {
-    if (asset.geometry.type !== "LineString") return;
+    if (asset.geometry?.type !== "LineString") return;
 
     const updated = [...asset.geometry.coordinates];
     updated[index] = [lat, lng];
-
-    // SAFE segment reroute
-    if (index > 0 && index < updated.length - 1) {
-      const prev = updated[index - 1];
-      const next = updated[index + 1];
-
-      try {
-        const rerouted = await routeToRoads([prev, updated[index], next]);
-
-        if (rerouted && rerouted.length > 2) {
-          updated.splice(index - 1, 3, ...rerouted);
-        }
-      } catch (err) {
-        console.warn("Road snapping failed", err);
-      }
-    }
 
     updateCableCoordinates(asset, updated);
   };
 
   const handleInsertMidpoint = (asset: SavedMapAsset, i: number) => {
-    if (asset.geometry.type !== "LineString") return;
+    if (asset.geometry?.type !== "LineString") return;
 
     const coords = asset.geometry.coordinates;
     const start = coords[i];
     const end = coords[i + 1];
+
     if (!start || !end) return;
 
     const updated = [...coords];
@@ -165,13 +250,27 @@ export default function CableLinesLayer({
     <>
       {cableAssets.map((asset) => {
         const points =
-          asset.geometry.type === "LineString"
+          asset.geometry?.type === "LineString"
             ? asset.geometry.coordinates
             : [];
 
         const length = getCableLengthMeters(points);
         const isHovered = hoveredCableId === asset.id;
         const isEditing = editingCableId === asset.id;
+
+        const startAsset =
+          points.length >= 2
+            ? findConnectedAssetAtCableEnd(assets, points[0])
+            : null;
+
+        const endAsset =
+          points.length >= 2
+            ? findConnectedAssetAtCableEnd(assets, points[points.length - 1])
+            : null;
+
+        const usedFibres =
+  (asset as any).usedFibres ??
+  getCableUsedFibres(asset, assets);
 
         return (
           <React.Fragment key={asset.id}>
@@ -190,24 +289,64 @@ export default function CableLinesLayer({
               }}
             >
               <Popup>
-                <div style={{ minWidth: 220 }}>
-                  <div style={{ fontWeight: 700 }}>{asset.name}</div>
-                  <div>{asset.cableType || "Cable"}</div>
-                  <div style={{ fontSize: "0.85rem" }}>
-                    {asset.fibreCount || "12F"} ·{" "}
-                    {asset.installMethod || "Underground"}
-                  </div>
-                  <div style={{ fontSize: "0.85rem" }}>
-                    Length: {formatCableLength(length)}
+                <div style={{ minWidth: 240 }}>
+                  <div style={{ fontWeight: 700, fontSize: "1rem" }}>
+                    {asset.name || "Unnamed Cable"}
                   </div>
 
-                  <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+                  <div style={{ marginTop: 6 }}>
+                    <b>Size:</b> {asset.fibreCount || "N/A"}
+                  </div>
+
+                  <div>
+                    <b>Type:</b> {asset.cableType || "Cable"}
+                  </div>
+
+                  <div>
+                    <b>Install:</b> {asset.installMethod || "Underground"}
+                  </div>
+
+                  <div>
+                    <b>Length:</b> {formatCableLength(length)}
+                  </div>
+
+                  <div>
+                    <b>Used fibres:</b> {usedFibres} /{" "}
+                    {asset.fibreCount || "N/A"}
+                  </div>
+
+                  <div>
+                    <b>From:</b> {startAsset?.name || "Not connected"}
+                  </div>
+
+                  <div>
+                    <b>To:</b> {endAsset?.name || "Not connected"}
+                  </div>
+
+                  {asset.notes ? (
+                    <div style={{ marginTop: 8 }}>{asset.notes}</div>
+                  ) : null}
+
+                  <div
+                    style={{
+                      marginTop: 10,
+                      display: "flex",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <button onClick={() => onEditAsset(asset)}>
+                      Edit details
+                    </button>
+
                     <button onClick={() => setEditingCableId(asset.id)}>
                       Edit route
                     </button>
+
                     <button onClick={() => setEditingCableId(null)}>
                       Done
                     </button>
+
                     <button onClick={() => onDeleteAsset(asset.id)}>
                       Delete
                     </button>
@@ -215,18 +354,16 @@ export default function CableLinesLayer({
                 </div>
               </Popup>
 
-              <Tooltip permanent direction="center">
-                {/* distance labels removed for home drops */}
+              <Tooltip sticky>
+                {asset.name || "Cable"} · {asset.fibreCount || "N/A"} ·{" "}
+                {formatCableLength(length)}
               </Tooltip>
             </Polyline>
 
-            {/* DRAG HANDLES */}
             {isEditing &&
               points
                 .map((coord, i) => ({ coord, i }))
-                .filter(({ i }) =>
-                  shouldShowEditHandle(i, points.length)
-                )
+                .filter(({ i }) => shouldShowEditHandle(i, points.length))
                 .map(({ coord, i }) => (
                   <Marker
                     key={`${asset.id}-drag-${i}`}
@@ -241,7 +378,6 @@ export default function CableLinesLayer({
                   />
                 ))}
 
-            {/* MIDPOINT INSERT */}
             {isEditing &&
               points.slice(0, -1).map((coord, i) => {
                 if (!shouldShowEditHandle(i, points.length)) return null;

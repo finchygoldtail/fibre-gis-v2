@@ -69,7 +69,7 @@ export type SavedMapAsset = {
   cableType?: CableType;
   fibreCount?: FibreCount;
   installMethod?: InstallMethod;
-
+  usedFibres?: number;
   poleDetails?: PoleDetails;
   dpDetails?: DistributionPointDetails;
   chamberDetails?: ChamberDetails;

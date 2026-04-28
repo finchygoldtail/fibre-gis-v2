@@ -15,6 +15,16 @@ type LayerVisibility = {
   homesSdu?: boolean;
   homesMdu?: boolean;
   homesFlats?: boolean;
+  newPoles?: boolean;
+  orPoles?: boolean;
+  fw2?: boolean;
+  fw4?: boolean;
+  fw6?: boolean;
+  fw10?: boolean;
+  live?: boolean;
+  bwip?: boolean;
+  unserviceable?: boolean;
+  liveNotReady?: boolean;
 };
 
 type Props = {
@@ -189,9 +199,20 @@ function isVisible(asset: SavedMapAsset, visibleLayers: LayerVisibility): boolea
 
     case "pole": {
       if (!visibleLayers.poles) return false;
-      const poleType = String((asset as any).poleType || asset.poleDetails?.poleType || "").toLowerCase();
-      if ((poleType === "new" || poleType === "new pole") && layers.newPoles === false) return false;
-      if ((poleType === "or" || poleType === "or pole" || poleType === "existing") && layers.existingPoles === false) return false;
+
+      const poleType = String(
+        (asset as any).poleType ||
+          asset.poleDetails?.poleType ||
+          (asset.poleDetails as any)?.type ||
+          (asset.poleDetails as any)?.status ||
+          asset.notes ||
+          asset.name ||
+          ""
+      ).toLowerCase();
+
+      if ((poleType.includes("new") || poleType.includes("proposed")) && layers.newPoles === false) return false;
+      if ((poleType.includes("or") || poleType.includes("existing")) && layers.orPoles === false) return false;
+
       return true;
     }
 
@@ -209,11 +230,21 @@ function isVisible(asset: SavedMapAsset, visibleLayers: LayerVisibility): boolea
 
     case "chamber": {
       if (!visibleLayers.chambers) return false;
-      const chamberType = String(asset.chamberDetails?.chamberType || (asset as any).chamberType || "").toLowerCase();
-      if (chamberType === "fw2" && layers.fw2 === false) return false;
-      if (chamberType === "fw4" && layers.fw4 === false) return false;
-      if (chamberType === "fw6" && layers.fw6 === false) return false;
-      if (chamberType === "fw10" && layers.fw10 === false) return false;
+
+      const chamberType = String(
+        asset.chamberDetails?.chamberType ||
+          (asset as any).chamberType ||
+          asset.chamberDetails?.size ||
+          asset.notes ||
+          asset.name ||
+          ""
+      ).toLowerCase();
+
+      if (chamberType.includes("fw2") && layers.fw2 === false) return false;
+      if (chamberType.includes("fw4") && layers.fw4 === false) return false;
+      if (chamberType.includes("fw6") && layers.fw6 === false) return false;
+      if (chamberType.includes("fw10") && layers.fw10 === false) return false;
+
       return true;
     }
 

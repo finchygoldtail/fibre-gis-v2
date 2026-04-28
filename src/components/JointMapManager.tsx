@@ -104,6 +104,8 @@ type MapMode = "pick" | "measure" | "draw-cable" | "draw-area";
 
 type BasemapType = "street" | "satellite" | "hybrid" | "dark";
 
+type AreaLevel = "L0" | "L1" | "L2" | "L3";
+
 type LayerVisibility = {
   agJoints: boolean;
   streetCabs: boolean;
@@ -346,6 +348,30 @@ function formatAreaLabel(areaSquareMeters: number): string {
   return `${(areaSquareMeters / 10000).toFixed(2)} ha`;
 }
 
+function normaliseAreaLevel(value: unknown): AreaLevel {
+  const level = String(value || "L0").toUpperCase();
+
+  if (level === "L1" || level === "L2" || level === "L3") {
+    return level;
+  }
+
+  return "L0";
+}
+
+function isAreaVisibleForLevel(
+  asset: SavedMapAsset,
+  visibleLayers: LayerVisibility
+): boolean {
+  const areaLevel = normaliseAreaLevel((asset as any).areaLevel);
+
+  if (areaLevel === "L0") return visibleLayers.l0;
+  if (areaLevel === "L1") return visibleLayers.l1;
+  if (areaLevel === "L2") return visibleLayers.l2;
+  if (areaLevel === "L3") return visibleLayers.l3;
+
+  return true;
+}
+
 export default function JointMapManager({
   currentJointName,
   currentJointType,
@@ -364,6 +390,7 @@ export default function JointMapManager({
   const [jointName, setJointName] = useState(currentJointName || "");
   const [jointType, setJointType] = useState(currentJointType || "CMJ (12 trays)");
   const [notes, setNotes] = useState("");
+  const [areaLevel, setAreaLevel] = useState<AreaLevel>("L0");
 
   const [cableType, setCableType] = useState<CableType>("Feeder Cable");
   const [fibreCount, setFibreCount] = useState<FibreCount>("12F");
@@ -487,6 +514,7 @@ export default function JointMapManager({
     setEditingAssetId(null);
     setPickedLocation(null);
     setNotes("");
+    setAreaLevel("L0");
     setMapMode("pick");
     setDraftCablePoints([]);
     setDraftAreaPoints([]);
@@ -536,6 +564,7 @@ export default function JointMapManager({
     setJointName(asset.name || "");
     setJointType(asset.jointType || "");
     setNotes(asset.notes || "");
+    setAreaLevel(normaliseAreaLevel((asset as any).areaLevel));
     setCableType(asset.cableType || "Feeder Cable");
     setFibreCount(asset.fibreCount || "12F");
     setInstallMethod(asset.installMethod || "Underground");
@@ -613,6 +642,7 @@ export default function JointMapManager({
             jointType: "Polygon Area",
             notes: notes.trim(),
             assetType: "area",
+            areaLevel,
             geometry: {
               type: "Polygon",
               coordinates: [draftAreaPoints.map((p) => [p.lat, p.lng])],
@@ -760,6 +790,7 @@ export default function JointMapManager({
       assetType: "area",
       jointType: "Polygon Area",
       notes: notes.trim(),
+      areaLevel,
       mappingRows: [],
       geometry: {
         type: "Polygon",
@@ -860,7 +891,39 @@ export default function JointMapManager({
   const handleClearCable = () => {
     setDraftCablePoints([]);
   };
+const handleMoveCablePoint = (index: number, point: LatLngLiteral) => {
+  const snapped = snapPointToAssets(
+    point,
+    (savedJoints ?? []).filter((asset) => asset.assetType !== "area"),
+    snapEnabled,
+    8
+  );
 
+  setDraftCablePoints((prev) =>
+    prev.map((existingPoint, existingIndex) =>
+      existingIndex === index ? snapped : existingPoint
+    )
+  );
+};
+
+const handleDeleteCablePoint = (index: number) => {
+  setDraftCablePoints((prev) => prev.filter((_, i) => i !== index));
+};
+
+const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
+  const snapped = snapPointToAssets(
+    point,
+    (savedJoints ?? []).filter((asset) => asset.assetType !== "area"),
+    snapEnabled,
+    8
+  );
+
+  setDraftCablePoints((prev) => [
+    ...prev.slice(0, index + 1),
+    snapped,
+    ...prev.slice(index + 1),
+  ]);
+};
   const handleDeleteAsset = (id: string) => {
     setSavedJoints((prev) =>
       prev.filter((asset) => {
@@ -923,6 +986,7 @@ export default function JointMapManager({
     setJointType("Polygon Area");
     setJointName(`Area ${(savedJoints ?? []).filter((asset) => asset.assetType === "area").length + 1}`);
     setNotes("");
+    setAreaLevel("L0");
     setPickedLocation(null);
     setDraftCablePoints([]);
     setDraftAreaPoints(contextMenu.latlng ? [contextMenu.latlng] : []);
@@ -1112,6 +1176,7 @@ export default function JointMapManager({
               assetType: asset.assetType || "area",
               jointType: asset.jointType,
               notes: asset.notes || "",
+              areaLevel: (asset as any).areaLevel || "L0",
             },
             geometry: {
               type: "Polygon",
@@ -1280,6 +1345,22 @@ export default function JointMapManager({
             placeholder="Asset name"
           />
 
+          {assetType === "area" ? (
+            <>
+              <div style={{ ...label, marginTop: 10 }}>Polygon Level</div>
+              <select
+                value={areaLevel}
+                onChange={(e) => setAreaLevel(e.target.value as AreaLevel)}
+                style={input}
+              >
+                <option value="L0">L0</option>
+                <option value="L1">L1</option>
+                <option value="L2">L2</option>
+                <option value="L3">L3</option>
+              </select>
+            </>
+          ) : null}
+
           {assetType === "ag-joint" ? (
             <>
               <div style={{ ...label, marginTop: 10 }}>Joint Type</div>
@@ -1438,6 +1519,20 @@ export default function JointMapManager({
                 Click around the boundary. Drag any blue area point marker to adjust it. Use Finish Area when you have at least three points.
               </div>
 
+              <div style={{ marginTop: 10 }}>
+                <div style={label}>Polygon Level</div>
+                <select
+                  value={areaLevel}
+                  onChange={(e) => setAreaLevel(e.target.value as AreaLevel)}
+                  style={input}
+                >
+                  <option value="L0">L0</option>
+                  <option value="L1">L1</option>
+                  <option value="L2">L2</option>
+                  <option value="L3">L3</option>
+                </select>
+              </div>
+
               <div style={{ marginTop: 8, fontSize: "0.9rem", color: "#e5e7eb" }}>
                 Points: {draftAreaPoints.length}
               </div>
@@ -1486,7 +1581,7 @@ export default function JointMapManager({
                 {editingAssetId ? "Edit Cable Route" : "Cable Drawing"}
               </div>
               <div style={{ color: "#9ca3af" }}>
-                Click points on the map to create or update the cable route.
+                Click the map to add points. Drag points to move them. Click a cable segment to insert a point. Use the marker popup to delete a point.
               </div>
 
               <div style={{ marginTop: 8, fontSize: "0.9rem", color: "#e5e7eb" }}>
@@ -1624,7 +1719,12 @@ export default function JointMapManager({
 
           {visibleLayers.areas &&
             (savedJoints ?? [])
-              .filter((asset) => asset.assetType === "area" && asset.geometry?.type === "Polygon")
+              .filter(
+                (asset) =>
+                  asset.assetType === "area" &&
+                  asset.geometry?.type === "Polygon" &&
+                  isAreaVisibleForLevel(asset, visibleLayers)
+              )
               .map((asset) => {
                 const areaPoints = (asset.geometry as {
                   type: "Polygon";
@@ -1646,7 +1746,7 @@ export default function JointMapManager({
                     <Popup>
                       <b>{asset.name}</b>
                       <br />
-                      Polygon Area
+                      Polygon Area ({normaliseAreaLevel((asset as any).areaLevel)})
                       <br />
                       Area: {areaLabel}
                       <br />
@@ -1668,7 +1768,7 @@ export default function JointMapManager({
                       opacity={0.9}
                       className="area-size-label"
                     >
-                      {areaLabel}
+                      {asset.name}
                     </Tooltip>
                   </Polygon>
                 );
@@ -1677,6 +1777,7 @@ export default function JointMapManager({
           <CableLinesLayer
             assets={savedJoints}
             cablesVisible={visibleLayers.cables}
+            visibleLayers={visibleLayers}
             onDeleteAsset={handleDeleteAsset}
             onEditAsset={handleEditAsset}
           />
@@ -1758,35 +1859,79 @@ export default function JointMapManager({
           )}
 
           {draftCablePoints.map((point, index) => (
-            <Marker
-              key={`draft-cable-${index}`}
-              position={[point.lat, point.lng]}
-            >
-              <Popup>
-                <b>Cable Point {index + 1}</b>
-                <br />
-                {point.lat.toFixed(5)}, {point.lng.toFixed(5)}
-              </Popup>
-            </Marker>
-          ))}
+  <Marker
+    key={`draft-cable-${index}`}
+    position={[point.lat, point.lng]}
+    draggable
+    eventHandlers={{
+      dragend: (event) => {
+        const marker = event.target as L.Marker;
+        const nextPoint = marker.getLatLng();
 
-          {draftCablePoints.length >= 2 && (
-            <Polyline
-              positions={draftCablePoints.map(
-                (p) => [p.lat, p.lng] as [number, number]
-              )}
-              pathOptions={{
-                color:
-                  cableType === "ULW Cable"
-                    ? "#22c55e"
-                    : cableType === "Link Cable"
-                    ? "#3b82f6"
-                    : "#f59e0b",
-                weight: 4,
-                dashArray: installMethod === "OH" ? "10, 8" : undefined,
-              }}
-            />
-          )}
+        handleMoveCablePoint(index, {
+          lat: nextPoint.lat,
+          lng: nextPoint.lng,
+        });
+      },
+    }}
+  >
+    <Popup>
+      <b>Cable Point {index + 1}</b>
+      <br />
+      Drag this marker to adjust the cable.
+      <br />
+      {point.lat.toFixed(5)}, {point.lng.toFixed(5)}
+      <br />
+      <button
+        onClick={() => handleDeleteCablePoint(index)}
+        style={{
+          marginTop: 8,
+          background: "#dc2626",
+          color: "white",
+          border: "none",
+          padding: "6px 10px",
+          borderRadius: 6,
+          cursor: "pointer",
+        }}
+      >
+        Delete this point
+      </button>
+    </Popup>
+  </Marker>
+))}
+
+          {draftCablePoints.length >= 2 &&
+  draftCablePoints.slice(0, -1).map((point, index) => {
+    const nextPoint = draftCablePoints[index + 1];
+
+    return (
+      <Polyline
+        key={`draft-cable-segment-${index}`}
+        positions={[
+          [point.lat, point.lng] as [number, number],
+          [nextPoint.lat, nextPoint.lng] as [number, number],
+        ]}
+        pathOptions={{
+          color:
+            cableType === "ULW Cable"
+              ? "#22c55e"
+              : cableType === "Link Cable"
+              ? "#3b82f6"
+              : "#f59e0b",
+          weight: 6,
+          dashArray: installMethod === "OH" ? "10, 8" : undefined,
+        }}
+        eventHandlers={{
+          click: (event) => {
+            handleInsertCablePoint(index, {
+              lat: event.latlng.lat,
+              lng: event.latlng.lng,
+            });
+          },
+        }}
+      />
+    );
+  })}
 
           <GpsLocationControl />
         </MapContainer>

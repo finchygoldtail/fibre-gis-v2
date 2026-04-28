@@ -8,11 +8,13 @@ type Props = {
   cableType: CableType;
   fibreCount: FibreCount;
   installMethod: InstallMethod;
+  usedFibres: number;
   onChangeName: (value: string) => void;
   onChangeNotes: (value: string) => void;
   onChangeCableType: (value: CableType) => void;
   onChangeFibreCount: (value: FibreCount) => void;
   onChangeInstallMethod: (value: InstallMethod) => void;
+  onChangeUsedFibres: (value: number) => void;
   onStart: () => void;
   onCancel: () => void;
   isEditing?: boolean;
@@ -25,11 +27,13 @@ export default function CableDetailsModal({
   cableType,
   fibreCount,
   installMethod,
+  usedFibres,
   onChangeName,
   onChangeNotes,
   onChangeCableType,
   onChangeFibreCount,
   onChangeInstallMethod,
+  onChangeUsedFibres,
   onStart,
   onCancel,
   isEditing = false,
@@ -38,36 +42,9 @@ export default function CableDetailsModal({
 
   return (
     <>
-      <div
-        onClick={onCancel}
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.45)",
-          zIndex: 12000,
-        }}
-      />
+      <div onClick={onCancel} style={overlay} />
 
-      <div
-        style={{
-          position: "fixed",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          width: 440,
-          maxWidth: "92vw",
-          background: "#1f2937",
-          border: "1px solid #374151",
-          borderRadius: 12,
-          padding: 20,
-          zIndex: 12001,
-          color: "white",
-          boxShadow: "0 20px 50px rgba(0,0,0,0.45)",
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
-        }}
-      >
+      <div style={modal}>
         <div style={{ fontSize: "1.1rem", fontWeight: 700 }}>
           {isEditing ? "Edit Cable" : "Add Cable"}
         </div>
@@ -85,13 +62,14 @@ export default function CableDetailsModal({
         <div>
           <div style={label}>Cable Type</div>
           <select
-  value={cableType}
-  onChange={(e) => onChangeCableType(e.target.value as any)}
->
-  <option>Feeder Cable</option>
-  <option>ULW Cable</option>
-  <option>Link Cable</option>
-</select>
+            value={cableType}
+            onChange={(e) => onChangeCableType(e.target.value as CableType)}
+            style={input}
+          >
+            <option>Feeder Cable</option>
+            <option>ULW Cable</option>
+            <option>Link Cable</option>
+          </select>
         </div>
 
         <div>
@@ -109,6 +87,18 @@ export default function CableDetailsModal({
             <option>144F</option>
             <option>288F</option>
           </select>
+        </div>
+
+        <div>
+          <div style={label}>Used Fibres</div>
+          <input
+            type="number"
+            min={0}
+            value={usedFibres}
+            onChange={(e) => onChangeUsedFibres(Number(e.target.value))}
+            style={input}
+            placeholder="e.g. 36"
+          />
         </div>
 
         <div>
@@ -146,6 +136,32 @@ export default function CableDetailsModal({
     </>
   );
 }
+
+const overlay: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(0,0,0,0.45)",
+  zIndex: 12000,
+};
+
+const modal: React.CSSProperties = {
+  position: "fixed",
+  top: "50%",
+  left: "50%",
+  transform: "translate(-50%, -50%)",
+  width: 440,
+  maxWidth: "92vw",
+  background: "#1f2937",
+  border: "1px solid #374151",
+  borderRadius: 12,
+  padding: 20,
+  zIndex: 12001,
+  color: "white",
+  boxShadow: "0 20px 50px rgba(0,0,0,0.45)",
+  display: "flex",
+  flexDirection: "column",
+  gap: 12,
+};
 
 const label: React.CSSProperties = {
   fontSize: "0.9rem",
