@@ -2,8 +2,30 @@ import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "../../../firebase";
 
 const MAX_OH_DROP_DISTANCE_METERS = 65;
+const DEFAULT_DP_CAPACITY = 32;
 
-function getDistanceMeters(a: any, b: any): number {
+type LatLng = { lat: number; lng: number };
+
+function getLatLng(asset: any): LatLng | null {
+  if (typeof asset?.lat === "number" && typeof asset?.lng === "number") {
+    return { lat: asset.lat, lng: asset.lng };
+  }
+
+  if (
+    asset?.geometry?.type === "Point" &&
+    Array.isArray(asset.geometry.coordinates) &&
+    asset.geometry.coordinates.length >= 2
+  ) {
+    return {
+      lat: Number(asset.geometry.coordinates[0]),
+      lng: Number(asset.geometry.coordinates[1]),
+    };
+  }
+
+  return null;
+}
+
+function getDistanceMeters(a: LatLng, b: LatLng): number {
   const toRad = (v: number) => (v * Math.PI) / 180;
   const R = 6371000;
 
@@ -23,56 +45,117 @@ function getDistanceMeters(a: any, b: any): number {
   return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }
 
-export async function generateDropsFromDP(
+function getDpCapacity(dp: any): number {
+  const raw =
+    dp?.dpDetails?.connectionsToHomes ??
+    dp?.connectionsToHomes ??
+    dp?.capacity ??
+    DEFAULT_DP_CAPACITY;
+
+  const capacity = Number(raw);
+  return Number.isFinite(capacity) && capacity > 0
+    ? Math.floor(capacity)
+    : DEFAULT_DP_CAPACITY;
+}
+
+function isDropCable(asset: any): boolean {
+  return (
+    asset?.assetType === "cable" &&
+    String(asset?.cableType || "").toLowerCase() === "drop"
+  );
+}
+
+function homeAlreadyConnectedToAnyDp(home: any, existingAssets: any[]): boolean {
+  return existingAssets.some(
+    (asset) =>
+      isDropCable(asset) &&
+      (asset.toAssetId === home.id || asset.fromAssetId === home.id)
+  );
+}
+
+function countExistingDropsFromDp(dp: any, existingAssets: any[]): number {
+  return existingAssets.filter(
+    (asset) =>
+      isDropCable(asset) &&
+      (asset.fromAssetId === dp.id || asset.toAssetId === dp.id)
+  ).length;
+}
+
+export function createDropCableRecordsFromDP(
   dp: any,
-  homes: any[]
+  homes: any[],
+  existingAssets: any[] = []
 ) {
-  if (dp.assetType !== "distribution-point") {
-    console.warn("Not a distribution point");
-    return { created: 0, skipped: homes.length };
+  if (dp?.assetType !== "distribution-point") {
+    return [];
   }
 
-  let created = 0;
-  let skipped = 0;
+  const dpPoint = getLatLng(dp);
+  if (!dpPoint) return [];
 
-  for (const home of homes) {
-    if (!home.lat || !home.lng) continue;
+  const capacity = getDpCapacity(dp);
+  const used = countExistingDropsFromDp(dp, existingAssets);
+  const available = Math.max(0, capacity - used);
 
-    const distance = getDistanceMeters(
-      { lat: dp.lat, lng: dp.lng },
-      { lat: home.lat, lng: home.lng }
-    );
+  if (available <= 0) return [];
 
-    if (distance > MAX_OH_DROP_DISTANCE_METERS) {
-      skipped++;
-      continue;
-    }
+  const candidates = homes
+    .filter((home) => home?.assetType === "home")
+    .filter((home) => !homeAlreadyConnectedToAnyDp(home, existingAssets))
+    .map((home) => {
+      const homePoint = getLatLng(home);
+      if (!homePoint) return null;
+      const distance = getDistanceMeters(dpPoint, homePoint);
+      return { home, homePoint, distance };
+    })
+    .filter(Boolean) as Array<{ home: any; homePoint: LatLng; distance: number }>;
 
-    await addDoc(collection(db, "projects/main-network/cables"), {
+  return candidates
+    .filter((candidate) => candidate.distance <= MAX_OH_DROP_DISTANCE_METERS)
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, available)
+    .map((candidate, index) => ({
+      id: crypto.randomUUID(),
+      name: `${dp.name || "DP"} Drop ${used + index + 1}`,
       assetType: "cable",
+      jointType: "Cable",
+      notes: `Auto drop from ${dp.name || dp.id} to ${candidate.home.name || candidate.home.id}`,
       cableType: "Drop",
+      fibreCount: "1F",
       installMethod: "OH",
-
+      fromAssetId: dp.id,
+      toAssetId: candidate.home.id,
+      lengthMeters: candidate.distance,
       geometry: {
         type: "LineString",
         coordinates: [
-          [dp.lat, dp.lng],
-          [home.lat, home.lng],
+          [dpPoint.lat, dpPoint.lng],
+          [candidate.homePoint.lat, candidate.homePoint.lng],
         ],
       },
+    }));
+}
 
-      fromAssetId: dp.id,
-      toAssetId: home.id,
+export async function generateDropsFromDP(dp: any, homes: any[], existingAssets: any[] = []) {
+  const dropRecords = createDropCableRecordsFromDP(dp, homes, existingAssets);
 
-      lengthMeters: distance,
-
+  for (const drop of dropRecords) {
+    await addDoc(collection(db, "projects/main-network/cables"), {
+      ...drop,
+      // IMPORTANT: Firestore cannot store nested arrays. Keep this stringified.
+      geometry: {
+        ...drop.geometry,
+        coordinates: JSON.stringify(drop.geometry.coordinates),
+      },
       createdBy: auth.currentUser?.uid,
       createdByEmail: auth.currentUser?.email,
       createdAt: serverTimestamp(),
     });
-
-    created++;
   }
 
-  return { created, skipped };
+  return {
+    created: dropRecords.length,
+    skipped: homes.length - dropRecords.length,
+    drops: dropRecords,
+  };
 }

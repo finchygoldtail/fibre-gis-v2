@@ -21,6 +21,8 @@ import {
 
 import { loadMappingFile } from "../logic/mappingParser";
 import { applyLmjRowsToModel } from "../logic/lmjMapping";
+import * as XLSX from "xlsx";
+import { convertLmjSheetToStandardRows } from "../logic/lmjSheetConverter";
 
 import { exportLmjExcelInPlace } from "../logic/exportLmjExcel";
 import { exportAgExcelInPlace } from "../logic/exportAgExcel";
@@ -153,10 +155,25 @@ function extractAllText(rows: any[][]): string[] {
   return rows.flat().map((v) => cleanCell(v)).filter(Boolean);
 }
 
+function looksLikeStandardLmjRows(rows: any[][]): boolean {
+  return rows.some((row) => {
+    if (!Array.isArray(row)) return false;
+
+    const splitterId = cleanCell(row[13]); // Column N: 1:4W SPLITTER
+    const ag = cleanCell(row[21]);         // Column V: AG
+    const agFibre = cleanCell(row[22]);    // Column W: Splitter Fibre Out
+
+    return Boolean(splitterId && ag && agFibre);
+  });
+}
+
 function detectJointTypeFromRows(rows: any[][]): JointTypeLabel {
   const text = extractAllText(rows).join(" ").toUpperCase();
 
-  if (text.includes("LMJ")) return "LMJ (40 trays)";
+  if (text.includes("LMJ") || looksLikeStandardLmjRows(rows)) {
+    return "LMJ (40 trays)";
+  }
+
   if (text.includes("MMJ")) return "MMJ (20 trays)";
   return "CMJ (12 trays)";
 }
@@ -584,6 +601,60 @@ export const FibreTrayEditor: React.FC = () => {
   };
 
   /* -------------------------------------------------------------
+    Convert LMJ supplier sheet
+
+    This does NOT import into the current joint.
+    It downloads a clean standard LMJ Excel file that can then be
+    uploaded through the normal "Load Mapping File" input above.
+  ------------------------------------------------------------- */
+  const handleConvertLmjFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const data = await file.arrayBuffer();
+
+      const workbook = XLSX.read(data, {
+        type: "array",
+        cellDates: false,
+        raw: false,
+      });
+
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+
+      if (!sheet) {
+        throw new Error("No worksheet found in this file.");
+      }
+
+      const sourceRows = XLSX.utils.sheet_to_json(sheet, {
+        header: 1,
+        defval: "",
+        raw: false,
+      }) as any[][];
+
+      const convertedRows = convertLmjSheetToStandardRows(sourceRows);
+
+      const outputSheet = XLSX.utils.aoa_to_sheet(convertedRows);
+      const outputWorkbook = XLSX.utils.book_new();
+
+      XLSX.utils.book_append_sheet(
+        outputWorkbook,
+        outputSheet,
+        "LMJ_CONVERTED"
+      );
+
+      const originalName = file.name.replace(/\.[^.]+$/, "");
+      XLSX.writeFile(outputWorkbook, `${originalName}_LMJ_CONVERTED.xlsx`);
+    } catch (err: any) {
+      console.error(err);
+      alert("LMJ conversion failed: " + (err?.message || String(err)));
+    }
+
+    e.target.value = "";
+  };
+
+  /* -------------------------------------------------------------
     Search
   ------------------------------------------------------------- */
   const searchMatches = useMemo(() => {
@@ -800,16 +871,21 @@ export const FibreTrayEditor: React.FC = () => {
         display: "grid",
         gridTemplateColumns: "320px 1fr 420px",
         height: "100vh",
+        overflow: "hidden",
+        background: "#111827",
+        color: "white",
       }}
     >
       {/* LEFT PANEL */}
       <div
         style={{
-          borderRight: "1px solid #444",
+          borderRight: "1px solid #374151",
           padding: "1rem",
           display: "flex",
           flexDirection: "column",
           gap: "1rem",
+          overflowY: "auto",
+          background: "#111827",
         }}
       >
         <button style={btnSecondary} onClick={() => setActiveView("map")}>
@@ -878,9 +954,30 @@ export const FibreTrayEditor: React.FC = () => {
         <label>Load Mapping File</label>
         <input
           type="file"
-          accept=".csv,.xls,.xlsx,.xlsm"
+          accept=".csv,.xls,.xlsx,.xlsm,.xlm"
           onChange={handleLoadFile}
         />
+
+        <label>Convert LMJ Sheet</label>
+        <input
+          type="file"
+          accept=".csv,.xls,.xlsx,.xlsm,.xlm"
+          onChange={handleConvertLmjFile}
+        />
+
+        <div
+          style={{
+            fontSize: "0.8rem",
+            color: "#cbd5e1",
+            background: "#1f2937",
+            padding: "0.5rem",
+            borderRadius: 6,
+          }}
+        >
+          Use this for supplier LMJ sheets with different layouts. It downloads
+          a clean LMJ file. Then upload that converted file using Load Mapping
+          File above.
+        </div>
 
         <button
           style={btnSecondary}
@@ -1012,7 +1109,7 @@ export const FibreTrayEditor: React.FC = () => {
           {/* MIDDLE PANEL */}
           <div
             ref={trayContainerRef}
-            style={{ padding: "1rem", overflow: "auto" }}
+            style={{ padding: "1rem", overflow: "auto", background: "#111827" }}
           >
             {jointType === "LMJ (40 trays)" ? (
               <LMJTrayView
@@ -1105,9 +1202,10 @@ export const FibreTrayEditor: React.FC = () => {
           {/* RIGHT PANEL */}
           <div
             style={{
-              borderLeft: "1px solid #444",
+              borderLeft: "1px solid #374151",
               padding: "1rem",
               overflow: "auto",
+              background: "#111827",
             }}
           >
             {jointType === "LMJ (40 trays)" ? (

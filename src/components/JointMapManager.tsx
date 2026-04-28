@@ -1,3 +1,7 @@
+// =====================================================
+// IMPORTS
+// =====================================================
+
 import React, { useEffect, useMemo, useState } from "react";
 import {
   MapContainer,
@@ -21,6 +25,8 @@ import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { formatDistance, getPathDistanceMeters } from "../utils/mapMeasure";
 import { getNextAssetName } from "../utils/mapAssetNames";
 import MapContextMenu, { type MapContextAction } from "./map/MapContextMenu";
+import LayersPanel from "./map/LayersPanel";
+import GpsLocationControl from "./map/GpsLocationControl";
 import AssetMarkersLayer from "./map/AssetMarkersLayer";
 import CableLinesLayer from "./map/CableLinesLayer";
 import CableDetailsModal from "./map/CableDetailsModal";
@@ -32,9 +38,9 @@ import ChamberDetailsModal, {
 import { snapPointToAssets } from "./map/utils/snapToAssets";
 import { routePointsToRoads } from "./map/utils/routeToRoads";
 import { loadOsmBuildingsAsHomes, type OsmBounds } from "./map/utils/loadOsmBuildings";
+import { createDropCableRecordsFromDP } from "./map/utils/generateDrops";
 import StreetCabDesigner from "./streetcab/StreetCabDesigner";
-import GpsLocationControl from "./map/GpsLocationControl";
-import LayersPanel from "./map/LayersPanel";
+
 import type {
   AssetType,
   CableType,
@@ -45,8 +51,16 @@ import type {
   SavedMapAsset,
 } from "./map/types";
 
+// =====================================================
+// EXPORTED TYPES
+// =====================================================
+
 export type SavedJoint = SavedMapAsset;
 export type { SavedMapAsset };
+
+// =====================================================
+// LEAFLET DEFAULT ICON FIX
+// =====================================================
 
 /* Fix default leaflet icons */
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -55,6 +69,10 @@ L.Icon.Default.mergeOptions({
   iconUrl: markerIcon,
   shadowUrl: markerShadow,
 });
+
+// =====================================================
+// COMPONENT TYPES
+// =====================================================
 
 type Props = {
   currentJointName: string;
@@ -80,7 +98,34 @@ type LayerVisibility = {
   areas: boolean;
   measurements: boolean;
   homes: boolean;
+  l0: boolean;
+  l1: boolean;
+  l2: boolean;
+  l3: boolean;
+  newPoles: boolean;
+  orPoles: boolean;
+  fw2: boolean;
+  fw4: boolean;
+  fw6: boolean;
+  fw10: boolean;
+  homesSdu: boolean;
+  homesMdu: boolean;
+  homesFlats: boolean;
+  feeders: boolean;
+  links: boolean;
+  ulw48: boolean;
+  ulw36: boolean;
+  ulw24: boolean;
+  ulw12: boolean;
+  live: boolean;
+  bwip: boolean;
+  unserviceable: boolean;
+  liveNotReady: boolean;
 };
+
+// =====================================================
+// MAP EVENT HANDLER: LEFT CLICK / RIGHT CLICK
+// =====================================================
 
 function MapClickHandler({
   mode,
@@ -140,6 +185,10 @@ function MapClickHandler({
   return null;
 }
 
+// =====================================================
+// MAP BOUNDS TRACKER: USED FOR OSM HOME IMPORTS
+// =====================================================
+
 function MapBoundsTracker({ onBoundsChange }: { onBoundsChange: (bounds: OsmBounds) => void }) {
   const map = useMap();
 
@@ -166,6 +215,48 @@ function MapBoundsTracker({ onBoundsChange }: { onBoundsChange: (bounds: OsmBoun
   return null;
 }
 
+
+
+// =====================================================
+// HELPER FUNCTIONS: ASSET GEOMETRY / CABLE DETECTION
+// =====================================================
+
+function getAssetPoint(asset: SavedMapAsset): LatLngLiteral | null {
+  if (typeof (asset as any).lat === "number" && typeof (asset as any).lng === "number") {
+    return { lat: (asset as any).lat, lng: (asset as any).lng };
+  }
+
+  if (asset.geometry?.type === "Point" && Array.isArray(asset.geometry.coordinates)) {
+    const [lat, lng] = asset.geometry.coordinates as any;
+    const nextLat = Number(lat);
+    const nextLng = Number(lng);
+    if (Number.isFinite(nextLat) && Number.isFinite(nextLng)) {
+      return { lat: nextLat, lng: nextLng };
+    }
+  }
+
+  return null;
+}
+
+function findDpAtCableEnd(assets: SavedMapAsset[], point: LatLngLiteral) {
+  return assets.find((asset) => {
+    if (asset.assetType !== "distribution-point") return false;
+    const assetPoint = getAssetPoint(asset);
+    if (!assetPoint) return false;
+    return getPathDistanceMeters([assetPoint, point]) <= 10;
+  });
+}
+
+function isDropCable(asset: SavedMapAsset): boolean {
+  return (
+    asset.assetType === "cable" &&
+    String((asset as any).cableType || "").trim().toLowerCase() === "drop"
+  );
+}
+
+// =====================================================
+// MAP BASE LAYERS: STREET / SATELLITE / HYBRID / DARK
+// =====================================================
 
 function MapBaseLayers({
   basemap,
@@ -223,6 +314,10 @@ function MapBaseLayers({
   );
 }
 
+// =====================================================
+// HELPER FUNCTIONS: ASSET NAMING / AREA MEASUREMENT
+// =====================================================
+
 function inferAssetTypeFromName(name: string): AssetType {
   const upper = String(name || "").toUpperCase();
   if (upper.includes("-SC") || upper.includes("STREET CAB") || upper.includes("CAB")) {
@@ -255,23 +350,9 @@ function formatAreaLabel(areaSquareMeters: number): string {
   return `${(areaSquareMeters / 10000).toFixed(2)} ha`;
 }
 
-function getAreaLevel(asset: SavedMapAsset): "l0" | "l1" | "l2" | "l3" | null {
-  const text = `${asset.name || ""} ${asset.jointType || ""} ${asset.notes || ""}`.toLowerCase();
-  if (/\bl0\b/.test(text)) return "l0";
-  if (/\bl1\b/.test(text)) return "l1";
-  if (/\bl2\b/.test(text)) return "l2";
-  if (/\bl3\b/.test(text)) return "l3";
-  return null;
-}
-
-function getAreaDisplayLabel(asset: SavedMapAsset): string {
-  const level = getAreaLevel(asset);
-  const cleanName = String(asset.name || "Polygon Area").trim();
-  if (level && !new RegExp(`\\b${level}\\b`, "i").test(cleanName)) {
-    return `${cleanName} ${level.toUpperCase()}`;
-  }
-  return cleanName;
-}
+// =====================================================
+// MAIN COMPONENT: JOINT MAP MANAGER
+// =====================================================
 
 export default function JointMapManager({
   currentJointName,
@@ -282,6 +363,10 @@ export default function JointMapManager({
   onClose,
   onOpenJoint,
 }: Props) {
+  // =====================================================
+  // STATE: SELECTED LOCATION / ASSET EDITOR FIELDS
+  // =====================================================
+
   const [pickedLocation, setPickedLocation] = useState<LatLngLiteral | null>(null);
 
   const [assetType, setAssetType] = useState<AssetType>(
@@ -296,6 +381,10 @@ export default function JointMapManager({
   const [fibreCount, setFibreCount] = useState<FibreCount>("12F");
   const [installMethod, setInstallMethod] = useState<InstallMethod>("Underground");
 
+  // =====================================================
+  // STATE: ASSET DETAIL MODAL DATA
+  // =====================================================
+
   const [poleDetails, setPoleDetails] = useState<PoleDetails>({});
   const [dpDetails, setDpDetails] = useState<DistributionPointDetails>({
     powerReadings: ["", "", "", ""],
@@ -303,6 +392,10 @@ export default function JointMapManager({
     connectionsToHomes: 8,
   });
   const [chamberDetails, setChamberDetails] = useState<ChamberDetails>({});
+
+  // =====================================================
+  // STATE: EDITING / MAP MODES / LAYERS
+  // =====================================================
 
   const [editingAssetId, setEditingAssetId] = useState<string | null>(null);
 
@@ -312,6 +405,7 @@ export default function JointMapManager({
   const [measurePoints, setMeasurePoints] = useState<LatLngLiteral[]>([]);
   const [draftCablePoints, setDraftCablePoints] = useState<LatLngLiteral[]>([]);
   const [draftAreaPoints, setDraftAreaPoints] = useState<LatLngLiteral[]>([]);
+  const [isLayersOpen, setIsLayersOpen] = useState(true);
 
   const [visibleLayers, setVisibleLayers] = useState<LayerVisibility>({
     agJoints: true,
@@ -349,10 +443,13 @@ export default function JointMapManager({
   });
 
   const [snapEnabled, setSnapEnabled] = useState(true);
-  const [layersDrawerOpen, setLayersDrawerOpen] = useState(true);
   const [isRoutingCable, setIsRoutingCable] = useState(false);
   const [isLoadingOsmHomes, setIsLoadingOsmHomes] = useState(false);
   const [mapBounds, setMapBounds] = useState<OsmBounds | null>(null);
+
+  // =====================================================
+  // STATE: RIGHT-CLICK CONTEXT MENU
+  // =====================================================
 
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean;
@@ -366,6 +463,10 @@ export default function JointMapManager({
     latlng: null,
   });
 
+  // =====================================================
+  // STATE: MODALS / STREET CAB DESIGNER
+  // =====================================================
+
   const [showCableModal, setShowCableModal] = useState(false);
   const [showPoleModal, setShowPoleModal] = useState(false);
   const [showDpModal, setShowDpModal] = useState(false);
@@ -373,11 +474,19 @@ export default function JointMapManager({
 
   const [openStreetCabAsset, setOpenStreetCabAsset] = useState<SavedMapAsset | null>(null);
 
+  // =====================================================
+  // EFFECT: SYNC INCOMING CURRENT JOINT PROPS
+  // =====================================================
+
   useEffect(() => {
     setJointName(currentJointName || "");
     setJointType(currentJointType || "CMJ (12 trays)");
     setAssetType(inferAssetTypeFromName(currentJointName));
   }, [currentJointName, currentJointType]);
+
+  // =====================================================
+  // DERIVED VALUES: MAP CENTRE / MEASUREMENTS
+  // =====================================================
 
   const mapCenter = useMemo<[number, number]>(() => {
     if (pickedLocation) return [pickedLocation.lat, pickedLocation.lng];
@@ -409,6 +518,10 @@ export default function JointMapManager({
   const draftCableDistance = useMemo(() => {
     return getPathDistanceMeters(draftCablePoints);
   }, [draftCablePoints]);
+
+  // =====================================================
+  // ACTIONS: RESET / START NEW CABLE
+  // =====================================================
 
   const resetEditor = () => {
     setEditingAssetId(null);
@@ -456,6 +569,10 @@ export default function JointMapManager({
     setMapMode("draw-cable");
     setShowCableModal(false);
   };
+
+  // =====================================================
+  // ACTION: LOAD EXISTING ASSET INTO EDITOR
+  // =====================================================
 
   const handleEditAsset = (asset: SavedMapAsset) => {
     setEditingAssetId(asset.id);
@@ -508,6 +625,10 @@ export default function JointMapManager({
       setShowCableModal(true);
     }
   };
+
+  // =====================================================
+  // ACTION: SAVE EDITS TO EXISTING ASSET
+  // =====================================================
 
   const handleSaveEdits = async (detailOverrides?: { poleDetails?: PoleDetails; dpDetails?: DistributionPointDetails; chamberDetails?: ChamberDetails }) => {
     if (!editingAssetId) return;
@@ -602,6 +723,10 @@ export default function JointMapManager({
     resetEditor();
   };
 
+  // =====================================================
+  // ACTION: CREATE NEW POINT ASSET
+  // =====================================================
+
   const handleSaveJoint = (detailOverrides?: { poleDetails?: PoleDetails; dpDetails?: DistributionPointDetails; chamberDetails?: ChamberDetails }) => {
     if (!pickedLocation) {
       alert("Click a location on the map first.");
@@ -671,6 +796,10 @@ export default function JointMapManager({
     resetEditor();
   };
 
+  // =====================================================
+  // ACTIONS: POLYGON AREA DRAWING
+  // =====================================================
+
   const handleFinishArea = () => {
     if (draftAreaPoints.length < 3) {
       alert("Add at least three polygon points.");
@@ -714,6 +843,10 @@ export default function JointMapManager({
     );
   };
 
+  // =====================================================
+  // ACTIONS: CABLE DRAWING / AUTO DROP GENERATION
+  // =====================================================
+
   const handleFinishCable = async () => {
     if (draftCablePoints.length < 2) {
       alert("Add at least two cable points.");
@@ -744,7 +877,32 @@ export default function JointMapManager({
         },
       };
 
-      setSavedJoints((prev) => [...prev, cableRecord]);
+      const firstPoint = draftCablePoints[0];
+      const lastPoint = draftCablePoints[draftCablePoints.length - 1];
+      const fedDps = [
+        findDpAtCableEnd(savedJoints, firstPoint),
+        findDpAtCableEnd(savedJoints, lastPoint),
+      ].filter(Boolean) as SavedMapAsset[];
+
+      const homes = savedJoints.filter((asset) => asset.assetType === "home");
+      const autoDrops: SavedMapAsset[] = [];
+
+      for (const dp of fedDps) {
+        const nextDrops = createDropCableRecordsFromDP(dp, homes, [
+          ...savedJoints,
+          cableRecord,
+          ...autoDrops,
+        ]) as SavedMapAsset[];
+
+        autoDrops.push(...nextDrops);
+      }
+
+      setSavedJoints((prev) => [...prev, cableRecord, ...autoDrops]);
+
+      if (autoDrops.length > 0) {
+        alert(`Cable saved. Auto-connected ${autoDrops.length} nearby homes to the AFN/CBT.`);
+      }
+
       resetEditor();
     } finally {
       setIsRoutingCable(false);
@@ -759,8 +917,24 @@ export default function JointMapManager({
     setDraftCablePoints([]);
   };
 
+  // =====================================================
+  // ACTIONS: DELETE ASSETS / MEASUREMENTS / CONTEXT MENU
+  // =====================================================
+
   const handleDeleteAsset = (id: string) => {
-    setSavedJoints((prev) => prev.filter((j) => j.id !== id));
+    setSavedJoints((prev) =>
+      prev.filter((asset) => {
+        if (asset.id === id) return false;
+
+        // If an AFN/CBT or home is deleted, remove its auto-generated drop cables too.
+        if (isDropCable(asset)) {
+          return (asset as any).fromAssetId !== id && (asset as any).toAssetId !== id;
+        }
+
+        return true;
+      })
+    );
+
     if (editingAssetId === id) {
       resetEditor();
     }
@@ -794,6 +968,10 @@ export default function JointMapManager({
       latlng: null,
     });
   };
+
+  // =====================================================
+  // ACTION: RIGHT-CLICK MENU ADD ASSET
+  // =====================================================
 
   const handleContextAddAsset = (type: MapContextAction) => {
   setEditingAssetId(null);
@@ -875,6 +1053,10 @@ export default function JointMapManager({
   handleCloseContextMenu();
 };
 
+  // =====================================================
+  // ACTIONS: LAYER TOGGLE / DRAW POINT CAPTURE
+  // =====================================================
+
   const toggleLayer = (key: keyof LayerVisibility) => {
     setVisibleLayers((prev) => ({
       ...prev,
@@ -890,6 +1072,10 @@ export default function JointMapManager({
   const handleAreaPoint = (point: LatLngLiteral) => {
     setDraftAreaPoints((prev) => [...prev, point]);
   };
+
+  // =====================================================
+  // ACTION: LOAD OSM BUILDINGS AS HOME ASSETS
+  // =====================================================
 
   const handleLoadOsmHomes = async () => {
     if (!mapBounds) {
@@ -923,6 +1109,10 @@ export default function JointMapManager({
       setIsLoadingOsmHomes(false);
     }
   };
+
+  // =====================================================
+  // ACTIONS: IMPORT / EXPORT
+  // =====================================================
 
   const handleExportJson = () => {
     const blob = new Blob([JSON.stringify(savedJoints, null, 2)], {
@@ -1040,6 +1230,50 @@ export default function JointMapManager({
     e.target.value = "";
   };
 
+
+  // =====================================================
+  // DERIVED VALUE: CONNECTED HOMES FOR SELECTED DP / AFN
+  // =====================================================
+
+  const connectedHomesForSelectedDp = useMemo(() => {
+    if (!editingAssetId) return [];
+
+    const drops = (savedJoints ?? []).filter((asset) => {
+      return (
+        isDropCable(asset) &&
+        (((asset as any).fromAssetId === editingAssetId) || ((asset as any).toAssetId === editingAssetId))
+      );
+    });
+
+    return drops
+      .map((drop, index) => {
+        const fromId = (drop as any).fromAssetId;
+        const toId = (drop as any).toAssetId;
+        const homeId = fromId === editingAssetId ? toId : fromId;
+        const home = (savedJoints ?? []).find((asset) => asset.id === homeId);
+        const status =
+          (home as any)?.customerStatus ||
+          (home as any)?.homeStatus ||
+          (home as any)?.status ||
+          (drop as any)?.customerStatus ||
+          (drop as any)?.homeStatus ||
+          (drop as any)?.status ||
+          "Planned";
+
+        return {
+          port: Number((drop as any).port || (drop as any).dpPort || index + 1),
+          homeId: String(homeId || ""),
+          homeName: String(home?.name || homeId || `Home ${index + 1}`),
+          status: String(status),
+        };
+      })
+      .sort((a, b) => a.port - b.port);
+  }, [editingAssetId, savedJoints]);
+
+  // =====================================================
+  // RENDER: STREET CAB DESIGNER SCREEN
+  // =====================================================
+
   if (openStreetCabAsset) {
     return (
       <StreetCabDesigner
@@ -1055,34 +1289,42 @@ export default function JointMapManager({
     );
   }
 
+  // =====================================================
+  // RENDER: MAIN MAP SCREEN
+  // Layout model:
+  // LEFT   = fixed 360px asset editor panel
+  // CENTRE = Leaflet map full-screen behind panels
+  // RIGHT  = slide-in LayersPanel drawer
+  // =====================================================
+
   return (
     <div
       style={{
         height: "100vh",
         width: "100vw",
-        display: "grid",
-        gridTemplateColumns: "360px 1fr",
         position: "relative",
+        overflow: "hidden",
         background: "#1f2937",
         color: "white",
       }}
     >
-      <style>{`
-        .transparent-area-label {
-          background: transparent !important;
-          border: 0 !important;
-          box-shadow: none !important;
-          color: #ffffff !important;
-          font-weight: 800 !important;
-          font-size: 16px !important;
-          text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 0 2px rgba(88,28,135,0.9) !important;
-          pointer-events: none !important;
-        }
-        .transparent-area-label::before {
-          display: none !important;
-        }
-      `}</style>
-      <div style={panel}>
+      {/* =====================================================
+          LEFT PANEL: ASSET EDITOR / MAP TOOLS / IMPORT EXPORT
+          ===================================================== */}
+      <div
+        style={{
+          ...panel,
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: "360px",
+          height: "100%",
+          zIndex: 1000,
+          overflowY: "auto",
+          background: "#1f2937",
+          boxSizing: "border-box",
+        }}
+      >
         <div style={{ display: "flex", justifyContent: "space-between" }}>
           <h2 style={{ margin: 0 }}>Joint Map Manager</h2>
           <button onClick={onClose} style={btnSecondary}>
@@ -1405,11 +1647,25 @@ export default function JointMapManager({
         </div>
       </div>
 
-      <div style={{ position: "relative", height: "100%" }}>
-        <MapContainer center={mapCenter} zoom={6} style={{ height: "100%" }}>
+      {/* =====================================================
+          CENTRE MAP: FULL-SCREEN LEAFLET MAP BEHIND PANELS
+          ===================================================== */}
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 0,
+        }}
+      >
+        {/* =====================================================
+            LEAFLET MAP CONTAINER + BASE LAYERS
+            ===================================================== */}
+        <MapContainer center={mapCenter} zoom={6} style={{ height: "100%", width: "100%" }}>
           <MapBaseLayers basemap={basemap} roadOverlayVisible={roadOverlayVisible} />
           <MapBoundsTracker onBoundsChange={setMapBounds} />
-          <GpsLocationControl/>
 
           <MapClickHandler
             mode={mapMode}
@@ -1424,6 +1680,9 @@ export default function JointMapManager({
             onRightClick={handleMapRightClick}
           />
 
+          {/* =====================================================
+              MAP LAYERS: ASSET MARKERS
+              ===================================================== */}
           <AssetMarkersLayer
   assets={(savedJoints ?? []).filter((asset) => asset.assetType !== "area")}
   visibleLayers={visibleLayers}
@@ -1456,14 +1715,12 @@ export default function JointMapManager({
 />
           
 
+          {/* =====================================================
+              MAP LAYERS: POLYGON AREAS
+              ===================================================== */}
           {visibleLayers.areas &&
             (savedJoints ?? [])
-              .filter((asset) => {
-                if (asset.assetType !== "area" || asset.geometry?.type !== "Polygon") return false;
-                if (!visibleLayers.areas) return false;
-                const level = getAreaLevel(asset);
-                return !level || visibleLayers[level] !== false;
-              })
+              .filter((asset) => asset.assetType === "area" && asset.geometry?.type === "Polygon")
               .map((asset) => {
                 const areaPoints = (asset.geometry as {
                   type: "Polygon";
@@ -1472,7 +1729,6 @@ export default function JointMapManager({
 
                 const areaSquareMeters = getPolygonAreaSquareMeters(areaPoints);
                 const areaLabel = formatAreaLabel(areaSquareMeters);
-                const displayLabel = getAreaDisplayLabel(asset);
 
                 return (
                   <Polygon
@@ -1506,14 +1762,17 @@ export default function JointMapManager({
                       permanent
                       direction="center"
                       opacity={0.9}
-                      className="transparent-area-label"
+                      className="area-size-label"
                     >
-                      {displayLabel}
+                      {areaLabel}
                     </Tooltip>
                   </Polygon>
                 );
               })}
 
+          {/* =====================================================
+              MAP LAYERS: CABLES
+              ===================================================== */}
           <CableLinesLayer
             assets={savedJoints}
             cablesVisible={visibleLayers.cables}
@@ -1521,6 +1780,9 @@ export default function JointMapManager({
             onEditAsset={handleEditAsset}
           />
 
+          {/* =====================================================
+              MAP OVERLAYS: PICKED LOCATION / MEASUREMENTS / DRAFTS
+              ===================================================== */}
           {pickedLocation && mapMode === "pick" && (
             <Marker position={[pickedLocation.lat, pickedLocation.lng]}>
               <Popup>Picked Location</Popup>
@@ -1627,60 +1889,13 @@ export default function JointMapManager({
               }}
             />
           )}
+
+          <GpsLocationControl />
         </MapContainer>
 
-        <button
-          type="button"
-          onClick={() => setLayersDrawerOpen((open) => !open)}
-          style={{
-            position: "absolute",
-            top: 16,
-            right: layersDrawerOpen ? 396 : 16,
-            zIndex: 1200,
-            background: "#2563eb",
-            color: "white",
-            border: "1px solid rgba(255,255,255,0.25)",
-            borderRadius: 10,
-            padding: "0.65rem 0.85rem",
-            fontWeight: 900,
-            cursor: "pointer",
-            boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
-            transition: "right 220ms ease",
-          }}
-          aria-label={layersDrawerOpen ? "Hide layers menu" : "Show layers menu"}
-        >
-          {layersDrawerOpen ? "Hide Layers" : "Layers"}
-        </button>
-
-        <aside
-          style={{
-            position: "absolute",
-            top: 16,
-            right: layersDrawerOpen ? 16 : -390,
-            bottom: 16,
-            width: 360,
-            zIndex: 1150,
-            background: "#1f2937",
-            border: "1px solid rgba(148,163,184,0.35)",
-            borderRadius: 14,
-            boxShadow: "0 18px 40px rgba(0,0,0,0.45)",
-            padding: "1rem",
-            overflowY: "auto",
-            transition: "right 220ms ease",
-          }}
-        >
-          <LayersPanel
-            visibleLayers={visibleLayers}
-            setVisibleLayers={setVisibleLayers}
-            basemap={basemap}
-            setBasemap={setBasemap}
-            roadOverlayVisible={roadOverlayVisible}
-            setRoadOverlayVisible={setRoadOverlayVisible}
-            snapEnabled={snapEnabled}
-            setSnapEnabled={setSnapEnabled}
-          />
-        </aside>
-
+        {/* =====================================================
+            FLOATING CONTROLS: CONTEXT MENU + MODALS
+            ===================================================== */}
         <MapContextMenu
           visible={contextMenu.visible}
           x={contextMenu.x}
@@ -1727,6 +1942,7 @@ export default function JointMapManager({
           visible={showDpModal}
           name={jointName}
           details={dpDetails}
+          connectedHomes={connectedHomesForSelectedDp}
           onChangeName={setJointName}
           onChange={setDpDetails}
           onSave={(nextDetails) => {
@@ -1759,9 +1975,67 @@ export default function JointMapManager({
           onCancel={resetEditor}
         />
       </div>
+
+      {/* =====================================================
+          RIGHT DRAWER: LAYERS PANEL SLIDE-IN / SLIDE-OUT
+          ===================================================== */}
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          right: 0,
+          width: "320px",
+          height: "100%",
+          zIndex: 1100,
+          padding: "1rem",
+          boxSizing: "border-box",
+          overflowY: "auto",
+          background: "#1f2937",
+          borderLeft: "1px solid #374151",
+          transform: isLayersOpen ? "translateX(0)" : "translateX(100%)",
+          transition: "transform 0.3s ease",
+        }}
+      >
+        <LayersPanel
+          visibleLayers={visibleLayers}
+          setVisibleLayers={setVisibleLayers}
+          basemap={basemap}
+          setBasemap={setBasemap}
+          roadOverlayVisible={roadOverlayVisible}
+          setRoadOverlayVisible={setRoadOverlayVisible}
+          snapEnabled={snapEnabled}
+          setSnapEnabled={setSnapEnabled}
+        />
+      </div>
+
+      {/* =====================================================
+          LAYERS DRAWER TOGGLE BUTTON
+          ===================================================== */}
+      <button
+        onClick={() => setIsLayersOpen((prev) => !prev)}
+        style={{
+          position: "absolute",
+          top: 16,
+          right: isLayersOpen ? 340 : 16,
+          zIndex: 1200,
+          background: "#2563eb",
+          color: "white",
+          border: "none",
+          padding: "10px 14px",
+          borderRadius: "8px",
+          cursor: "pointer",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.35)",
+        }}
+      >
+        {isLayersOpen ? "Hide Layers" : "Layers"}
+      </button>
     </div>
   );
 }
+
+// =====================================================
+// STYLE CONSTANTS
+// =====================================================
 
 const panel: React.CSSProperties = {
   padding: "1rem",

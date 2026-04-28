@@ -216,7 +216,7 @@ export default function CableLinesLayer({
               </Popup>
 
               <Tooltip permanent direction="center">
-                {formatCableLength(length)}
+                {/* distance labels removed for home drops */}
               </Tooltip>
             </Polyline>
 

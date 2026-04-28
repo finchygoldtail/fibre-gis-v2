@@ -63,7 +63,7 @@ function createCircleIcon(background: string, border: string) {
   });
 }
 
-function createHomeIcon() {
+function createHomeIcon(fill = "#94a3b8", border = "#111827") {
   return L.divIcon({
     className: "",
     html: `
@@ -84,22 +84,22 @@ function createHomeIcon() {
           <path
             d="M3 10.6 12 3l9 7.6"
             fill="none"
-            stroke="#111827"
+            stroke="${border}"
             stroke-width="3"
             stroke-linecap="round"
             stroke-linejoin="round"
           />
           <path
             d="M5.5 10.2V21h13V10.2L12 4.8 5.5 10.2Z"
-            fill="#38bdf8"
-            stroke="#111827"
+            fill="${fill}"
+            stroke="${border}"
             stroke-width="2"
             stroke-linejoin="round"
           />
           <path
             d="M10 21v-6h4v6"
             fill="#f8fafc"
-            stroke="#111827"
+            stroke="${border}"
             stroke-width="1.8"
             stroke-linejoin="round"
           />
@@ -179,7 +179,6 @@ const streetCabIcon = createSquareIcon("#2563eb", "#ffffff");
 const chamberIcon = createSquareIcon("#6b7280", "#ffffff");
 const agJointIcon = createCircleIcon("#10b981", "#ffffff");
 const poleIcon = createCircleIcon("#8b5a2b", "#ffffff");
-const homeIcon = createHomeIcon();
 
 function isVisible(asset: SavedMapAsset, visibleLayers: LayerVisibility): boolean {
   const layers = visibleLayers as any;
@@ -366,14 +365,56 @@ function renderDocuments(documents?: string[]) {
   );
 }
 
-function getIconForAsset(asset: SavedMapAsset) {
+
+function isDropCable(asset: SavedMapAsset): boolean {
+  return (
+    asset.assetType === "cable" &&
+    String((asset as any).cableType || "").trim().toLowerCase() === "drop"
+  );
+}
+
+function getHomeConnectionStatus(
+  home: SavedMapAsset,
+  allAssets: SavedMapAsset[]
+): "unconnected" | "connected" | "live" {
+  const ownStatus = normaliseStatus(
+    (home as any).customerStatus ||
+      (home as any).homeStatus ||
+      (home as any).status ||
+      (home as any).buildStatus
+  );
+
+  if (ownStatus === "live") return "live";
+
+  const drop = allAssets.find(
+    (asset) =>
+      isDropCable(asset) &&
+      (((asset as any).fromAssetId === home.id) || ((asset as any).toAssetId === home.id))
+  );
+
+  if (!drop) return "unconnected";
+
+  const dropStatus = normaliseStatus(
+    (drop as any).customerStatus || (drop as any).homeStatus || (drop as any).status
+  );
+
+  return dropStatus === "live" ? "live" : "connected";
+}
+
+function getHomeIconForStatus(status: "unconnected" | "connected" | "live") {
+  if (status === "live") return createHomeIcon("#16a34a", "#064e3b");
+  if (status === "connected") return createHomeIcon("#f59e0b", "#92400e");
+  return createHomeIcon("#94a3b8", "#334155");
+}
+
+function getIconForAsset(asset: SavedMapAsset, allAssets: SavedMapAsset[]) {
   if (asset.assetType === "distribution-point") {
     return createSquareIcon(getDistributionPointColor(asset), "#ffffff");
   }
   if (asset.assetType === "street-cab") return streetCabIcon;
   if (asset.assetType === "chamber") return chamberIcon;
   if (asset.assetType === "pole") return poleIcon;
-  if (asset.assetType === "home") return homeIcon;
+  if (asset.assetType === "home") return getHomeIconForStatus(getHomeConnectionStatus(asset, allAssets));
   return agJointIcon;
 }
 
@@ -427,7 +468,7 @@ export default function AssetMarkersLayer({
         const latLng = getPointLatLng(asset);
         if (!latLng) return null;
         const [lat, lng] = latLng;
-        const icon = getIconForAsset(asset);
+        const icon = getIconForAsset(asset, assets);
 
         return (
           <Marker
@@ -488,6 +529,7 @@ export default function AssetMarkersLayer({
                   {asset.assetType === "home" ? (
                     <>
                       {infoRow("Source", asset.source || "OpenStreetMap")}
+                      {infoRow("Connection", getHomeConnectionStatus(asset, assets))}
                       {infoRow("OSM ID", asset.osmId)}
                     </>
                   ) : null}

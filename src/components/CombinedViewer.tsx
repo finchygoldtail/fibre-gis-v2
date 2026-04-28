@@ -28,6 +28,12 @@ import {
 } from "../logic/fibreColours";
 
 import { loadMappingFile } from "../logic/mappingParser";
+import * as XLSX from "xlsx";
+import { convertLmjSheetToStandardRows } from "../logic/lmjSheetConverter";
+
+// =====================================================
+// HELPERS
+// =====================================================
 
 function cleanCell(v: any): string {
   if (v === null || v === undefined) return "";
@@ -107,12 +113,28 @@ function withTracking(asset: SavedMapAsset, isNew: boolean): SavedMapAsset {
   } as SavedMapAsset;
 }
 
+// =====================================================
+// COMPONENT
+// =====================================================
+
 const CombinedViewer: React.FC = () => {
+  // =====================================================
+  // STATE: VIEW MODE
+  // =====================================================
+
   const [view, setView] = useState<"map" | "splice">("map");
+
+  // =====================================================
+  // STATE: JOINTS / FIREBASE
+  // =====================================================
 
   const [savedJoints, setSavedJoints] = useState<SavedMapAsset[]>([]);
   const [firebaseLoaded, setFirebaseLoaded] = useState(false);
   const lastSavedJsonRef = useRef("");
+
+  // =====================================================
+  // STATE: SELECTED JOINT
+  // =====================================================
 
   const [selectedJoint, setSelectedJoint] = useState<SavedMapAsset | null>(
     null
@@ -127,17 +149,23 @@ const CombinedViewer: React.FC = () => {
 
   const cfg = JOINT_TYPES[jointType];
 
+  // =====================================================
+  // STATE: MAPPING / SEARCH / CHAIN VIEW
+  // =====================================================
+
   const [mappingRows, setMappingRows] = useState<any[][]>([]);
   const [selectedFibre, setSelectedFibre] = useState<number | null>(null);
+
   const [chainText, setChainText] = useState(
     "Create or select a joint from the map, then load a file."
   );
 
   const [searchTerm, setSearchTerm] = useState("");
 
-  // ---------------------------------------------------------
-  // FIREBASE LOAD — SHARED BUSINESS NETWORK
-  // ---------------------------------------------------------
+  // =====================================================
+  // FIREBASE LOAD
+  // =====================================================
+
   useEffect(() => {
     const ref = doc(db, "businesses", "fibre-gis-v2");
 
@@ -156,7 +184,10 @@ const CombinedViewer: React.FC = () => {
               }))
             : [];
 
-          lastSavedJsonRef.current = JSON.stringify(cleanForFirebase(loadedJoints));
+          lastSavedJsonRef.current = JSON.stringify(
+            cleanForFirebase(loadedJoints)
+          );
+
           setSavedJoints(loadedJoints);
         } else {
           await setDoc(
@@ -170,6 +201,7 @@ const CombinedViewer: React.FC = () => {
             },
             { merge: true }
           );
+
           lastSavedJsonRef.current = JSON.stringify([]);
           console.log("Created Firestore document: businesses/fibre-gis-v2");
         }
@@ -185,9 +217,10 @@ const CombinedViewer: React.FC = () => {
     return () => unsub();
   }, []);
 
-  // ---------------------------------------------------------
-  // FIREBASE AUTO SAVE — LOOP SAFE
-  // ---------------------------------------------------------
+  // =====================================================
+  // FIREBASE AUTO SAVE
+  // =====================================================
+
   useEffect(() => {
     if (!firebaseLoaded) return;
 
@@ -216,6 +249,10 @@ const CombinedViewer: React.FC = () => {
     });
   }, [savedJoints, firebaseLoaded]);
 
+  // =====================================================
+  // ACTION: OPEN JOINT FROM MAP
+  // =====================================================
+
   function openJoint(joint: SavedMapAsset) {
     setSavedJoints((prev) => {
       const exists = prev.some((j) => j.id === joint.id);
@@ -241,6 +278,7 @@ const CombinedViewer: React.FC = () => {
     setMappingRows(rows);
     setSelectedFibre(null);
     setSearchTerm("");
+
     setChainText(
       rows.length
         ? `Loaded ${rows.length} continuity rows for ${joint.name}. Click any fibre to view the chain.`
@@ -250,11 +288,19 @@ const CombinedViewer: React.FC = () => {
     setView("splice");
   }
 
+  // =====================================================
+  // ACTION: BACK TO MAP
+  // =====================================================
+
   function backToMap() {
     setView("map");
     setSelectedJoint(null);
     setSelectedFibre(null);
   }
+
+  // =====================================================
+  // ACTION: LOAD MAPPING FILE
+  // =====================================================
 
   const handleLoadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -307,6 +353,65 @@ const CombinedViewer: React.FC = () => {
     }
   };
 
+  // =====================================================
+  // ACTION: CONVERT LMJ SHEET ONLY
+  // This does NOT load data into the joint.
+  // It creates a clean standard Excel file for upload.
+  // Supports CSV, XLS, XLSX, XLSM, and XLM-style file extensions.
+  // =====================================================
+
+  const handleConvertLmjFile = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const data = await file.arrayBuffer();
+
+      const workbook = XLSX.read(data, {
+        type: "array",
+        cellDates: false,
+        raw: false,
+      });
+
+      const firstSheetName = workbook.SheetNames[0];
+      const firstSheet = workbook.Sheets[firstSheetName];
+
+      if (!firstSheet) {
+        throw new Error("No worksheet found in this file.");
+      }
+
+      const sourceRows = XLSX.utils.sheet_to_json(firstSheet, {
+        header: 1,
+        defval: "",
+        raw: false,
+      }) as any[][];
+
+      const convertedRows = convertLmjSheetToStandardRows(sourceRows);
+
+      if (!convertedRows.length) {
+        throw new Error("No LMJ rows could be converted from this file.");
+      }
+
+      const outputSheet = XLSX.utils.aoa_to_sheet(convertedRows);
+      const outputWorkbook = XLSX.utils.book_new();
+
+      XLSX.utils.book_append_sheet(outputWorkbook, outputSheet, "LMJ_CONVERTED");
+
+      const originalName = file.name.replace(/\.[^.]+$/, "");
+      XLSX.writeFile(outputWorkbook, `${originalName}_LMJ_CONVERTED.xlsx`);
+    } catch (err: any) {
+      alert("LMJ conversion failed: " + (err?.message || String(err)));
+    }
+
+    e.target.value = "";
+  };
+
+  // =====================================================
+  // DERIVED: SEARCH MATCHES
+  // =====================================================
+
   const searchMatches = useMemo(() => {
     const s = searchTerm.trim().toLowerCase();
     if (!s) return new Set<number>();
@@ -326,11 +431,27 @@ const CombinedViewer: React.FC = () => {
     return set;
   }, [searchTerm, mappingRows]);
 
+  // =====================================================
+  // DERIVED: FIBRE LOOKUPS
+  // =====================================================
+
   const findCell = useCallback(
     (tray: number, pos: number) =>
       model.find((f) => f.tray === tray && f.pos === pos),
     [model]
   );
+
+  const selectedCell = selectedFibre
+    ? model.find((f) => f.globalNo === selectedFibre)
+    : null;
+
+  const selectedRow = selectedFibre
+    ? mappingRows.find((r) => r.includes(selectedFibre))
+    : null;
+
+  // =====================================================
+  // ACTION: FIBRE CLICK
+  // =====================================================
 
   const handleFibreClick = (cell: FibreCell) => {
     setSelectedFibre(cell.globalNo);
@@ -344,13 +465,9 @@ const CombinedViewer: React.FC = () => {
     setChainText(chain);
   };
 
-  const selectedCell = selectedFibre
-    ? model.find((f) => f.globalNo === selectedFibre)
-    : null;
-
-  const selectedRow = selectedFibre
-    ? mappingRows.find((r) => r.includes(selectedFibre))
-    : null;
+  // =====================================================
+  // SVG LAYOUT SETTINGS
+  // =====================================================
 
   const trayH = 26;
   const trayGap = 6;
@@ -360,6 +477,10 @@ const CombinedViewer: React.FC = () => {
 
   const svgWidth = left + cfg.fibresPerTray * gap + 60;
   const svgHeight = top + cfg.trays * (trayH + trayGap) + 40;
+
+  // =====================================================
+  // RENDER: MAP SCREEN
+  // =====================================================
 
   if (view === "map") {
     return (
@@ -375,6 +496,14 @@ const CombinedViewer: React.FC = () => {
     );
   }
 
+  // =====================================================
+  // RENDER: SPLICE SCREEN
+  // This is the screen with:
+  // LEFT   = joint controls
+  // CENTRE = tray/fibre drawing
+  // RIGHT  = chain viewer
+  // =====================================================
+
   return (
     <div
       style={{
@@ -382,13 +511,20 @@ const CombinedViewer: React.FC = () => {
         gridTemplateColumns: "300px 1fr 500px",
         height: "100vh",
         overflow: "hidden",
+        background: "#111827",
+        color: "white",
       }}
     >
+      {/* =====================================================
+          LEFT PANEL: JOINT INFO / FILE UPLOAD / SEARCH
+          ===================================================== */}
       <div
         style={{
           padding: "1rem",
-          borderRight: "1px solid #ccc",
+          borderRight: "1px solid #374151",
           overflowY: "auto",
+          background: "#111827",
+          color: "white",
         }}
       >
         <button onClick={backToMap} style={{ marginBottom: "1rem" }}>
@@ -403,10 +539,12 @@ const CombinedViewer: React.FC = () => {
               <strong>Last edited by:</strong>{" "}
               {(selectedJoint as any).updatedByEmail || "Unknown"}
             </div>
+
             <div>
               <strong>Last edited:</strong>{" "}
               {(selectedJoint as any).updatedAt || "Unknown"}
             </div>
+
             <div>
               <strong>Created by:</strong>{" "}
               {(selectedJoint as any).createdByEmail || "Unknown"}
@@ -417,22 +555,61 @@ const CombinedViewer: React.FC = () => {
         <label>Load Mapping File</label>
         <input
           type="file"
-          accept=".csv,.xls,.xlsx,.xlsm"
+          accept=".csv,.xls,.xlsx,.xlsm,.xlm"
           onChange={handleLoadFile}
-          style={{ width: "100%", marginBottom: "1rem" }}
+          style={{
+            width: "100%",
+            marginBottom: "1rem",
+            color: "white",
+          }}
         />
+
+        {/* =====================================================
+            LMJ CONVERTER: CLEAN SUPPLIER SHEETS
+            This downloads a converted file.
+            It does not import into the selected joint automatically.
+            ===================================================== */}
+        <label>Convert LMJ Sheet</label>
+        <input
+          type="file"
+          accept=".csv,.xls,.xlsx,.xlsm,.xlm"
+          onChange={handleConvertLmjFile}
+          style={{
+            width: "100%",
+            marginBottom: "0.5rem",
+            color: "white",
+          }}
+        />
+
+        <div
+          style={{
+            fontSize: "0.78rem",
+            color: "#9ca3af",
+            marginBottom: "1rem",
+          }}
+        >
+          Use this for supplier LMJ sheets with different layouts. It will
+          download a clean converted Excel file, then you can upload that file
+          above as the mapping file.
+        </div>
 
         <label>Search</label>
         <input
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          style={{ width: "100%", padding: "0.4rem" }}
+          style={{
+            width: "100%",
+            padding: "0.4rem",
+            background: "#0f172a",
+            color: "white",
+            border: "1px solid #374151",
+          }}
           placeholder="Search cable, joint, fibre..."
         />
 
         <small>Matches: {searchMatches.size}</small>
 
-        <hr />
+        <hr style={{ borderColor: "#374151" }} />
 
         <h3>Selected Fibre Info</h3>
 
@@ -461,21 +638,53 @@ const CombinedViewer: React.FC = () => {
         {selectedRow && (
           <>
             <h3>Raw XLSM Row</h3>
-            <pre style={{ fontSize: "11px", whiteSpace: "pre-wrap" }}>
+            <pre
+              style={{
+                fontSize: "11px",
+                whiteSpace: "pre-wrap",
+                background: "#0f172a",
+                color: "white",
+                padding: "0.5rem",
+                borderRadius: "6px",
+              }}
+            >
               {JSON.stringify(selectedRow, null, 2)}
             </pre>
           </>
         )}
       </div>
 
-      <div style={{ overflow: "auto", padding: "1rem" }}>
-        <svg width={svgWidth} height={svgHeight}>
+      {/* =====================================================
+          CENTRE PANEL: TRAY / FIBRE SVG DRAWING
+          This is the main white area you wanted black.
+          ===================================================== */}
+      <div
+        style={{
+          overflow: "auto",
+          padding: "1rem",
+          background: "#111827",
+          minHeight: "100vh",
+        }}
+      >
+        <svg
+          width={svgWidth}
+          height={svgHeight}
+          style={{
+            background: "#111827",
+            display: "block",
+          }}
+        >
           {Array.from({ length: cfg.trays }, (_, tray) => {
             const y = top + tray * (trayH + trayGap);
 
             return (
               <g key={tray}>
-                <text x={15} y={y + trayH / 2 + 3} fontSize={10}>
+                <text
+                  x={15}
+                  y={y + trayH / 2 + 3}
+                  fontSize={10}
+                  fill="#e5e7eb"
+                >
                   Tray {tray + 1}
                 </text>
 
@@ -503,9 +712,7 @@ const CombinedViewer: React.FC = () => {
                       cx={fx}
                       cy={fy}
                       r={6}
-                      fill={
-                        match ? SEARCH_HIGHLIGHT : getColourForFibre(pos)
-                      }
+                      fill={match ? SEARCH_HIGHLIGHT : getColourForFibre(pos)}
                       stroke="#333"
                       onClick={() => handleFibreClick(cell)}
                       style={{ cursor: "pointer" }}
@@ -518,12 +725,16 @@ const CombinedViewer: React.FC = () => {
         </svg>
       </div>
 
+      {/* =====================================================
+          RIGHT PANEL: CHAIN VIEWER
+          ===================================================== */}
       <div
         style={{
-          borderLeft: "1px solid #ccc",
+          borderLeft: "1px solid #374151",
           padding: "1rem",
           overflowY: "auto",
-          background: "#fafafa",
+          background: "#111827",
+          color: "white",
         }}
       >
         <h2>Chain Viewer</h2>
@@ -539,8 +750,9 @@ const CombinedViewer: React.FC = () => {
             fontSize: "14px",
             padding: "0.75rem",
             whiteSpace: "pre-wrap",
-            background: "white",
-            border: "1px solid #ccc",
+            background: "#0f172a",
+            color: "white",
+            border: "1px solid #374151",
           }}
         />
       </div>
