@@ -6,7 +6,7 @@ import React, {
   useState,
 } from "react";
 
-import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, setDoc } from "firebase/firestore";
 import { db, auth } from "../firebase";
 
 import JointMapManager, {
@@ -93,6 +93,17 @@ function cleanForFirebase(value: SavedMapAsset[]): any[] {
   });
 }
 
+function parseSavedJointsFromFirestore(data: any): SavedMapAsset[] {
+  return Array.isArray(data?.savedJoints)
+    ? data.savedJoints.map((asset: any) => ({
+        ...asset,
+        mappingRows: asset.mappingRowsJson
+          ? JSON.parse(asset.mappingRowsJson)
+          : asset.mappingRows || [],
+      }))
+    : [];
+}
+
 function withTracking(asset: SavedMapAsset, isNew: boolean): SavedMapAsset {
   const user = auth.currentUser;
   const now = new Date().toISOString();
@@ -163,7 +174,7 @@ const CombinedViewer: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
 
   // =====================================================
-  // FIREBASE LOAD
+  // FIREBASE LOAD — SHARED BUSINESS NETWORK
   // =====================================================
 
   useEffect(() => {
@@ -173,16 +184,7 @@ const CombinedViewer: React.FC = () => {
       ref,
       async (snap) => {
         if (snap.exists()) {
-          const data = snap.data();
-
-          const loadedJoints = Array.isArray(data.savedJoints)
-            ? data.savedJoints.map((asset: any) => ({
-                ...asset,
-                mappingRows: asset.mappingRowsJson
-                  ? JSON.parse(asset.mappingRowsJson)
-                  : asset.mappingRows || [],
-              }))
-            : [];
+          const loadedJoints = parseSavedJointsFromFirestore(snap.data());
 
           lastSavedJsonRef.current = JSON.stringify(
             cleanForFirebase(loadedJoints)
@@ -190,12 +192,15 @@ const CombinedViewer: React.FC = () => {
 
           setSavedJoints(loadedJoints);
         } else {
+          const now = new Date().toISOString();
+
           await setDoc(
             ref,
             {
               savedJoints: [],
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
+              createdAt: now,
+              updatedAt: now,
+              syncRevision: now,
               updatedByUid: auth.currentUser?.uid || "unknown",
               updatedByEmail: auth.currentUser?.email || "unknown",
             },
@@ -218,7 +223,45 @@ const CombinedViewer: React.FC = () => {
   }, []);
 
   // =====================================================
-  // FIREBASE AUTO SAVE
+  // FIREBASE REFRESH — MOBILE / TABLET SAFETY NET
+  // =====================================================
+
+  useEffect(() => {
+    const refreshFromFirestore = async () => {
+      try {
+        const ref = doc(db, "businesses", "fibre-gis-v2");
+        const snap = await getDoc(ref);
+        if (!snap.exists()) return;
+
+        const loadedJoints = parseSavedJointsFromFirestore(snap.data());
+
+        lastSavedJsonRef.current = JSON.stringify(
+          cleanForFirebase(loadedJoints)
+        );
+
+        setSavedJoints(loadedJoints);
+      } catch (err) {
+        console.error("Firebase refresh failed:", err);
+      }
+    };
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === "visible") {
+        void refreshFromFirestore();
+      }
+    };
+
+    window.addEventListener("focus", handleVisibilityOrFocus);
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+
+    return () => {
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+    };
+  }, []);
+
+  // =====================================================
+  // FIREBASE AUTO SAVE — LOOP SAFE
   // =====================================================
 
   useEffect(() => {
@@ -240,6 +283,7 @@ const CombinedViewer: React.FC = () => {
       {
         savedJoints: cleanedJoints,
         updatedAt: now,
+        syncRevision: now,
         updatedByUid: user?.uid || "unknown",
         updatedByEmail: user?.email || "unknown",
       },
