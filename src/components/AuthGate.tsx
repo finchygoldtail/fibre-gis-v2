@@ -11,9 +11,9 @@ import { auth, googleProvider } from "../firebase";
 
 const ALLOWED_EMAILS = [
   "alistairlgrantham@gmail.com",
-  "benedict.almond@netomnia.com",
-  "adam.whittaker@netomnia.com",
-  "james.oliver@netomnia.com",
+  "benedict.almond@brsk.co.uk",
+  "adam.whittaker@brsk.co.uk",
+  "james.oliver@brsk.co.uk",
   "alistair.grantham@brsk.co.uk",
 ];
 
