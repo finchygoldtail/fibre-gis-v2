@@ -535,16 +535,47 @@ export default function AssetMarkersLayer({
                   ) : null}
 
                   {asset.assetType === "distribution-point" ? (
-                    <>
-                      {infoRow("Build Status", asset.dpDetails?.buildStatus)}
-                      {infoRow("Closure Type", asset.dpDetails?.closureType)}
-                      {infoRow("Homes", asset.dpDetails?.connectionsToHomes)}
-                      {infoRow("Power 1", asset.dpDetails?.powerReadings?.[0])}
-                      {infoRow("Power 2", asset.dpDetails?.powerReadings?.[1])}
-                      {infoRow("Power 3", asset.dpDetails?.powerReadings?.[2])}
-                      {infoRow("Power 4", asset.dpDetails?.powerReadings?.[3])}
-                    </>
-                  ) : null}
+  <>
+    {infoRow("Build Status", asset.dpDetails?.buildStatus)}
+    {infoRow("DP Type", asset.dpDetails?.closureType)}
+    {infoRow("Homes", asset.dpDetails?.connectionsToHomes)}
+
+    {asset.dpDetails?.closureType === "AFN" && (
+      <>
+        <br />
+        <b>AFN Splitter</b>
+        <br />
+        Through cable: {asset.dpDetails.afnDetails?.throughCableId || "-"}
+        <br />
+        Fibres: {asset.dpDetails.afnDetails?.inputFibres?.join(", ") || "-"}
+      </>
+    )}
+
+    {infoRow("Power 1", asset.dpDetails?.powerReadings?.[0])}
+    {infoRow("Power 2", asset.dpDetails?.powerReadings?.[1])}
+    {infoRow("Power 3", asset.dpDetails?.powerReadings?.[2])}
+    {infoRow("Power 4", asset.dpDetails?.powerReadings?.[3])}
+  </>
+) : null}
+
+{asset.assetType === "chamber" ? (
+  <>
+    {infoRow("Type", asset.chamberDetails?.chamberType)}
+    {infoRow("Size", asset.chamberDetails?.size)}
+    {infoRow("Depth", asset.chamberDetails?.depth)}
+    {infoRow("Lid Type", asset.chamberDetails?.lidType)}
+    {infoRow("Condition", asset.chamberDetails?.condition)}
+    {infoRow("Ducts", asset.chamberDetails?.connectedDucts)}
+  </>
+) : null}
+
+{asset.assetType === "home" ? (
+  <>
+    {infoRow("Source", asset.source || "OpenStreetMap")}
+    {infoRow("Connection", getHomeConnectionStatus(asset, assets))}
+    {infoRow("OSM ID", asset.osmId)}
+  </>
+) : null}
 
                   {asset.assetType === "chamber" ? (
                     <>

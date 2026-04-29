@@ -106,6 +106,24 @@ function findConnectedAssetAtCableEnd(
   return candidates[0] || null;
 }
 
+function getNumberArray(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => Number(item))
+    .filter((item) => Number.isFinite(item) && item > 0);
+}
+
+function sameCableReference(value: unknown, cable: SavedMapAsset): boolean {
+  const ref = String(value || "").trim();
+  if (!ref) return false;
+
+  const cableId = String(cable.id || "").trim();
+  const cableName = String(cable.name || "").trim();
+
+  return ref === cableId || ref === cableName;
+}
+
 function getCableUsedFibres(
   cable: SavedMapAsset,
   allAssets: SavedMapAsset[]
@@ -116,6 +134,47 @@ function getCableUsedFibres(
   if (String(cable.cableType || "").toLowerCase() === "drop") {
     return 1;
   }
+
+  const reservedFibres = new Set<number>();
+
+  // Existing/manual cable usage, if your saved data already has it.
+  const manualUsedFibres = Number((cable as any).usedFibres || 0);
+
+  // AFN DPs reserve fibres from their selected through cable.
+  allAssets.forEach((asset) => {
+    if (asset.assetType !== "distribution-point") return;
+
+    const afn = asset.dpDetails?.afnDetails;
+    if (!afn) return;
+    if (!sameCableReference(afn.throughCableId, cable)) return;
+
+    getNumberArray(afn.inputFibres).forEach((fibre) => {
+      reservedFibres.add(fibre);
+    });
+  });
+
+  // Future branch/jump-off cable support.
+  // A branch cable can reserve fibres from this cable using parentCableId
+  // and allocatedInputFibres.
+  allAssets.forEach((asset) => {
+    if (asset.assetType !== "cable") return;
+    if (asset.id === cable.id) return;
+
+    const parentCableId = (asset as any).parentCableId;
+    const feederCableId = (asset as any).feederCableId;
+    const throughCableId = (asset as any).throughCableId;
+
+    const isChildOfThisCable =
+      sameCableReference(parentCableId, cable) ||
+      sameCableReference(feederCableId, cable) ||
+      sameCableReference(throughCableId, cable);
+
+    if (!isChildOfThisCable) return;
+
+    getNumberArray((asset as any).allocatedInputFibres).forEach((fibre) => {
+      reservedFibres.add(fibre);
+    });
+  });
 
   const linkedDrops = allAssets.filter((asset) => {
     if (asset.assetType !== "cable") return false;
@@ -128,40 +187,44 @@ function getCableUsedFibres(
     );
   });
 
-  if (linkedDrops.length > 0) return linkedDrops.length;
+  let mappingRowsUsed = 0;
 
-  if (cable.geometry?.type !== "LineString") return 0;
+  if (cable.geometry?.type === "LineString") {
+    const points = cable.geometry.coordinates;
 
-  const points = cable.geometry.coordinates;
-  if (points.length < 2) return 0;
+    if (points.length >= 2) {
+      const startAsset = findConnectedAssetAtCableEnd(allAssets, points[0]);
+      const endAsset = findConnectedAssetAtCableEnd(
+        allAssets,
+        points[points.length - 1]
+      );
 
-  const startAsset = findConnectedAssetAtCableEnd(allAssets, points[0]);
-  const endAsset = findConnectedAssetAtCableEnd(
-    allAssets,
-    points[points.length - 1]
+      const connectedAssets = [startAsset, endAsset].filter(
+        Boolean
+      ) as SavedMapAsset[];
+
+      connectedAssets.forEach((asset) => {
+        const rows = asset.mappingRows || [];
+
+        rows.forEach((row: any[]) => {
+          const rowText = row
+            .map((cell) => String(cell || "").trim().toLowerCase())
+            .join(" ");
+
+          if (cableName && rowText.includes(cableName)) {
+            mappingRowsUsed += 1;
+          }
+        });
+      });
+    }
+  }
+
+  return Math.max(
+    manualUsedFibres,
+    reservedFibres.size,
+    linkedDrops.length,
+    mappingRowsUsed
   );
-
-  const connectedAssets = [startAsset, endAsset].filter(
-    Boolean
-  ) as SavedMapAsset[];
-
-  let used = 0;
-
-  connectedAssets.forEach((asset) => {
-    const rows = asset.mappingRows || [];
-
-    rows.forEach((row: any[]) => {
-      const rowText = row
-        .map((cell) => String(cell || "").trim().toLowerCase())
-        .join(" ");
-
-      if (cableName && rowText.includes(cableName)) {
-        used += 1;
-      }
-    });
-  });
-
-  return used;
 }
 
 export default function CableLinesLayer({
@@ -268,9 +331,7 @@ export default function CableLinesLayer({
             ? findConnectedAssetAtCableEnd(assets, points[points.length - 1])
             : null;
 
-        const usedFibres =
-  (asset as any).usedFibres ??
-  getCableUsedFibres(asset, assets);
+        const usedFibres = getCableUsedFibres(asset, assets);
 
         return (
           <React.Fragment key={asset.id}>

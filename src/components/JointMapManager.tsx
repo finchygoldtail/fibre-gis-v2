@@ -395,13 +395,16 @@ export default function JointMapManager({
   const [cableType, setCableType] = useState<CableType>("Feeder Cable");
   const [fibreCount, setFibreCount] = useState<FibreCount>("12F");
   const [installMethod, setInstallMethod] = useState<InstallMethod>("Underground");
+  const [parentCableId, setParentCableId] = useState<string | undefined>(undefined);
+  const [allocatedInputFibres, setAllocatedInputFibres] = useState<number[]>([]);
 
   const [poleDetails, setPoleDetails] = useState<PoleDetails>({});
   const [dpDetails, setDpDetails] = useState<DistributionPointDetails>({
-    powerReadings: ["", "", "", ""],
-    closureType: "CBT",
-    connectionsToHomes: 8,
-  });
+  powerReadings: ["", "", "", ""],
+  closureType: "CBT",
+  connectionsToHomes: 8,
+  afnDetails: undefined,
+});
   const [chamberDetails, setChamberDetails] = useState<ChamberDetails>({});
 
   const [editingAssetId, setEditingAssetId] = useState<string | null>(null);
@@ -521,6 +524,8 @@ export default function JointMapManager({
     setCableType("Feeder Cable");
     setFibreCount("12F");
     setInstallMethod("Underground");
+    setParentCableId(undefined);
+    setAllocatedInputFibres([]);
     setPoleDetails({});
     setDpDetails({
       powerReadings: ["", "", "", ""],
@@ -543,6 +548,8 @@ export default function JointMapManager({
     setCableType("Feeder Cable");
     setFibreCount("12F");
     setInstallMethod("Underground");
+    setParentCableId(undefined);
+    setAllocatedInputFibres([]);
     setDraftCablePoints([]);
     setShowCableModal(true);
   };
@@ -568,6 +575,8 @@ export default function JointMapManager({
     setCableType(asset.cableType || "Feeder Cable");
     setFibreCount(asset.fibreCount || "12F");
     setInstallMethod(asset.installMethod || "Underground");
+    setParentCableId((asset as any).parentCableId);
+    setAllocatedInputFibres(((asset as any).allocatedInputFibres || []) as number[]);
     setPoleDetails(asset.poleDetails || {});
     setDpDetails(
       asset.dpDetails || {
@@ -691,6 +700,8 @@ export default function JointMapManager({
           cableType,
           fibreCount,
           installMethod,
+          parentCableId,
+          allocatedInputFibres,
           routeMode: routedCableCoordinates ? "road" : undefined,
           geometry: {
             type: "LineString",
@@ -841,6 +852,8 @@ export default function JointMapManager({
         cableType,
         fibreCount,
         installMethod,
+        parentCableId,
+        allocatedInputFibres,
         routeMode: "road",
         geometry: {
           type: "LineString",
@@ -1261,6 +1274,43 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
       })
       .sort((a, b) => a.port - b.port);
   }, [editingAssetId, savedJoints]);
+
+
+  const availableAfnThroughCables = useMemo(
+    () =>
+      (savedJoints ?? []).filter((asset) => {
+        return (
+          asset.assetType === "cable" &&
+          asset.geometry?.type === "LineString" &&
+          (asset.cableType === "AFN Spine Cable" ||
+            asset.cableType === "Feeder Cable" ||
+            asset.cableType === "ULW Cable" ||
+            asset.installMethod === "OH")
+        );
+      }),
+    [savedJoints]
+  );
+
+  const allDistributionPointsForAfn = useMemo(
+    () => (savedJoints ?? []).filter((asset) => asset.assetType === "distribution-point"),
+    [savedJoints]
+  );
+
+  const availableParentCablesForBranchAllocation = useMemo(
+    () =>
+      (savedJoints ?? []).filter((asset) => {
+        return (
+          asset.assetType === "cable" &&
+          asset.geometry?.type === "LineString" &&
+          asset.id !== editingAssetId &&
+          (asset.cableType === "AFN Spine Cable" ||
+            asset.cableType === "Feeder Cable" ||
+            asset.cableType === "ULW Cable" ||
+            asset.installMethod === "OH")
+        );
+      }),
+    [editingAssetId, savedJoints]
+  );
 
   if (openStreetCabAsset) {
     return (
@@ -1951,11 +2001,20 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
           cableType={cableType}
           fibreCount={fibreCount}
           installMethod={installMethod}
+          usedFibres={0}
+          parentCableId={parentCableId}
+          allocatedInputFibres={allocatedInputFibres}
+          availableParentCables={availableParentCablesForBranchAllocation}
+          allAssets={savedJoints ?? []}
+          editingAssetId={editingAssetId}
           onChangeName={setJointName}
           onChangeNotes={setNotes}
           onChangeCableType={setCableType}
           onChangeFibreCount={setFibreCount}
           onChangeInstallMethod={setInstallMethod}
+          onChangeUsedFibres={() => {}}
+          onChangeParentCableId={setParentCableId}
+          onChangeAllocatedInputFibres={setAllocatedInputFibres}
           onStart={startCableDrawing}
           onCancel={resetEditor}
           isEditing={!!editingAssetId}
@@ -1983,6 +2042,10 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
           name={jointName}
           details={dpDetails}
           connectedHomes={connectedHomesForSelectedDp}
+          availableThroughCables={availableAfnThroughCables}
+          allDistributionPoints={allDistributionPointsForAfn}
+          allAssets={savedJoints ?? []}
+          editingAssetId={editingAssetId}
           onChangeName={setJointName}
           onChange={setDpDetails}
           onSave={(nextDetails) => {

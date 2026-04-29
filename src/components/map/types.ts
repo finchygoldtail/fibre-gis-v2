@@ -8,7 +8,7 @@ export type AssetType =
   | "home"
   | "area"
   | "cable";
-export type CableType = "Feeder Cable" | "ULW Cable" | "Link Cable";
+export type CableType = "Feeder Cable" | "ULW Cable" | "Link Cable" | "AFN Spine Cable";
 
 export type FibreCount =
   | "12F"
@@ -41,11 +41,20 @@ export type PoleDetails = {
 };
 
 export type DistributionPointDetails = {
-  buildStatus?: AssetStatus | "";
-  image?: string;
-  powerReadings?: [string, string, string, string];
-  closureType?: "CBT" | "AFN";
-  connectionsToHomes?: 8 | 16 | 24 | 32;
+  powerReadings: string[];
+  closureType: "CBT" | "AFN";   // 👈 update this
+  connectionsToHomes: number;
+  buildStatus?: string;
+
+  // ✅ AFN FIELDS
+  afnDetails?: {
+    enabled: boolean;
+    throughCableId?: string;
+    fibreCountUsed?: number;
+    inputFibres: number[];      // e.g. [1,2,3,4]
+    splitterRatio: "1:8";
+    splitterOutputs: number;    // always 8
+  };
 };
 
 export type ChamberDetails = {
@@ -70,6 +79,11 @@ export type SavedMapAsset = {
   fibreCount?: FibreCount;
   installMethod?: InstallMethod;
   usedFibres?: number;
+
+  // Branch / jump-off cable fibre reservation from a parent spine cable.
+  parentCableId?: string;
+  allocatedInputFibres?: number[];
+
   poleDetails?: PoleDetails;
   dpDetails?: DistributionPointDetails;
   chamberDetails?: ChamberDetails;

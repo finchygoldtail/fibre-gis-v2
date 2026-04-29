@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { storage } from "../../../firebase";
-import type { DistributionPointDetails } from "../types";
+import type { DistributionPointDetails, SavedMapAsset } from "../types";
 
 type ConnectedHome = {
   port: number;
@@ -10,19 +10,16 @@ type ConnectedHome = {
   status: string;
 };
 
-type MoveTarget = {
-  id: string;
-  name?: string;
-  details?: DistributionPointDetails;
-};
-
 type Props = {
   visible: boolean;
   name: string;
   details: DistributionPointDetails;
   connectedHomes?: ConnectedHome[];
-  allDistributionPoints?: MoveTarget[];
+  availableThroughCables?: SavedMapAsset[];
+  allDistributionPoints?: SavedMapAsset[];
+  allAssets?: SavedMapAsset[];
   currentDpId?: string;
+  editingAssetId?: string | null;
   onChangeName: (v: string) => void;
   onChange: (v: DistributionPointDetails) => void;
   onSave: (nextDetails?: DistributionPointDetails) => void;
@@ -50,8 +47,11 @@ export default function DistributionPointDetailsModal({
   name,
   details,
   connectedHomes = [],
+  availableThroughCables = [],
   allDistributionPoints = [],
+  allAssets = [],
   currentDpId,
+  editingAssetId,
   onChangeName,
   onChange,
   onSave,
@@ -87,10 +87,88 @@ export default function DistributionPointDetailsModal({
     onChange({ ...details, powerReadings: readings });
   };
 
-  const capacity = Number(details.connectionsToHomes || 0);
+  const selectedCableId = details.afnDetails?.throughCableId || "";
+  const selectedCable = availableThroughCables.find((cable) => cable.id === selectedCableId);
+  const currentInputFibres = details.afnDetails?.inputFibres || [];
+
+  const capacity =
+    details.closureType === "AFN"
+      ? currentInputFibres.length * 8
+      : Number(details.connectionsToHomes || 0);
   const used = connectedHomes.length;
   const available = Math.max(0, capacity - used);
-  const availableMoveTargets = allDistributionPoints.filter((dp) => dp.id !== currentDpId);
+  const activeDpId = editingAssetId || currentDpId;
+  const availableMoveTargets = allDistributionPoints.filter((dp) => dp.id !== activeDpId);
+
+  function getCableFibreTotal(cable?: SavedMapAsset): number {
+    const raw = String(cable?.fibreCount || "");
+    const match = raw.match(/\d+/);
+    return match ? Number(match[0]) : 48;
+  }
+
+  const fibreTotal = getCableFibreTotal(selectedCable);
+
+  const usedByOtherAfns = new Set<number>();
+
+  allDistributionPoints.forEach((asset) => {
+    if (asset.id === activeDpId) return;
+
+    const afn = asset.dpDetails?.afnDetails;
+    if (!afn?.throughCableId || afn.throughCableId !== selectedCableId) return;
+
+    (afn.inputFibres || []).forEach((fibre) => usedByOtherAfns.add(Number(fibre)));
+  });
+
+  // Branch / jump-off cables can also reserve fibres from the same spine cable.
+  // Treat those reserved fibres exactly like fibres used by another AFN.
+  allAssets.forEach((asset) => {
+    if (asset.assetType !== "cable") return;
+    if ((asset as any).parentCableId !== selectedCableId) return;
+
+    ((asset as any).allocatedInputFibres || []).forEach((fibre: unknown) => {
+      const fibreNumber = Number(fibre);
+      if (Number.isFinite(fibreNumber)) usedByOtherAfns.add(fibreNumber);
+    });
+  });
+
+  function updateAfnDetails(nextAfnDetails: Partial<NonNullable<DistributionPointDetails["afnDetails"]>>) {
+    const nextInputFibres = nextAfnDetails.inputFibres || currentInputFibres;
+
+    onChange({
+      ...details,
+      closureType: "AFN",
+      connectionsToHomes: nextInputFibres.length * 8,
+      afnDetails: {
+        enabled: true,
+        throughCableId: selectedCableId || undefined,
+        inputFibres: nextInputFibres,
+        fibreCountUsed: nextInputFibres.length,
+        splitterRatio: "1:8",
+        splitterOutputs: 8,
+        ...details.afnDetails,
+        ...nextAfnDetails,
+      },
+    });
+  }
+
+  function toggleFibre(fibre: number) {
+    const selectedHere = currentInputFibres.includes(fibre);
+
+    let nextFibres: number[];
+
+    if (selectedHere) {
+      nextFibres = currentInputFibres.filter((item) => item !== fibre);
+    } else {
+      if (currentInputFibres.length >= 4) return;
+      if (usedByOtherAfns.has(fibre)) return;
+      nextFibres = [...currentInputFibres, fibre].sort((a, b) => a - b);
+    }
+
+    updateAfnDetails({
+      inputFibres: nextFibres,
+      fibreCountUsed: nextFibres.length,
+    });
+  }
 
   const handleSave = async () => {
     try {
@@ -134,22 +212,134 @@ export default function DistributionPointDetailsModal({
           <option value="Live not ready for service">Live not ready for service</option>
         </select>
 
-        <label>Closure Type</label>
+        <label>DP Type</label>
         <select
           value={details.closureType || "CBT"}
-          onChange={(e) => update("closureType", e.target.value)}
+          onChange={(e) => {
+            const nextClosureType = e.target.value as "CBT" | "AFN";
+
+            onChange({
+              ...details,
+              closureType: nextClosureType,
+              connectionsToHomes:
+                nextClosureType === "AFN"
+                  ? (details.afnDetails?.inputFibres?.length || 0) * 8
+                  : details.connectionsToHomes || 8,
+              afnDetails:
+                nextClosureType === "AFN"
+                  ? details.afnDetails || {
+                      enabled: true,
+                      throughCableId: undefined,
+                      fibreCountUsed: 0,
+                      inputFibres: [],
+                      splitterRatio: "1:8",
+                      splitterOutputs: 8,
+                    }
+                  : undefined,
+            });
+          }}
         >
-          <option>CBT</option>
-          <option>AFN</option>
+          <option value="CBT">CBT</option>
+          <option value="AFN">AFN Pole Splitter</option>
         </select>
+
+        {details.closureType === "AFN" ? (
+          <div className="afn-panel">
+            <strong>AFN loop-through splitter</strong>
+            <span>
+              Select a through cable, then allocate up to 4 fibres from that pole-to-pole spine.
+              Fibres already used by other AFNs on the same cable are disabled.
+            </span>
+
+            <label>Through Cable</label>
+            <select
+              value={selectedCableId}
+              onChange={(e) => {
+                const nextThroughCableId = e.target.value || undefined;
+
+                onChange({
+                  ...details,
+                  closureType: "AFN",
+                  connectionsToHomes: 0,
+                  afnDetails: {
+                    enabled: true,
+                    throughCableId: nextThroughCableId,
+                    fibreCountUsed: 0,
+                    inputFibres: [],
+                    splitterRatio: "1:8",
+                    splitterOutputs: 8,
+                  },
+                });
+              }}
+            >
+              <option value="">Select through cable</option>
+              {availableThroughCables.map((cable) => (
+                <option key={cable.id} value={cable.id}>
+                  {cable.name || cable.id} — {cable.fibreCount || "48F"}
+                </option>
+              ))}
+            </select>
+
+            {selectedCableId ? (
+              <>
+                <div className="afn-grid-header">
+                  <span>Input fibres</span>
+                  <em>{currentInputFibres.length}/4 selected</em>
+                </div>
+
+                <div className="afn-fibre-buttons">
+                  {Array.from({ length: fibreTotal }, (_, index) => {
+                    const fibre = index + 1;
+                    const selectedHere = currentInputFibres.includes(fibre);
+                    const usedElsewhere = usedByOtherAfns.has(fibre);
+                    const disabled = usedElsewhere && !selectedHere;
+
+                    return (
+                      <button
+                        key={fibre}
+                        type="button"
+                        disabled={disabled}
+                        className={[
+                          "afn-fibre",
+                          selectedHere ? "selected" : "",
+                          disabled ? "disabled" : "",
+                        ].join(" ").trim()}
+                        title={
+                          disabled
+                            ? "Already used by another AFN on this through cable"
+                            : selectedHere
+                            ? "Click to unallocate this fibre"
+                            : "Click to allocate this fibre"
+                        }
+                        onClick={() => toggleFibre(fibre)}
+                      >
+                        F{fibre}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <div className="afn-summary">Select a through cable to allocate fibres.</div>
+            )}
+
+            <div className="afn-summary">
+              Fibres selected: {currentInputFibres.join(", ") || "none"}
+              <br />
+              Splitter: 1:8 / 8 outputs
+            </div>
+          </div>
+        ) : null}
 
         <label>Connections to Homes</label>
         <select
-          value={details.connectionsToHomes || 8}
+          value={details.closureType === "AFN" ? capacity : details.connectionsToHomes || 8}
+          disabled={details.closureType === "AFN"}
           onChange={(e) =>
             update("connectionsToHomes", Number(e.target.value))
           }
         >
+          {details.closureType === "AFN" ? <option value={0}>0</option> : null}
           <option value={8}>8</option>
           <option value={16}>16</option>
           <option value={24}>24</option>
@@ -472,6 +662,59 @@ input, select {
   width: auto;
 }
 
+.afn-panel {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.afn-panel strong {
+  color: #f8fafc;
+}
+.afn-panel span,
+.afn-summary {
+  color: #cbd5e1;
+  font-size: 0.86rem;
+}
+.afn-fibre-buttons {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+}
+.afn-grid-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #cbd5e1;
+  font-size: 0.86rem;
+}
+.afn-grid-header em {
+  font-style: normal;
+  color: #93c5fd;
+}
+.afn-fibre {
+  background: #374151;
+  color: white;
+  border: 1px solid #4b5563;
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.afn-fibre.selected {
+  background: #16a34a;
+  border-color: #22c55e;
+}
+.afn-fibre.disabled,
+.afn-fibre:disabled {
+  background: #1f2937;
+  color: #6b7280;
+  border-color: #374151;
+  cursor: not-allowed;
+  opacity: 0.85;
+}
 
 .dp-preview-card {
   background: #111827;
