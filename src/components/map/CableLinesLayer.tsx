@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import L from "leaflet";
 import { CircleMarker, Marker, Polyline, Popup, Tooltip } from "react-leaflet";
 import type { SavedMapAsset } from "../JointMapManager";
 
@@ -6,6 +7,7 @@ type Props = {
   assets: SavedMapAsset[];
   cablesVisible: boolean;
   visibleLayers?: Record<string, boolean>;
+  showCableDistances?: boolean;
   onDeleteAsset: (id: string) => void;
   onEditAsset: (asset: SavedMapAsset) => void;
 };
@@ -72,6 +74,68 @@ function getDistanceMeters(a: [number, number], b: [number, number]): number {
   return getCableLengthMeters([a, b]);
 }
 
+function getCableSpanAngleDegrees(
+  a: [number, number],
+  b: [number, number]
+): number {
+  const midLat = ((a[0] + b[0]) / 2) * (Math.PI / 180);
+  const dx = (b[1] - a[1]) * Math.cos(midLat);
+  const dy = b[0] - a[0];
+
+  return (Math.atan2(dy, dx) * 180) / Math.PI;
+}
+
+function getOffsetCableLabelPosition(
+  a: [number, number],
+  b: [number, number],
+  offsetMeters = 7
+): [number, number] {
+  const midpoint = getMidpoint(a, b);
+  const midLatRad = midpoint[0] * (Math.PI / 180);
+
+  const eastMeters = (b[1] - a[1]) * 111320 * Math.cos(midLatRad);
+  const northMeters = (b[0] - a[0]) * 111320;
+  const lengthMeters = Math.sqrt(eastMeters ** 2 + northMeters ** 2);
+
+  if (!lengthMeters) return midpoint;
+
+  const offsetEastMeters = (-northMeters / lengthMeters) * offsetMeters;
+  const offsetNorthMeters = (eastMeters / lengthMeters) * offsetMeters;
+
+  return [
+    midpoint[0] + offsetNorthMeters / 111320,
+    midpoint[1] + offsetEastMeters / (111320 * Math.cos(midLatRad)),
+  ];
+}
+
+function getCableDistanceLabelIcon(label: string, angleDegrees: number) {
+  return L.divIcon({
+    className: "",
+    html: `
+      <div style="
+        pointer-events: none;
+        background: transparent;
+        border: none;
+        padding: 0;
+        font-size: 11px;
+        font-weight: 800;
+        line-height: 1;
+        color: rgba(147, 51, 234, 0.72);
+        white-space: nowrap;
+        text-shadow:
+          0 1px 2px rgba(255,255,255,0.9),
+          0 -1px 2px rgba(255,255,255,0.9),
+          1px 0 2px rgba(255,255,255,0.9),
+          -1px 0 2px rgba(255,255,255,0.9);
+        transform: translate(-50%, -50%) rotate(${angleDegrees}deg);
+        transform-origin: center;
+      ">${label}</div>
+    `,
+    iconSize: [0, 0],
+    iconAnchor: [0, 0],
+  });
+}
+
 function getAssetPoint(asset: SavedMapAsset): [number, number] | null {
   if (asset.geometry?.type !== "Point") return null;
 
@@ -106,24 +170,6 @@ function findConnectedAssetAtCableEnd(
   return candidates[0] || null;
 }
 
-function getNumberArray(value: unknown): number[] {
-  if (!Array.isArray(value)) return [];
-
-  return value
-    .map((item) => Number(item))
-    .filter((item) => Number.isFinite(item) && item > 0);
-}
-
-function sameCableReference(value: unknown, cable: SavedMapAsset): boolean {
-  const ref = String(value || "").trim();
-  if (!ref) return false;
-
-  const cableId = String(cable.id || "").trim();
-  const cableName = String(cable.name || "").trim();
-
-  return ref === cableId || ref === cableName;
-}
-
 function getCableUsedFibres(
   cable: SavedMapAsset,
   allAssets: SavedMapAsset[]
@@ -135,46 +181,27 @@ function getCableUsedFibres(
     return 1;
   }
 
-  const reservedFibres = new Set<number>();
+  const used = new Set<number>();
 
-  // Existing/manual cable usage, if your saved data already has it.
-  const manualUsedFibres = Number((cable as any).usedFibres || 0);
-
-  // AFN DPs reserve fibres from their selected through cable.
   allAssets.forEach((asset) => {
-    if (asset.assetType !== "distribution-point") return;
+    if (asset.assetType === "distribution-point") {
+      const afn = asset.dpDetails?.afnDetails;
 
-    const afn = asset.dpDetails?.afnDetails;
-    if (!afn) return;
-    if (!sameCableReference(afn.throughCableId, cable)) return;
+      if (afn?.throughCableId === cableId) {
+        (afn.inputFibres || []).forEach((fibre) => used.add(Number(fibre)));
+      }
+    }
 
-    getNumberArray(afn.inputFibres).forEach((fibre) => {
-      reservedFibres.add(fibre);
-    });
+    if (asset.assetType === "cable") {
+      if (String((asset as any).parentCableId || "") === cableId) {
+        ((asset as any).allocatedInputFibres || []).forEach((fibre: number) =>
+          used.add(Number(fibre))
+        );
+      }
+    }
   });
 
-  // Future branch/jump-off cable support.
-  // A branch cable can reserve fibres from this cable using parentCableId
-  // and allocatedInputFibres.
-  allAssets.forEach((asset) => {
-    if (asset.assetType !== "cable") return;
-    if (asset.id === cable.id) return;
-
-    const parentCableId = (asset as any).parentCableId;
-    const feederCableId = (asset as any).feederCableId;
-    const throughCableId = (asset as any).throughCableId;
-
-    const isChildOfThisCable =
-      sameCableReference(parentCableId, cable) ||
-      sameCableReference(feederCableId, cable) ||
-      sameCableReference(throughCableId, cable);
-
-    if (!isChildOfThisCable) return;
-
-    getNumberArray((asset as any).allocatedInputFibres).forEach((fibre) => {
-      reservedFibres.add(fibre);
-    });
-  });
+  if (used.size > 0) return used.size;
 
   const linkedDrops = allAssets.filter((asset) => {
     if (asset.assetType !== "cable") return false;
@@ -187,50 +214,47 @@ function getCableUsedFibres(
     );
   });
 
-  let mappingRowsUsed = 0;
+  if (linkedDrops.length > 0) return linkedDrops.length;
 
-  if (cable.geometry?.type === "LineString") {
-    const points = cable.geometry.coordinates;
+  if (cable.geometry?.type !== "LineString") return 0;
 
-    if (points.length >= 2) {
-      const startAsset = findConnectedAssetAtCableEnd(allAssets, points[0]);
-      const endAsset = findConnectedAssetAtCableEnd(
-        allAssets,
-        points[points.length - 1]
-      );
+  const points = cable.geometry.coordinates;
+  if (points.length < 2) return 0;
 
-      const connectedAssets = [startAsset, endAsset].filter(
-        Boolean
-      ) as SavedMapAsset[];
-
-      connectedAssets.forEach((asset) => {
-        const rows = asset.mappingRows || [];
-
-        rows.forEach((row: any[]) => {
-          const rowText = row
-            .map((cell) => String(cell || "").trim().toLowerCase())
-            .join(" ");
-
-          if (cableName && rowText.includes(cableName)) {
-            mappingRowsUsed += 1;
-          }
-        });
-      });
-    }
-  }
-
-  return Math.max(
-    manualUsedFibres,
-    reservedFibres.size,
-    linkedDrops.length,
-    mappingRowsUsed
+  const startAsset = findConnectedAssetAtCableEnd(allAssets, points[0]);
+  const endAsset = findConnectedAssetAtCableEnd(
+    allAssets,
+    points[points.length - 1]
   );
+
+  const connectedAssets = [startAsset, endAsset].filter(
+    Boolean
+  ) as SavedMapAsset[];
+
+  let fallbackUsed = 0;
+
+  connectedAssets.forEach((asset) => {
+    const rows = asset.mappingRows || [];
+
+    rows.forEach((row: any[]) => {
+      const rowText = row
+        .map((cell) => String(cell || "").trim().toLowerCase())
+        .join(" ");
+
+      if (cableName && rowText.includes(cableName)) {
+        fallbackUsed += 1;
+      }
+    });
+  });
+
+  return fallbackUsed;
 }
 
 export default function CableLinesLayer({
   assets,
   cablesVisible,
   visibleLayers = {},
+  showCableDistances = true,
   onDeleteAsset,
   onEditAsset,
 }: Props) {
@@ -331,7 +355,8 @@ export default function CableLinesLayer({
             ? findConnectedAssetAtCableEnd(assets, points[points.length - 1])
             : null;
 
-        const usedFibres = getCableUsedFibres(asset, assets);
+        const usedFibres =
+          (asset as any).usedFibres ?? getCableUsedFibres(asset, assets);
 
         return (
           <React.Fragment key={asset.id}>
@@ -420,6 +445,26 @@ export default function CableLinesLayer({
                 {formatCableLength(length)}
               </Tooltip>
             </Polyline>
+
+            {showCableDistances &&
+              points.slice(0, -1).map((coord, i) => {
+                const next = points[i + 1];
+                if (!next) return null;
+
+                const spanLength = getDistanceMeters(coord, next);
+
+                return (
+                  <Marker
+                    key={`${asset.id}-distance-${i}`}
+                    position={getOffsetCableLabelPosition(coord, next)}
+                    interactive={false}
+                    icon={getCableDistanceLabelIcon(
+                      formatCableLength(spanLength),
+                      getCableSpanAngleDegrees(coord, next)
+                    )}
+                  />
+                );
+              })}
 
             {isEditing &&
               points

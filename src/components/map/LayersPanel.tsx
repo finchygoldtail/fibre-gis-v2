@@ -25,7 +25,14 @@ const layerGroups: LayerGroup[] = [
   { id: "cables", title: "Cables", options: [{ label: "All Cables", key: "cables" }, { label: "Feeders", key: "feeders" }, { label: "Links", key: "links" }, { label: "48 ULW", key: "ulw48" }, { label: "36 ULW", key: "ulw36" }, { label: "24 ULW", key: "ulw24" }, { label: "12 ULW", key: "ulw12" }] },
   { id: "distributionPoints", title: "DPs", options: [{ label: "Distribution Points", key: "distributionPoints" }] },
   { id: "status", title: "Status", options: [{ label: "Live", key: "live" }, { label: "BWIP", key: "bwip" }, { label: "Unserviceable", key: "unserviceable" }, { label: "Live not ready", key: "liveNotReady" }] },
-  { id: "measurements", title: "Measurements", options: [{ label: "Measurements", key: "measurements" }] },
+  {
+  id: "measurements",
+  title: "Measurements",
+  options: [
+    { label: "Measurements", key: "measurements" },
+    { label: "Cable distances", key: "cableDistances" },
+  ],
+},
 ];
 
 const panel: React.CSSProperties = { width: 260, maxWidth: "78vw", height: "100vh", color: "white", display: "flex", flexDirection: "column", gap: 8, overflowY: "auto", padding: "10px 8px", boxSizing: "border-box" };

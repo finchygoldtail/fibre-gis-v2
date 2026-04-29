@@ -426,6 +426,7 @@ export default function JointMapManager({
     cables: true,
     areas: true,
     measurements: true,
+    cableDistances: true,
     homes: true,
     l0: true,
     l1: true,
@@ -1830,6 +1831,7 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
             visibleLayers={visibleLayers}
             onDeleteAsset={handleDeleteAsset}
             onEditAsset={handleEditAsset}
+            showCableDistances={visibleLayers.cableDistances !== false}
           />
 
           {pickedLocation && mapMode === "pick" && (
