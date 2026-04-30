@@ -438,6 +438,38 @@ function getHomeIconForStatus(status: "unconnected" | "connected" | "live") {
   return createHomeIcon("#94a3b8", "#334155");
 }
 
+function getHomeConnectedDp(home: SavedMapAsset, allAssets: SavedMapAsset[]): SavedMapAsset | null {
+  const manualDpId = String((home as any).connectedDpId || "");
+  if (manualDpId) {
+    return allAssets.find(
+      (asset) => asset.assetType === "distribution-point" && asset.id === manualDpId
+    ) || null;
+  }
+
+  const drop = allAssets.find(
+    (asset) =>
+      isDropCable(asset) &&
+      (((asset as any).fromAssetId === home.id) || ((asset as any).toAssetId === home.id))
+  );
+
+  if (!drop) return null;
+
+  const dpId =
+    (drop as any).fromAssetId === home.id
+      ? (drop as any).toAssetId
+      : (drop as any).fromAssetId;
+
+  return allAssets.find(
+    (asset) => asset.assetType === "distribution-point" && asset.id === dpId
+  ) || null;
+}
+
+function getDistributionPoints(allAssets: SavedMapAsset[]): SavedMapAsset[] {
+  return allAssets
+    .filter((asset) => asset.assetType === "distribution-point")
+    .sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
+}
+
 function getIconForAsset(asset: SavedMapAsset, allAssets: SavedMapAsset[]) {
   if (asset.assetType === "distribution-point") {
     return createSquareIcon(getDistributionPointColor(asset), "#ffffff");
@@ -485,7 +517,7 @@ export default function AssetMarkersLayer({
         if (!latLng) return false;
 
         // Homes are the heavy layer: only render visible homes when zoomed in.
-        if (mapView.zoom < 17) return false;
+        if (mapView.zoom < 12) return false;
         return mapView.bounds.pad(0.2).contains(latLng);
       }
 
@@ -500,6 +532,9 @@ export default function AssetMarkersLayer({
         if (!latLng) return null;
         const [lat, lng] = latLng;
         const icon = getIconForAsset(asset, assets);
+        const distributionPoints = getDistributionPoints(assets);
+        const connectedDp = asset.assetType === "home" ? getHomeConnectedDp(asset, assets) : null;
+        const connectionMode = String((asset as any).connectionMode || "auto").toLowerCase() === "manual" ? "manual" : "auto";
 
         return (
           <Marker
@@ -573,7 +608,59 @@ export default function AssetMarkersLayer({
   <>
     {infoRow("Source", asset.source || "OpenStreetMap")}
     {infoRow("Connection", getHomeConnectionStatus(asset, assets))}
+    {infoRow("Mode", connectionMode === "manual" ? "Manual" : "Auto")}
+    {infoRow("Connected DP", connectedDp?.name || ((asset as any).connectedDpId ? "Unknown DP" : "Not connected"))}
     {infoRow("OSM ID", asset.osmId)}
+
+    <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+      <label style={{ fontSize: "0.8rem", fontWeight: 700, color: "#334155" }}>
+        Manual DP override
+      </label>
+
+      <select
+        value={(asset as any).connectedDpId || ""}
+        onChange={(event) => {
+          const nextDpId = event.target.value;
+          onEditAsset({
+            ...asset,
+            connectedDpId: nextDpId || undefined,
+            connectionMode: nextDpId ? "manual" : "auto",
+          } as SavedMapAsset);
+        }}
+        style={{
+          width: "100%",
+          border: "1px solid #cbd5e1",
+          borderRadius: 8,
+          padding: "6px 8px",
+          fontSize: "0.82rem",
+          background: "white",
+          color: "#111827",
+        }}
+      >
+        <option value="">Auto / no manual override</option>
+        {distributionPoints.map((dp) => (
+          <option key={dp.id} value={dp.id}>
+            {dp.name || dp.id}
+          </option>
+        ))}
+      </select>
+
+      {connectionMode === "manual" || (asset as any).connectedDpId ? (
+        <button
+          type="button"
+          style={secondaryButtonStyle}
+          onClick={() =>
+            onEditAsset({
+              ...asset,
+              connectedDpId: undefined,
+              connectionMode: "auto",
+            } as SavedMapAsset)
+          }
+        >
+          Reset to auto
+        </button>
+      ) : null}
+    </div>
   </>
 ) : null}
 
@@ -723,6 +810,16 @@ const actionsStyle: React.CSSProperties = {
 
 const actionButtonStyle: React.CSSProperties = {
   background: "#2563eb",
+  color: "white",
+  border: "none",
+  borderRadius: 8,
+  padding: "6px 12px",
+  cursor: "pointer",
+  fontSize: "0.82rem",
+};
+
+const secondaryButtonStyle: React.CSSProperties = {
+  background: "#475569",
   color: "white",
   border: "none",
   borderRadius: 8,

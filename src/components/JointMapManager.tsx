@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -35,9 +35,9 @@ import ChamberDetailsModal, {
 import { snapPointToAssets } from "./map/utils/snapToAssets";
 import { routePointsToRoads } from "./map/utils/routeToRoads";
 import { loadOsmBuildingsAsHomes, type OsmBounds } from "./map/utils/loadOsmBuildings";
-import { createDropCableRecordsFromDP } from "./map/utils/generateDrops";
+import { createDropCableRecordsFromDPs } from "./map/utils/generateDrops";
 import StreetCabDesigner from "./streetcab/StreetCabDesigner";
-
+import ProjectAreaSelector from "./projects/ProjectAreaSelector";
 import type {
   AssetType,
   CableType,
@@ -226,6 +226,17 @@ function MapBoundsTracker({ onBoundsChange }: { onBoundsChange: (bounds: OsmBoun
 }
 
 
+function MapRefTracker({ onReady }: { onReady: (map: L.Map) => void }) {
+  const map = useMap();
+
+  useEffect(() => {
+    onReady(map);
+  }, [map, onReady]);
+
+  return null;
+}
+
+
 
 function getAssetPoint(asset: SavedMapAsset): LatLngLiteral | null {
   if (typeof (asset as any).lat === "number" && typeof (asset as any).lng === "number") {
@@ -251,6 +262,83 @@ function findDpAtCableEnd(assets: SavedMapAsset[], point: LatLngLiteral) {
     if (!assetPoint) return false;
     return getPathDistanceMeters([assetPoint, point]) <= 10;
   });
+}
+
+function getDistancePointToSegmentMeters(point: LatLngLiteral, start: LatLngLiteral, end: LatLngLiteral): number {
+  const midLat = ((start.lat + end.lat + point.lat) / 3) * (Math.PI / 180);
+  const toXY = (p: LatLngLiteral) => ({
+    x: p.lng * 111320 * Math.cos(midLat),
+    y: p.lat * 111320,
+  });
+
+  const p = toXY(point);
+  const a = toXY(start);
+  const b = toXY(end);
+
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lenSq = dx * dx + dy * dy;
+
+  if (lenSq === 0) {
+    return Math.sqrt((p.x - a.x) ** 2 + (p.y - a.y) ** 2);
+  }
+
+  const t = Math.max(
+    0,
+    Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq)
+  );
+
+  const projected = {
+    x: a.x + t * dx,
+    y: a.y + t * dy,
+  };
+
+  return Math.sqrt((p.x - projected.x) ** 2 + (p.y - projected.y) ** 2);
+}
+
+function getDistancePointToLineMeters(point: LatLngLiteral, line: LatLngLiteral[]): number {
+  if (line.length === 0) return Infinity;
+  if (line.length === 1) return getPathDistanceMeters([point, line[0]]);
+
+  let best = Infinity;
+
+  for (let i = 0; i < line.length - 1; i++) {
+    best = Math.min(
+      best,
+      getDistancePointToSegmentMeters(point, line[i], line[i + 1])
+    );
+  }
+
+  return best;
+}
+
+function findDpsAlongCable(
+  assets: SavedMapAsset[],
+  route: LatLngLiteral[],
+  maxDistanceMeters = 15
+): SavedMapAsset[] {
+  const seen = new Set<string>();
+
+  return assets
+    .filter((asset) => asset.assetType === "distribution-point")
+    .map((asset) => {
+      const assetPoint = getAssetPoint(asset);
+      if (!assetPoint) return null;
+
+      return {
+        asset,
+        distance: getDistancePointToLineMeters(assetPoint, route),
+      };
+    })
+    .filter((item): item is { asset: SavedMapAsset; distance: number } => Boolean(item))
+    .filter((item) => item.distance <= maxDistanceMeters)
+    .sort((a, b) => a.distance - b.distance)
+    .map((item) => item.asset)
+    .filter((asset) => {
+      if (seen.has(asset.id)) return false;
+      seen.add(asset.id);
+      return true;
+    });
 }
 
 function isDropCable(asset: SavedMapAsset): boolean {
@@ -382,6 +470,7 @@ export default function JointMapManager({
   onOpenJoint,
 }: Props) {
   const [pickedLocation, setPickedLocation] = useState<LatLngLiteral | null>(null);
+  const mapRef = useRef<L.Map | null>(null);
 
   const [assetType, setAssetType] = useState<AssetType>(
     inferAssetTypeFromName(currentJointName)
@@ -426,7 +515,6 @@ export default function JointMapManager({
     cables: true,
     areas: true,
     measurements: true,
-    cableDistances: true,
     homes: true,
     l0: true,
     l1: true,
@@ -549,8 +637,6 @@ export default function JointMapManager({
     setCableType("Feeder Cable");
     setFibreCount("12F");
     setInstallMethod("Underground");
-    setParentCableId(undefined);
-    setAllocatedInputFibres([]);
     setDraftCablePoints([]);
     setShowCableModal(true);
   };
@@ -864,23 +950,31 @@ export default function JointMapManager({
 
       const firstPoint = draftCablePoints[0];
       const lastPoint = draftCablePoints[draftCablePoints.length - 1];
-      const fedDps = [
+      const endpointDps = [
         findDpAtCableEnd(savedJoints, firstPoint),
         findDpAtCableEnd(savedJoints, lastPoint),
       ].filter(Boolean) as SavedMapAsset[];
 
+      // Use both the drawn cable route and the road-routed cable route.
+      // Road routing can pull the line away from poles/DPs, so checking only
+      // the final routed line can miss DPs sitting on the actual pole line.
+      const routeDps = [
+        ...findDpsAlongCable(savedJoints, draftCablePoints, 35),
+        ...findDpsAlongCable(savedJoints, routedCoordinates, 35),
+      ];
+
+      const fedDps = Array.from(
+        new Map([...endpointDps, ...routeDps].map((dp) => [dp.id, dp])).values()
+      );
+
       const homes = savedJoints.filter((asset) => asset.assetType === "home");
-      const autoDrops: SavedMapAsset[] = [];
 
-      for (const dp of fedDps) {
-        const nextDrops = createDropCableRecordsFromDP(dp, homes, [
-          ...savedJoints,
-          cableRecord,
-          ...autoDrops,
-        ]) as SavedMapAsset[];
-
-        autoDrops.push(...nextDrops);
-      }
+      // Generate drops globally across all DPs on this cable, so each home goes
+      // to the nearest available DP instead of the last/end DP winning.
+      const autoDrops = createDropCableRecordsFromDPs(fedDps, homes, [
+        ...savedJoints,
+        cableRecord,
+      ]) as SavedMapAsset[];
 
       setSavedJoints((prev) => [
         ...prev,
@@ -1119,6 +1213,133 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
     }
   };
 
+  const createHomeAssetsFromGeoJson = (
+    geojson: any,
+    onlyInBounds?: L.LatLngBounds
+  ): SavedMapAsset[] => {
+    if (!geojson?.features || !Array.isArray(geojson.features)) {
+      throw new Error("Invalid GeoJSON");
+    }
+
+    const existingHomeKeys = new Set(
+      (savedJoints ?? [])
+        .filter((asset) => asset.assetType === "home")
+        .map((asset) => {
+          const uprn = String((asset as any).uprn || asset.name || asset.id || "").trim();
+          return uprn || asset.id;
+        })
+    );
+
+    return geojson.features
+      .map((feature: any) => {
+        if (feature?.geometry?.type !== "Point") return null;
+        if (!Array.isArray(feature.geometry.coordinates)) return null;
+
+        const [lngRaw, latRaw] = feature.geometry.coordinates;
+        const lat = Number(latRaw);
+        const lng = Number(lngRaw);
+
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+        if (onlyInBounds && !onlyInBounds.contains([lat, lng])) return null;
+
+        const rawUprn =
+          feature.properties?.UPRN ??
+          feature.properties?.uprn ??
+          feature.properties?.Uprn ??
+          feature.properties?.id ??
+          "";
+        const uprn = String(rawUprn || "").trim();
+        const id = uprn ? `uprn-${uprn}` : crypto.randomUUID();
+        const duplicateKey = uprn || id;
+
+        if (existingHomeKeys.has(duplicateKey) || existingHomeKeys.has(id)) {
+          return null;
+        }
+
+        existingHomeKeys.add(duplicateKey);
+        existingHomeKeys.add(id);
+
+        return {
+          id,
+          name: uprn ? `UPRN ${uprn}` : "Home",
+          assetType: "home",
+          jointType: "Home",
+          notes: "",
+          mappingRows: [],
+          uprn: uprn || undefined,
+          connectionMode: "auto",
+          geometry: {
+            type: "Point",
+            coordinates: [lat, lng],
+          },
+        } as SavedMapAsset;
+      })
+      .filter(Boolean) as SavedMapAsset[];
+  };
+
+  const loadGeoJsonHomes = (file: File) => {
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      try {
+        const geojson = JSON.parse(String(e.target?.result || ""));
+        const homes = createHomeAssetsFromGeoJson(geojson);
+
+        if (homes.length === 0) {
+          alert("No new GeoJSON homes found in that file.");
+          return;
+        }
+
+        setSavedJoints((prev) => [
+          ...prev,
+          ...homes.map((asset) => markAssetForLiveSync(asset, true)),
+        ]);
+
+        alert(`Loaded ${homes.length} GeoJSON homes.`);
+      } catch (err: any) {
+        console.error(err);
+        alert(`Failed to load GeoJSON homes: ${err.message || String(err)}`);
+      }
+    };
+
+    reader.readAsText(file);
+  };
+
+  const loadGeoJsonHomesInView = (file: File) => {
+    const map = mapRef.current;
+
+    if (!map) {
+      alert("Map is not ready yet. Move or zoom the map once, then try again.");
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      try {
+        const geojson = JSON.parse(String(e.target?.result || ""));
+        const homes = createHomeAssetsFromGeoJson(geojson, map.getBounds());
+
+        if (homes.length === 0) {
+          alert("No new GeoJSON homes found in the current map view.");
+          return;
+        }
+
+        setSavedJoints((prev) => [
+          ...prev,
+          ...homes.map((asset) => markAssetForLiveSync(asset, true)),
+        ]);
+
+        alert(`Loaded ${homes.length} GeoJSON homes in view.`);
+      } catch (err: any) {
+        console.error(err);
+        alert(`Failed to load GeoJSON homes: ${err.message || String(err)}`);
+      }
+    };
+
+    reader.readAsText(file);
+  };
+
   const handleExportJson = () => {
     const blob = new Blob([JSON.stringify(savedJoints, null, 2)], {
       type: "application/json",
@@ -1241,6 +1462,30 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
   };
 
 
+  const availableParentCablesForBranchAllocation = useMemo(
+    () =>
+      (savedJoints ?? []).filter((asset) => {
+        return (
+          asset.assetType === "cable" &&
+          asset.geometry?.type === "LineString" &&
+          asset.id !== editingAssetId &&
+          (asset.cableType === "AFN Spine Cable" ||
+            asset.cableType === "Feeder Cable" ||
+            asset.cableType === "ULW Cable" ||
+            asset.installMethod === "OH")
+        );
+      }),
+    [savedJoints, editingAssetId]
+  );
+
+  const allDistributionPointsForAfnAllocation = useMemo(
+    () =>
+      (savedJoints ?? []).filter(
+        (asset) => asset.assetType === "distribution-point"
+      ),
+    [savedJoints]
+  );
+
   const connectedHomesForSelectedDp = useMemo(() => {
     if (!editingAssetId) return [];
 
@@ -1275,43 +1520,6 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
       })
       .sort((a, b) => a.port - b.port);
   }, [editingAssetId, savedJoints]);
-
-
-  const availableAfnThroughCables = useMemo(
-    () =>
-      (savedJoints ?? []).filter((asset) => {
-        return (
-          asset.assetType === "cable" &&
-          asset.geometry?.type === "LineString" &&
-          (asset.cableType === "AFN Spine Cable" ||
-            asset.cableType === "Feeder Cable" ||
-            asset.cableType === "ULW Cable" ||
-            asset.installMethod === "OH")
-        );
-      }),
-    [savedJoints]
-  );
-
-  const allDistributionPointsForAfn = useMemo(
-    () => (savedJoints ?? []).filter((asset) => asset.assetType === "distribution-point"),
-    [savedJoints]
-  );
-
-  const availableParentCablesForBranchAllocation = useMemo(
-    () =>
-      (savedJoints ?? []).filter((asset) => {
-        return (
-          asset.assetType === "cable" &&
-          asset.geometry?.type === "LineString" &&
-          asset.id !== editingAssetId &&
-          (asset.cableType === "AFN Spine Cable" ||
-            asset.cableType === "Feeder Cable" ||
-            asset.cableType === "ULW Cable" ||
-            asset.installMethod === "OH")
-        );
-      }),
-    [editingAssetId, savedJoints]
-  );
 
   if (openStreetCabAsset) {
     return (
@@ -1703,8 +1911,34 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
             {isLoadingOsmHomes ? "Loading OSM Homes..." : "Load OSM Homes in View"}
           </button>
 
+          <div style={{ marginTop: 10 }}>
+            <div style={label}>Load GeoJSON / UPRN Homes</div>
+            <input
+              type="file"
+              accept=".geojson,.json,application/geo+json,application/json"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) loadGeoJsonHomes(file);
+                e.target.value = "";
+              }}
+            />
+          </div>
+
+          <div style={{ marginTop: 10 }}>
+            <div style={label}>Load GeoJSON / UPRN Homes in View</div>
+            <input
+              type="file"
+              accept=".geojson,.json,application/geo+json,application/json"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) loadGeoJsonHomesInView(file);
+                e.target.value = "";
+              }}
+            />
+          </div>
+
           <div style={{ fontSize: "0.82rem", color: "#cbd5e1" }}>
-            Zoom into the estate/road first, then load buildings. Imported buildings become shared Home assets.
+            Zoom into the estate/road first, then load buildings or UPRN GeoJSON homes. Imported points become shared Home assets.
           </div>
         </div>
       </div>
@@ -1722,6 +1956,7 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
         <MapContainer center={mapCenter} zoom={6} style={{ height: "100%", width: "100%" }}>
           <MapBaseLayers basemap={basemap} roadOverlayVisible={roadOverlayVisible} />
           <MapBoundsTracker onBoundsChange={setMapBounds} />
+          <MapRefTracker onReady={(map) => { mapRef.current = map; }} />
 
           <MapClickHandler
             mode={mapMode}
@@ -1831,7 +2066,6 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
             visibleLayers={visibleLayers}
             onDeleteAsset={handleDeleteAsset}
             onEditAsset={handleEditAsset}
-            showCableDistances={visibleLayers.cableDistances !== false}
           />
 
           {pickedLocation && mapMode === "pick" && (
@@ -2044,9 +2278,10 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
           name={jointName}
           details={dpDetails}
           connectedHomes={connectedHomesForSelectedDp}
-          availableThroughCables={availableAfnThroughCables}
-          allDistributionPoints={allDistributionPointsForAfn}
+          availableThroughCables={availableParentCablesForBranchAllocation}
+          allDistributionPoints={allDistributionPointsForAfnAllocation}
           allAssets={savedJoints ?? []}
+          currentDpId={editingAssetId ?? undefined}
           editingAssetId={editingAssetId}
           onChangeName={setJointName}
           onChange={setDpDetails}

@@ -15,6 +15,7 @@ const ALLOWED_EMAILS = [
   "adam.whittaker@brsk.co.uk",
   "james.oliver@brsk.co.uk",
   "alistair.grantham@brsk.co.uk",
+  "ben.almond@brsk.co.uk"
 ];
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {

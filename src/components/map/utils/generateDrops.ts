@@ -136,6 +136,111 @@ export function createDropCableRecordsFromDP(
     }));
 }
 
+
+export function createDropCableRecordsFromDPs(
+  dps: any[],
+  homes: any[],
+  existingAssets: any[] = []
+) {
+  const validDps = dps
+    .filter((dp) => dp?.assetType === "distribution-point")
+    .map((dp) => {
+      const point = getLatLng(dp);
+      if (!point) return null;
+
+      const capacity = getDpCapacity(dp);
+      const used = countExistingDropsFromDp(dp, existingAssets);
+      const available = Math.max(0, capacity - used);
+
+      return { dp, point, available, used };
+    })
+    .filter(Boolean) as Array<{
+      dp: any;
+      point: LatLng;
+      available: number;
+      used: number;
+    }>;
+
+  if (validDps.length === 0) return [];
+
+  const availableByDpId = new Map<string, number>();
+  const usedByDpId = new Map<string, number>();
+
+  validDps.forEach(({ dp, available, used }) => {
+    availableByDpId.set(String(dp.id), available);
+    usedByDpId.set(String(dp.id), used);
+  });
+
+  const candidates: Array<{
+    dp: any;
+    home: any;
+    dpPoint: LatLng;
+    homePoint: LatLng;
+    distance: number;
+  }> = [];
+
+  homes
+    .filter((home) => home?.assetType === "home")
+    .filter((home) => !homeAlreadyConnectedToAnyDp(home, existingAssets))
+    .forEach((home) => {
+      const homePoint = getLatLng(home);
+      if (!homePoint) return;
+
+      validDps.forEach(({ dp, point: dpPoint, available }) => {
+        if (available <= 0) return;
+
+        const distance = getDistanceMeters(dpPoint, homePoint);
+        if (distance > MAX_OH_DROP_DISTANCE_METERS) return;
+
+        candidates.push({ dp, home, dpPoint, homePoint, distance });
+      });
+    });
+
+  candidates.sort((a, b) => a.distance - b.distance);
+
+  const assignedHomeIds = new Set<string>();
+  const drops: any[] = [];
+
+  for (const candidate of candidates) {
+    const dpId = String(candidate.dp.id);
+    const homeId = String(candidate.home.id);
+    const available = availableByDpId.get(dpId) ?? 0;
+
+    if (available <= 0) continue;
+    if (assignedHomeIds.has(homeId)) continue;
+
+    const currentUsed = usedByDpId.get(dpId) ?? 0;
+    const nextPort = currentUsed + 1;
+
+    assignedHomeIds.add(homeId);
+    availableByDpId.set(dpId, available - 1);
+    usedByDpId.set(dpId, currentUsed + 1);
+
+    drops.push({
+      id: crypto.randomUUID(),
+      name: `${candidate.dp.name || "DP"} Drop ${nextPort}`,
+      assetType: "cable",
+      jointType: "Cable",
+      notes: `Auto drop from ${candidate.dp.name || candidate.dp.id} to ${candidate.home.name || candidate.home.id}`,
+      cableType: "Drop",
+      fibreCount: "1F",
+      installMethod: "OH",
+      fromAssetId: candidate.dp.id,
+      toAssetId: candidate.home.id,
+      lengthMeters: candidate.distance,
+      geometry: {
+        type: "LineString",
+        coordinates: [
+          [candidate.dpPoint.lat, candidate.dpPoint.lng],
+          [candidate.homePoint.lat, candidate.homePoint.lng],
+        ],
+      },
+    });
+  }
+
+  return drops;
+}
+
 export async function generateDropsFromDP(dp: any, homes: any[], existingAssets: any[] = []) {
   const dropRecords = createDropCableRecordsFromDP(dp, homes, existingAssets);
 
