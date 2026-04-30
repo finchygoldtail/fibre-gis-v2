@@ -18,7 +18,7 @@ import { auth } from "../firebase";
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
-
+import AreaPolygonsLayer from "./map/AreaPolygonsLayer";
 import { formatDistance, getPathDistanceMeters } from "../utils/mapMeasure";
 import { getNextAssetName } from "../utils/mapAssetNames";
 import MapContextMenu, { type MapContextAction } from "./map/MapContextMenu";
@@ -37,7 +37,7 @@ import { routePointsToRoads } from "./map/utils/routeToRoads";
 import { loadOsmBuildingsAsHomes, type OsmBounds } from "./map/utils/loadOsmBuildings";
 import { createDropCableRecordsFromDPs } from "./map/utils/generateDrops";
 import StreetCabDesigner from "./streetcab/StreetCabDesigner";
-import ProjectAreaSelector from "./projects/ProjectAreaSelector";
+import ProjectAreaSelector from "./map/projects/ProjectAreaSelector";
 import type {
   AssetType,
   CableType,
@@ -471,7 +471,7 @@ export default function JointMapManager({
 }: Props) {
   const [pickedLocation, setPickedLocation] = useState<LatLngLiteral | null>(null);
   const mapRef = useRef<L.Map | null>(null);
-
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [assetType, setAssetType] = useState<AssetType>(
     inferAssetTypeFromName(currentJointName)
   );
@@ -601,7 +601,35 @@ export default function JointMapManager({
   const draftCableDistance = useMemo(() => {
     return getPathDistanceMeters(draftCablePoints);
   }, [draftCablePoints]);
+const projectAreas = useMemo(
+  () =>
+    (savedJoints ?? []).filter(
+      (asset) =>
+        asset.assetType === "area" &&
+        asset.geometry?.type === "Polygon"
+    ),
+  [savedJoints]
+);
+const handleSelectProject = (projectId: string) => {
+  setActiveProjectId(projectId);
 
+  const project = projectAreas.find((area) => area.id === projectId);
+
+  if (!project || project.geometry?.type !== "Polygon") return;
+
+  const points = project.geometry.coordinates[0];
+
+  if (!points?.length) return;
+
+  const bounds = L.latLngBounds(
+    points.map(([lat, lng]) => [lat, lng] as [number, number])
+  );
+
+  mapRef.current?.fitBounds(bounds, {
+    padding: [60, 60],
+    maxZoom: 18,
+  });
+};
   const resetEditor = () => {
     setEditingAssetId(null);
     setPickedLocation(null);
@@ -1565,12 +1593,18 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
           boxSizing: "border-box",
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <h2 style={{ margin: 0 }}>Joint Map Manager</h2>
-          <button onClick={onClose} style={btnSecondary}>
-            Back
-          </button>
-        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+  <ProjectAreaSelector
+    projectAreas={projectAreas}
+    activeProjectId={activeProjectId}
+    onSelectProject={handleSelectProject}
+    onClearProject={() => setActiveProjectId(null)}
+  />
+
+  <button onClick={onClose} style={{ ...btnSecondary, marginLeft: "auto" }}>
+    Back
+  </button>
+</div>
 
         <div style={card}>
           <div style={label}>Asset Type</div>
@@ -1953,7 +1987,12 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
           zIndex: 0,
         }}
       >
-        <MapContainer center={mapCenter} zoom={6} style={{ height: "100%", width: "100%" }}>
+        <MapContainer
+  center={mapCenter}
+  zoom={6}
+  maxZoom={22}
+  style={{ height: "100%", width: "100%" }}
+>
           <MapBaseLayers basemap={basemap} roadOverlayVisible={roadOverlayVisible} />
           <MapBoundsTracker onBoundsChange={setMapBounds} />
           <MapRefTracker onReady={(map) => { mapRef.current = map; }} />
@@ -2003,62 +2042,17 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
 />
           
 
-          {visibleLayers.areas &&
-            (savedJoints ?? [])
-              .filter(
-                (asset) =>
-                  asset.assetType === "area" &&
-                  asset.geometry?.type === "Polygon" &&
-                  isAreaVisibleForLevel(asset, visibleLayers)
-              )
-              .map((asset) => {
-                const areaPoints = (asset.geometry as {
-                  type: "Polygon";
-                  coordinates: [number, number][][];
-                }).coordinates[0].map(([lat, lng]) => [lat, lng] as [number, number]);
-
-                const areaSquareMeters = getPolygonAreaSquareMeters(areaPoints);
-                const areaLabel = formatAreaLabel(areaSquareMeters);
-
-                return (
-                  <Polygon
-                    key={asset.id}
-                    positions={areaPoints}
-                    pathOptions={{ color: "#a855f7", weight: 3, fillOpacity: 0.18 }}
-                    eventHandlers={{
-                      click: () => handleEditAsset(asset),
-                    }}
-                  >
-                    <Popup>
-                      <b>{asset.name}</b>
-                      <br />
-                      Polygon Area ({normaliseAreaLevel((asset as any).areaLevel)})
-                      <br />
-                      Area: {areaLabel}
-                      <br />
-                      Points: {areaPoints.length}
-                      {asset.notes ? (
-                        <>
-                          <br />
-                          {asset.notes}
-                        </>
-                      ) : null}
-                      <br />
-                      <button onClick={() => handleEditAsset(asset)}>Edit</button>{" "}
-                      <button onClick={() => handleDeleteAsset(asset.id)}>Delete</button>
-                    </Popup>
-
-                    <Tooltip
-                      permanent
-                      direction="center"
-                      opacity={0.9}
-                      className="area-size-label"
-                    >
-                      {asset.name}
-                    </Tooltip>
-                  </Polygon>
-                );
-              })}
+         {visibleLayers.areas && (
+  <AreaPolygonsLayer
+    areas={projectAreas.filter((asset) =>
+      isAreaVisibleForLevel(asset, visibleLayers)
+    )}
+    activeProjectId={activeProjectId}
+    onSelect={handleSelectProject}
+    onEdit={handleEditAsset}
+    onDelete={handleDeleteAsset}
+  />
+)}
 
           <CableLinesLayer
             assets={savedJoints}
@@ -2220,6 +2214,8 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
   })}
 
           <GpsLocationControl />
+          
+
         </MapContainer>
 
         <MapContextMenu

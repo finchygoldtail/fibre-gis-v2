@@ -42,4 +42,28 @@ a:hover {
 
 button {
   font-family: inherit;
+}/* Fix Chrome autofill white background in dark UI */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px #111827 inset !important;
+  -webkit-text-fill-color: white !important;
+  transition: background-color 9999s ease-in-out 0s;
+}
+/* Purple translucent polygon labels */
+.leaflet-tooltip.area-label {
+  background: rgba(168, 85, 247, 0.28) !important;
+  border: 1px solid rgba(168, 85, 247, 0.75) !important;
+  color: #f3e8ff !important;
+  font-weight: 700 !important;
+  padding: 5px 10px !important;
+  border-radius: 8px !important;
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.45) !important;
+  backdrop-filter: blur(4px);
+}
+
+/* Remove Leaflet tooltip arrow */
+.leaflet-tooltip.area-label::before {
+  display: none !important;
 }

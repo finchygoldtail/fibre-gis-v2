@@ -170,38 +170,103 @@ function findConnectedAssetAtCableEnd(
   return candidates[0] || null;
 }
 
+function normaliseCableRef(value: unknown): string {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[–—]/g, "-");
+}
+
+function getNumberFromFibreCount(value: unknown): number {
+  const match = String(value || "").match(/\d+/);
+  return match ? Number(match[0]) : 0;
+}
+
+function getRowText(row: any[]): string {
+  return row.map((cell) => String(cell || "").trim()).join(" ");
+}
+
+function rowMentionsCable(row: any[], cable: SavedMapAsset): boolean {
+  const cableName = normaliseCableRef(cable.name);
+  const cableId = normaliseCableRef(cable.id);
+
+  if (!cableName && !cableId) return false;
+
+  const rowText = normaliseCableRef(getRowText(row));
+
+  return Boolean(
+    (cableName && rowText.includes(cableName)) ||
+      (cableId && rowText.includes(cableId))
+  );
+}
+
 function getCableUsedFibres(
   cable: SavedMapAsset,
   allAssets: SavedMapAsset[]
 ): number {
-  const cableName = String(cable.name || "").trim().toLowerCase();
   const cableId = String(cable.id || "");
 
+  // Drop cables normally represent one used customer fibre.
   if (String(cable.cableType || "").toLowerCase() === "drop") {
     return 1;
   }
 
-  const used = new Set<number>();
+  // 1) Exact allocation data from DPs / child cables.
+  // This is the cleanest source when it exists.
+  const allocatedFibres = new Set<number>();
 
   allAssets.forEach((asset) => {
     if (asset.assetType === "distribution-point") {
       const afn = asset.dpDetails?.afnDetails;
 
       if (afn?.throughCableId === cableId) {
-        (afn.inputFibres || []).forEach((fibre) => used.add(Number(fibre)));
+        (afn.inputFibres || []).forEach((fibre) => {
+          const n = Number(fibre);
+          if (Number.isFinite(n) && n > 0) allocatedFibres.add(n);
+        });
       }
     }
 
     if (asset.assetType === "cable") {
       if (String((asset as any).parentCableId || "") === cableId) {
-        ((asset as any).allocatedInputFibres || []).forEach((fibre: number) =>
-          used.add(Number(fibre))
-        );
+        ((asset as any).allocatedInputFibres || []).forEach((fibre: number) => {
+          const n = Number(fibre);
+          if (Number.isFinite(n) && n > 0) allocatedFibres.add(n);
+        });
       }
     }
   });
 
-  if (used.size > 0) return used.size;
+  if (allocatedFibres.size > 0) return allocatedFibres.size;
+
+  // 2) Fallback for older/sheet-driven designs:
+  // read uploaded joint / splice mapping rows and count rows that mention this cable.
+  // This supports your Excel mapping uploads where fibre use is already recorded
+  // against LMJs/CMJs/AG joints rather than stored directly on the cable.
+  const mappingRowKeys = new Set<string>();
+
+  allAssets.forEach((asset) => {
+    const rows = Array.isArray(asset.mappingRows) ? asset.mappingRows : [];
+
+    rows.forEach((row: any[], rowIndex: number) => {
+      if (!Array.isArray(row)) return;
+      if (!rowMentionsCable(row, cable)) return;
+
+      const rowText = getRowText(row).trim();
+      if (!rowText) return;
+
+      // Use the whole row text as the key so the same row is not counted twice.
+      // Include asset id to allow the same fibre to appear at both ends if it is
+      // genuinely present in two different joint sheets.
+      mappingRowKeys.add(`${asset.id}:${rowIndex}:${normaliseCableRef(rowText)}`);
+    });
+  });
+
+  if (mappingRowKeys.size > 0) return mappingRowKeys.size;
+
+  // 3) Last fallback: count linked drops/child cables by parent metadata/name.
+  const cableName = normaliseCableRef(cable.name);
 
   const linkedDrops = allAssets.filter((asset) => {
     if (asset.assetType !== "cable") return false;
@@ -210,44 +275,21 @@ function getCableUsedFibres(
     return (
       String((asset as any).parentCableId || "") === cableId ||
       String((asset as any).feederCableId || "") === cableId ||
-      String((asset as any).parentCableName || "").toLowerCase() === cableName
+      normaliseCableRef((asset as any).parentCableName) === cableName
     );
   });
 
   if (linkedDrops.length > 0) return linkedDrops.length;
 
-  if (cable.geometry?.type !== "LineString") return 0;
+  const childCableUsage = allAssets
+    .filter(
+      (asset) =>
+        asset.assetType === "cable" &&
+        String((asset as any).parentCableId || "") === cableId
+    )
+    .reduce((sum, child) => sum + getNumberFromFibreCount(child.fibreCount), 0);
 
-  const points = cable.geometry.coordinates;
-  if (points.length < 2) return 0;
-
-  const startAsset = findConnectedAssetAtCableEnd(allAssets, points[0]);
-  const endAsset = findConnectedAssetAtCableEnd(
-    allAssets,
-    points[points.length - 1]
-  );
-
-  const connectedAssets = [startAsset, endAsset].filter(
-    Boolean
-  ) as SavedMapAsset[];
-
-  let fallbackUsed = 0;
-
-  connectedAssets.forEach((asset) => {
-    const rows = asset.mappingRows || [];
-
-    rows.forEach((row: any[]) => {
-      const rowText = row
-        .map((cell) => String(cell || "").trim().toLowerCase())
-        .join(" ");
-
-      if (cableName && rowText.includes(cableName)) {
-        fallbackUsed += 1;
-      }
-    });
-  });
-
-  return fallbackUsed;
+  return childCableUsage;
 }
 
 export default function CableLinesLayer({

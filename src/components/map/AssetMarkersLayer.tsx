@@ -501,29 +501,30 @@ export default function AssetMarkersLayer({
   });
 
   const pointAssets = useMemo(() => {
-    const homesEnabled =
-      visibleLayers.homes !== false &&
-      ((visibleLayers as any).homesSdu !== false ||
-        (visibleLayers as any).homesMdu !== false ||
-        (visibleLayers as any).homesFlats !== false);
+  const homesEnabled = visibleLayers.homes !== false;
 
-    return assets.filter((asset) => {
-      if (asset.geometry?.type !== "Point") return false;
-      if (!isVisible(asset, visibleLayers)) return false;
+  return assets.filter((asset) => {
+    if (asset.geometry?.type !== "Point") return false;
 
-      if (asset.assetType === "home") {
-        if (!homesEnabled) return false;
-        const latLng = getPointLatLng(asset);
-        if (!latLng) return false;
+    // Handle homes separately so SDU/MDU/Flats filters don't accidentally hide them
+    if (asset.assetType === "home") {
+      if (!homesEnabled) return false;
 
-        // Homes are the heavy layer: only render visible homes when zoomed in.
-        if (mapView.zoom < 12) return false;
-        return mapView.bounds.pad(0.2).contains(latLng);
-      }
+      const latLng = getPointLatLng(asset);
+      if (!latLng) return false;
+
+      // keep homes visible when zoomed in
+      if (mapView.zoom < 10) return false;
 
       return true;
-    });
-  }, [assets, visibleLayers, mapView]);
+    }
+
+    // Normal asset visibility
+    if (!isVisible(asset, visibleLayers)) return false;
+
+    return true;
+  });
+}, [assets, visibleLayers, mapView]);
 
   return (
     <>
