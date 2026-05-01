@@ -6,7 +6,7 @@ import React, {
   useState,
 } from "react";
 
-import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDocs, onSnapshot, setDoc } from "firebase/firestore";
 import { db, auth } from "../firebase";
 
 import { buildJoint, JOINT_TYPES } from "../logic/jointConfig";
@@ -42,6 +42,94 @@ import StreetCabEditor from "./StreetCabEditor";
 const STORAGE_KEY = "fibre-tray-project-v1";
 const FIRESTORE_REF_PATH = ["businesses", "fibre-gis-v2"] as const;
 
+const JOINT_MAPPING_CHUNK_SIZE = 250;
+
+type MappingChunkDoc = {
+  rowsJson?: string;
+  chunkIndex?: number;
+};
+
+function parseFibreNumber(value: any): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const cleaned = value.trim();
+    if (!cleaned) return null;
+    const parsed = Number(cleaned);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+async function saveJointMappingRowsToFirestore(jointId: string, rows: any[][]) {
+  const chunksRef = collection(
+    db,
+    "businesses",
+    "fibre-gis-v2",
+    "jointMappings",
+    jointId,
+    "chunks"
+  );
+
+  const existing = await getDocs(chunksRef);
+  await Promise.all(existing.docs.map((chunkDoc) => deleteDoc(chunkDoc.ref)));
+
+  const chunks: any[][][] = [];
+  for (let i = 0; i < rows.length; i += JOINT_MAPPING_CHUNK_SIZE) {
+    chunks.push(rows.slice(i, i + JOINT_MAPPING_CHUNK_SIZE));
+  }
+
+  await Promise.all(
+    chunks.map((chunkRows, index) =>
+      setDoc(doc(chunksRef, `chunk_${String(index).padStart(5, "0")}`), {
+        chunkIndex: index,
+        rowsJson: JSON.stringify(chunkRows),
+      })
+    )
+  );
+
+  await setDoc(
+    doc(db, "businesses", "fibre-gis-v2", "jointMappings", jointId),
+    {
+      jointId,
+      rowCount: rows.length,
+      chunkCount: chunks.length,
+      updatedAt: new Date().toISOString(),
+      updatedByUid: auth.currentUser?.uid || "unknown",
+      updatedByEmail: auth.currentUser?.email || "unknown",
+    },
+    { merge: true }
+  );
+}
+
+async function loadJointMappingRowsFromFirestore(jointId: string): Promise<any[][]> {
+  const chunksRef = collection(
+    db,
+    "businesses",
+    "fibre-gis-v2",
+    "jointMappings",
+    jointId,
+    "chunks"
+  );
+
+  const snapshot = await getDocs(chunksRef);
+  const chunks = snapshot.docs
+    .map((chunkDoc) => {
+      const data = chunkDoc.data() as MappingChunkDoc;
+      return {
+        id: chunkDoc.id,
+        index:
+          typeof data.chunkIndex === "number"
+            ? data.chunkIndex
+            : Number(chunkDoc.id.replace("chunk_", "")),
+        rows: safeJsonParse(data.rowsJson, []),
+      };
+    })
+    .sort((a, b) => a.index - b.index || a.id.localeCompare(b.id));
+
+  return chunks.flatMap((chunk) => (Array.isArray(chunk.rows) ? chunk.rows : []));
+}
+
+
 function safeJsonParse(value: any, fallback: any) {
   if (typeof value !== "string") return fallback;
   try {
@@ -63,10 +151,16 @@ function cleanSavedJointsForFirebase(value: SavedJoint[]): any[] {
       delete copy.geometry;
     }
 
-    // Mapping rows from CSV/XLSX are arrays of arrays, also unsupported.
+    // Do not sync full uploaded joint sheets inside the main project doc.
+    // Mapping rows are shared separately in jointMappings/{jointId}/chunks.
     if (Array.isArray(copy.mappingRows)) {
-      copy.mappingRowsJson = JSON.stringify(copy.mappingRows);
+      copy.mappingRowsRef = true;
+      copy.mappingRowsCount = copy.mappingRows.length;
+      copy.mappingRowsSummary = {
+        rowCount: copy.mappingRows.length,
+      };
       delete copy.mappingRows;
+      delete copy.mappingRowsJson;
     }
 
     return JSON.parse(JSON.stringify(copy));
@@ -86,12 +180,10 @@ function restoreSavedJointsFromFirebase(value: any[]): SavedJoint[] {
       delete copy.geometryCoordinatesJson;
     }
 
-    if (copy.mappingRowsJson) {
-      copy.mappingRows = safeJsonParse(copy.mappingRowsJson, []);
-      delete copy.mappingRowsJson;
-    } else if (!Array.isArray(copy.mappingRows)) {
-      copy.mappingRows = [];
-    }
+    // Older saves may contain mappingRowsJson. Do not restore it into the main
+    // project state, otherwise the next save can exceed Firestore's 1MB limit.
+    copy.mappingRows = [];
+    delete copy.mappingRowsJson;
 
     return copy as SavedJoint;
   });
@@ -259,7 +351,6 @@ export const FibreTrayEditor: React.FC = () => {
   const [selectedJointId, setSelectedJointId] = useState<string | null>(null);
   const [firebaseLoaded, setFirebaseLoaded] = useState(false);
   const lastFirebaseJsonRef = useRef("");
-  const firebaseSaveTimerRef = useRef<number | null>(null);
 
   const [jointType, setJointType] =
     useState<JointTypeLabel>("CMJ (12 trays)");
@@ -280,16 +371,39 @@ export const FibreTrayEditor: React.FC = () => {
     setModel((prev) => fn(prev.map((f) => ({ ...f }))));
 
   const cfg = JOINT_TYPES[jointType];
+  const saveSavedJointsToFirestoreNow = useCallback(async (nextSavedJoints: SavedJoint[]) => {
+    const cleaned = cleanSavedJointsForFirebase(nextSavedJoints);
+    const json = JSON.stringify(cleaned);
+    const now = new Date().toISOString();
+    const ref = doc(db, ...FIRESTORE_REF_PATH);
+
+    const payload = {
+      savedJoints: cleaned,
+      updatedAt: now,
+      updatedByUid: auth.currentUser?.uid || "unknown",
+      updatedByEmail: auth.currentUser?.email || "unknown",
+    };
+
+    const payloadSize = new Blob([JSON.stringify(payload)]).size;
+    if (payloadSize > 950_000) {
+      console.warn("Skipping Firestore save: project payload is too large", payloadSize);
+      return;
+    }
+
+    await setDoc(ref, payload, { merge: true });
+    lastFirebaseJsonRef.current = json;
+    console.log(`Saved ${cleaned.length} map assets to Firestore immediately`);
+  }, []);
+
 
   const selectedMapJoint = selectedJointId
     ? savedJoints.find((j) => j.id === selectedJointId) || null
     : null;
 
-  const currentJointName =
-    selectedMapJoint?.name ||
-    (mappingRows.length > 0
-      ? deriveJointNameFromRows(mappingRows)
-      : "UNKNOWN-JOINT");
+  // IMPORTANT: do not derive the selected joint name from uploaded mapping rows.
+  // Mapping files often contain cable/joint references that are not the asset's
+  // user-edited map name, and using them here causes names to be overwritten.
+  const currentJointName = selectedMapJoint?.name || "UNKNOWN-JOINT";
 
   /* -------------------------------------------------------------
     Load persisted project
@@ -402,38 +516,31 @@ export const FibreTrayEditor: React.FC = () => {
 
     if (json === lastFirebaseJsonRef.current) return;
 
-    if (firebaseSaveTimerRef.current) {
-      window.clearTimeout(firebaseSaveTimerRef.current);
+    const now = new Date().toISOString();
+    const ref = doc(db, ...FIRESTORE_REF_PATH);
+
+    const payload = {
+      savedJoints: cleaned,
+      updatedAt: now,
+      updatedByUid: auth.currentUser?.uid || "unknown",
+      updatedByEmail: auth.currentUser?.email || "unknown",
+    };
+
+    const payloadSize = new Blob([JSON.stringify(payload)]).size;
+
+    if (payloadSize > 950_000) {
+      console.warn("Skipping Firestore save: project payload is too large", payloadSize);
+      return;
     }
 
-    firebaseSaveTimerRef.current = window.setTimeout(() => {
-      const now = new Date().toISOString();
-      const ref = doc(db, ...FIRESTORE_REF_PATH);
-
-      setDoc(
-        ref,
-        {
-          savedJoints: cleaned,
-          updatedAt: now,
-          updatedByUid: auth.currentUser?.uid || "unknown",
-          updatedByEmail: auth.currentUser?.email || "unknown",
-        },
-        { merge: true }
-      )
-        .then(() => {
-          lastFirebaseJsonRef.current = json;
-          console.log(`Saved ${cleaned.length} map assets to Firestore`);
-        })
-        .catch((err) => {
-          console.error("Firestore save failed:", err);
-        });
-    }, 500);
-
-    return () => {
-      if (firebaseSaveTimerRef.current) {
-        window.clearTimeout(firebaseSaveTimerRef.current);
-      }
-    };
+    setDoc(ref, payload, { merge: true })
+      .then(() => {
+        lastFirebaseJsonRef.current = json;
+        console.log(`Saved ${cleaned.length} map assets to Firestore`);
+      })
+      .catch((err) => {
+        console.error("Firestore save failed:", err);
+      });
   }, [savedJoints, firebaseLoaded]);
 
   /* -------------------------------------------------------------
@@ -446,7 +553,7 @@ export const FibreTrayEditor: React.FC = () => {
         jointType,
         model,
         mappingRows,
-        savedJoints,
+        savedJoints: restoreSavedJointsFromFirebase(cleanSavedJointsForFirebase(savedJoints)),
         selectedFibre,
         loadedFileName,
       };
@@ -478,10 +585,10 @@ export const FibreTrayEditor: React.FC = () => {
       applyLmjRowsToModel(rows, base, (row) => extractChain(row).join(" → "));
     } else {
       rows.forEach((row: any[]) => {
-        const fibre = row[1];
+        const fibre = parseFibreNumber(row[1]);
         const fullChain = extractChain(row).join(" → ");
 
-        if (typeof fibre === "number") {
+        if (fibre !== null) {
           const cell = base.find((f) => f.globalNo === fibre);
           if (cell) cell.label = fullChain;
         }
@@ -494,37 +601,54 @@ export const FibreTrayEditor: React.FC = () => {
   /* -------------------------------------------------------------
     Open saved asset
   ------------------------------------------------------------- */
-  const openSavedJoint = (joint: SavedJoint) => {
+  const openSavedJoint = async (joint: SavedJoint) => {
     const isStreetCab = joint.assetType === "street-cab";
-    const rows = joint.mappingRows || [];
 
     setSelectedJointId(joint.id);
-    setLoadedFileName(rows.length ? joint.name || "" : "");
-    setMappingRows(rows);
+    setLoadedFileName(joint.name || "");
+    setMappingRows([]);
     setSearchTerm("");
     setMoveMode(false);
     setMoveSrc(null);
     setSelectedFibre(null);
     setTrayFilter("all");
 
-    if (isStreetCab) {
-      setAssetType("street-cab");
-      setActiveView("editor");
-      return;
-    }
-
     const jt = (joint.jointType in JOINT_TYPES
       ? joint.jointType
       : "CMJ (12 trays)") as JointTypeLabel;
 
-    setAssetType("ag-joint");
-    setJointType(jt);
-    if (rows.length > 0) {
-      applyMappingRowsToModel(rows, jt);
+    if (isStreetCab) {
+      setAssetType("street-cab");
+      setActiveView("editor");
     } else {
+      setAssetType("ag-joint");
+      setJointType(jt);
       setModel(buildJoint(jt));
+      setActiveView("editor");
     }
-    setActiveView("editor");
+
+    try {
+      const hasSharedRows = Boolean((joint as any).mappingRowsRef || (joint as any).mappingRowsCount);
+      const rows = hasSharedRows
+        ? await loadJointMappingRowsFromFirestore(joint.id)
+        : Array.isArray((joint as any).mappingRows)
+        ? ((joint as any).mappingRows as any[][])
+        : [];
+
+      setLoadedFileName(rows.length ? joint.name || "" : "");
+      setMappingRows(rows);
+
+      if (!isStreetCab) {
+        if (rows.length > 0) {
+          applyMappingRowsToModel(rows, jt);
+        } else {
+          setModel(buildJoint(jt));
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load joint mapping rows:", err);
+      alert("Failed to load this joint's mapping rows from Firestore.");
+    }
   };
 
   /* -------------------------------------------------------------
@@ -536,33 +660,49 @@ export const FibreTrayEditor: React.FC = () => {
 
     try {
       setOriginalFile(file);
-      setLoadedFileName(selectedMapJoint ? `${selectedMapJoint.name} - ${file.name}` : file.name);
+      setLoadedFileName(file.name);
 
       const rows = await loadMappingFile(file);
       const detectedAssetType = detectAssetTypeFromRows(rows);
       const detectedJointType = detectJointTypeFromRows(rows);
 
       if (selectedJointId) {
-        setSavedJoints((prev) =>
-          prev.map((asset) => {
-            if (asset.id !== selectedJointId) return asset;
-            return {
-              ...asset,
-              assetType: asset.assetType || detectedAssetType,
-              jointType:
-                asset.assetType === "street-cab" ? "Street Cab" : detectedJointType,
-              mappingRows: rows,
-              importedFiles: [
-                ...(asset.importedFiles || []),
-                {
-                  name: file.name,
-                  importedAt: new Date().toISOString(),
-                  rowCount: rows.length,
-                },
-              ],
-            };
-          })
-        );
+        await saveJointMappingRowsToFirestore(selectedJointId, rows);
+
+        const updatedSavedJoints = savedJoints.map((asset) => {
+          if (asset.id !== selectedJointId) return asset;
+
+          const isStreetCabAsset = asset.assetType === "street-cab" || detectedAssetType === "street-cab";
+
+          const nextAsset: any = {
+            ...asset,
+            // Preserve the map asset name exactly as the user set it.
+            // Do not overwrite from spreadsheet contents.
+            name: asset.name,
+            assetType: isStreetCabAsset ? "street-cab" : "ag-joint",
+            jointType: isStreetCabAsset ? "Street Cab" : detectedJointType,
+            mappingRowsRef: true,
+            mappingRowsCount: rows.length,
+            mappingRowsSummary: {
+              rowCount: rows.length,
+            },
+            importedFiles: [
+              ...(asset.importedFiles || []),
+              {
+                name: file.name,
+                importedAt: new Date().toISOString(),
+                rowCount: rows.length,
+              },
+            ],
+          };
+
+          delete nextAsset.mappingRows;
+          delete nextAsset.mappingRowsJson;
+          return nextAsset as SavedJoint;
+        });
+
+        setSavedJoints(updatedSavedJoints);
+        await saveSavedJointsToFirestoreNow(updatedSavedJoints);
       }
       setAssetType(selectedMapJoint?.assetType === "street-cab" ? "street-cab" : detectedAssetType);
       setMappingRows(rows);
@@ -580,10 +720,10 @@ export const FibreTrayEditor: React.FC = () => {
         const base = buildJoint(detectedJointType);
 
         rows.forEach((row: any[]) => {
-          const fibre = row[1];
+          const fibre = parseFibreNumber(row[1]);
           const fullChain = extractChain(row).join(" → ");
 
-          if (typeof fibre === "number") {
+          if (fibre !== null) {
             const cell = base.find((f) => f.globalNo === fibre);
             if (cell) cell.label = fullChain;
           }
@@ -957,7 +1097,54 @@ export const FibreTrayEditor: React.FC = () => {
           accept=".csv,.xls,.xlsx,.xlsm,.xlm"
           onChange={handleLoadFile}
         />
+        <button
+  style={btnSecondary}
+  onClick={async () => {
+    if (!selectedJointId) {
+      alert("Open/select a joint first.");
+      return;
+    }
 
+    const now = new Date().toISOString();
+
+    const updatedJoints = savedJoints.map((asset) => {
+      if (asset.id !== selectedJointId) return asset;
+
+      return {
+        ...asset,
+        // Preserve the map asset name exactly as the user set it.
+        // Do not overwrite from spreadsheet contents/current editor name.
+        name: asset.name,
+        jointType,
+        mappingRowsRef: true,
+        mappingRowsCount: mappingRows.length,
+        mappingRowsSummary: {
+          rowCount: mappingRows.length,
+        },
+        updatedAt: now,
+        updatedByUid: auth.currentUser?.uid || "unknown",
+        updatedByEmail: auth.currentUser?.email || "unknown",
+      } as any;
+    });
+
+    setSavedJoints(updatedJoints);
+
+    await setDoc(
+      doc(db, ...FIRESTORE_REF_PATH),
+      {
+        savedJoints: cleanSavedJointsForFirebase(updatedJoints),
+        updatedAt: now,
+        updatedByUid: auth.currentUser?.uid || "unknown",
+        updatedByEmail: auth.currentUser?.email || "unknown",
+      },
+      { merge: true }
+    );
+
+    alert("Joint saved to Firestore.");
+  }}
+>
+  Save Joint
+</button>
         <label>Convert LMJ Sheet</label>
         <input
           type="file"

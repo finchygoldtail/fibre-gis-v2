@@ -685,7 +685,7 @@ export default function AssetMarkersLayer({
                   ) : null}
 
                   {asset.assetType === "ag-joint" || asset.assetType === "street-cab" ? (
-                    infoRow("Rows", asset.mappingRows?.length ?? 0)
+                    infoRow("Rows", (asset as any).mappingRowsCount ?? (asset as any).mappingRowsSummary?.rowCount ?? asset.mappingRows?.length ?? 0)
                   ) : null}
                 </div>
 

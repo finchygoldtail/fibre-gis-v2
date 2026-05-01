@@ -4,6 +4,11 @@ import type { SavedMapAsset } from "../types";
 type Props = {
   areas: SavedMapAsset[];
   activeProjectId: string | null;
+  /**
+   * Keep polygons visual-only unless the user is intentionally editing/selecting areas.
+   * This stops area polygons stealing clicks while drawing cables.
+   */
+  polygonEditingEnabled?: boolean;
   onSelect: (id: string) => void;
   onEdit: (asset: SavedMapAsset) => void;
   onDelete: (id: string) => void;
@@ -29,6 +34,7 @@ function getColor(id: string) {
 export default function AreaPolygonsLayer({
   areas,
   activeProjectId,
+  polygonEditingEnabled = false,
   onSelect,
   onEdit,
   onDelete,
@@ -49,6 +55,7 @@ export default function AreaPolygonsLayer({
           <Polygon
             key={asset.id}
             positions={positions}
+            interactive={polygonEditingEnabled}
             pathOptions={{
               color: baseColor,
               weight: isActive ? 6 : 3,
@@ -57,22 +64,33 @@ export default function AreaPolygonsLayer({
               dashArray: undefined,
               className: isActive ? "glow-polygon" : "",
             }}
-            eventHandlers={{
-              click: () => onSelect(asset.id),
-            }}
+            eventHandlers={
+              polygonEditingEnabled
+                ? {
+                    click: () => onSelect(asset.id),
+                  }
+                : undefined
+            }
           >
-            <Popup>
-              <b>{asset.name}</b>
-              <br />
-              Polygon Area
-              <br />
-              <button onClick={() => onEdit(asset)}>Edit</button>{" "}
-              <button onClick={() => onDelete(asset.id)}>Delete</button>
-            </Popup>
+            {polygonEditingEnabled && (
+              <Popup>
+                <b>{asset.name}</b>
+                <br />
+                Polygon Area
+                <br />
+                <button onClick={() => onEdit(asset)}>Edit</button>{" "}
+                <button onClick={() => onDelete(asset.id)}>Delete</button>
+              </Popup>
+            )}
 
-            <Tooltip permanent direction="center" opacity={1} className="area-label">
-  {asset.name}
-</Tooltip>
+            <Tooltip
+              permanent
+              direction="center"
+              opacity={1}
+              className="area-label"
+            >
+              {asset.name}
+            </Tooltip>
           </Polygon>
         );
       })}

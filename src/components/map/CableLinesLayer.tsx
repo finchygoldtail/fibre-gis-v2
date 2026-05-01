@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import L from "leaflet";
 import {
   CircleMarker,
@@ -10,6 +10,8 @@ import {
   useMapEvents,
 } from "react-leaflet";
 import type { SavedMapAsset } from "../JointMapManager";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "../../firebase";
 
 type Props = {
   assets: SavedMapAsset[];
@@ -19,6 +21,68 @@ type Props = {
   onDeleteAsset: (id: string) => void;
   onEditAsset: (asset: SavedMapAsset) => void;
 };
+
+type MappingRowsByAssetId = Record<string, any[][]>;
+
+type MappingChunkDoc = {
+  rowsJson?: string;
+  rows?: any[];
+  chunkIndex?: number;
+};
+
+function safeJsonParse(value: unknown, fallback: any) {
+  if (typeof value !== "string") return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+async function loadJointMappingRowsFromFirestore(jointId: string): Promise<any[][]> {
+  const chunksRef = collection(
+    db,
+    "businesses",
+    "fibre-gis-v2",
+    "jointMappings",
+    jointId,
+    "chunks"
+  );
+
+  const snapshot = await getDocs(chunksRef);
+
+  return snapshot.docs
+    .map((chunkDoc) => {
+      const data = chunkDoc.data() as MappingChunkDoc;
+
+      let rows: any[] = [];
+
+      // Current shared format: JSON string, avoids Firestore nested-array errors.
+      if (typeof data.rowsJson === "string") {
+        rows = safeJsonParse(data.rowsJson, []);
+      }
+
+      // Backwards compatibility with earlier test formats.
+      if (!rows.length && Array.isArray(data.rows)) {
+        rows = data.rows.map((row: any) =>
+          Array.isArray(row) ? row : Array.isArray(row?.values) ? row.values : row
+        );
+      }
+
+      return {
+        id: chunkDoc.id,
+        index:
+          typeof data.chunkIndex === "number"
+            ? data.chunkIndex
+            : Number(chunkDoc.id.replace("chunk_", "")),
+        rows: Array.isArray(rows) ? rows : [],
+      };
+    })
+    .sort((a, b) => a.index - b.index || a.id.localeCompare(b.id))
+    .flatMap((chunk) => chunk.rows)
+    .filter((row) => Array.isArray(row));
+}
+
 
 function getCableLengthMeters(points: [number, number][]): number {
   if (points.length < 2) return 0;
@@ -189,23 +253,40 @@ function getRowText(row: any[]): string {
   return row.map((cell) => String(cell || "").trim()).join(" ");
 }
 
-function rowMentionsCable(row: any[], cable: SavedMapAsset): boolean {
-  const cableName = normaliseCableRef(cable.name);
-  const cableId = normaliseCableRef(cable.id);
+function getCableAliases(cable: SavedMapAsset): string[] {
+  const values = [cable.name, cable.id, (cable as any).label, (cable as any).cableId]
+    .map(normaliseCableRef)
+    .filter(Boolean);
 
-  if (!cableName && !cableId) return false;
+  const aliases = new Set<string>();
+
+  values.forEach((value) => {
+    aliases.add(value);
+
+    const parts = value.split("-").filter(Boolean);
+    const last = parts[parts.length - 1];
+    if (last) aliases.add(last);
+
+    const lcMatch = value.match(/lc\d{1,4}/i);
+    if (lcMatch) aliases.add(normaliseCableRef(lcMatch[0]));
+  });
+
+  return Array.from(aliases).filter((alias) => alias.length >= 3);
+}
+
+function rowMentionsCable(row: any[], cable: SavedMapAsset): boolean {
+  const aliases = getCableAliases(cable);
+  if (!aliases.length) return false;
 
   const rowText = normaliseCableRef(getRowText(row));
 
-  return Boolean(
-    (cableName && rowText.includes(cableName)) ||
-      (cableId && rowText.includes(cableId))
-  );
+  return aliases.some((alias) => rowText.includes(alias));
 }
 
 function getCableUsedFibres(
   cable: SavedMapAsset,
-  allAssets: SavedMapAsset[]
+  allAssets: SavedMapAsset[],
+  mappingRowsByAssetId: MappingRowsByAssetId = {}
 ): number {
   const cableId = String(cable.id || "");
 
@@ -242,7 +323,9 @@ function getCableUsedFibres(
   const mappingRowKeys = new Set<string>();
 
   allAssets.forEach((asset) => {
-    const rows = Array.isArray(asset.mappingRows) ? asset.mappingRows : [];
+    const localRows = Array.isArray(asset.mappingRows) ? asset.mappingRows : [];
+    const sharedRows = mappingRowsByAssetId[asset.id] || [];
+    const rows = sharedRows.length ? sharedRows : localRows;
 
     rows.forEach((row: any[], rowIndex: number) => {
       if (!Array.isArray(row)) return;
@@ -293,6 +376,49 @@ export default function CableLinesLayer({
   const [selectedCableId, setSelectedCableId] = useState<string | null>(null);
   const [editingCableId, setEditingCableId] = useState<string | null>(null);
   const [hoveredCableId, setHoveredCableId] = useState<string | null>(null);
+  const [mappingRowsByAssetId, setMappingRowsByAssetId] = useState<MappingRowsByAssetId>({});
+
+  const mappingAssetKey = useMemo(
+    () =>
+      assets
+        .filter((asset) => Boolean((asset as any).mappingRowsRef || (asset as any).mappingRowsCount))
+        .map((asset) => `${asset.id}:${(asset as any).mappingRowsCount || 0}:${(asset as any).updatedAt || ""}`)
+        .sort()
+        .join("|"),
+    [assets]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const assetsWithSharedMappings = assets.filter((asset) =>
+      Boolean((asset as any).mappingRowsRef || (asset as any).mappingRowsCount)
+    );
+
+    if (!assetsWithSharedMappings.length) {
+      setMappingRowsByAssetId({});
+      return;
+    }
+
+    Promise.all(
+      assetsWithSharedMappings.map(async (asset) => {
+        try {
+          const rows = await loadJointMappingRowsFromFirestore(asset.id);
+          return [asset.id, rows] as const;
+        } catch (err) {
+          console.error(`Failed to load mapping rows for ${asset.name || asset.id}`, err);
+          return [asset.id, []] as const;
+        }
+      })
+    ).then((entries) => {
+      if (cancelled) return;
+      setMappingRowsByAssetId(Object.fromEntries(entries));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mappingAssetKey]);
 
   useMapEvents({
     click: () => {
@@ -407,8 +533,16 @@ export default function CableLinesLayer({
             ? findConnectedAssetAtCableEnd(assets, points[points.length - 1])
             : null;
 
+        const calculatedUsedFibres = getCableUsedFibres(
+          asset,
+          assets,
+          mappingRowsByAssetId
+        );
+
         const usedFibres =
-          (asset as any).usedFibres ?? getCableUsedFibres(asset, assets);
+          typeof (asset as any).usedFibres === "number"
+            ? (asset as any).usedFibres
+            : calculatedUsedFibres;
 
         return (
           <React.Fragment key={asset.id}>

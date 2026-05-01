@@ -39,7 +39,7 @@ import { loadOsmBuildingsAsHomes, type OsmBounds } from "./map/utils/loadOsmBuil
 import { createDropCableRecordsFromDPs } from "./map/utils/generateDrops";
 import StreetCabDesigner from "./streetcab/StreetCabDesigner";
 import ProjectAreaSelector from "./map/projects/ProjectAreaSelector";
-
+import "leaflet-rotate";
 import type {
   AssetType,
   CableType,
@@ -525,7 +525,7 @@ export default function JointMapManager({
     cables: true,
     areas: true,
     measurements: true,
-    homes: true,
+    homes: false,
     l0: true,
     l1: true,
     l2: true,
@@ -536,9 +536,9 @@ export default function JointMapManager({
     fw4: true,
     fw6: true,
     fw10: true,
-    homesSdu: true,
-    homesMdu: true,
-    homesFlats: true,
+    homesSdu: false,
+    homesMdu: false,
+    homesFlats: false,
     feeders: true,
     links: true,
     ulw48: true,
@@ -2029,7 +2029,18 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
           zIndex: 0,
         }}
       >
-        <MapContainer center={mapCenter} zoom={6} maxZoom={22} style={{ height: "100%", width: "100%" }}>
+        <MapContainer
+  center={mapCenter}
+  zoom={6}
+  maxZoom={22}
+  style={{ height: "100%", width: "100%" }}
+  {...({
+    rotate: true,
+    touchRotate: true,
+    rotateControl: true,
+    bearing: 0,
+  } as any)}
+>
           <MapBaseLayers basemap={basemap} roadOverlayVisible={roadOverlayVisible} />
           <MapBoundsTracker onBoundsChange={setMapBounds} />
           <MapRefTracker onReady={(map) => { mapRef.current = map; }} />
@@ -2081,14 +2092,15 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
 
           {visibleLayers.areas && (
             <AreaPolygonsLayer
-              areas={projectAreas.filter((asset) =>
-                isAreaVisibleForLevel(asset, visibleLayers)
-              )}
-              activeProjectId={activeProjectId}
-              onSelect={handleSelectProject}
-              onEdit={handleEditAsset}
-              onDelete={handleDeleteAsset}
-            />
+  areas={projectAreas.filter((asset) =>
+    isAreaVisibleForLevel(asset, visibleLayers)
+  )}
+  activeProjectId={activeProjectId}
+  polygonEditingEnabled={mapMode === "pick"}
+  onSelect={handleSelectProject}
+  onEdit={handleEditAsset}
+  onDelete={handleDeleteAsset}
+/>
           )}
 
           <CableLinesLayer
