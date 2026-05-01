@@ -28,6 +28,7 @@ import GpsLocationControl from "./map/GpsLocationControl";
 import AssetMarkersLayer from "./map/AssetMarkersLayer";
 import CableLinesLayer from "./map/CableLinesLayer";
 import CableDetailsModal from "./map/CableDetailsModal";
+import { loadMapView, saveMapView } from "./map/mapViewMemory";
 import PoleDetailsModal from "./map/modals/PoleDetailsModal";
 import DistributionPointDetailsModal from "./map/modals/DistributionPointDetailsModal";
 import ChamberDetailsModal, {
@@ -39,6 +40,7 @@ import { loadOsmBuildingsAsHomes, type OsmBounds } from "./map/utils/loadOsmBuil
 import { createDropCableRecordsFromDPs } from "./map/utils/generateDrops";
 import StreetCabDesigner from "./streetcab/StreetCabDesigner";
 import ProjectAreaSelector from "./map/projects/ProjectAreaSelector";
+import { filterAssetsForProjectArea } from "./map/projects/projectAssetFilter";
 
 import type {
   AssetType,
@@ -472,7 +474,11 @@ export default function JointMapManager({
 }: Props) {
   const [pickedLocation, setPickedLocation] = useState<LatLngLiteral | null>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const initialMapViewRef = useRef(loadMapView());
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(
+    () => initialMapViewRef.current?.activeProjectId ?? null
+  );
+  const activeProjectIdRef = useRef<string | null>(activeProjectId);
   const [assetType, setAssetType] = useState<AssetType>(
     inferAssetTypeFromName(currentJointName)
   );
@@ -598,6 +604,11 @@ export default function JointMapManager({
       return [last.lat, last.lng];
     }
 
+    const savedMapView = initialMapViewRef.current;
+    if (savedMapView?.center) {
+      return [savedMapView.center.lat, savedMapView.center.lng];
+    }
+
     const firstPointAsset = (savedJoints ?? []).find((a) => a.geometry?.type === "Point");
     if (firstPointAsset?.geometry?.type === "Point") {
       return firstPointAsset.geometry.coordinates;
@@ -624,8 +635,33 @@ export default function JointMapManager({
     [savedJoints]
   );
 
+  useEffect(() => {
+    activeProjectIdRef.current = activeProjectId;
+  }, [activeProjectId]);
+
+  const activeProjectArea = useMemo(
+    () => projectAreas.find((area) => area.id === activeProjectId) ?? null,
+    [activeProjectId, projectAreas]
+  );
+
+  const visibleProjectAssets = useMemo(
+    () =>
+      filterAssetsForProjectArea(
+        (savedJoints ?? []).filter((asset) => asset.assetType !== "area"),
+        activeProjectArea
+      ),
+    [activeProjectArea, savedJoints]
+  );
+
+  const visibleProjectAreas = useMemo(
+    () => (activeProjectId ? projectAreas.filter((area) => area.id === activeProjectId) : projectAreas),
+    [activeProjectId, projectAreas]
+  );
+
   const handleSelectProject = (projectId: string) => {
+    activeProjectIdRef.current = projectId;
     setActiveProjectId(projectId);
+    saveMapView({ activeProjectId: projectId });
 
     const project = projectAreas.find((area) => area.id === projectId);
 
@@ -1647,7 +1683,11 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
             projectAreas={projectAreas}
             activeProjectId={activeProjectId}
             onSelectProject={handleSelectProject}
-            onClearProject={() => setActiveProjectId(null)}
+            onClearProject={() => {
+              activeProjectIdRef.current = null;
+              setActiveProjectId(null);
+              saveMapView({ activeProjectId: null });
+            }}
           />
 
           <button onClick={onClose} style={{ ...btnSecondary, marginLeft: "auto" }}>
@@ -2036,14 +2076,27 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
           zIndex: 0,
         }}
       >
-        <MapContainer center={mapCenter} zoom={6} maxZoom={22} style={{ height: "100%", width: "100%" }}>
+        <MapContainer center={mapCenter} zoom={initialMapViewRef.current?.zoom ?? 6} maxZoom={22} style={{ height: "100%", width: "100%" }}>
           <MapBaseLayers basemap={basemap} roadOverlayVisible={roadOverlayVisible} />
-          <MapBoundsTracker onBoundsChange={setMapBounds} />
+          <MapBoundsTracker
+            onBoundsChange={(bounds) => {
+              setMapBounds(bounds);
+              const map = mapRef.current;
+              if (!map) return;
+
+              const center = map.getCenter();
+              saveMapView({
+                center: { lat: center.lat, lng: center.lng },
+                zoom: map.getZoom(),
+                activeProjectId: activeProjectIdRef.current,
+              });
+            }}
+          />
           <MapRefTracker onReady={(map) => { mapRef.current = map; }} />
 
           <MapClickHandler
             mode={mapMode}
-            assets={(savedJoints ?? []).filter((asset) => asset.assetType !== "area")}
+            assets={visibleProjectAssets}
             snapEnabled={snapEnabled}
             onPick={setPickedLocation}
             onMeasurePoint={(point) =>
@@ -2055,7 +2108,7 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
           />
 
           <AssetMarkersLayer
-  assets={(savedJoints ?? []).filter((asset) => asset.assetType !== "area")}
+  assets={visibleProjectAssets}
   visibleLayers={visibleLayers}
   onOpenAsset={(asset) => {
     if (asset.assetType === "street-cab") {
@@ -2088,7 +2141,7 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
 
           {visibleLayers.areas && (
             <AreaPolygonsLayer
-              areas={projectAreas.filter((asset) =>
+              areas={visibleProjectAreas.filter((asset) =>
                 isAreaVisibleForLevel(asset, visibleLayers)
               )}
               activeProjectId={activeProjectId}
@@ -2099,7 +2152,7 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
           )}
 
           <CableLinesLayer
-            assets={savedJoints}
+            assets={visibleProjectAssets}
             cablesVisible={visibleLayers.cables}
             visibleLayers={visibleLayers}
             showCableDistances={visibleLayers.cableDistances}
