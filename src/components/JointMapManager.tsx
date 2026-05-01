@@ -117,6 +117,7 @@ type LayerVisibility = {
   cables: boolean;
   areas: boolean;
   measurements: boolean;
+  cableDistances: boolean;
   homes: boolean;
   l0: boolean;
   l1: boolean;
@@ -525,6 +526,7 @@ export default function JointMapManager({
     cables: true,
     areas: true,
     measurements: true,
+    cableDistances: false,
     homes: false,
     l0: true,
     l1: true,
@@ -2100,6 +2102,7 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
             assets={savedJoints}
             cablesVisible={visibleLayers.cables}
             visibleLayers={visibleLayers}
+            showCableDistances={visibleLayers.cableDistances}
             onDeleteAsset={handleDeleteAsset}
             onEditAsset={handleEditAsset}
           />

@@ -357,7 +357,7 @@ export default function CableLinesLayer({
   assets,
   cablesVisible,
   visibleLayers = {},
-  showCableDistances = true,
+  showCableDistances,
   onDeleteAsset,
   onEditAsset,
 }: Props) {
@@ -627,7 +627,7 @@ export default function CableLinesLayer({
               </Tooltip>
             </Polyline>
 
-            {showCableDistances &&
+            {showCableDistances === true &&
               points.slice(0, -1).map((coord, i) => {
                 const next = points[i + 1];
                 if (!next) return null;
