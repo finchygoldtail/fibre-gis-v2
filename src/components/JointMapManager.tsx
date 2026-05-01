@@ -19,6 +19,7 @@ import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import AreaPolygonsLayer from "./map/AreaPolygonsLayer";
+
 import { formatDistance, getPathDistanceMeters } from "../utils/mapMeasure";
 import { getNextAssetName } from "../utils/mapAssetNames";
 import MapContextMenu, { type MapContextAction } from "./map/MapContextMenu";
@@ -38,6 +39,7 @@ import { loadOsmBuildingsAsHomes, type OsmBounds } from "./map/utils/loadOsmBuil
 import { createDropCableRecordsFromDPs } from "./map/utils/generateDrops";
 import StreetCabDesigner from "./streetcab/StreetCabDesigner";
 import ProjectAreaSelector from "./map/projects/ProjectAreaSelector";
+
 import type {
   AssetType,
   CableType,
@@ -359,44 +361,42 @@ function MapBaseLayers({
     <>
       {basemap === "street" ? (
         <TileLayer
-          attribution='&copy; OpenStreetMap contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; MapTiler &copy; OpenStreetMap contributors'
+          url="https://api.maptiler.com/maps/streets-v4/{z}/{x}/{y}.png?key=FMa5odRKrNLiyoaXSW4N"
+          maxZoom={22}
         />
       ) : null}
 
-      {basemap === "satellite" || basemap === "hybrid" ? (
+      {basemap === "satellite" ? (
         <TileLayer
-          attribution="Tiles &copy; Esri"
-          url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+          attribution='&copy; MapTiler &copy; OpenStreetMap contributors'
+          url="https://api.maptiler.com/maps/satellite/{z}/{x}/{y}.jpg?key=FMa5odRKrNLiyoaXSW4N"
+          maxZoom={22}
         />
       ) : null}
 
       {basemap === "dark" ? (
         <TileLayer
-          attribution='&copy; OpenStreetMap contributors &copy; CARTO'
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          attribution='&copy; MapTiler &copy; OpenStreetMap contributors'
+          url="https://api.maptiler.com/maps/dataviz-dark/{z}/{x}/{y}.png?key=FMa5odRKrNLiyoaXSW4N"
+          maxZoom={22}
         />
       ) : null}
 
       {basemap === "hybrid" ? (
-        <>
-          <TileLayer
-            attribution="Labels &copy; Esri"
-            url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
-            opacity={0.9}
-          />
-          <TileLayer
-            attribution="Roads &copy; Esri"
-            url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}"
-            opacity={0.85}
-          />
-        </>
+        <TileLayer
+          attribution='&copy; MapTiler &copy; OpenStreetMap contributors'
+          url="https://api.maptiler.com/maps/hybrid/{z}/{x}/{y}.jpg?key=FMa5odRKrNLiyoaXSW4N"
+          maxZoom={22}
+          opacity={0.95}
+        />
       ) : null}
 
       {roadOverlayVisible && basemap !== "hybrid" ? (
         <TileLayer
-          attribution="Roads &copy; Esri"
-          url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}"
+          attribution='&copy; MapTiler &copy; OpenStreetMap contributors'
+          url="https://api.maptiler.com/maps/uk-openzoomstack-road/{z}/{x}/{y}.png?key=FMa5odRKrNLiyoaXSW4N"
+          maxZoom={22}
           opacity={basemap === "satellite" ? 0.9 : 0.65}
         />
       ) : null}
@@ -504,7 +504,17 @@ export default function JointMapManager({
   const [measurePoints, setMeasurePoints] = useState<LatLngLiteral[]>([]);
   const [draftCablePoints, setDraftCablePoints] = useState<LatLngLiteral[]>([]);
   const [draftAreaPoints, setDraftAreaPoints] = useState<LatLngLiteral[]>([]);
-  const [isLayersOpen, setIsLayersOpen] = useState(true);
+  const [isLayersOpen, setIsLayersOpen] = useState(false);
+  const [isPanelOpen, setIsPanelOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const updateMobile = () => setIsMobile(window.innerWidth < 600);
+    updateMobile();
+
+    window.addEventListener("resize", updateMobile);
+    return () => window.removeEventListener("resize", updateMobile);
+  }, []);
 
   const [visibleLayers, setVisibleLayers] = useState<LayerVisibility>({
     agJoints: true,
@@ -601,35 +611,38 @@ export default function JointMapManager({
   const draftCableDistance = useMemo(() => {
     return getPathDistanceMeters(draftCablePoints);
   }, [draftCablePoints]);
-const projectAreas = useMemo(
-  () =>
-    (savedJoints ?? []).filter(
-      (asset) =>
-        asset.assetType === "area" &&
-        asset.geometry?.type === "Polygon"
-    ),
-  [savedJoints]
-);
-const handleSelectProject = (projectId: string) => {
-  setActiveProjectId(projectId);
 
-  const project = projectAreas.find((area) => area.id === projectId);
-
-  if (!project || project.geometry?.type !== "Polygon") return;
-
-  const points = project.geometry.coordinates[0];
-
-  if (!points?.length) return;
-
-  const bounds = L.latLngBounds(
-    points.map(([lat, lng]) => [lat, lng] as [number, number])
+  const projectAreas = useMemo(
+    () =>
+      (savedJoints ?? []).filter(
+        (asset) =>
+          asset.assetType === "area" &&
+          asset.geometry?.type === "Polygon"
+      ),
+    [savedJoints]
   );
 
-  mapRef.current?.fitBounds(bounds, {
-    padding: [60, 60],
-    maxZoom: 18,
-  });
-};
+  const handleSelectProject = (projectId: string) => {
+    setActiveProjectId(projectId);
+
+    const project = projectAreas.find((area) => area.id === projectId);
+
+    if (!project || project.geometry?.type !== "Polygon") return;
+
+    const points = project.geometry.coordinates[0];
+
+    if (!points?.length) return;
+
+    const bounds = L.latLngBounds(
+      points.map(([lat, lng]) => [lat, lng] as [number, number])
+    );
+
+    mapRef.current?.fitBounds(bounds, {
+      padding: [60, 60],
+      maxZoom: 18,
+    });
+  };
+
   const resetEditor = () => {
     setEditingAssetId(null);
     setPickedLocation(null);
@@ -1579,32 +1592,61 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
         color: "white",
       }}
     >
+      {isMobile && (
+        <button
+          onClick={() => setIsPanelOpen((prev) => !prev)}
+          style={{
+            position: "absolute",
+            top: 12,
+            left: 12,
+            zIndex: 2000,
+            background: "#1f2937",
+            color: "white",
+            border: "1px solid #374151",
+            padding: "9px 12px",
+            borderRadius: 8,
+            fontSize: 18,
+            boxShadow: "0 2px 8px rgba(0,0,0,0.35)",
+          }}
+        >
+          {isPanelOpen ? "×" : "☰"}
+        </button>
+      )}
+
       <div
         style={{
           ...panel,
           position: "absolute",
           top: 0,
           left: 0,
-          width: "360px",
-          height: "100%",
-          zIndex: 1000,
+          width: isMobile ? "100%" : "360px",
+          height: isMobile ? "85%" : "100%",
+          zIndex: 1500,
           overflowY: "auto",
           background: "#1f2937",
           boxSizing: "border-box",
+          borderRight: isMobile ? "none" : "1px solid #374151",
+          borderBottom: isMobile ? "1px solid #374151" : "none",
+          transform: isMobile
+            ? isPanelOpen
+              ? "translateY(0)"
+              : "translateY(-100%)"
+            : "translateX(0)",
+          transition: "transform 0.3s ease",
         }}
       >
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-  <ProjectAreaSelector
-    projectAreas={projectAreas}
-    activeProjectId={activeProjectId}
-    onSelectProject={handleSelectProject}
-    onClearProject={() => setActiveProjectId(null)}
-  />
+          <ProjectAreaSelector
+            projectAreas={projectAreas}
+            activeProjectId={activeProjectId}
+            onSelectProject={handleSelectProject}
+            onClearProject={() => setActiveProjectId(null)}
+          />
 
-  <button onClick={onClose} style={{ ...btnSecondary, marginLeft: "auto" }}>
-    Back
-  </button>
-</div>
+          <button onClick={onClose} style={{ ...btnSecondary, marginLeft: "auto" }}>
+            Back
+          </button>
+        </div>
 
         <div style={card}>
           <div style={label}>Asset Type</div>
@@ -1987,12 +2029,7 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
           zIndex: 0,
         }}
       >
-        <MapContainer
-  center={mapCenter}
-  zoom={6}
-  maxZoom={22}
-  style={{ height: "100%", width: "100%" }}
->
+        <MapContainer center={mapCenter} zoom={6} maxZoom={22} style={{ height: "100%", width: "100%" }}>
           <MapBaseLayers basemap={basemap} roadOverlayVisible={roadOverlayVisible} />
           <MapBoundsTracker onBoundsChange={setMapBounds} />
           <MapRefTracker onReady={(map) => { mapRef.current = map; }} />
@@ -2042,17 +2079,17 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
 />
           
 
-         {visibleLayers.areas && (
-  <AreaPolygonsLayer
-    areas={projectAreas.filter((asset) =>
-      isAreaVisibleForLevel(asset, visibleLayers)
-    )}
-    activeProjectId={activeProjectId}
-    onSelect={handleSelectProject}
-    onEdit={handleEditAsset}
-    onDelete={handleDeleteAsset}
-  />
-)}
+          {visibleLayers.areas && (
+            <AreaPolygonsLayer
+              areas={projectAreas.filter((asset) =>
+                isAreaVisibleForLevel(asset, visibleLayers)
+              )}
+              activeProjectId={activeProjectId}
+              onSelect={handleSelectProject}
+              onEdit={handleEditAsset}
+              onDelete={handleDeleteAsset}
+            />
+          )}
 
           <CableLinesLayer
             assets={savedJoints}
@@ -2214,8 +2251,6 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
   })}
 
           <GpsLocationControl />
-          
-
         </MapContainer>
 
         <MapContextMenu
@@ -2340,7 +2375,7 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
         style={{
           position: "absolute",
           top: 16,
-          right: isLayersOpen ? 340 : 16,
+          right: isMobile ? 16 : isLayersOpen ? 340 : 16,
           zIndex: 1200,
           background: "#2563eb",
           color: "white",

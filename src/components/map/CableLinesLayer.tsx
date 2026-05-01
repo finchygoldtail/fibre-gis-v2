@@ -1,6 +1,14 @@
 import React, { useState } from "react";
 import L from "leaflet";
-import { CircleMarker, Marker, Polyline, Popup, Tooltip } from "react-leaflet";
+import {
+  CircleMarker,
+  Marker,
+  Polyline,
+  Popup,
+  Tooltip,
+  useMap,
+  useMapEvents,
+} from "react-leaflet";
 import type { SavedMapAsset } from "../JointMapManager";
 
 type Props = {
@@ -56,6 +64,10 @@ function getDashArray(asset: SavedMapAsset): string | undefined {
   return asset.installMethod === "OH" ? "10, 8" : undefined;
 }
 
+function getMidpoint(a: [number, number], b: [number, number]): [number, number] {
+  return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+}
+
 function shouldShowEditHandle(index: number, total: number): boolean {
   if (index === 0 || index === total - 1) return true;
   if (total <= 80) return true;
@@ -63,21 +75,11 @@ function shouldShowEditHandle(index: number, total: number): boolean {
   return index % 25 === 0;
 }
 
-function getMidpoint(
-  a: [number, number],
-  b: [number, number]
-): [number, number] {
-  return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-}
-
 function getDistanceMeters(a: [number, number], b: [number, number]): number {
   return getCableLengthMeters([a, b]);
 }
 
-function getCableSpanAngleDegrees(
-  a: [number, number],
-  b: [number, number]
-): number {
+function getCableSpanAngleDegrees(a: [number, number], b: [number, number]): number {
   const midLat = ((a[0] + b[0]) / 2) * (Math.PI / 180);
   const dx = (b[1] - a[1]) * Math.cos(midLat);
   const dy = b[0] - a[0];
@@ -207,13 +209,10 @@ function getCableUsedFibres(
 ): number {
   const cableId = String(cable.id || "");
 
-  // Drop cables normally represent one used customer fibre.
   if (String(cable.cableType || "").toLowerCase() === "drop") {
     return 1;
   }
 
-  // 1) Exact allocation data from DPs / child cables.
-  // This is the cleanest source when it exists.
   const allocatedFibres = new Set<number>();
 
   allAssets.forEach((asset) => {
@@ -240,10 +239,6 @@ function getCableUsedFibres(
 
   if (allocatedFibres.size > 0) return allocatedFibres.size;
 
-  // 2) Fallback for older/sheet-driven designs:
-  // read uploaded joint / splice mapping rows and count rows that mention this cable.
-  // This supports your Excel mapping uploads where fibre use is already recorded
-  // against LMJs/CMJs/AG joints rather than stored directly on the cable.
   const mappingRowKeys = new Set<string>();
 
   allAssets.forEach((asset) => {
@@ -256,16 +251,12 @@ function getCableUsedFibres(
       const rowText = getRowText(row).trim();
       if (!rowText) return;
 
-      // Use the whole row text as the key so the same row is not counted twice.
-      // Include asset id to allow the same fibre to appear at both ends if it is
-      // genuinely present in two different joint sheets.
       mappingRowKeys.add(`${asset.id}:${rowIndex}:${normaliseCableRef(rowText)}`);
     });
   });
 
   if (mappingRowKeys.size > 0) return mappingRowKeys.size;
 
-  // 3) Last fallback: count linked drops/child cables by parent metadata/name.
   const cableName = normaliseCableRef(cable.name);
 
   const linkedDrops = allAssets.filter((asset) => {
@@ -281,15 +272,13 @@ function getCableUsedFibres(
 
   if (linkedDrops.length > 0) return linkedDrops.length;
 
-  const childCableUsage = allAssets
+  return allAssets
     .filter(
       (asset) =>
         asset.assetType === "cable" &&
         String((asset as any).parentCableId || "") === cableId
     )
     .reduce((sum, child) => sum + getNumberFromFibreCount(child.fibreCount), 0);
-
-  return childCableUsage;
 }
 
 export default function CableLinesLayer({
@@ -300,8 +289,16 @@ export default function CableLinesLayer({
   onDeleteAsset,
   onEditAsset,
 }: Props) {
+  const map = useMap();
+  const [selectedCableId, setSelectedCableId] = useState<string | null>(null);
   const [editingCableId, setEditingCableId] = useState<string | null>(null);
   const [hoveredCableId, setHoveredCableId] = useState<string | null>(null);
+
+  useMapEvents({
+    click: () => {
+      setSelectedCableId(null);
+    },
+  });
 
   if (!cablesVisible) return null;
 
@@ -331,6 +328,16 @@ export default function CableLinesLayer({
 
     return true;
   });
+
+  const zoomToCable = (points: [number, number][]) => {
+    if (points.length < 2) return;
+
+    const bounds = L.latLngBounds(points);
+    map.fitBounds(bounds, {
+      padding: [80, 80],
+      maxZoom: 19,
+    });
+  };
 
   const updateCableCoordinates = (
     asset: SavedMapAsset,
@@ -385,7 +392,10 @@ export default function CableLinesLayer({
 
         const length = getCableLengthMeters(points);
         const isHovered = hoveredCableId === asset.id;
+        const isSelected = selectedCableId === asset.id;
         const isEditing = editingCableId === asset.id;
+        const baseColor = getCableColor(asset);
+        const cableColor = isSelected ? "#f59e0b" : baseColor;
 
         const startAsset =
           points.length >= 2
@@ -405,13 +415,18 @@ export default function CableLinesLayer({
             <Polyline
               positions={points}
               pathOptions={{
-                color: getCableColor(asset),
-                weight: isHovered || isEditing ? 6 : 4,
-                opacity: isHovered || isEditing ? 1 : 0.85,
+                color: cableColor,
+                weight: isSelected ? 9 : isHovered || isEditing ? 7 : 4,
+                opacity: isSelected || isHovered || isEditing ? 1 : 0.85,
                 dashArray: getDashArray(asset),
+                className: isSelected ? "selected-cable-glow" : "",
               }}
               eventHandlers={{
-                click: () => setEditingCableId(asset.id),
+                click: (e) => {
+                  L.DomEvent.stopPropagation(e);
+                  setSelectedCableId(asset.id);
+                  zoomToCable(points);
+                },
                 mouseover: () => setHoveredCableId(asset.id),
                 mouseout: () => setHoveredCableId(null),
               }}
@@ -467,7 +482,12 @@ export default function CableLinesLayer({
                       Edit details
                     </button>
 
-                    <button onClick={() => setEditingCableId(asset.id)}>
+                    <button
+                      onClick={() => {
+                        setSelectedCableId(asset.id);
+                        setEditingCableId(asset.id);
+                      }}
+                    >
                       Edit route
                     </button>
 
