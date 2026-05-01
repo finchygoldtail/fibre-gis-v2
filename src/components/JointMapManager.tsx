@@ -41,6 +41,7 @@ import { createDropCableRecordsFromDPs } from "./map/utils/generateDrops";
 import StreetCabDesigner from "./streetcab/StreetCabDesigner";
 import ProjectAreaSelector from "./map/projects/ProjectAreaSelector";
 import { filterAssetsForProjectArea } from "./map/projects/projectAssetFilter";
+import { loadProjectHomes, saveProjectHomes } from "./map/projects/projectHomesStorage";
 
 import type {
   AssetType,
@@ -562,6 +563,9 @@ export default function JointMapManager({
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [isRoutingCable, setIsRoutingCable] = useState(false);
   const [isLoadingOsmHomes, setIsLoadingOsmHomes] = useState(false);
+  const [isLoadingProjectHomes, setIsLoadingProjectHomes] = useState(false);
+  const [projectHomes, setProjectHomes] = useState<SavedMapAsset[]>([]);
+  const [loadedHomesProjectId, setLoadedHomesProjectId] = useState<string | null>(null);
   const [mapBounds, setMapBounds] = useState<OsmBounds | null>(null);
 
   const [contextMenu, setContextMenu] = useState<{
@@ -589,6 +593,46 @@ export default function JointMapManager({
     setAssetType(inferAssetTypeFromName(currentJointName));
   }, [currentJointName, currentJointType]);
 
+  const allMapAssets = useMemo(() => {
+    const byId = new Map<string, SavedMapAsset>();
+    (savedJoints ?? []).forEach((asset) => byId.set(asset.id, asset));
+    projectHomes.forEach((asset) => byId.set(asset.id, asset));
+    return Array.from(byId.values());
+  }, [savedJoints, projectHomes]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchProjectHomes = async () => {
+      if (!activeProjectId || !visibleLayers.homes) {
+        setProjectHomes([]);
+        setLoadedHomesProjectId(null);
+        return;
+      }
+
+      if (loadedHomesProjectId === activeProjectId) return;
+
+      setIsLoadingProjectHomes(true);
+      try {
+        const homes = await loadProjectHomes(activeProjectId);
+        if (!cancelled) {
+          setProjectHomes(homes);
+          setLoadedHomesProjectId(activeProjectId);
+        }
+      } catch (err) {
+        console.error("Failed to load saved project homes", err);
+      } finally {
+        if (!cancelled) setIsLoadingProjectHomes(false);
+      }
+    };
+
+    fetchProjectHomes();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProjectId, visibleLayers.homes, loadedHomesProjectId]);
+
   const mapCenter = useMemo<[number, number]>(() => {
     if (pickedLocation) return [pickedLocation.lat, pickedLocation.lng];
     if (draftCablePoints.length > 0) {
@@ -609,13 +653,13 @@ export default function JointMapManager({
       return [savedMapView.center.lat, savedMapView.center.lng];
     }
 
-    const firstPointAsset = (savedJoints ?? []).find((a) => a.geometry?.type === "Point");
+    const firstPointAsset = allMapAssets.find((a) => a.geometry?.type === "Point");
     if (firstPointAsset?.geometry?.type === "Point") {
       return firstPointAsset.geometry.coordinates;
     }
 
     return [54.5, -3.0];
-  }, [pickedLocation, draftCablePoints, draftAreaPoints, measurePoints, savedJoints]);
+  }, [pickedLocation, draftCablePoints, draftAreaPoints, measurePoints, allMapAssets]);
 
   const measuredDistance = useMemo(() => {
     return getPathDistanceMeters(measurePoints);
@@ -647,10 +691,10 @@ export default function JointMapManager({
   const visibleProjectAssets = useMemo(
     () =>
       filterAssetsForProjectArea(
-        (savedJoints ?? []).filter((asset) => asset.assetType !== "area"),
+        allMapAssets.filter((asset) => asset.assetType !== "area"),
         activeProjectArea
       ),
-    [activeProjectArea, savedJoints]
+    [activeProjectArea, allMapAssets]
   );
 
   const visibleProjectAreas = useMemo(
@@ -1256,7 +1300,28 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
     setDraftAreaPoints((prev) => [...prev, point]);
   };
 
+  const loadExistingHomesOrContinueImport = async (projectId: string): Promise<boolean> => {
+    const existingHomes = await loadProjectHomes(projectId);
+
+    if (existingHomes.length === 0) {
+      return false;
+    }
+
+    setProjectHomes(existingHomes);
+    setLoadedHomesProjectId(projectId);
+    alert("Homes are already saved for this project, so I loaded the saved homes instead of importing duplicates.");
+    return true;
+  };
+
   const handleLoadOsmHomes = async () => {
+    if (!activeProjectId) {
+      alert("Select a project area first, then load homes. This keeps homes saved against one area only.");
+      return;
+    }
+
+    const loadedExistingHomes = await loadExistingHomesOrContinueImport(activeProjectId);
+    if (loadedExistingHomes) return;
+
     if (!mapBounds) {
       alert("Move or zoom the map once, then try again.");
       return;
@@ -1273,18 +1338,24 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
     setIsLoadingOsmHomes(true);
 
     try {
-      const homes = await loadOsmBuildingsAsHomes(mapBounds, savedJoints);
+      const homes = (await loadOsmBuildingsAsHomes(mapBounds, allMapAssets)).map((asset) => ({
+        ...(asset as SavedMapAsset),
+        projectId: activeProjectId,
+      }));
 
       if (homes.length === 0) {
         alert("No new OSM homes found in the current map view.");
         return;
       }
 
-      setSavedJoints((prev) => [
-        ...prev,
-        ...homes.map((asset) => markAssetForLiveSync(asset as SavedMapAsset, true)),
-      ]);
-      alert(`Loaded ${homes.length} OSM homes into the map.`);
+      const savedHomes = homes.map((asset) => markAssetForLiveSync(asset as SavedMapAsset, true));
+      const mergedHomes = [...projectHomes, ...savedHomes];
+
+      await saveProjectHomes(activeProjectId, mergedHomes);
+      setProjectHomes(mergedHomes);
+      setLoadedHomesProjectId(activeProjectId);
+
+      alert(`Saved ${homes.length} OSM homes to this project.`);
     } catch (err: any) {
       alert(`Failed to load OSM homes: ${err.message || String(err)}`);
     } finally {
@@ -1301,7 +1372,7 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
     }
 
     const existingHomeKeys = new Set(
-      (savedJoints ?? [])
+      allMapAssets
         .filter((asset) => asset.assetType === "home")
         .map((asset) => {
           const uprn = String((asset as any).uprn || asset.name || asset.id || "").trim();
@@ -1342,6 +1413,7 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
           id,
           name: uprn ? `UPRN ${uprn}` : "Home",
           assetType: "home",
+          projectId: activeProjectId || undefined,
           jointType: "Home",
           notes: "",
           mappingRows: [],
@@ -1357,10 +1429,19 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
   };
 
   const loadGeoJsonHomes = (file: File) => {
+    if (!activeProjectId) {
+      alert("Select a project area first, then import homes. This keeps homes saved against one area only.");
+      return;
+    }
+
+    const projectIdForImport = activeProjectId;
     const reader = new FileReader();
 
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
+        const loadedExistingHomes = await loadExistingHomesOrContinueImport(projectIdForImport);
+        if (loadedExistingHomes) return;
+
         const geojson = JSON.parse(String(e.target?.result || ""));
         const homes = createHomeAssetsFromGeoJson(geojson);
 
@@ -1369,12 +1450,14 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
           return;
         }
 
-        setSavedJoints((prev) => [
-          ...prev,
-          ...homes.map((asset) => markAssetForLiveSync(asset, true)),
-        ]);
+        const savedHomes = homes.map((asset) => markAssetForLiveSync({ ...asset, projectId: projectIdForImport }, true));
+        const mergedHomes = [...projectHomes, ...savedHomes];
 
-        alert(`Loaded ${homes.length} GeoJSON homes.`);
+        await saveProjectHomes(projectIdForImport, mergedHomes);
+        setProjectHomes(mergedHomes);
+        setLoadedHomesProjectId(projectIdForImport);
+
+        alert(`Saved ${homes.length} GeoJSON homes to this project.`);
       } catch (err: any) {
         console.error(err);
         alert(`Failed to load GeoJSON homes: ${err.message || String(err)}`);
@@ -1385,6 +1468,12 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
   };
 
   const loadGeoJsonHomesInView = (file: File) => {
+    if (!activeProjectId) {
+      alert("Select a project area first, then import homes. This keeps homes saved against one area only.");
+      return;
+    }
+
+    const projectIdForImport = activeProjectId;
     const map = mapRef.current;
 
     if (!map) {
@@ -1394,8 +1483,11 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
 
     const reader = new FileReader();
 
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
+        const loadedExistingHomes = await loadExistingHomesOrContinueImport(projectIdForImport);
+        if (loadedExistingHomes) return;
+
         const geojson = JSON.parse(String(e.target?.result || ""));
         const homes = createHomeAssetsFromGeoJson(geojson, map.getBounds());
 
@@ -1404,12 +1496,14 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
           return;
         }
 
-        setSavedJoints((prev) => [
-          ...prev,
-          ...homes.map((asset) => markAssetForLiveSync(asset, true)),
-        ]);
+        const savedHomes = homes.map((asset) => markAssetForLiveSync({ ...asset, projectId: projectIdForImport }, true));
+        const mergedHomes = [...projectHomes, ...savedHomes];
 
-        alert(`Loaded ${homes.length} GeoJSON homes in view.`);
+        await saveProjectHomes(projectIdForImport, mergedHomes);
+        setProjectHomes(mergedHomes);
+        setLoadedHomesProjectId(projectIdForImport);
+
+        alert(`Saved ${homes.length} GeoJSON homes in view to this project.`);
       } catch (err: any) {
         console.error(err);
         alert(`Failed to load GeoJSON homes: ${err.message || String(err)}`);
@@ -2060,8 +2154,14 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
             />
           </div>
 
+          {isLoadingProjectHomes && (
+            <div style={{ fontSize: "0.82rem", color: "#fbbf24", marginTop: 8 }}>
+              Loading saved homes for this project...
+            </div>
+          )}
+
           <div style={{ fontSize: "0.82rem", color: "#cbd5e1" }}>
-            Zoom into the estate/road first, then load buildings or UPRN GeoJSON homes. Imported points become shared Home assets.
+            Zoom into the estate/road first, then load buildings or UPRN GeoJSON homes. Imported points are saved once in project home chunks.
           </div>
         </div>
       </div>
@@ -2333,7 +2433,7 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
           parentCableId={parentCableId}
           allocatedInputFibres={allocatedInputFibres}
           availableParentCables={availableParentCablesForBranchAllocation}
-          allAssets={savedJoints ?? []}
+          allAssets={allMapAssets}
           editingAssetId={editingAssetId}
           onChangeName={setJointName}
           onChangeNotes={setNotes}
@@ -2372,7 +2472,7 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
           connectedHomes={connectedHomesForSelectedDp}
           availableThroughCables={availableParentCablesForBranchAllocation}
           allDistributionPoints={allDistributionPointsForAfnAllocation}
-          allAssets={savedJoints ?? []}
+          allAssets={allMapAssets}
           currentDpId={editingAssetId ?? undefined}
           editingAssetId={editingAssetId}
           onChangeName={setJointName}
