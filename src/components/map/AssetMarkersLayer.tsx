@@ -481,6 +481,96 @@ function getIconForAsset(asset: SavedMapAsset, allAssets: SavedMapAsset[]) {
   return agJointIcon;
 }
 
+
+function createHomeClusterIcon(count: number) {
+  const size = count >= 100 ? 44 : count >= 25 ? 38 : 32;
+
+  return L.divIcon({
+    className: "",
+    html: `
+      <div style="
+        width: ${size}px;
+        height: ${size}px;
+        border-radius: 999px;
+        display: grid;
+        place-items: center;
+        background: #334155;
+        color: #ffffff;
+        border: 3px solid #ffffff;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.35);
+        font-weight: 800;
+        font-size: 0.8rem;
+      ">${count}</div>
+    `,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2],
+  });
+}
+
+type HomeCluster = {
+  id: string;
+  assets: SavedMapAsset[];
+  position: [number, number];
+};
+
+
+function getHomeClusterBounds(cluster: HomeCluster): L.LatLngBounds | null {
+  const positions = cluster.assets
+    .map((home) => getPointLatLng(home))
+    .filter(Boolean) as [number, number][];
+
+  if (positions.length === 0) return null;
+
+  return L.latLngBounds(positions.map(([lat, lng]) => L.latLng(lat, lng)));
+}
+
+function clusterHomeAssets(homes: SavedMapAsset[], map: L.Map): HomeCluster[] {
+  const zoom = map.getZoom();
+
+  if (zoom >= 19 || homes.length < 2) {
+    return homes
+      .map((home) => {
+        const position = getPointLatLng(home);
+        if (!position) return null;
+        return { id: home.id, assets: [home], position };
+      })
+      .filter(Boolean) as HomeCluster[];
+  }
+
+  const gridSize = zoom >= 17 ? 44 : zoom >= 15 ? 56 : 68;
+  const buckets = new Map<string, SavedMapAsset[]>();
+
+  homes.forEach((home) => {
+    const position = getPointLatLng(home);
+    if (!position) return;
+
+    const point = map.latLngToLayerPoint(L.latLng(position[0], position[1]));
+    const key = `${Math.floor(point.x / gridSize)}:${Math.floor(point.y / gridSize)}`;
+    const bucket = buckets.get(key) || [];
+    bucket.push(home);
+    buckets.set(key, bucket);
+  });
+
+  return Array.from(buckets.entries()).map(([key, bucket]) => {
+    let latTotal = 0;
+    let lngTotal = 0;
+
+    bucket.forEach((home) => {
+      const position = getPointLatLng(home);
+      if (!position) return;
+      latTotal += position[0];
+      lngTotal += position[1];
+    });
+
+    return {
+      id: `home-cluster-${key}-${bucket.length}`,
+      assets: bucket,
+      position: [latTotal / bucket.length, lngTotal / bucket.length],
+    };
+  });
+}
+
 export default function AssetMarkersLayer({
   assets,
   visibleLayers,
@@ -526,218 +616,247 @@ export default function AssetMarkersLayer({
   });
 }, [assets, visibleLayers, mapView]);
 
+  const nonHomePointAssets = useMemo(
+    () => pointAssets.filter((asset) => asset.assetType !== "home"),
+    [pointAssets]
+  );
+
+  const homePointAssets = useMemo(
+    () => pointAssets.filter((asset) => asset.assetType === "home"),
+    [pointAssets]
+  );
+
+  const homeClusters = useMemo(
+    () => clusterHomeAssets(homePointAssets, map),
+    [homePointAssets, map, mapView.zoom, mapView.bounds]
+  );
+
+  const renderAssetMarker = (asset: SavedMapAsset) => {
+    const latLng = getPointLatLng(asset);
+    if (!latLng) return null;
+    const [lat, lng] = latLng;
+    const icon = getIconForAsset(asset, assets);
+    const distributionPoints = getDistributionPoints(assets);
+    const connectedDp = asset.assetType === "home" ? getHomeConnectedDp(asset, assets) : null;
+    const connectionMode = String((asset as any).connectionMode || "auto").toLowerCase() === "manual" ? "manual" : "auto";
+
+    return (
+      <Marker
+        key={asset.id}
+        position={[lat, lng]}
+        icon={icon}
+        draggable={asset.assetType !== "home"}
+        eventHandlers={{
+          dragend: (e) => {
+            const marker = e.target as L.Marker;
+            const position = marker.getLatLng();
+
+            onMoveAsset?.(asset.id, position.lat, position.lng);
+          },
+        }}
+      >
+        <Popup minWidth={260}>
+          <div style={popupCardStyle}>
+            <div style={titleStyle}>{asset.name}</div>
+            <div style={subTitleStyle}>{getAssetTypeLabel(asset)}</div>
+
+            <div style={sectionStyle}>
+              {infoRow("Coordinates", `${lat.toFixed(5)}, ${lng.toFixed(5)}`)}
+
+              {asset.assetType === "pole" ? (
+                <>
+                  {infoRow("Size", asset.poleDetails?.size)}
+                  {infoRow("Year", asset.poleDetails?.year)}
+                  {infoRow("Location", asset.poleDetails?.locationType)}
+                  {infoRow("Test Date", asset.poleDetails?.testDate)}
+                  {infoRow("Special Markings", asset.poleDetails?.specialMarkings)}
+                </>
+              ) : null}
+
+              {asset.assetType === "distribution-point" ? (
+                <>
+                  {infoRow("Build Status", asset.dpDetails?.buildStatus)}
+                  {infoRow("DP Type", asset.dpDetails?.closureType)}
+                  {infoRow("Homes", asset.dpDetails?.connectionsToHomes)}
+
+                  {asset.dpDetails?.closureType === "AFN" && (
+                    <>
+                      <br />
+                      <b>AFN Splitter</b>
+                      <br />
+                      Through cable: {asset.dpDetails.afnDetails?.throughCableId || "-"}
+                      <br />
+                      Fibres: {asset.dpDetails.afnDetails?.inputFibres?.join(", ") || "-"}
+                    </>
+                  )}
+
+                  {infoRow("Power 1", asset.dpDetails?.powerReadings?.[0])}
+                  {infoRow("Power 2", asset.dpDetails?.powerReadings?.[1])}
+                  {infoRow("Power 3", asset.dpDetails?.powerReadings?.[2])}
+                  {infoRow("Power 4", asset.dpDetails?.powerReadings?.[3])}
+                </>
+              ) : null}
+
+              {asset.assetType === "chamber" ? (
+                <>
+                  {infoRow("Type", asset.chamberDetails?.chamberType)}
+                  {infoRow("Size", asset.chamberDetails?.size)}
+                  {infoRow("Depth", asset.chamberDetails?.depth)}
+                  {infoRow("Lid Type", asset.chamberDetails?.lidType)}
+                  {infoRow("Condition", asset.chamberDetails?.condition)}
+                  {infoRow("Ducts", asset.chamberDetails?.connectedDucts)}
+                </>
+              ) : null}
+
+              {asset.assetType === "home" ? (
+                <>
+                  {infoRow("Source", asset.source || "OpenStreetMap")}
+                  {infoRow("Connection", getHomeConnectionStatus(asset, assets))}
+                  {infoRow("Mode", connectionMode === "manual" ? "Manual" : "Auto")}
+                  {infoRow("Connected DP", connectedDp?.name || ((asset as any).connectedDpId ? "Unknown DP" : "Not connected"))}
+                  {infoRow("OSM ID", asset.osmId)}
+
+                  <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                    <label style={{ fontSize: "0.8rem", fontWeight: 700, color: "#334155" }}>
+                      Manual DP override
+                    </label>
+
+                    <select
+                      value={(asset as any).connectedDpId || ""}
+                      onChange={(event) => {
+                        const nextDpId = event.target.value;
+                        onEditAsset({
+                          ...asset,
+                          connectedDpId: nextDpId || undefined,
+                          connectionMode: nextDpId ? "manual" : "auto",
+                        } as SavedMapAsset);
+                      }}
+                      style={{
+                        width: "100%",
+                        border: "1px solid #cbd5e1",
+                        borderRadius: 8,
+                        padding: "6px 8px",
+                        fontSize: "0.82rem",
+                        background: "white",
+                        color: "#111827",
+                      }}
+                    >
+                      <option value="">Auto / no manual override</option>
+                      {distributionPoints.map((dp) => (
+                        <option key={dp.id} value={dp.id}>
+                          {dp.name || dp.id}
+                        </option>
+                      ))}
+                    </select>
+
+                    {connectionMode === "manual" || (asset as any).connectedDpId ? (
+                      <button
+                        type="button"
+                        style={secondaryButtonStyle}
+                        onClick={() =>
+                          onEditAsset({
+                            ...asset,
+                            connectedDpId: undefined,
+                            connectionMode: "auto",
+                          } as SavedMapAsset)
+                        }
+                      >
+                        Reset to auto
+                      </button>
+                    ) : null}
+                  </div>
+                </>
+              ) : null}
+
+              {asset.assetType === "ag-joint" || asset.assetType === "street-cab" ? (
+                infoRow("Rows", (asset as any).mappingRowsCount ?? (asset as any).mappingRowsSummary?.rowCount ?? asset.mappingRows?.length ?? 0)
+              ) : null}
+            </div>
+
+            {asset.assetType === "distribution-point"
+              ? renderImagePreview(asset.dpDetails?.image, "Distribution point")
+              : null}
+
+            {asset.assetType === "pole"
+              ? renderPhotoStrip(asset.poleDetails?.photos)
+              : null}
+
+            {asset.assetType === "pole"
+              ? renderDocuments(asset.poleDetails?.documents)
+              : null}
+
+            {asset.assetType === "chamber"
+              ? renderPhotoStrip(asset.chamberDetails?.photos)
+              : null}
+
+            {asset.assetType === "chamber"
+              ? renderDocuments(asset.chamberDetails?.documents)
+              : null}
+
+            {asset.notes ? (
+              <div style={sectionStyle}>
+                <div style={sectionLabelStyle}>Notes</div>
+                <div style={notesStyle}>{asset.notes}</div>
+              </div>
+            ) : null}
+
+            <div style={actionsStyle}>
+              {asset.assetType === "ag-joint" || asset.assetType === "street-cab" ? (
+                <button style={actionButtonStyle} onClick={() => onOpenAsset(asset)}>
+                  Open
+                </button>
+              ) : null}
+
+              <button style={actionButtonStyle} onClick={() => onEditAsset(asset)}>
+                Edit
+              </button>
+
+              <button style={deleteButtonStyle} onClick={() => onDeleteAsset(asset.id)}>
+                Delete
+              </button>
+            </div>
+          </div>
+        </Popup>
+      </Marker>
+    );
+  };
+
   return (
     <>
-      {pointAssets.map((asset) => {
-        const latLng = getPointLatLng(asset);
-        if (!latLng) return null;
-        const [lat, lng] = latLng;
-        const icon = getIconForAsset(asset, assets);
-        const distributionPoints = getDistributionPoints(assets);
-        const connectedDp = asset.assetType === "home" ? getHomeConnectedDp(asset, assets) : null;
-        const connectionMode = String((asset as any).connectionMode || "auto").toLowerCase() === "manual" ? "manual" : "auto";
+      {nonHomePointAssets.map(renderAssetMarker)}
+
+      {homeClusters.map((cluster) => {
+        if (cluster.assets.length === 1) {
+          return renderAssetMarker(cluster.assets[0]);
+        }
 
         return (
           <Marker
-            key={asset.id}
-            position={[lat, lng]}
-            icon={icon}
-            draggable={asset.assetType !== "home"}
+            key={cluster.id}
+            position={cluster.position}
+            icon={createHomeClusterIcon(cluster.assets.length)}
             eventHandlers={{
-              dragend: (e) => {
-                const marker = e.target as L.Marker;
-                const position = marker.getLatLng();
+              click: () => {
+                const bounds = getHomeClusterBounds(cluster);
 
-                onMoveAsset?.(asset.id, position.lat, position.lng);
+                if (bounds && bounds.isValid()) {
+                  map.fitBounds(bounds, {
+                    padding: [48, 48],
+                    maxZoom: 19,
+                    animate: true,
+                  });
+                  return;
+                }
+
+                map.setView(cluster.position, Math.min(map.getZoom() + 2, 20), { animate: true });
               },
             }}
-          >
-            <Popup minWidth={260}>
-              <div style={popupCardStyle}>
-                <div style={titleStyle}>{asset.name}</div>
-                <div style={subTitleStyle}>{getAssetTypeLabel(asset)}</div>
-
-                <div style={sectionStyle}>
-                  {infoRow("Coordinates", `${lat.toFixed(5)}, ${lng.toFixed(5)}`)}
-
-                  {asset.assetType === "pole" ? (
-                    <>
-                      {infoRow("Size", asset.poleDetails?.size)}
-                      {infoRow("Year", asset.poleDetails?.year)}
-                      {infoRow("Location", asset.poleDetails?.locationType)}
-                      {infoRow("Test Date", asset.poleDetails?.testDate)}
-                      {infoRow("Special Markings", asset.poleDetails?.specialMarkings)}
-                    </>
-                  ) : null}
-
-                  {asset.assetType === "distribution-point" ? (
-  <>
-    {infoRow("Build Status", asset.dpDetails?.buildStatus)}
-    {infoRow("DP Type", asset.dpDetails?.closureType)}
-    {infoRow("Homes", asset.dpDetails?.connectionsToHomes)}
-
-    {asset.dpDetails?.closureType === "AFN" && (
-      <>
-        <br />
-        <b>AFN Splitter</b>
-        <br />
-        Through cable: {asset.dpDetails.afnDetails?.throughCableId || "-"}
-        <br />
-        Fibres: {asset.dpDetails.afnDetails?.inputFibres?.join(", ") || "-"}
-      </>
-    )}
-
-    {infoRow("Power 1", asset.dpDetails?.powerReadings?.[0])}
-    {infoRow("Power 2", asset.dpDetails?.powerReadings?.[1])}
-    {infoRow("Power 3", asset.dpDetails?.powerReadings?.[2])}
-    {infoRow("Power 4", asset.dpDetails?.powerReadings?.[3])}
-  </>
-) : null}
-
-{asset.assetType === "chamber" ? (
-  <>
-    {infoRow("Type", asset.chamberDetails?.chamberType)}
-    {infoRow("Size", asset.chamberDetails?.size)}
-    {infoRow("Depth", asset.chamberDetails?.depth)}
-    {infoRow("Lid Type", asset.chamberDetails?.lidType)}
-    {infoRow("Condition", asset.chamberDetails?.condition)}
-    {infoRow("Ducts", asset.chamberDetails?.connectedDucts)}
-  </>
-) : null}
-
-{asset.assetType === "home" ? (
-  <>
-    {infoRow("Source", asset.source || "OpenStreetMap")}
-    {infoRow("Connection", getHomeConnectionStatus(asset, assets))}
-    {infoRow("Mode", connectionMode === "manual" ? "Manual" : "Auto")}
-    {infoRow("Connected DP", connectedDp?.name || ((asset as any).connectedDpId ? "Unknown DP" : "Not connected"))}
-    {infoRow("OSM ID", asset.osmId)}
-
-    <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
-      <label style={{ fontSize: "0.8rem", fontWeight: 700, color: "#334155" }}>
-        Manual DP override
-      </label>
-
-      <select
-        value={(asset as any).connectedDpId || ""}
-        onChange={(event) => {
-          const nextDpId = event.target.value;
-          onEditAsset({
-            ...asset,
-            connectedDpId: nextDpId || undefined,
-            connectionMode: nextDpId ? "manual" : "auto",
-          } as SavedMapAsset);
-        }}
-        style={{
-          width: "100%",
-          border: "1px solid #cbd5e1",
-          borderRadius: 8,
-          padding: "6px 8px",
-          fontSize: "0.82rem",
-          background: "white",
-          color: "#111827",
-        }}
-      >
-        <option value="">Auto / no manual override</option>
-        {distributionPoints.map((dp) => (
-          <option key={dp.id} value={dp.id}>
-            {dp.name || dp.id}
-          </option>
-        ))}
-      </select>
-
-      {connectionMode === "manual" || (asset as any).connectedDpId ? (
-        <button
-          type="button"
-          style={secondaryButtonStyle}
-          onClick={() =>
-            onEditAsset({
-              ...asset,
-              connectedDpId: undefined,
-              connectionMode: "auto",
-            } as SavedMapAsset)
-          }
-        >
-          Reset to auto
-        </button>
-      ) : null}
-    </div>
-  </>
-) : null}
-
-                  {asset.assetType === "chamber" ? (
-                    <>
-                      {infoRow("Type", asset.chamberDetails?.chamberType)}
-                      {infoRow("Size", asset.chamberDetails?.size)}
-                      {infoRow("Depth", asset.chamberDetails?.depth)}
-                      {infoRow("Lid Type", asset.chamberDetails?.lidType)}
-                      {infoRow("Condition", asset.chamberDetails?.condition)}
-                      {infoRow("Ducts", asset.chamberDetails?.connectedDucts)}
-                    </>
-                  ) : null}
-
-                  {asset.assetType === "home" ? (
-                    <>
-                      {infoRow("Source", asset.source || "OpenStreetMap")}
-                      {infoRow("Connection", getHomeConnectionStatus(asset, assets))}
-                      {infoRow("OSM ID", asset.osmId)}
-                    </>
-                  ) : null}
-
-                  {asset.assetType === "ag-joint" || asset.assetType === "street-cab" ? (
-                    infoRow("Rows", (asset as any).mappingRowsCount ?? (asset as any).mappingRowsSummary?.rowCount ?? asset.mappingRows?.length ?? 0)
-                  ) : null}
-                </div>
-
-                {asset.assetType === "distribution-point"
-                  ? renderImagePreview(asset.dpDetails?.image, "Distribution point")
-                  : null}
-
-                {asset.assetType === "pole"
-                  ? renderPhotoStrip(asset.poleDetails?.photos)
-                  : null}
-
-                {asset.assetType === "pole"
-                  ? renderDocuments(asset.poleDetails?.documents)
-                  : null}
-
-                {asset.assetType === "chamber"
-                  ? renderPhotoStrip(asset.chamberDetails?.photos)
-                  : null}
-
-                {asset.assetType === "chamber"
-                  ? renderDocuments(asset.chamberDetails?.documents)
-                  : null}
-
-                {asset.notes ? (
-                  <div style={sectionStyle}>
-                    <div style={sectionLabelStyle}>Notes</div>
-                    <div style={notesStyle}>{asset.notes}</div>
-                  </div>
-                ) : null}
-
-                <div style={actionsStyle}>
-                  {asset.assetType === "ag-joint" || asset.assetType === "street-cab" ? (
-                    <button style={actionButtonStyle} onClick={() => onOpenAsset(asset)}>
-                      Open
-                    </button>
-                  ) : null}
-
-                  <button style={actionButtonStyle} onClick={() => onEditAsset(asset)}>
-                    Edit
-                  </button>
-
-                  <button style={deleteButtonStyle} onClick={() => onDeleteAsset(asset.id)}>
-                    Delete
-                  </button>
-                </div>
-              </div>
-            </Popup>
-          </Marker>
+          />
         );
       })}
     </>
   );
+
 }
 
 const popupCardStyle: React.CSSProperties = {
