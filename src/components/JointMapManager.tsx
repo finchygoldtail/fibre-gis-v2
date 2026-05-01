@@ -39,7 +39,7 @@ import { loadOsmBuildingsAsHomes, type OsmBounds } from "./map/utils/loadOsmBuil
 import { createDropCableRecordsFromDPs } from "./map/utils/generateDrops";
 import StreetCabDesigner from "./streetcab/StreetCabDesigner";
 import ProjectAreaSelector from "./map/projects/ProjectAreaSelector";
-import "leaflet-rotate";
+
 import type {
   AssetType,
   CableType,
@@ -1506,14 +1506,19 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
   const availableParentCablesForBranchAllocation = useMemo(
     () =>
       (savedJoints ?? []).filter((asset) => {
+        if (asset.assetType !== "cable") return false;
+        if (asset.geometry?.type !== "LineString") return false;
+        if (asset.id === editingAssetId) return false;
+
+        // Parent / through cable options need to include link cables as well as
+        // feeder/spine/ULW cables. Previously Link Cable was excluded, so cables
+        // like BD-BAW-LC011 could not be selected as a BAS parent cable.
         return (
-          asset.assetType === "cable" &&
-          asset.geometry?.type === "LineString" &&
-          asset.id !== editingAssetId &&
-          (asset.cableType === "AFN Spine Cable" ||
-            asset.cableType === "Feeder Cable" ||
-            asset.cableType === "ULW Cable" ||
-            asset.installMethod === "OH")
+          asset.cableType === "AFN Spine Cable" ||
+          asset.cableType === "Feeder Cable" ||
+          asset.cableType === "ULW Cable" ||
+          asset.cableType === "Link Cable" ||
+          asset.installMethod === "OH"
         );
       }),
     [savedJoints, editingAssetId]
@@ -2029,18 +2034,7 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
           zIndex: 0,
         }}
       >
-        <MapContainer
-  center={mapCenter}
-  zoom={6}
-  maxZoom={22}
-  style={{ height: "100%", width: "100%" }}
-  {...({
-    rotate: true,
-    touchRotate: true,
-    rotateControl: true,
-    bearing: 0,
-  } as any)}
->
+        <MapContainer center={mapCenter} zoom={6} maxZoom={22} style={{ height: "100%", width: "100%" }}>
           <MapBaseLayers basemap={basemap} roadOverlayVisible={roadOverlayVisible} />
           <MapBoundsTracker onBoundsChange={setMapBounds} />
           <MapRefTracker onReady={(map) => { mapRef.current = map; }} />
@@ -2092,15 +2086,14 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
 
           {visibleLayers.areas && (
             <AreaPolygonsLayer
-  areas={projectAreas.filter((asset) =>
-    isAreaVisibleForLevel(asset, visibleLayers)
-  )}
-  activeProjectId={activeProjectId}
-  polygonEditingEnabled={mapMode === "pick"}
-  onSelect={handleSelectProject}
-  onEdit={handleEditAsset}
-  onDelete={handleDeleteAsset}
-/>
+              areas={projectAreas.filter((asset) =>
+                isAreaVisibleForLevel(asset, visibleLayers)
+              )}
+              activeProjectId={activeProjectId}
+              onSelect={handleSelectProject}
+              onEdit={handleEditAsset}
+              onDelete={handleDeleteAsset}
+            />
           )}
 
           <CableLinesLayer
@@ -2280,7 +2273,7 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
           cableType={cableType}
           fibreCount={fibreCount}
           installMethod={installMethod}
-          usedFibres={0}
+          usedFibres={allocatedInputFibres.length}
           parentCableId={parentCableId}
           allocatedInputFibres={allocatedInputFibres}
           availableParentCables={availableParentCablesForBranchAllocation}

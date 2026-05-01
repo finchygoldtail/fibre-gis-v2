@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import type {
   CableType,
   FibreCount,
@@ -67,13 +67,15 @@ export default function CableDetailsModal({
   onCancel,
   isEditing = false,
 }: Props) {
+  const [lastSelected, setLastSelected] = useState<number | null>(null);
+
   if (!visible) return null;
 
   const selectedParentCable = availableParentCables.find(
     (asset) => asset.id === parentCableId
   );
-  const parentFibreTotal = getCableFibreTotal(selectedParentCable);
 
+  const parentFibreTotal = getCableFibreTotal(selectedParentCable);
   const usedByOtherAssets = new Set<number>();
 
   if (parentCableId) {
@@ -82,8 +84,11 @@ export default function CableDetailsModal({
 
       if (asset.assetType === "distribution-point") {
         const afn = asset.dpDetails?.afnDetails;
+
         if (afn?.throughCableId === parentCableId) {
-          (afn.inputFibres || []).forEach((f) => usedByOtherAssets.add(Number(f)));
+          (afn.inputFibres || []).forEach((f) =>
+            usedByOtherAssets.add(Number(f))
+          );
         }
       }
 
@@ -110,6 +115,31 @@ export default function CableDetailsModal({
     onChangeAllocatedInputFibres?.(
       [...allocatedInputFibres, fibre].sort((a, b) => a - b)
     );
+  }
+
+  function handleFibreClick(fibre: number, event?: React.MouseEvent) {
+    if (event?.shiftKey && lastSelected !== null) {
+      const start = Math.min(lastSelected, fibre);
+      const end = Math.max(lastSelected, fibre);
+
+      const range: number[] = [];
+
+      for (let i = start; i <= end; i++) {
+        if (!usedByOtherAssets.has(i)) {
+          range.push(i);
+        }
+      }
+
+      const merged = Array.from(
+        new Set([...allocatedInputFibres, ...range])
+      ).sort((a, b) => a - b);
+
+      onChangeAllocatedInputFibres?.(merged);
+      return;
+    }
+
+    toggleParentFibre(fibre);
+    setLastSelected(fibre);
   }
 
   return (
@@ -192,8 +222,10 @@ export default function CableDetailsModal({
           <div style={{ ...label, marginBottom: 4 }}>
             Branch / jump-off allocation
           </div>
+
           <div style={hint}>
-            Use this when this cable jumps off another spine cable and needs to reserve fibres from it.
+            Use this when this cable jumps off another spine cable and needs to
+            reserve fibres from it.
           </div>
 
           <div style={{ marginTop: 10 }}>
@@ -237,7 +269,7 @@ export default function CableDetailsModal({
                       key={fibre}
                       type="button"
                       disabled={disabled}
-                      onClick={() => toggleParentFibre(fibre)}
+                      onClick={(event) => handleFibreClick(fibre, event)}
                       style={{
                         ...fibreButton,
                         ...(selectedHere

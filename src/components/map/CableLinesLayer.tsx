@@ -12,7 +12,7 @@ import {
 import type { SavedMapAsset } from "../JointMapManager";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../firebase";
-
+import { getCableUsedFibres } from "./cableUsage";
 type Props = {
   assets: SavedMapAsset[];
   cablesVisible: boolean;
@@ -283,44 +283,49 @@ function rowMentionsCable(row: any[], cable: SavedMapAsset): boolean {
   return aliases.some((alias) => rowText.includes(alias));
 }
 
-function getCableUsedFibres(
-  cable: SavedMapAsset,
-  allAssets: SavedMapAsset[],
-  mappingRowsByAssetId: MappingRowsByAssetId = {}
-): number {
-  const cableId = String(cable.id || "");
+function getAssetAliases(asset?: SavedMapAsset | null): string[] {
+  if (!asset) return [];
 
-  if (String(cable.cableType || "").toLowerCase() === "drop") {
-    return 1;
-  }
+  const rawValues = [asset.name, asset.id, (asset as any).label, (asset as any).nodeId]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
 
-  const allocatedFibres = new Set<number>();
+  const aliases = new Set<string>();
 
-  allAssets.forEach((asset) => {
-    if (asset.assetType === "distribution-point") {
-      const afn = asset.dpDetails?.afnDetails;
+  rawValues.forEach((raw) => {
+    const value = normaliseCableRef(raw);
+    if (!value) return;
 
-      if (afn?.throughCableId === cableId) {
-        (afn.inputFibres || []).forEach((fibre) => {
-          const n = Number(fibre);
-          if (Number.isFinite(n) && n > 0) allocatedFibres.add(n);
-        });
-      }
+    aliases.add(value);
+
+    // BD-BAW-AG11-CMJ01 should also match BD-BAW-AG11.
+    const withoutJointSuffix = value.replace(/-(cmj|mmj|lmj)\d{1,4}$/i, '');
+    if (withoutJointSuffix && withoutJointSuffix !== value) {
+      aliases.add(withoutJointSuffix);
     }
 
-    if (asset.assetType === "cable") {
-      if (String((asset as any).parentCableId || "") === cableId) {
-        ((asset as any).allocatedInputFibres || []).forEach((fibre: number) => {
-          const n = Number(fibre);
-          if (Number.isFinite(n) && n > 0) allocatedFibres.add(n);
-        });
-      }
-    }
+    // Add compact node tokens such as AG11, LMJ01, LC011, SB35.
+    const nodeMatches = value.match(/(?:ag|lmj|mmj|cmj|lc|sb|midj|sc)\d{1,4}/gi);
+    nodeMatches?.forEach((match) => aliases.add(normaliseCableRef(match)));
   });
 
-  if (allocatedFibres.size > 0) return allocatedFibres.size;
+  return Array.from(aliases).filter((alias) => alias.length >= 3);
+}
 
-  const mappingRowKeys = new Set<string>();
+function rowMentionsAsset(row: any[], asset?: SavedMapAsset | null): boolean {
+  const aliases = getAssetAliases(asset);
+  if (!aliases.length) return false;
+
+  const rowText = normaliseCableRef(getRowText(row));
+  return aliases.some((alias) => rowText.includes(alias));
+}
+
+function countRowsMatching(
+  allAssets: SavedMapAsset[],
+  mappingRowsByAssetId: MappingRowsByAssetId,
+  predicate: (row: any[], sourceAsset: SavedMapAsset, rowIndex: number) => boolean
+): number {
+  const keys = new Set<string>();
 
   allAssets.forEach((asset) => {
     const localRows = Array.isArray(asset.mappingRows) ? asset.mappingRows : [];
@@ -329,40 +334,24 @@ function getCableUsedFibres(
 
     rows.forEach((row: any[], rowIndex: number) => {
       if (!Array.isArray(row)) return;
-      if (!rowMentionsCable(row, cable)) return;
+      if (!predicate(row, asset, rowIndex)) return;
 
       const rowText = getRowText(row).trim();
       if (!rowText) return;
 
-      mappingRowKeys.add(`${asset.id}:${rowIndex}:${normaliseCableRef(rowText)}`);
+      keys.add(`${asset.id}:${rowIndex}:${normaliseCableRef(rowText)}`);
     });
   });
 
-  if (mappingRowKeys.size > 0) return mappingRowKeys.size;
-
-  const cableName = normaliseCableRef(cable.name);
-
-  const linkedDrops = allAssets.filter((asset) => {
-    if (asset.assetType !== "cable") return false;
-    if (String(asset.cableType || "").toLowerCase() !== "drop") return false;
-
-    return (
-      String((asset as any).parentCableId || "") === cableId ||
-      String((asset as any).feederCableId || "") === cableId ||
-      normaliseCableRef((asset as any).parentCableName) === cableName
-    );
-  });
-
-  if (linkedDrops.length > 0) return linkedDrops.length;
-
-  return allAssets
-    .filter(
-      (asset) =>
-        asset.assetType === "cable" &&
-        String((asset as any).parentCableId || "") === cableId
-    )
-    .reduce((sum, child) => sum + getNumberFromFibreCount(child.fibreCount), 0);
+  return keys.size;
 }
+
+function clampToCableCapacity(cable: SavedMapAsset, value: number): number {
+  const capacity = getNumberFromFibreCount(cable.fibreCount);
+  if (!capacity) return value;
+  return Math.min(value, capacity);
+}
+
 
 export default function CableLinesLayer({
   assets,
@@ -533,16 +522,12 @@ export default function CableLinesLayer({
             ? findConnectedAssetAtCableEnd(assets, points[points.length - 1])
             : null;
 
-        const calculatedUsedFibres = getCableUsedFibres(
-          asset,
-          assets,
-          mappingRowsByAssetId
-        );
+        
 
-        const usedFibres =
-          typeof (asset as any).usedFibres === "number"
-            ? (asset as any).usedFibres
-            : calculatedUsedFibres;
+        const usedFibres = clampToCableCapacity(
+  asset,
+  getCableUsedFibres(asset, assets)
+);
 
         return (
           <React.Fragment key={asset.id}>
