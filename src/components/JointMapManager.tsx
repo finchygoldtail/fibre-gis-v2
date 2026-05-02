@@ -13,6 +13,7 @@ import {
 import type { LatLngLiteral } from "leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import "leaflet-rotate";
 import { auth } from "../firebase";
 
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
@@ -505,6 +506,7 @@ export default function JointMapManager({
   const [chamberDetails, setChamberDetails] = useState<ChamberDetails>({});
 
   const [editingAssetId, setEditingAssetId] = useState<string | null>(null);
+  const [editingAreaId, setEditingAreaId] = useState<string | null>(null);
 
   const [mapMode, setMapMode] = useState<MapMode>("pick");
   const [basemap, setBasemap] = useState<BasemapType>("street");
@@ -727,6 +729,7 @@ export default function JointMapManager({
 
   const resetEditor = () => {
     setEditingAssetId(null);
+    setEditingAreaId(null);
     setPickedLocation(null);
     setNotes("");
     setAreaLevel("L0");
@@ -2176,7 +2179,15 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
           zIndex: 0,
         }}
       >
-        <MapContainer center={mapCenter} zoom={initialMapViewRef.current?.zoom ?? 6} maxZoom={22} style={{ height: "100%", width: "100%" }}>
+        <MapContainer
+          center={mapCenter}
+          zoom={initialMapViewRef.current?.zoom ?? 6}
+          maxZoom={22}
+          rotate={true}
+          touchRotate={true}
+          rotateControl={true}
+          style={{ height: "100%", width: "100%" }}
+        >
           <MapBaseLayers basemap={basemap} roadOverlayVisible={roadOverlayVisible} />
           <MapBoundsTracker
             onBoundsChange={(bounds) => {
@@ -2245,6 +2256,8 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
                 isAreaVisibleForLevel(asset, visibleLayers)
               )}
               activeProjectId={activeProjectId}
+              editingAreaId={editingAreaId}
+              onUnlockPolygon={setEditingAreaId}
               onSelect={handleSelectProject}
               onEdit={handleEditAsset}
               onDelete={handleDeleteAsset}
