@@ -55,6 +55,7 @@ import type {
   SavedMapAsset,
 } from "./map/types";
 import {
+  deleteExchange,
   loadExchange,
   loadExchanges,
   saveExchange,
@@ -564,6 +565,22 @@ const handleSaveExchange = async (exchange: ExchangeAsset) => {
   } catch (err) {
     console.error("Failed to save exchange", err);
     alert("Exchange failed to save. Check console.");
+  }
+};
+
+const handleDeleteExchange = async (exchange: ExchangeAsset) => {
+  if (!confirm(`Delete ${exchange.name || "this exchange"}? This cannot be undone.`)) return;
+
+  try {
+    await deleteExchange(exchange.id);
+    setSavedExchanges((prev) => prev.filter((item) => item.id !== exchange.id));
+
+    if (openExchangeAsset?.id === exchange.id) {
+      setOpenExchangeAsset(null);
+    }
+  } catch (err) {
+    console.error("Failed to delete exchange", err);
+    alert("Exchange failed to delete. Check console.");
   }
 };
 
@@ -2362,6 +2379,7 @@ return (
           <ExchangeMarkersLayer
   exchanges={savedExchanges}
   onExchangeClick={handleOpenExchange}
+  onExchangeDelete={handleDeleteExchange}
           />
 
           {/* =====================================================
