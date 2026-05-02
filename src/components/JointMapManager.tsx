@@ -55,6 +55,7 @@ import type {
   SavedMapAsset,
 } from "./map/types";
 import {
+  loadExchange,
   loadExchanges,
   saveExchange,
   type ExchangeAsset,
@@ -216,31 +217,19 @@ function MapBoundsTracker({ onBoundsChange }: { onBoundsChange: (bounds: OsmBoun
   const map = useMap();
 
   const updateBounds = () => {
-    try {
-      if (!map) return;
-
-      const container = map.getContainer();
-      if (!container || !container.isConnected) return;
-
-      map.invalidateSize();
-
-      const bounds = map.getBounds();
-
-      onBoundsChange({
-        south: bounds.getSouth(),
-        west: bounds.getWest(),
-        north: bounds.getNorth(),
-        east: bounds.getEast(),
-      });
-    } catch (err) {
-      console.warn("MapBoundsTracker skipped bounds update:", err);
-    }
+    const bounds = map.getBounds();
+    onBoundsChange({
+      south: bounds.getSouth(),
+      west: bounds.getWest(),
+      north: bounds.getNorth(),
+      east: bounds.getEast(),
+    });
   };
 
   useEffect(() => {
-    const timer = window.setTimeout(updateBounds, 100);
-    return () => window.clearTimeout(timer);
-  }, [map]);
+    updateBounds();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useMapEvents({
     moveend: updateBounds,
@@ -529,20 +518,48 @@ useEffect(() => {
 // =====================================================
 // SAVE EXCHANGE
 // =====================================================
+const toExchangeMarker = (exchange: ExchangeAsset): ExchangeAsset => ({
+  id: exchange.id,
+  name: exchange.name,
+  code: exchange.code,
+  lat: exchange.lat,
+  lng: exchange.lng,
+  projectId: exchange.projectId,
+  notes: exchange.notes,
+  createdAt: exchange.createdAt,
+  updatedAt: exchange.updatedAt,
+  olts: [],
+  feederPanels: [],
+  hdSplitterPanels: [],
+});
+
+const handleOpenExchange = async (exchange: ExchangeAsset) => {
+  try {
+    const fullExchange = await loadExchange(exchange.id);
+    setOpenExchangeAsset(fullExchange ?? exchange);
+  } catch (err) {
+    console.error("Failed to open exchange", err);
+    alert("Exchange failed to open. Check console.");
+  }
+};
+
 const handleSaveExchange = async (exchange: ExchangeAsset) => {
+  const markerExchange = toExchangeMarker(exchange);
+
   setSavedExchanges((prev) => {
     const exists = prev.some((e) => e.id === exchange.id);
 
     if (exists) {
-      return prev.map((e) => (e.id === exchange.id ? exchange : e));
+      return prev.map((e) => (e.id === exchange.id ? markerExchange : e));
     }
 
-    return [...prev, exchange];
+    return [...prev, markerExchange];
   });
 
   try {
     console.log("Saving exchange:", exchange);
     await saveExchange(exchange);
+    setOpenExchangeAsset(exchange);
     console.log("Exchange saved successfully");
   } catch (err) {
     console.error("Failed to save exchange", err);
@@ -1826,19 +1843,9 @@ if (type === "exchange") {
 if (openExchangeAsset) {
   return (
     <ExchangeDesigner
-      key={openExchangeAsset.id}
       exchange={openExchangeAsset}
-      onClose={() => {
-        setOpenExchangeAsset(null);
-
-        window.setTimeout(() => {
-          mapRef.current?.invalidateSize();
-        }, 100);
-      }}
-      onSave={async (updatedExchange) => {
-        await handleSaveExchange(updatedExchange);
-        setOpenExchangeAsset(updatedExchange);
-      }}
+      onClose={() => setOpenExchangeAsset(null)}
+      onSave={handleSaveExchange}
     />
   );
 }
@@ -2354,7 +2361,7 @@ return (
               ===================================================== */}
           <ExchangeMarkersLayer
   exchanges={savedExchanges}
-  onExchangeClick={setOpenExchangeAsset}
+  onExchangeClick={handleOpenExchange}
           />
 
           {/* =====================================================
