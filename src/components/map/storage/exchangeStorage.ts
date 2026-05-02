@@ -1,7 +1,6 @@
 import {
   collection,
   getDocs,
-  setDoc,
   doc,
   deleteDoc,
   getDoc,
@@ -98,12 +97,11 @@ function exchangeSummary(exchange: ExchangeAsset): Omit<ExchangeAsset, "olts" | 
   return summary;
 }
 
-async function replaceSubcollection<T extends { id: string }>(
+function exchangeSubcollectionRef(
   exchangeId: string,
-  subcollectionName: "olts" | "hdSplitterPanels" | "feederPanels",
-  items: T[]
+  subcollectionName: "olts" | "hdSplitterPanels" | "feederPanels"
 ) {
-  const subcollectionRef = collection(
+  return collection(
     db,
     "businesses",
     BUSINESS_ID,
@@ -111,22 +109,20 @@ async function replaceSubcollection<T extends { id: string }>(
     exchangeId,
     subcollectionName
   );
+}
 
+async function getSubcollectionDeletes<T extends { id: string }>(
+  exchangeId: string,
+  subcollectionName: "olts" | "hdSplitterPanels" | "feederPanels",
+  nextItems: T[]
+) {
+  const subcollectionRef = exchangeSubcollectionRef(exchangeId, subcollectionName);
   const existingSnap = await getDocs(subcollectionRef);
-  const nextIds = new Set(items.map((item) => item.id));
-  const batch = writeBatch(db);
+  const nextIds = new Set(nextItems.map((item) => item.id));
 
-  existingSnap.docs.forEach((docSnap) => {
-    if (!nextIds.has(docSnap.id)) {
-      batch.delete(docSnap.ref);
-    }
-  });
-
-  items.forEach((item) => {
-    batch.set(doc(subcollectionRef, item.id), stripUndefined(item), { merge: true });
-  });
-
-  await batch.commit();
+  return existingSnap.docs
+    .filter((docSnap) => !nextIds.has(docSnap.id))
+    .map((docSnap) => docSnap.ref);
 }
 
 export async function loadExchanges(): Promise<ExchangeAsset[]> {
@@ -176,15 +172,63 @@ export async function saveExchange(exchange: ExchangeAsset) {
     updatedAt: now,
   };
 
-  // Root document stays tiny: good for map markers and avoids the 1 MiB document limit.
-  await setDoc(exchangeDoc(exchange.id), stripUndefined(exchangeSummary(exchangeWithDates)), { merge: true });
+  const olts = exchangeWithDates.olts ?? [];
+  const hdSplitterPanels = exchangeWithDates.hdSplitterPanels ?? [];
+  const feederPanels = exchangeWithDates.feederPanels ?? [];
 
-  // Heavy data is split into panel-level documents.
-  await Promise.all([
-    replaceSubcollection(exchange.id, "olts", exchangeWithDates.olts ?? []),
-    replaceSubcollection(exchange.id, "hdSplitterPanels", exchangeWithDates.hdSplitterPanels ?? []),
-    replaceSubcollection(exchange.id, "feederPanels", exchangeWithDates.feederPanels ?? []),
+  const [oltDeletes, splitterDeletes, feederDeletes] = await Promise.all([
+    getSubcollectionDeletes(exchange.id, "olts", olts),
+    getSubcollectionDeletes(exchange.id, "hdSplitterPanels", hdSplitterPanels),
+    getSubcollectionDeletes(exchange.id, "feederPanels", feederPanels),
   ]);
+
+  const totalWrites =
+    1 +
+    oltDeletes.length +
+    splitterDeletes.length +
+    feederDeletes.length +
+    olts.length +
+    hdSplitterPanels.length +
+    feederPanels.length;
+
+  // Firestore allows a maximum of 500 operations in a single atomic batch.
+  if (totalWrites > 500) {
+    throw new Error(
+      `Exchange save needs ${totalWrites} Firestore writes, which is over the 500-write batch limit. ` +
+        "Split the save into smaller chunks before saving this exchange."
+    );
+  }
+
+  const batch = writeBatch(db);
+
+  // Root document stays tiny: good for map markers and avoids the 1 MiB document limit.
+  batch.set(exchangeDoc(exchange.id), stripUndefined(exchangeSummary(exchangeWithDates)), { merge: true });
+
+  [...oltDeletes, ...splitterDeletes, ...feederDeletes].forEach((docRef) => {
+    batch.delete(docRef);
+  });
+
+  olts.forEach((olt) => {
+    batch.set(doc(exchangeSubcollectionRef(exchange.id, "olts"), olt.id), stripUndefined(olt), { merge: true });
+  });
+
+  hdSplitterPanels.forEach((panel) => {
+    batch.set(
+      doc(exchangeSubcollectionRef(exchange.id, "hdSplitterPanels"), panel.id),
+      stripUndefined(panel),
+      { merge: true }
+    );
+  });
+
+  feederPanels.forEach((panel) => {
+    batch.set(
+      doc(exchangeSubcollectionRef(exchange.id, "feederPanels"), panel.id),
+      stripUndefined(panel),
+      { merge: true }
+    );
+  });
+
+  await batch.commit();
 }
 
 export async function deleteExchange(exchangeId: string) {
