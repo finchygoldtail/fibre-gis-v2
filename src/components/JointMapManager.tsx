@@ -20,7 +20,7 @@ import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import AreaPolygonsLayer from "./map/AreaPolygonsLayer";
-
+import ExchangeDesigner from "./exchange/ExchangeDesigner";
 import { formatDistance, getPathDistanceMeters } from "../utils/mapMeasure";
 import { getNextAssetName } from "../utils/mapAssetNames";
 import MapContextMenu, { type MapContextAction } from "./map/MapContextMenu";
@@ -36,6 +36,7 @@ import ChamberDetailsModal, {
   type ChamberDetails,
 } from "./map/modals/ChamberDetailsModal";
 import { snapPointToAssets } from "./map/utils/snapToAssets";
+
 import { routePointsToRoads } from "./map/utils/routeToRoads";
 import { loadOsmBuildingsAsHomes, type OsmBounds } from "./map/utils/loadOsmBuildings";
 import { createDropCableRecordsFromDPs } from "./map/utils/generateDrops";
@@ -43,7 +44,7 @@ import StreetCabDesigner from "./streetcab/StreetCabDesigner";
 import ProjectAreaSelector from "./map/projects/ProjectAreaSelector";
 import { filterAssetsForProjectArea } from "./map/projects/projectAssetFilter";
 import { loadProjectHomes, saveProjectHomes } from "./map/projects/projectHomesStorage";
-
+import { ExchangeMarkersLayer } from "./map/ExchangeMarkersLayer";
 import type {
   AssetType,
   CableType,
@@ -53,7 +54,11 @@ import type {
   PoleDetails,
   SavedMapAsset,
 } from "./map/types";
-
+import {
+  loadExchanges,
+  saveExchange,
+  type ExchangeAsset,
+} from "./map/storage/exchangeStorage";
 export type SavedJoint = SavedMapAsset;
 export type { SavedMapAsset };
 
@@ -74,6 +79,7 @@ type Props = {
   onClose: () => void;
   onOpenJoint: (joint: SavedMapAsset) => void;
 };
+
 
 
 // =====================================================
@@ -210,19 +216,31 @@ function MapBoundsTracker({ onBoundsChange }: { onBoundsChange: (bounds: OsmBoun
   const map = useMap();
 
   const updateBounds = () => {
-    const bounds = map.getBounds();
-    onBoundsChange({
-      south: bounds.getSouth(),
-      west: bounds.getWest(),
-      north: bounds.getNorth(),
-      east: bounds.getEast(),
-    });
+    try {
+      if (!map) return;
+
+      const container = map.getContainer();
+      if (!container || !container.isConnected) return;
+
+      map.invalidateSize();
+
+      const bounds = map.getBounds();
+
+      onBoundsChange({
+        south: bounds.getSouth(),
+        west: bounds.getWest(),
+        north: bounds.getNorth(),
+        east: bounds.getEast(),
+      });
+    } catch (err) {
+      console.warn("MapBoundsTracker skipped bounds update:", err);
+    }
   };
 
   useEffect(() => {
-    updateBounds();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const timer = window.setTimeout(updateBounds, 100);
+    return () => window.clearTimeout(timer);
+  }, [map]);
 
   useMapEvents({
     moveend: updateBounds,
@@ -474,6 +492,9 @@ export default function JointMapManager({
   onClose,
   onOpenJoint,
 }: Props) {
+  // =====================================================
+  // 1) CORE MAP / PROJECT STATE
+  // =====================================================
   const [pickedLocation, setPickedLocation] = useState<LatLngLiteral | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const initialMapViewRef = useRef(loadMapView());
@@ -484,7 +505,54 @@ export default function JointMapManager({
   const [assetType, setAssetType] = useState<AssetType>(
     inferAssetTypeFromName(currentJointName)
   );
+  // =====================================================
+  // 2) EXCHANGE STATE
+  // savedExchanges controls the ⭐ markers on the map.
+  // selectedExchange controls the right/side page panel.
+  //
+  // NOTE: This starts empty until you wire it into Firestore
+  // or temporarily add a test exchange here.
+  // =====================================================
+  const [savedExchanges, setSavedExchanges] = useState<ExchangeAsset[]>([]);
+const [openExchangeAsset, setOpenExchangeAsset] = useState<ExchangeAsset | null>(null);
+// =====================================================
+// LOAD EXCHANGES FROM FIRESTORE
+// =====================================================
+useEffect(() => {
+  loadExchanges()
+    .then(setSavedExchanges)
+    .catch((err) => {
+      console.error("Failed to load exchanges", err);
+    });
+}, []);
 
+// =====================================================
+// SAVE EXCHANGE
+// =====================================================
+const handleSaveExchange = async (exchange: ExchangeAsset) => {
+  setSavedExchanges((prev) => {
+    const exists = prev.some((e) => e.id === exchange.id);
+
+    if (exists) {
+      return prev.map((e) => (e.id === exchange.id ? exchange : e));
+    }
+
+    return [...prev, exchange];
+  });
+
+  try {
+    console.log("Saving exchange:", exchange);
+    await saveExchange(exchange);
+    console.log("Exchange saved successfully");
+  } catch (err) {
+    console.error("Failed to save exchange", err);
+    alert("Exchange failed to save. Check console.");
+  }
+};
+
+  // =====================================================
+  // 3) ASSET EDITOR FORM STATE
+  // =====================================================
   const [jointName, setJointName] = useState(currentJointName || "");
   const [jointType, setJointType] = useState(currentJointType || "CMJ (12 trays)");
   const [notes, setNotes] = useState("");
@@ -508,6 +576,9 @@ export default function JointMapManager({
   const [editingAssetId, setEditingAssetId] = useState<string | null>(null);
   const [editingAreaId, setEditingAreaId] = useState<string | null>(null);
 
+  // =====================================================
+  // 4) MAP DRAWING / LAYER UI STATE
+  // =====================================================
   const [mapMode, setMapMode] = useState<MapMode>("pick");
   const [basemap, setBasemap] = useState<BasemapType>("street");
   const [roadOverlayVisible, setRoadOverlayVisible] = useState(false);
@@ -928,7 +999,11 @@ export default function JointMapManager({
 
     resetEditor();
   };
-
+  // =====================================================
+  // SAVE / UPDATE MAP ASSETS
+  // Handles joints, street cabs, poles, DPs, chambers, cables, areas.
+  // Exchange saving can be added separately once the ⭐ marker UI is live.
+  // =====================================================
   const handleSaveJoint = (detailOverrides?: { poleDetails?: PoleDetails; dpDetails?: DistributionPointDetails; chamberDetails?: ChamberDetails }) => {
     if (!pickedLocation) {
       alert("Click a location on the map first.");
@@ -1230,7 +1305,22 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
   }
 
   if (!contextMenu.latlng) return;
+// =============================
+// ADD EXCHANGE (⭐)
+// =============================
+if (type === "exchange") {
+  const exchange: ExchangeAsset = {
+    id: crypto.randomUUID(),
+    name: `Exchange ${savedExchanges.length + 1}`,
+    lat: contextMenu.latlng.lat,
+    lng: contextMenu.latlng.lng,
+  };
 
+  handleSaveExchange(exchange);
+  setOpenExchangeAsset(exchange);
+  handleCloseContextMenu();
+  return;
+}
   // NEW: Add Joint directly from right-click menu
   if (type === "joint") {
     const record: SavedMapAsset = {
@@ -1256,7 +1346,19 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
   setAssetType(type as AssetType);
   setJointName(getNextAssetName(savedJoints, type as any));
   setNotes("");
+  if (type === "exchange") {
+  const exchange: ExchangeAsset = {
+    id: crypto.randomUUID(),
+    name: `Exchange ${savedExchanges.length + 1}`,
+    lat: contextMenu.latlng.lat,
+    lng: contextMenu.latlng.lng,
+  };
 
+  handleSaveExchange(exchange);
+  setOpenExchangeAsset(exchange);
+  handleCloseContextMenu();
+  return;
+}
   if (type === "pole") {
     setJointType("Pole");
     setPoleDetails({});
@@ -1703,26 +1805,46 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
   }, [editingAssetId, savedJoints]);
 
   if (openStreetCabAsset) {
-    return (
-      <StreetCabDesigner
-        asset={openStreetCabAsset}
-        onClose={() => setOpenStreetCabAsset(null)}
-        onSave={(updatedAsset) => {
-          setSavedJoints((prev) =>
-            prev.map((item) =>
-              item.id === updatedAsset.id
-                ? markAssetForLiveSync(updatedAsset, false)
-                : item
-            )
-          );
-          setOpenStreetCabAsset(updatedAsset);
-        }}
-      />
-    );
-  }
-
   return (
-    <div
+    <StreetCabDesigner
+      asset={openStreetCabAsset}
+      onClose={() => setOpenStreetCabAsset(null)}
+      onSave={(updatedAsset) => {
+        setSavedJoints((prev) =>
+          prev.map((item) =>
+            item.id === updatedAsset.id
+              ? markAssetForLiveSync(updatedAsset, false)
+              : item
+          )
+        );
+        setOpenStreetCabAsset(updatedAsset);
+      }}
+    />
+  );
+}
+
+if (openExchangeAsset) {
+  return (
+    <ExchangeDesigner
+      key={openExchangeAsset.id}
+      exchange={openExchangeAsset}
+      onClose={() => {
+        setOpenExchangeAsset(null);
+
+        window.setTimeout(() => {
+          mapRef.current?.invalidateSize();
+        }, 100);
+      }}
+      onSave={async (updatedExchange) => {
+        await handleSaveExchange(updatedExchange);
+        setOpenExchangeAsset(updatedExchange);
+      }}
+    />
+  );
+}
+
+return (
+  <div
       style={{
         height: "100vh",
         width: "100vw",
@@ -1752,6 +1874,11 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
           {isPanelOpen ? "×" : "☰"}
         </button>
       )}
+      {/* =====================================================
+          EXCHANGE SIDE PANEL
+          Opens when a ⭐ exchange marker is clicked.
+          ===================================================== */}
+      
 
       <div
         style={{
@@ -2179,6 +2306,10 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
           zIndex: 0,
         }}
       >
+        {/* =====================================================
+            MAIN LEAFLET MAP
+            All Leaflet layers/markers must be inside MapContainer.
+            ===================================================== */}
         <MapContainer
           center={mapCenter}
           zoom={initialMapViewRef.current?.zoom ?? 6}
@@ -2217,7 +2348,18 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
             onAreaPoint={handleAreaPoint}
             onRightClick={handleMapRightClick}
           />
+          {/* =====================================================
+              EXCHANGE STAR MARKERS
+              Keep this inside MapContainer.
+              ===================================================== */}
+          <ExchangeMarkersLayer
+  exchanges={savedExchanges}
+  onExchangeClick={setOpenExchangeAsset}
+          />
 
+          {/* =====================================================
+              EXISTING JOINT / CAB / POLE / DP / CHAMBER MARKERS
+              ===================================================== */}
           <AssetMarkersLayer
   assets={visibleProjectAssets}
   visibleLayers={visibleLayers}
