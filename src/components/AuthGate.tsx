@@ -44,7 +44,6 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
   const handleEmailLogin = async () => {
     setError("");
-
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
     } catch (err: any) {
@@ -54,7 +53,6 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
   const handleCreateAccount = async () => {
     setError("");
-
     try {
       await createUserWithEmailAndPassword(auth, email.trim(), password);
     } catch (err: any) {
@@ -64,7 +62,6 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
   const handleGoogleLogin = async () => {
     setError("");
-
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (err: any) {
@@ -76,7 +73,8 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     return (
       <div style={screen}>
         <div style={card}>
-          <h1>Fibre GIS</h1>
+          <img src="/Alistra GIS Logo.png" alt="logo" style={logo} />
+          <h1>Alistra GIS</h1>
           <p>Checking login...</p>
         </div>
       </div>
@@ -87,7 +85,9 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     return (
       <div style={screen}>
         <div style={card}>
-          <h1>Fibre GIS</h1>
+          <img src="/Alistra GIS Logo.png" alt="logo" style={logo} />
+
+          <h1>Alistra GIS</h1>
           <p>Please sign in to continue.</p>
 
           <input
@@ -130,6 +130,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     return (
       <div style={screen}>
         <div style={card}>
+          <img src="/Alistra GIS Logo.png" alt="logo" style={logo} />
           <h1>Access denied</h1>
           <p>{user.email} is not authorised to use this system.</p>
 
@@ -154,6 +155,13 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     </>
   );
 }
+
+/* ---------- styles ---------- */
+
+const logo: React.CSSProperties = {
+  width: 120,
+  marginBottom: 16,
+};
 
 const screen: React.CSSProperties = {
   minHeight: "100vh",
