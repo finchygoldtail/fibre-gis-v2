@@ -57,50 +57,137 @@ function deriveStreetCabName(rows: any[][], fileName?: string): string {
   return "UNKNOWN-STREET-CAB";
 }
 
+function getCell(row: any[], index: number): string {
+  return cleanCell(row?.[index]);
+}
+
+function findHeaderRowIndex(rows: any[][]): number {
+  return (rows || []).findIndex((row) => {
+    if (!Array.isArray(row)) return false;
+    const joined = row.map(cleanCell).join(" ").toUpperCase();
+    return joined.includes("PON") && joined.includes("SPLITTER") && joined.includes("AG");
+  });
+}
+
+function inferPanelFromSplitter(splitter4Way: string): string {
+  const match = cleanCell(splitter4Way).match(/(?:1:4W[-_ ]?)(\d+)/i);
+  if (!match) return "";
+
+  const splitterNumber = Number(match[1]);
+  if (!Number.isFinite(splitterNumber) || splitterNumber <= 0) return "";
+
+  // 32 x 1:4 splitters per panel.
+  return String(Math.ceil(splitterNumber / 32));
+}
+
+function looksLikePatchRow(record: StreetCabRecord): boolean {
+  const joined = Object.values(record).join(" ").toUpperCase();
+  const filled = Object.values(record).filter(Boolean).length;
+
+  if (filled < 4) return false;
+  if (joined.includes("PON PORT")) return false;
+
+  return (
+    /\bAG\d+\b/i.test(joined) ||
+    /\bLC\d+\b/i.test(joined) ||
+    /1:4W/i.test(joined) ||
+    /1:2W/i.test(joined) ||
+    /\bFC\d+\b/i.test(joined)
+  );
+}
+
 function parseStreetCabRows(rows: any[][]): StreetCabRecord[] {
   const out: StreetCabRecord[] = [];
+  const headerRowIndex = findHeaderRowIndex(rows);
+  const headerRow = headerRowIndex >= 0 ? rows[headerRowIndex] : [];
+  const headerText = headerRow.map(cleanCell).join(" ").toUpperCase();
+  const dataRows = headerRowIndex >= 0 ? rows.slice(headerRowIndex + 1) : rows;
 
-  for (const row of rows || []) {
-    if (!Array.isArray(row) || row.length < 10) continue;
+  // The patching sheets are not all the same width:
+  // CHN = full 27-column sheet with Feeder 1/2/3 and AG columns at the end.
+  // HEE = compact 19-column sheet where splitter panel starts at K and AG at R.
+  // HAY = compact 20-column as-built sheet with no explicit panel column; infer panel from splitter number.
+  const isHeeStyle = headerText.includes("CABLE 1") || headerRow.length <= 19;
+  const isHayStyle = !isHeeStyle && headerRow.length <= 21;
 
-    const joined = row.map(cleanCell).join(" ").toUpperCase();
+  for (const row of dataRows || []) {
+    if (!Array.isArray(row) || row.length < 8) continue;
 
-    // crude filter: only keep rows that look like actual patching/output rows
-    const hasAg = joined.includes("AG");
-    const hasLink = joined.includes("LC") || joined.includes("LINK");
-    const hasSplitter = joined.includes("SPLITTER") || joined.includes("1:4W") || joined.includes("1:2W");
+    let record: StreetCabRecord;
 
-    if (!hasAg && !hasLink && !hasSplitter) continue;
+    if (isHeeStyle) {
+      record = {
+        ponPort: getCell(row, 0),
+        splitter2Way: getCell(row, 1),
+        splitterFibreIn: getCell(row, 2),
+        odfNumber: getCell(row, 3),
+        linkCable: getCell(row, 4),
+        linkFibre: getCell(row, 5),
+        hh: getCell(row, 6),
+        feederCable: getCell(row, 8),
+        feederFibre: getCell(row, 9),
+        feederJoint: getCell(row, 16),
+        splitterPanel: getCell(row, 10),
+        splitter4Way: getCell(row, 11),
+        splitterFibreOut: getCell(row, 12),
+        cableId: getCell(row, 13),
+        cableFibre: getCell(row, 14),
+        ag: getCell(row, 17),
+        portOut: getCell(row, 18),
+        agJoint: getCell(row, 16),
+      };
+    } else if (isHayStyle) {
+      const splitter4Way = getCell(row, 14);
 
-    const values = row.map(cleanCell);
+      record = {
+        ponPort: getCell(row, 0),
+        splitter2Way: getCell(row, 1),
+        splitterFibreIn: getCell(row, 2),
+        odfNumber: getCell(row, 3),
+        linkCable: getCell(row, 4),
+        linkFibre: getCell(row, 5),
+        hh: getCell(row, 6),
+        feederCable: getCell(row, 8),
+        feederFibre: getCell(row, 9),
+        feederJoint: getCell(row, 11),
+        splitterPanel: inferPanelFromSplitter(splitter4Way),
+        splitter4Way,
+        splitterFibreOut: getCell(row, 15),
+        cableId: getCell(row, 16),
+        cableFibre: getCell(row, 17),
+        ag: getCell(row, 18),
+        portOut: getCell(row, 19),
+        agJoint: getCell(row, 11),
+      };
+    } else {
+      record = {
+        ponPort: getCell(row, 0),
+        splitter2Way: getCell(row, 1),
+        splitterFibreIn: getCell(row, 2),
+        odfNumber: getCell(row, 3),
+        linkCable: getCell(row, 4),
+        linkFibre: getCell(row, 5),
+        hh: getCell(row, 6),
+        feederCable: getCell(row, 8),
+        feederFibre: getCell(row, 9),
+        feederJoint: getCell(row, 11),
+        splitterPanel: getCell(row, 18),
+        splitter4Way: getCell(row, 19),
+        splitterFibreOut: getCell(row, 20),
+        cableId: getCell(row, 21),
+        cableFibre: getCell(row, 22),
+        ag: getCell(row, 25),
+        portOut: getCell(row, 26),
+        agJoint: getCell(row, 24),
+      };
+    }
 
-    out.push({
-      ponPort: values[0] || "",
-      splitter2Way: values[1] || "",
-      splitterFibreIn: values[2] || "",
-      odfNumber: values[3] || "",
-      linkCable: values[4] || "",
-      linkFibre: values[5] || "",
-      hh: values[6] || "",
-      feederCable: values[8] || "",
-      feederFibre: values[9] || "",
-      feederJoint: values[11] || "",
-      splitterPanel: values[18] || "",
-      splitter4Way: values[19] || "",
-      splitterFibreOut: values[20] || "",
-      cableId: values[21] || "",
-      cableFibre: values[22] || "",
-      ag: values[25] || "",
-      portOut: values[26] || "",
-      agJoint: values[24] || "",
-    });
+    if (looksLikePatchRow(record)) {
+      out.push(record);
+    }
   }
 
-  // remove very empty rows
-  return out.filter((r) => {
-    const filled = Object.values(r).filter(Boolean).length;
-    return filled >= 4;
-  });
+  return out;
 }
 
 export default function StreetCabEditor({ fileName, rows }: Props) {
@@ -175,6 +262,8 @@ export default function StreetCabEditor({ fileName, rows }: Props) {
         display: "grid",
         gridTemplateColumns: "320px 1fr",
         height: "100vh",
+        minHeight: 0,
+        overflow: "hidden",
         background: "#1f2937",
         color: "white",
       }}
@@ -188,6 +277,8 @@ export default function StreetCabEditor({ fileName, rows }: Props) {
           flexDirection: "column",
           gap: "1rem",
           overflow: "auto",
+          minHeight: 0,
+          paddingBottom: 80,
         }}
       >
         <div
@@ -268,7 +359,7 @@ export default function StreetCabEditor({ fileName, rows }: Props) {
       </div>
 
       {/* RIGHT */}
-      <div style={{ padding: "1rem", overflow: "auto" }}>
+      <div style={{ padding: "1rem", overflow: "auto", minHeight: 0, paddingBottom: 80 }}>
         <div
           style={{
             fontSize: "1.1rem",

@@ -168,6 +168,22 @@ function renderPortButton(
 ) {
   const annotations = getPortAnnotation(panelId, port.id, props.portAnnotations);
   const selected = isPortSelected(panelId, port.id, props.selectedPort);
+  const connected = isPortConnected(panelId, port.id, props.connections);
+  const highlighted = isPortHighlighted(
+    panelId,
+    port.id,
+    props.highlightedPortKeys
+  );
+  const dragStart = isDragStart(panelId, port.id, props.dragStartPort);
+
+  const className = [
+    connected ? "port-connected" : "",
+    highlighted ? "port-chain-highlight" : "",
+    selected ? "port-selected" : "",
+    dragStart ? "port-connection-source" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <div key={port.id} style={{ ...portCell, ...(props.cellStyle || {}) }}>
@@ -201,6 +217,7 @@ function renderPortButton(
           props.onDropConnection(panelId, port);
         }}
         title={buildPortTitle(props.title, annotations)}
+        className={className}
         style={props.style}
       >
         {props.buttonLabel ?? port.number}

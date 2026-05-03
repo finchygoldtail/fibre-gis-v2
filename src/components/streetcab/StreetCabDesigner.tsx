@@ -589,12 +589,67 @@ export default function StreetCabDesigner({
 
   const highlightedPortKeys = useMemo(() => {
     if (!selectedPort) return new Set<string>();
-    return getConnectedPortKeys(
+
+    // Start with the normal connection chain from the clicked port.
+    // Then expand through a splitter block internally:
+    // feeder F1 -> Splitter IN -> all 4 splitter OUTs -> connected LC/feed fibres.
+    const keys = getConnectedPortKeys(
       selectedPort.panelId,
       selectedPort.portId,
       connections
     );
-  }, [selectedPort, connections]);
+
+    let changed = true;
+
+    while (changed) {
+      changed = false;
+
+      for (const key of Array.from(keys)) {
+        const [panelId, portId] = key.split(":");
+        const panel = panels.find((item) => item.id === panelId);
+
+        if (!panel || panel.type !== "splitter-panel") continue;
+
+        const splitter = panel.splitters.find(
+          (item) =>
+            item.input.id === portId ||
+            item.outputs.some((output) => output.id === portId)
+        );
+
+        if (!splitter) continue;
+
+        const splitterKeys = [
+          `${panel.id}:${splitter.input.id}`,
+          ...splitter.outputs.map((output) => `${panel.id}:${output.id}`),
+        ];
+
+        for (const splitterKey of splitterKeys) {
+          if (!keys.has(splitterKey)) {
+            keys.add(splitterKey);
+            changed = true;
+          }
+        }
+      }
+
+      // Pull in anything connected to newly highlighted splitter ports.
+      for (const connection of connections) {
+        const fromKey = `${connection.fromPanelId}:${connection.fromPortId}`;
+        const toKey = `${connection.toPanelId}:${connection.toPortId}`;
+
+        if (keys.has(fromKey) && !keys.has(toKey)) {
+          keys.add(toKey);
+          changed = true;
+        }
+
+        if (keys.has(toKey) && !keys.has(fromKey)) {
+          keys.add(fromKey);
+          changed = true;
+        }
+      }
+    }
+
+    return keys;
+  }, [selectedPort, connections, panels]);
 
   const selectedPortRole = useMemo(() => {
     if (!selectedPort) return "none";
@@ -918,171 +973,314 @@ export default function StreetCabDesigner({
   };
 
   const handleConvertNormalSheet = async (
-  event: React.ChangeEvent<HTMLInputElement>
-) => {
-  const file = event.target.files?.[0];
-  if (!file) return;
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
 
-  try {
-    const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: "array" });
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array" });
 
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
-      header: 1,
-      defval: "",
-    });
+      const cleanRows: Array<Array<string | number>> = [
+        [
+          "Cabinet Ref",
+          "Feeder Cable",
+          "Feeder Fibre",
+          "Splitter No",
+          "Splitter Output",
+          "Link Cable",
+          "Link Fibre",
+          "AG",
+          "AG Port",
+        ],
+      ];
 
-    const cleanRows: Array<Array<string | number>> = [
-      [
-        "Cabinet Ref",
-        "Feeder Cable",
-        "Feeder Fibre",
-        "Splitter No",
-        "Splitter Output",
-        "Link Cable",
-        "Link Fibre",
-        "AG",
-        "AG Port",
-      ],
-    ];
+      const getText = (value: unknown): string =>
+        value === null || value === undefined ? "" : String(value).trim();
 
-    const getText = (value: unknown): string =>
-      value === null || value === undefined ? "" : String(value).trim();
+      const normaliseHeader = (value: unknown): string =>
+        getText(value).toLowerCase().replace(/\s+/g, " ").trim();
 
-    const getNum = (value: unknown): number | null => {
-      const text = getText(value);
-      const match = text.match(/\d+/);
-      return match ? Number(match[0]) : null;
-    };
+      const getNum = (value: unknown): number | null => {
+        const text = getText(value);
+        const match = text.match(/\d+/);
+        return match ? Number(match[0]) : null;
+      };
 
-    const getSplitterNo = (value: unknown): number | null => {
-      const text = getText(value).replace(/\s/g, "");
-      if (!text) return null;
+      const getSplitterNo = (value: unknown): number | null => {
+        const text = getText(value).replace(/\s/g, "");
+        if (!text) return null;
 
-      // Example: ST-CHN_1:4W-09 -> 9
-      const trailing = text.match(/(\d+)\s*$/);
-      if (trailing) return Number(trailing[1]);
+        // Examples: ST-CHN_1:4W-09, BD-HEE_1:4W-01, BD-HAY_1:4W-01
+        const trailing = text.match(/(\d+)\s*$/);
+        if (trailing) return Number(trailing[1]);
 
-      const all = text.match(/\d+/g);
-      if (!all?.length) return null;
+        const all = text.match(/\d+/g);
+        if (!all?.length) return null;
 
-      return Number(all[all.length - 1]);
-    };
+        return Number(all[all.length - 1]);
+      };
 
-    let currentCabinetRef =
-      getText(rows[0]?.[0]) || cabinetRef || asset.name || "";
+      const deriveCabinetRef = (): string => {
+        const existing = getText(cabinetRef || asset.name);
+        if (existing && !existing.toLowerCase().includes("street cab")) return existing;
 
-    let currentFeederCable = "";
-    let currentFeederFibre: number | null = null;
-    let currentSplitterNo: number | null = null;
-    let currentLinkCable = "";
-    let currentAG = "";
+        const fromFile = file.name
+          .replace(/\.(xlsx|xls)$/i, "")
+          .match(/\b([A-Z]{2,4})[-_ ]([A-Z]{2,6})[-_ ]SC(\d{1,3})\b/i);
 
-    // This BD-CHN file layout:
-    // Row 1 = cabinet ref
-    // Row 2 = headers
-    // Data starts row 3
-    //
-    // Q  = Feeder Cable       index 16
-    // R  = Feeder Fibre       index 17
-    // T  = 1:4W Splitter      index 19
-    // U  = Splitter Fibre     index 20
-    // V  = Link Cable         index 21
-    // W  = Link Fibre         index 22
-    // Z  = AG                 index 25
-    // AA = AG Port            index 26
+        if (fromFile) {
+          return `${fromFile[1].toUpperCase()}-${fromFile[2].toUpperCase()}-SC${fromFile[3]}`;
+        }
 
-    for (let i = 2; i < rows.length; i += 1) {
-      const row = rows[i] || [];
+        return existing || file.name.replace(/\.(xlsx|xls)$/i, "");
+      };
 
-      const feederCableRaw = getCell(row, 16);   // Q
-      const feederFibreRaw = getCell(row, 17);   // R
-      const splitterRaw = getCell(row, 19);      // T
-      const splitterOutRaw = getCell(row, 20);   // U
-      const linkCableRaw = getCell(row, 21);     // V
-      const linkFibreRaw = getCell(row, 22);     // W
-      const agRaw = getCell(row, 25);            // Z
-      const agPortRaw = getCell(row, 26);        // AA
+      type DetectedLayout = {
+        sheetName: string;
+        rows: unknown[][];
+        headerRowIndex: number;
+        feederCableCol: number;
+        feederFibreCol: number;
+        splitterCol: number;
+        splitterOutputCol: number;
+        linkCableCol: number;
+        linkFibreCol: number;
+        agCol: number;
+        agPortCol: number;
+      };
 
-      const feederCableText = getText(feederCableRaw);
-      if (feederCableText) currentFeederCable = feederCableText;
+      const findNextCol = (
+        headers: unknown[],
+        startCol: number,
+        predicate: (header: string, index: number) => boolean
+      ): number => {
+        for (let col = startCol + 1; col < headers.length; col += 1) {
+          if (predicate(normaliseHeader(headers[col]), col)) return col;
+        }
+        return -1;
+      };
 
-      const feederFibreNumber = getNum(feederFibreRaw);
-      if (feederFibreNumber !== null) currentFeederFibre = feederFibreNumber;
+      const findBestLayout = (): DetectedLayout | null => {
+        let best: DetectedLayout | null = null;
+        let bestScore = -1;
 
-      const splitterNo = getSplitterNo(splitterRaw);
-      if (splitterNo !== null) currentSplitterNo = splitterNo;
+        for (const sheetName of workbook.SheetNames) {
+          const sheet = workbook.Sheets[sheetName];
+          const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+            header: 1,
+            defval: "",
+          });
 
-      const linkCableText = getText(linkCableRaw);
-      if (linkCableText) currentLinkCable = linkCableText;
+          for (let rowIndex = 0; rowIndex < Math.min(rows.length, 30); rowIndex += 1) {
+            const row = rows[rowIndex] || [];
+            const headers = row.map(normaliseHeader);
+            const joined = headers.join(" ");
 
-      const agText = getText(agRaw);
-      if (agText) currentAG = agText;
+            const splitterCol = headers.findIndex(
+              (header) => header.includes("1:4") && header.includes("splitter")
+            );
+            const agCol = headers.findIndex((header) => header === "ag");
+            const agPortCol = headers.findIndex(
+              (header, index) =>
+                index > agCol &&
+                (header.includes("port out") || header.includes("1:4w port"))
+            );
 
-      const splitterOutput = getNum(splitterOutRaw);
-      const linkFibre = getNum(linkFibreRaw);
-      const agPort = getNum(agPortRaw);
+            if (splitterCol === -1 || agCol === -1 || agPortCol === -1) continue;
 
-      if (
-        !currentCabinetRef ||
-        !currentFeederCable ||
-        currentFeederFibre === null ||
-        currentSplitterNo === null ||
-        splitterOutput === null ||
-        !currentLinkCable ||
-        linkFibre === null ||
-        !currentAG ||
-        agPort === null
-      ) {
-        continue;
+            const feederCandidates = headers
+              .map((header, index) => ({ header, index }))
+              .filter(({ header, index }) =>
+                index < splitterCol &&
+                header.includes("feeder") &&
+                !header.includes("fibre")
+              );
+
+            const feederCableCol = feederCandidates.length
+              ? feederCandidates[feederCandidates.length - 1].index
+              : -1;
+
+            const feederFibreCol = feederCableCol >= 0
+              ? findNextCol(headers, feederCableCol, (header) => header.includes("fibre"))
+              : -1;
+
+            const splitterOutputCol = findNextCol(
+              headers,
+              splitterCol,
+              (header) => header.includes("splitter") && header.includes("fibre")
+            );
+
+            const linkCableCol = findNextCol(
+              headers,
+              splitterOutputCol >= 0 ? splitterOutputCol : splitterCol,
+              (header) =>
+                header.includes("link cable") ||
+                header.includes("cable 1") ||
+                header.includes("cable id")
+            );
+
+            const linkFibreCol = linkCableCol >= 0
+              ? findNextCol(headers, linkCableCol, (header) => header.includes("fibre"))
+              : -1;
+
+            const score = [
+              joined.includes("pon port"),
+              feederCableCol >= 0,
+              feederFibreCol >= 0,
+              splitterOutputCol >= 0,
+              linkCableCol >= 0,
+              linkFibreCol >= 0,
+              agCol >= 0,
+              agPortCol >= 0,
+            ].filter(Boolean).length;
+
+            if (
+              score > bestScore &&
+              feederCableCol >= 0 &&
+              feederFibreCol >= 0 &&
+              splitterOutputCol >= 0 &&
+              linkCableCol >= 0 &&
+              linkFibreCol >= 0
+            ) {
+              bestScore = score;
+              best = {
+                sheetName,
+                rows,
+                headerRowIndex: rowIndex,
+                feederCableCol,
+                feederFibreCol,
+                splitterCol,
+                splitterOutputCol,
+                linkCableCol,
+                linkFibreCol,
+                agCol,
+                agPortCol,
+              };
+            }
+          }
+        }
+
+        return best;
+      };
+
+      const layout = findBestLayout();
+
+      if (!layout) {
+        alert(
+          "No matching street-cab patching table was found. I looked for columns like 1:4W SPLITTER, Feeder, Link/Cable ID, AG and 1:4W Port Out."
+        );
+        return;
       }
 
-      if (splitterOutput < 1 || splitterOutput > 4) {
-        continue;
+      let currentCabinetRef = deriveCabinetRef();
+      let currentFeederCable = "";
+      let currentFeederFibre: number | null = null;
+      let currentSplitterNo: number | null = null;
+      let currentLinkCable = "";
+      let currentAG = "";
+
+      for (let i = layout.headerRowIndex + 1; i < layout.rows.length; i += 1) {
+        const row = layout.rows[i] || [];
+
+        const feederCableText = getText(getCell(row, layout.feederCableCol));
+        if (feederCableText) currentFeederCable = feederCableText;
+
+        const feederFibreNumber = getNum(getCell(row, layout.feederFibreCol));
+        if (feederFibreNumber !== null) currentFeederFibre = feederFibreNumber;
+
+        const splitterNo = getSplitterNo(getCell(row, layout.splitterCol));
+        if (splitterNo !== null) currentSplitterNo = splitterNo;
+
+        const linkCableText = getText(getCell(row, layout.linkCableCol));
+        if (linkCableText) currentLinkCable = linkCableText;
+
+        const agText = getText(getCell(row, layout.agCol));
+        if (agText) currentAG = agText;
+
+        const splitterOutput = getNum(getCell(row, layout.splitterOutputCol));
+        const linkFibre = getNum(getCell(row, layout.linkFibreCol));
+        const agPort = getNum(getCell(row, layout.agPortCol));
+
+        const hasUsefulCells =
+          feederCableText ||
+          feederFibreNumber !== null ||
+          splitterNo !== null ||
+          linkCableText ||
+          agText ||
+          splitterOutput !== null ||
+          linkFibre !== null ||
+          agPort !== null;
+
+        if (!hasUsefulCells) continue;
+
+        if (
+          !currentCabinetRef ||
+          !currentFeederCable ||
+          currentFeederFibre === null ||
+          currentSplitterNo === null ||
+          splitterOutput === null ||
+          !currentLinkCable ||
+          linkFibre === null ||
+          !currentAG ||
+          agPort === null
+        ) {
+          continue;
+        }
+
+        if (splitterOutput < 1 || splitterOutput > 4) continue;
+
+        cleanRows.push([
+          currentCabinetRef,
+          currentFeederCable,
+          currentFeederFibre,
+          currentSplitterNo,
+          splitterOutput,
+          currentLinkCable,
+          linkFibre,
+          currentAG,
+          agPort,
+        ]);
       }
 
-      cleanRows.push([
-        currentCabinetRef,
-        currentFeederCable,
-        currentFeederFibre,
-        currentSplitterNo,
-        splitterOutput,
-        currentLinkCable,
-        linkFibre,
-        currentAG,
-        agPort,
-      ]);
+      if (cleanRows.length === 1) {
+        alert(
+          `Found the patching table on sheet "${layout.sheetName}" but converted 0 rows. Check that the rows contain feeder fibre, splitter output, link fibre, AG and AG port values.`
+        );
+        return;
+      }
+
+      const cleanWorkbook = XLSX.utils.book_new();
+      const cleanSheet = XLSX.utils.aoa_to_sheet(cleanRows);
+
+      cleanSheet["!cols"] = [
+        { wch: 18 },
+        { wch: 22 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 18 },
+        { wch: 22 },
+        { wch: 12 },
+        { wch: 14 },
+        { wch: 12 },
+      ];
+
+      XLSX.utils.book_append_sheet(cleanWorkbook, cleanSheet, "Patching Import");
+
+      const safeName = file.name.replace(/\.(xlsx|xls)$/i, "");
+      XLSX.writeFile(cleanWorkbook, `${safeName}_clean_import.xlsx`);
+
+      alert(
+        `Converted ${cleanRows.length - 1} rows from sheet "${layout.sheetName}" into clean import format.`
+      );
+    } catch (error) {
+      console.error(error);
+      alert("Could not convert the normal patching sheet.");
     }
 
-    const cleanWorkbook = XLSX.utils.book_new();
-    const cleanSheet = XLSX.utils.aoa_to_sheet(cleanRows);
-
-    cleanSheet["!cols"] = [
-      { wch: 18 },
-      { wch: 22 },
-      { wch: 14 },
-      { wch: 14 },
-      { wch: 18 },
-      { wch: 22 },
-      { wch: 12 },
-      { wch: 14 },
-      { wch: 12 },
-    ];
-
-    XLSX.utils.book_append_sheet(cleanWorkbook, cleanSheet, "Patching Import");
-
-    const safeName = file.name.replace(/\.(xlsx|xls)$/i, "");
-    XLSX.writeFile(cleanWorkbook, `${safeName}_clean_import.xlsx`);
-
-    alert(`Converted ${cleanRows.length - 1} rows into clean import format.`);
-  } catch (error) {
-    console.error(error);
-    alert("Could not convert the normal patching sheet.");
-  }
-
-  event.target.value = "";
-};
+    event.target.value = "";
+  };
 
   const handleSave = () => {
     const updatedAsset: SavedMapAsset = {

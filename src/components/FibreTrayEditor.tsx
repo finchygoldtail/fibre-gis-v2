@@ -6,7 +6,7 @@ import React, {
   useState,
 } from "react";
 
-import { collection, deleteDoc, doc, getDocs, onSnapshot, setDoc } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, setDoc } from "firebase/firestore";
 import { db, auth } from "../firebase";
 
 import { buildJoint, JOINT_TYPES } from "../logic/jointConfig";
@@ -43,9 +43,15 @@ const STORAGE_KEY = "fibre-tray-project-v1";
 const FIRESTORE_REF_PATH = ["businesses", "fibre-gis-v2"] as const;
 
 const JOINT_MAPPING_CHUNK_SIZE = 250;
+const MAP_ASSET_CHUNK_SIZE = 150;
 
 type MappingChunkDoc = {
   rowsJson?: string;
+  chunkIndex?: number;
+};
+
+type MapAssetChunkDoc = {
+  assetsJson?: string;
   chunkIndex?: number;
 };
 
@@ -187,6 +193,104 @@ function restoreSavedJointsFromFirebase(value: any[]): SavedJoint[] {
 
     return copy as SavedJoint;
   });
+}
+
+async function saveMapAssetsToFirestore(nextSavedJoints: SavedJoint[]) {
+  const cleaned = cleanSavedJointsForFirebase(nextSavedJoints);
+  const chunksRef = collection(
+    db,
+    ...FIRESTORE_REF_PATH,
+    "mapAssets",
+    "main",
+    "chunks"
+  );
+
+  const existing = await getDocs(chunksRef);
+  await Promise.all(existing.docs.map((chunkDoc) => deleteDoc(chunkDoc.ref)));
+
+  const chunks: any[][] = [];
+  for (let i = 0; i < cleaned.length; i += MAP_ASSET_CHUNK_SIZE) {
+    chunks.push(cleaned.slice(i, i + MAP_ASSET_CHUNK_SIZE));
+  }
+
+  await Promise.all(
+    chunks.map((chunkAssets, index) =>
+      setDoc(doc(chunksRef, `chunk_${String(index).padStart(5, "0")}`), {
+        chunkIndex: index,
+        assetsJson: JSON.stringify(chunkAssets),
+      })
+    )
+  );
+
+  await setDoc(
+    doc(db, ...FIRESTORE_REF_PATH, "mapAssets", "main"),
+    {
+      chunked: true,
+      assetCount: cleaned.length,
+      chunkCount: chunks.length,
+      updatedAt: new Date().toISOString(),
+      updatedByUid: auth.currentUser?.uid || "unknown",
+      updatedByEmail: auth.currentUser?.email || "unknown",
+    },
+    { merge: true }
+  );
+
+  // Keep a small root summary for backwards visibility without risking 1MB.
+  await setDoc(
+    doc(db, ...FIRESTORE_REF_PATH),
+    {
+      mapAssetsChunked: true,
+      mapAssetsPath: "mapAssets/main/chunks",
+      mapAssetsCount: cleaned.length,
+      updatedAt: new Date().toISOString(),
+      updatedByUid: auth.currentUser?.uid || "unknown",
+      updatedByEmail: auth.currentUser?.email || "unknown",
+    },
+    { merge: true }
+  );
+
+  return cleaned;
+}
+
+async function loadMapAssetsFromFirestore(): Promise<SavedJoint[]> {
+  const chunksRef = collection(
+    db,
+    ...FIRESTORE_REF_PATH,
+    "mapAssets",
+    "main",
+    "chunks"
+  );
+
+  const snapshot = await getDocs(chunksRef);
+  const chunkAssets = snapshot.docs
+    .map((chunkDoc) => {
+      const data = chunkDoc.data() as MapAssetChunkDoc;
+      return {
+        id: chunkDoc.id,
+        index:
+          typeof data.chunkIndex === "number"
+            ? data.chunkIndex
+            : Number(chunkDoc.id.replace("chunk_", "")),
+        assets: safeJsonParse(data.assetsJson, []),
+      };
+    })
+    .sort((a, b) => a.index - b.index || a.id.localeCompare(b.id))
+    .flatMap((chunk) => (Array.isArray(chunk.assets) ? chunk.assets : []));
+
+  if (chunkAssets.length > 0) {
+    return restoreSavedJointsFromFirebase(chunkAssets);
+  }
+
+  // Backwards compatibility for your older one-document save.
+  const legacySnap = await getDoc(doc(db, ...FIRESTORE_REF_PATH));
+  if (legacySnap.exists()) {
+    const data = legacySnap.data();
+    if (Array.isArray(data.savedJoints)) {
+      return restoreSavedJointsFromFirebase(data.savedJoints);
+    }
+  }
+
+  return [];
 }
 
 type PersistedProject = {
@@ -351,6 +455,7 @@ export const FibreTrayEditor: React.FC = () => {
   const [selectedJointId, setSelectedJointId] = useState<string | null>(null);
   const [firebaseLoaded, setFirebaseLoaded] = useState(false);
   const lastFirebaseJsonRef = useRef("");
+  const firebaseSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [jointType, setJointType] =
     useState<JointTypeLabel>("CMJ (12 trays)");
@@ -372,27 +477,9 @@ export const FibreTrayEditor: React.FC = () => {
 
   const cfg = JOINT_TYPES[jointType];
   const saveSavedJointsToFirestoreNow = useCallback(async (nextSavedJoints: SavedJoint[]) => {
-    const cleaned = cleanSavedJointsForFirebase(nextSavedJoints);
-    const json = JSON.stringify(cleaned);
-    const now = new Date().toISOString();
-    const ref = doc(db, ...FIRESTORE_REF_PATH);
-
-    const payload = {
-      savedJoints: cleaned,
-      updatedAt: now,
-      updatedByUid: auth.currentUser?.uid || "unknown",
-      updatedByEmail: auth.currentUser?.email || "unknown",
-    };
-
-    const payloadSize = new Blob([JSON.stringify(payload)]).size;
-    if (payloadSize > 950_000) {
-      console.warn("Skipping Firestore save: project payload is too large", payloadSize);
-      return;
-    }
-
-    await setDoc(ref, payload, { merge: true });
-    lastFirebaseJsonRef.current = json;
-    console.log(`Saved ${cleaned.length} map assets to Firestore immediately`);
+    const cleaned = await saveMapAssetsToFirestore(nextSavedJoints);
+    lastFirebaseJsonRef.current = JSON.stringify(cleaned);
+    console.log(`Saved ${cleaned.length} chunked map assets to Firestore immediately`);
   }, []);
 
 
@@ -454,51 +541,39 @@ export const FibreTrayEditor: React.FC = () => {
     Load shared project from Firestore
   ------------------------------------------------------------- */
   useEffect(() => {
-    const ref = doc(db, ...FIRESTORE_REF_PATH);
+    const ref = doc(db, ...FIRESTORE_REF_PATH, "mapAssets", "main");
 
     const unsub = onSnapshot(
       ref,
-      async (snap) => {
+      async () => {
         try {
-          if (snap.exists()) {
-            const data = snap.data();
-            const restored = restoreSavedJointsFromFirebase(
-              Array.isArray(data.savedJoints) ? data.savedJoints : []
-            );
+          const restored = await loadMapAssetsFromFirestore();
 
-            lastFirebaseJsonRef.current = JSON.stringify(
-              cleanSavedJointsForFirebase(restored)
-            );
-            setSavedJoints(restored);
-          } else {
-            const now = new Date().toISOString();
-            const empty: SavedJoint[] = [];
-            const cleaned = cleanSavedJointsForFirebase(empty);
-
-            await setDoc(
-              ref,
-              {
-                savedJoints: cleaned,
-                createdAt: now,
-                updatedAt: now,
-                updatedByUid: auth.currentUser?.uid || "unknown",
-                updatedByEmail: auth.currentUser?.email || "unknown",
-              },
-              { merge: true }
-            );
-
-            lastFirebaseJsonRef.current = JSON.stringify(cleaned);
-            console.log("Created Firestore document: businesses/fibre-gis-v2");
-          }
+          lastFirebaseJsonRef.current = JSON.stringify(
+            cleanSavedJointsForFirebase(restored)
+          );
+          setSavedJoints(restored);
         } catch (err) {
-          console.error("Firestore load/create failed:", err);
+          console.error("Firestore map asset load failed:", err);
         } finally {
           setFirebaseLoaded(true);
         }
       },
-      (err) => {
-        console.error("Firestore listener failed:", err);
-        setFirebaseLoaded(true);
+      async (err) => {
+        console.error("Firestore map asset listener failed:", err);
+
+        // Try one direct load before giving up, useful when rules/listener timing is odd.
+        try {
+          const restored = await loadMapAssetsFromFirestore();
+          lastFirebaseJsonRef.current = JSON.stringify(
+            cleanSavedJointsForFirebase(restored)
+          );
+          setSavedJoints(restored);
+        } catch (loadErr) {
+          console.error("Firestore fallback map asset load failed:", loadErr);
+        } finally {
+          setFirebaseLoaded(true);
+        }
       }
     );
 
@@ -516,31 +591,26 @@ export const FibreTrayEditor: React.FC = () => {
 
     if (json === lastFirebaseJsonRef.current) return;
 
-    const now = new Date().toISOString();
-    const ref = doc(db, ...FIRESTORE_REF_PATH);
-
-    const payload = {
-      savedJoints: cleaned,
-      updatedAt: now,
-      updatedByUid: auth.currentUser?.uid || "unknown",
-      updatedByEmail: auth.currentUser?.email || "unknown",
-    };
-
-    const payloadSize = new Blob([JSON.stringify(payload)]).size;
-
-    if (payloadSize > 950_000) {
-      console.warn("Skipping Firestore save: project payload is too large", payloadSize);
-      return;
+    if (firebaseSaveTimerRef.current) {
+      clearTimeout(firebaseSaveTimerRef.current);
     }
 
-    setDoc(ref, payload, { merge: true })
-      .then(() => {
-        lastFirebaseJsonRef.current = json;
-        console.log(`Saved ${cleaned.length} map assets to Firestore`);
-      })
-      .catch((err) => {
-        console.error("Firestore save failed:", err);
-      });
+    firebaseSaveTimerRef.current = setTimeout(() => {
+      saveMapAssetsToFirestore(savedJoints)
+        .then((savedCleaned) => {
+          lastFirebaseJsonRef.current = JSON.stringify(savedCleaned);
+          console.log(`Saved ${savedCleaned.length} chunked map assets to Firestore`);
+        })
+        .catch((err) => {
+          console.error("Firestore chunked map asset save failed:", err);
+        });
+    }, 800);
+
+    return () => {
+      if (firebaseSaveTimerRef.current) {
+        clearTimeout(firebaseSaveTimerRef.current);
+      }
+    };
   }, [savedJoints, firebaseLoaded]);
 
   /* -------------------------------------------------------------

@@ -694,6 +694,37 @@ const handleDeleteExchange = async (exchange: ExchangeAsset) => {
 
   const [openStreetCabAsset, setOpenStreetCabAsset] = useState<SavedMapAsset | null>(null);
 
+  // =====================================================
+  // ONE MAP-ASSET SAVE PATH
+  // Use this for cabs, poles, DPs, chambers, cables, areas and joints.
+  // It updates an existing asset if found, or adds it if it is missing.
+  // The sync metadata forces the parent/Firebase listener to see a fresh change.
+  // =====================================================
+  const saveMapAssetToState = (
+    asset: SavedMapAsset,
+    options?: { isNew?: boolean; message?: string }
+  ): SavedMapAsset => {
+    const syncedAsset = markAssetForLiveSync(asset, options?.isNew ?? false);
+
+    setSavedJoints((prev) => {
+      const exists = (prev ?? []).some((item) => item.id === syncedAsset.id);
+
+      if (!exists) {
+        return [...(prev ?? []), syncedAsset];
+      }
+
+      return (prev ?? []).map((item) =>
+        item.id === syncedAsset.id ? syncedAsset : item
+      );
+    });
+
+    if (options?.message) {
+      alert(options.message);
+    }
+
+    return syncedAsset;
+  };
+
   useEffect(() => {
     setJointName(currentJointName || "");
     setJointType(currentJointType || "CMJ (12 trays)");
@@ -1838,35 +1869,6 @@ if (type === "exchange") {
       .sort((a, b) => a.port - b.port);
   }, [editingAssetId, savedJoints]);
 
-  if (openStreetCabAsset) {
-  return (
-    <StreetCabDesigner
-      asset={openStreetCabAsset}
-      onClose={() => setOpenStreetCabAsset(null)}
-      onSave={(updatedAsset) => {
-        setSavedJoints((prev) =>
-          prev.map((item) =>
-            item.id === updatedAsset.id
-              ? markAssetForLiveSync(updatedAsset, false)
-              : item
-          )
-        );
-        setOpenStreetCabAsset(updatedAsset);
-      }}
-    />
-  );
-}
-
-if (openExchangeAsset) {
-  return (
-    <ExchangeDesigner
-      exchange={openExchangeAsset}
-      onClose={() => setOpenExchangeAsset(null)}
-      onSave={handleSaveExchange}
-    />
-  );
-}
-
 return (
   <div
       style={{
@@ -2729,6 +2731,60 @@ return (
       >
         {isLayersOpen ? "Hide Layers" : "Layers"}
       </button>
+
+
+      {openStreetCabAsset && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 3000,
+            background: "#0f172a",
+            height: "100dvh",
+            maxHeight: "100dvh",
+            overflowY: "auto",
+            overflowX: "hidden",
+            overscrollBehavior: "contain",
+            paddingBottom: "96px",
+            boxSizing: "border-box",
+          }}
+        >
+          <StreetCabDesigner
+            asset={openStreetCabAsset}
+            onClose={() => setOpenStreetCabAsset(null)}
+            onSave={(updatedAsset) => {
+              const syncedAsset = saveMapAssetToState(updatedAsset, {
+                isNew: false,
+                message: "Street cab saved to map.",
+              });
+              setOpenStreetCabAsset(syncedAsset);
+            }}
+          />
+        </div>
+      )}
+      {openExchangeAsset && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 3000,
+            background: "#0f172a",
+            height: "100dvh",
+            maxHeight: "100dvh",
+            overflowY: "auto",
+            overflowX: "hidden",
+            overscrollBehavior: "contain",
+            paddingBottom: "96px",
+            boxSizing: "border-box",
+          }}
+        >
+          <ExchangeDesigner
+            exchange={openExchangeAsset}
+            onClose={() => setOpenExchangeAsset(null)}
+            onSave={handleSaveExchange}
+          />
+        </div>
+      )}
     </div>
   );
 }
