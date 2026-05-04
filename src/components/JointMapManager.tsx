@@ -1,3 +1,11 @@
+// =====================================================
+// FILE: JointMapManager.tsx
+// PURPOSE: Main Alistra GIS map, asset editor, cable drawing,
+//          area inspection, layer controls, and project map UI.
+// NOTE: Section headers are intentionally verbose so this large
+//       file is easier to maintain while the app is still evolving.
+// =====================================================
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   MapContainer,
@@ -25,10 +33,10 @@ import { formatDistance, getPathDistanceMeters } from "../utils/mapMeasure";
 import { getNextAssetName } from "../utils/mapAssetNames";
 import MapContextMenu, { type MapContextAction } from "./map/MapContextMenu";
 import LayersPanel from "./map/LayersPanel";
-import GpsLocationControl from "./map/GpsLocationControl";
 import AssetMarkersLayer from "./map/AssetMarkersLayer";
 import CableLinesLayer from "./map/CableLinesLayer";
 import CableDetailsModal from "./map/CableDetailsModal";
+import AreaAssetInspector from "./map/AreaAssetInspector";
 import { loadMapView, saveMapView } from "./map/mapViewMemory";
 import PoleDetailsModal from "./map/modals/PoleDetailsModal";
 import DistributionPointDetailsModal from "./map/modals/DistributionPointDetailsModal";
@@ -862,6 +870,38 @@ const handleDeleteExchange = async (exchange: ExchangeAsset) => {
       padding: [60, 60],
       maxZoom: 18,
     });
+  };
+
+
+
+  const handleZoomToAsset = (asset: SavedMapAsset) => {
+    if (!asset.geometry) return;
+
+    if (asset.geometry.type === "Point") {
+      mapRef.current?.setView(asset.geometry.coordinates as [number, number], 19);
+      return;
+    }
+
+    if (asset.geometry.type === "LineString") {
+      const points = (asset.geometry.coordinates || []) as [number, number][];
+      if (points.length === 0) return;
+
+      mapRef.current?.fitBounds(L.latLngBounds(points), {
+        padding: [60, 60],
+        maxZoom: 19,
+      });
+      return;
+    }
+
+    if (asset.geometry.type === "Polygon") {
+      const points = (asset.geometry.coordinates?.[0] || []) as [number, number][];
+      if (points.length === 0) return;
+
+      mapRef.current?.fitBounds(L.latLngBounds(points), {
+        padding: [60, 60],
+        maxZoom: 19,
+      });
+    }
   };
 
   const resetEditor = () => {
@@ -1876,7 +1916,39 @@ if (type === "exchange") {
       .sort((a, b) => a.port - b.port);
   }, [editingAssetId, savedJoints]);
 
-return (
+  // =====================================================
+  // HANDLER: TOP GPS BUTTON
+  // Moves the map to the user's current browser GPS location.
+  // Kept outside Leaflet's default control stack so it can sit in
+  // the cleaner top-right action area beside Layers.
+  // =====================================================
+  const handleGpsLocate = () => {
+    if (!navigator.geolocation) {
+      alert("GPS is not available in this browser.");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const nextLocation = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+
+        setPickedLocation(nextLocation);
+        mapRef.current?.flyTo([nextLocation.lat, nextLocation.lng], 18);
+      },
+      () => {
+        alert("Could not get your GPS location. Check browser location permissions.");
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  // =====================================================
+  // RENDER
+  // =====================================================
+  return (
   <div
       style={{
         height: "100vh",
@@ -1887,25 +1959,24 @@ return (
         color: "white",
       }}
     >
-      {isMobile && (
-        <button
-          onClick={() => setIsPanelOpen((prev) => !prev)}
-          style={{
-            position: "absolute",
-            top: 12,
-            left: 12,
-            zIndex: 2000,
-            background: "#1f2937",
-            color: "white",
-            border: "1px solid #374151",
-            padding: "9px 12px",
-            borderRadius: 8,
-            fontSize: 18,
-            boxShadow: "0 2px 8px rgba(0,0,0,0.35)",
-          }}
-        >
-          {isPanelOpen ? "×" : "☰"}
-        </button>
+      {/* =====================================================
+          TOP LEFT: TOOLS DRAWER TOGGLE
+          Keeps the first view clean and lets the full editor slide out.
+          ===================================================== */}
+      <button
+        onClick={() => setIsPanelOpen((prev) => !prev)}
+        style={drawerToggleButton}
+      >
+        {isPanelOpen ? "× Close" : "☰ Tools"}
+      </button>
+
+      {!isPanelOpen && (
+        <div style={welcomeCard}>
+          <div style={{ fontWeight: 800, fontSize: 18 }}>Welcome to Alistra GIS</div>
+          <div style={{ color: "#cbd5e1", marginTop: 6 }}>
+            Open Tools to create assets, draw cables, inspect areas, or manage project data.
+          </div>
+        </div>
       )}
       {/* =====================================================
           EXCHANGE SIDE PANEL
@@ -1919,19 +1990,15 @@ return (
           position: "absolute",
           top: 0,
           left: 0,
-          width: isMobile ? "100%" : "360px",
-          height: isMobile ? "85%" : "100%",
+          width: "360px",
+          maxWidth: "calc(100vw - 16px)",
+          height: "100%",
           zIndex: 1500,
           overflowY: "auto",
           background: "#1f2937",
           boxSizing: "border-box",
-          borderRight: isMobile ? "none" : "1px solid #374151",
-          borderBottom: isMobile ? "1px solid #374151" : "none",
-          transform: isMobile
-            ? isPanelOpen
-              ? "translateY(0)"
-              : "translateY(-100%)"
-            : "translateX(0)",
+          borderRight: "1px solid #374151",
+          transform: isPanelOpen ? "translateX(0)" : "translateX(-105%)",
           transition: "transform 0.3s ease",
         }}
       >
@@ -1952,7 +2019,9 @@ return (
           </button>
         </div>
 
-        <div style={card}>
+        <details open style={card}>
+          <summary style={sectionSummary}>Create / Edit Asset</summary>
+          <div style={sectionBody}>
           <div style={label}>Asset Type</div>
           <select
             value={assetType}
@@ -2036,9 +2105,12 @@ return (
               </button>
             </div>
           ) : null}
-        </div>
+          </div>
+        </details>
 
-        <div style={card}>
+        <details open style={card}>
+          <summary style={sectionSummary}>Map Tools</summary>
+          <div style={sectionBody}>
           <div style={label}>Map Tool</div>
 
           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
@@ -2268,10 +2340,25 @@ return (
               </div>
             </>
           )}
-        </div>
+          </div>
+        </details>
 
-        <div style={card}>
-          <div style={label}>Import / Export Saved Map</div>
+
+        <details open style={drawerSection}>
+          <summary style={sectionSummary}>Area Asset Inspector</summary>
+          <div style={sectionBody}>
+        <AreaAssetInspector
+          assets={allMapAssets}
+          areaAsset={activeProjectArea}
+          onZoomAsset={handleZoomToAsset}
+          onSelectAsset={handleEditAsset}
+        />
+          </div>
+        </details>
+
+        <details style={card}>
+          <summary style={sectionSummary}>Import / Export Saved Map</summary>
+          <div style={sectionBody}>
 
           <input type="file" accept=".json" onChange={handleImportJson} />
 
@@ -2326,7 +2413,8 @@ return (
           <div style={{ fontSize: "0.82rem", color: "#cbd5e1" }}>
             Zoom into the estate/road first, then load buildings or UPRN GeoJSON homes. Imported points are saved once in project home chunks.
           </div>
-        </div>
+          </div>
+        </details>
       </div>
 
       <div
@@ -2599,8 +2687,6 @@ return (
       />
     );
   })}
-
-          <GpsLocationControl />
         </MapContainer>
 
         <MapContextMenu
@@ -2723,6 +2809,16 @@ return (
       </div>
 
       <button
+        onClick={handleGpsLocate}
+        style={{
+          ...topMapButton,
+          right: isMobile ? 92 : isLayersOpen ? 430 : 92,
+        }}
+      >
+        GPS
+      </button>
+
+      <button
         onClick={() => setIsLayersOpen((prev) => !prev)}
         style={{
           position: "absolute",
@@ -2798,6 +2894,76 @@ return (
   );
 }
 
+// =====================================================
+// STYLES: DRAWER / WELCOME / TOP MAP ACTIONS
+// =====================================================
+const drawerToggleButton: React.CSSProperties = {
+  position: "absolute",
+  top: 16,
+  left: 16,
+  zIndex: 2100,
+  background: "#111827",
+  color: "white",
+  border: "1px solid #334155",
+  padding: "10px 14px",
+  borderRadius: 10,
+  cursor: "pointer",
+  fontWeight: 800,
+  boxShadow: "0 8px 22px rgba(0,0,0,0.35)",
+};
+
+const welcomeCard: React.CSSProperties = {
+  position: "absolute",
+  top: 72,
+  left: 16,
+  zIndex: 1000,
+  width: 300,
+  maxWidth: "calc(100vw - 32px)",
+  background: "rgba(17, 24, 39, 0.92)",
+  color: "white",
+  border: "1px solid #334155",
+  borderRadius: 14,
+  padding: "14px 16px",
+  boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
+};
+
+const topMapButton: React.CSSProperties = {
+  position: "absolute",
+  top: 16,
+  zIndex: 1200,
+  background: "#2563eb",
+  color: "white",
+  border: "none",
+  padding: "10px 14px",
+  borderRadius: "8px",
+  cursor: "pointer",
+  boxShadow: "0 2px 8px rgba(0,0,0,0.35)",
+};
+
+const drawerSection: React.CSSProperties = {
+  background: "#111827",
+  border: "1px solid #334155",
+  padding: "0.85rem",
+  borderRadius: 10,
+};
+
+const sectionSummary: React.CSSProperties = {
+  cursor: "pointer",
+  fontWeight: 800,
+  color: "white",
+  listStyle: "none",
+};
+
+const sectionBody: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 8,
+  marginTop: 12,
+};
+
+// =====================================================
+// STYLES: LEFT DRAWER / FORMS / BUTTONS
+// =====================================================
 const panel: React.CSSProperties = {
   padding: "1rem",
   display: "flex",

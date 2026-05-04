@@ -1,3 +1,9 @@
+// =====================================================
+// FILE: AuthGate.tsx
+// PURPOSE: Handles Firebase login, allowed-email access,
+//          compact signed-in header, and sign out.
+// =====================================================
+
 import React, { useEffect, useState } from "react";
 import {
   onAuthStateChanged,
@@ -9,6 +15,10 @@ import {
 } from "firebase/auth";
 import { auth, googleProvider } from "../firebase";
 
+// =====================================================
+// CONFIG: ALLOWED USERS
+// Keep this list in sync with Firestore rules later.
+// =====================================================
 const ALLOWED_EMAILS = [
   "alistairlgrantham@gmail.com",
   "benedict.almond@brsk.co.uk",
@@ -18,6 +28,9 @@ const ALLOWED_EMAILS = [
   "ben.almond@brsk.co.uk"
 ];
 
+// =====================================================
+// COMPONENT: AuthGate
+// =====================================================
 export default function AuthGate({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [checking, setChecking] = useState(true);
@@ -41,6 +54,9 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     ALLOWED_EMAILS.map((e) => e.toLowerCase()).includes(
       user.email.toLowerCase()
     );
+
+  const displayName =
+    user?.displayName || user?.email?.split("@")[0] || "User";
 
   const handleEmailLogin = async () => {
     setError("");
@@ -145,7 +161,8 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   return (
     <>
       <div style={topBar}>
-        <span>Signed in as {user.email}</span>
+        <span style={brandText}>Alistra GIS</span>
+        <span style={userText}>{displayName}</span>
         <button style={smallButton} onClick={() => signOut(auth)}>
           Sign out
         </button>
@@ -156,7 +173,9 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   );
 }
 
-/* ---------- styles ---------- */
+// =====================================================
+// STYLES
+// =====================================================
 
 const logo: React.CSSProperties = {
   width: 120,
@@ -221,20 +240,36 @@ const errorText: React.CSSProperties = {
 
 const topBar: React.CSSProperties = {
   display: "flex",
-  justifyContent: "space-between",
   alignItems: "center",
-  gap: 12,
-  padding: "8px 12px",
+  gap: 10,
+  padding: "6px 10px",
   background: "#111827",
   color: "white",
-  fontSize: 13,
+  fontSize: 12,
+  minHeight: 34,
+  boxSizing: "border-box",
+};
+
+const brandText: React.CSSProperties = {
+  fontWeight: 800,
+  letterSpacing: 0.2,
+};
+
+const userText: React.CSSProperties = {
+  color: "#cbd5e1",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  maxWidth: "42vw",
 };
 
 const smallButton: React.CSSProperties = {
+  marginLeft: "auto",
   background: "#374151",
   color: "white",
   border: "none",
-  padding: "6px 10px",
+  padding: "5px 9px",
   borderRadius: 6,
   cursor: "pointer",
+  fontSize: 12,
 };
