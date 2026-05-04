@@ -10,6 +10,7 @@ type Props = {
   visible: boolean;
   name: string;
   notes: string;
+  piaNoiNumber?: string;
   cableType: CableType;
   fibreCount: FibreCount;
   installMethod: InstallMethod;
@@ -21,6 +22,7 @@ type Props = {
   editingAssetId?: string | null;
   onChangeName: (value: string) => void;
   onChangeNotes: (value: string) => void;
+  onChangePiaNoiNumber: (value: string) => void;
   onChangeCableType: (value: CableType) => void;
   onChangeFibreCount: (value: FibreCount) => void;
   onChangeInstallMethod: (value: InstallMethod) => void;
@@ -46,6 +48,7 @@ export default function CableDetailsModal({
   visible,
   name,
   notes,
+  piaNoiNumber,
   cableType,
   fibreCount,
   installMethod,
@@ -57,6 +60,7 @@ export default function CableDetailsModal({
   editingAssetId = null,
   onChangeName,
   onChangeNotes,
+  onChangePiaNoiNumber,
   onChangeCableType,
   onChangeFibreCount,
   onChangeInstallMethod,
@@ -158,6 +162,16 @@ export default function CableDetailsModal({
             onChange={(e) => onChangeName(e.target.value)}
             style={input}
             placeholder="Cable 1"
+          />
+        </div>
+
+        <div>
+          <div style={label}>PIA NOI Number</div>
+          <input
+            value={piaNoiNumber || ""}
+            onChange={(e) => onChangePiaNoiNumber(e.target.value)}
+            style={input}
+            placeholder="e.g. NOI-123456"
           />
         </div>
 

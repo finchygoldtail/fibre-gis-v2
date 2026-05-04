@@ -590,6 +590,7 @@ const handleDeleteExchange = async (exchange: ExchangeAsset) => {
   const [jointName, setJointName] = useState(currentJointName || "");
   const [jointType, setJointType] = useState(currentJointType || "CMJ (12 trays)");
   const [notes, setNotes] = useState("");
+  const [cablePiaNoiNumber, setCablePiaNoiNumber] = useState("");
   const [areaLevel, setAreaLevel] = useState<AreaLevel>("L0");
 
   const [cableType, setCableType] = useState<CableType>("Feeder Cable");
@@ -868,6 +869,7 @@ const handleDeleteExchange = async (exchange: ExchangeAsset) => {
     setEditingAreaId(null);
     setPickedLocation(null);
     setNotes("");
+    setCablePiaNoiNumber("");
     setAreaLevel("L0");
     setMapMode("pick");
     setDraftCablePoints([]);
@@ -896,6 +898,7 @@ const handleDeleteExchange = async (exchange: ExchangeAsset) => {
     setJointType("Cable");
     setJointName(getNextAssetName(savedJoints, "cable"));
     setNotes("");
+    setCablePiaNoiNumber("");
     setCableType("Feeder Cable");
     setFibreCount("12F");
     setInstallMethod("Underground");
@@ -920,6 +923,7 @@ const handleDeleteExchange = async (exchange: ExchangeAsset) => {
     setJointName(asset.name || "");
     setJointType(asset.jointType || "");
     setNotes(asset.notes || "");
+    setCablePiaNoiNumber((asset as any).piaNoiNumber || "");
     setAreaLevel(normaliseAreaLevel((asset as any).areaLevel));
     setCableType(asset.cableType || "Feeder Cable");
     setFibreCount(asset.fibreCount || "12F");
@@ -1045,6 +1049,7 @@ const handleDeleteExchange = async (exchange: ExchangeAsset) => {
           name: jointName.trim() || asset.name,
           jointType: "Cable",
           notes: notes.trim(),
+          piaNoiNumber: cablePiaNoiNumber.trim(),
           assetType: "cable",
           cableType,
           fibreCount,
@@ -1196,12 +1201,13 @@ const handleDeleteExchange = async (exchange: ExchangeAsset) => {
     try {
       const routedCoordinates = await routePointsToRoads(draftCablePoints);
 
-      const cableRecord: SavedMapAsset = {
+      const cableRecord = {
         id: crypto.randomUUID(),
         name: cableName,
         assetType: "cable",
         jointType: "Cable",
         notes: notes.trim(),
+        piaNoiNumber: cablePiaNoiNumber.trim(),
         cableType,
         fibreCount,
         installMethod,
@@ -1212,7 +1218,7 @@ const handleDeleteExchange = async (exchange: ExchangeAsset) => {
           type: "LineString",
           coordinates: routedCoordinates,
         },
-      };
+      } as SavedMapAsset;
 
       const firstPoint = draftCablePoints[0];
       const lastPoint = draftCablePoints[draftCablePoints.length - 1];
@@ -1360,6 +1366,7 @@ const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
     setJointType("Polygon Area");
     setJointName(`Area ${(savedJoints ?? []).filter((asset) => asset.assetType === "area").length + 1}`);
     setNotes("");
+    setCablePiaNoiNumber("");
     setAreaLevel("L0");
     setPickedLocation(null);
     setDraftCablePoints([]);
@@ -2608,6 +2615,7 @@ return (
           visible={showCableModal}
           name={jointName}
           notes={notes}
+          piaNoiNumber={cablePiaNoiNumber}
           cableType={cableType}
           fibreCount={fibreCount}
           installMethod={installMethod}
@@ -2619,6 +2627,7 @@ return (
           editingAssetId={editingAssetId}
           onChangeName={setJointName}
           onChangeNotes={setNotes}
+          onChangePiaNoiNumber={setCablePiaNoiNumber}
           onChangeCableType={setCableType}
           onChangeFibreCount={setFibreCount}
           onChangeInstallMethod={setInstallMethod}
