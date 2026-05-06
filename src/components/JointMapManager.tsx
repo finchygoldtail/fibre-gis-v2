@@ -290,126 +290,6 @@ function getAssetPoint(asset: SavedMapAsset): LatLngLiteral | null {
   return null;
 }
 
-
-type AutoLocationFields = {
-  locationDescription?: string;
-  autoLocationDescription?: string;
-  locationSource?: "manual" | "auto-nearest-asset" | "auto-coordinate";
-  roadName?: string;
-  postcode?: string;
-  fromLocation?: string;
-  toLocation?: string;
-  midpointLocation?: string;
-};
-
-function formatCoordinateLocation(point: LatLngLiteral): string {
-  return `${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}`;
-}
-
-function getAssetLocationLabel(asset: SavedMapAsset): string {
-  const raw =
-    (asset as any).address ||
-    (asset as any).fullAddress ||
-    (asset as any).displayAddress ||
-    (asset as any).locationDescription ||
-    asset.name ||
-    asset.id ||
-    "nearby asset";
-
-  return String(raw).trim();
-}
-
-function getNearestAssetLocation(
-  point: LatLngLiteral,
-  assets: SavedMapAsset[],
-  maxDistanceMeters = 80,
-): { label: string; distance: number; asset: SavedMapAsset } | null {
-  let best: { label: string; distance: number; asset: SavedMapAsset } | null =
-    null;
-
-  for (const asset of assets || []) {
-    if (asset.assetType === "area" || asset.assetType === "cable") continue;
-
-    const assetPoint = getAssetPoint(asset);
-    if (!assetPoint) continue;
-
-    const label = getAssetLocationLabel(asset);
-    if (!label) continue;
-
-    const distance = getPathDistanceMeters([point, assetPoint]);
-    if (distance > maxDistanceMeters) continue;
-
-    if (!best || distance < best.distance) {
-      best = { label, distance, asset };
-    }
-  }
-
-  return best;
-}
-
-function buildAutoPointLocationFields(
-  point: LatLngLiteral,
-  assets: SavedMapAsset[],
-): AutoLocationFields {
-  const nearest = getNearestAssetLocation(point, assets);
-  const coordinateLabel = formatCoordinateLocation(point);
-
-  if (nearest) {
-    const roadName = String((nearest.asset as any).roadName || "").trim();
-    const postcode = String((nearest.asset as any).postcode || "").trim();
-    const label = `Near ${nearest.label}`;
-
-    return {
-      locationDescription: label,
-      autoLocationDescription: label,
-      locationSource: "auto-nearest-asset",
-      roadName: roadName || undefined,
-      postcode: postcode || undefined,
-    };
-  }
-
-  const label = `Map location ${coordinateLabel}`;
-
-  return {
-    locationDescription: label,
-    autoLocationDescription: label,
-    locationSource: "auto-coordinate",
-  };
-}
-
-function buildAutoCableLocationFields(
-  points: LatLngLiteral[],
-  assets: SavedMapAsset[],
-): AutoLocationFields {
-  if (points.length === 0) return {};
-
-  const first = points[0];
-  const last = points[points.length - 1];
-  const midpoint = points[Math.floor(points.length / 2)] || first;
-
-  const fromLocation = buildAutoPointLocationFields(first, assets).locationDescription;
-  const toLocation = buildAutoPointLocationFields(last, assets).locationDescription;
-  const midpointLocation = buildAutoPointLocationFields(midpoint, assets).locationDescription;
-  const description =
-    fromLocation && toLocation
-      ? `From ${fromLocation} to ${toLocation}`
-      : midpointLocation || `Cable route near ${formatCoordinateLocation(midpoint)}`;
-
-  return {
-    locationDescription: description,
-    autoLocationDescription: description,
-    locationSource: "auto-nearest-asset",
-    fromLocation,
-    toLocation,
-    midpointLocation,
-  };
-}
-
-function shouldReplaceAutoLocation(asset: SavedMapAsset): boolean {
-  const source = String((asset as any).locationSource || "");
-  return !(asset as any).locationDescription || source.startsWith("auto-");
-}
-
 function findDpAtCableEnd(assets: SavedMapAsset[], point: LatLngLiteral) {
   return assets.find((asset) => {
     if (asset.assetType !== "distribution-point") return false;
@@ -809,7 +689,6 @@ export default function JointMapManager({
     currentJointType || "CMJ (12 trays)",
   );
   const [notes, setNotes] = useState("");
-  const [locationDescription, setLocationDescription] = useState("");
   const [cablePiaNoiNumber, setCablePiaNoiNumber] = useState("");
   const [areaLevel, setAreaLevel] = useState<AreaLevel>("L0");
 
@@ -1163,7 +1042,6 @@ export default function JointMapManager({
     setEditingAreaId(null);
     setPickedLocation(null);
     setNotes("");
-    setLocationDescription("");
     setCablePiaNoiNumber("");
     setAreaLevel("L0");
     setMapMode("pick");
@@ -1193,7 +1071,6 @@ export default function JointMapManager({
     setJointType("Cable");
     setJointName(getNextAssetName(savedJoints, "cable"));
     setNotes("");
-    setLocationDescription("");
     setCablePiaNoiNumber("");
     setCableType("Feeder Cable");
     setFibreCount("12F");
@@ -1219,7 +1096,6 @@ export default function JointMapManager({
     setJointName(asset.name || "");
     setJointType(asset.jointType || "");
     setNotes(asset.notes || "");
-    setLocationDescription((asset as any).locationDescription || "");
     setCablePiaNoiNumber((asset as any).piaNoiNumber || "");
     setAreaLevel(normaliseAreaLevel((asset as any).areaLevel));
     setCableType(asset.cableType || "Feeder Cable");
@@ -1322,25 +1198,8 @@ export default function JointMapManager({
         if (asset.geometry?.type === "Point") {
           if (!pickedLocation) return asset;
 
-          const autoLocationFields = buildAutoPointLocationFields(
-            pickedLocation,
-            allMapAssets.filter((item) => item.id !== asset.id),
-          );
-          const locationFields = shouldReplaceAutoLocation(asset)
-            ? autoLocationFields
-            : {};
-
           return markAssetForLiveSync({
             ...asset,
-            ...locationFields,
-            locationDescription:
-              locationDescription.trim() ||
-              (locationFields as any).locationDescription ||
-              (asset as any).locationDescription,
-            locationSource: locationDescription.trim()
-              ? "manual"
-              : (locationFields as any).locationSource ||
-                (asset as any).locationSource,
             name: jointName.trim() || asset.name,
             jointType:
               assetType === "street-cab"
@@ -1368,27 +1227,8 @@ export default function JointMapManager({
           });
         }
 
-        const finalCablePoints =
-          routedCableCoordinates || draftCablePoints.map((p) => [p.lat, p.lng] as [number, number]);
-        const autoLocationFields = buildAutoCableLocationFields(
-          finalCablePoints.map(([lat, lng]) => ({ lat, lng })),
-          allMapAssets.filter((item) => item.id !== asset.id),
-        );
-        const locationFields = shouldReplaceAutoLocation(asset)
-          ? autoLocationFields
-          : {};
-
         return markAssetForLiveSync({
           ...asset,
-          ...locationFields,
-          locationDescription:
-            locationDescription.trim() ||
-            (locationFields as any).locationDescription ||
-            (asset as any).locationDescription,
-          locationSource: locationDescription.trim()
-            ? "manual"
-            : (locationFields as any).locationSource ||
-              (asset as any).locationSource,
           name: jointName.trim() || asset.name,
           jointType: "Cable",
           notes: notes.trim(),
@@ -1402,7 +1242,9 @@ export default function JointMapManager({
           routeMode: routedCableCoordinates ? "road" : undefined,
           geometry: {
             type: "LineString",
-            coordinates: finalCablePoints,
+            coordinates:
+              routedCableCoordinates ||
+              draftCablePoints.map((p) => [p.lat, p.lng]),
           },
         });
       }),
@@ -1456,10 +1298,6 @@ export default function JointMapManager({
     const nextDpDetails = detailOverrides?.dpDetails ?? dpDetails;
     const nextChamberDetails =
       detailOverrides?.chamberDetails ?? chamberDetails;
-    const autoLocationFields = buildAutoPointLocationFields(
-      pickedLocation,
-      allMapAssets,
-    );
 
     const record: SavedMapAsset = {
       id: crypto.randomUUID(),
@@ -1478,12 +1316,6 @@ export default function JointMapManager({
                   ? "Home"
                   : jointType,
       notes: notes.trim(),
-      ...autoLocationFields,
-      locationDescription:
-        locationDescription.trim() || autoLocationFields.locationDescription,
-      locationSource: locationDescription.trim()
-        ? "manual"
-        : autoLocationFields.locationSource,
       mappingRows: [],
       poleDetails: assetType === "pole" ? nextPoleDetails : undefined,
       dpDetails: assetType === "distribution-point" ? nextDpDetails : undefined,
@@ -1555,10 +1387,6 @@ export default function JointMapManager({
 
     try {
       const routedCoordinates = await routePointsToRoads(draftCablePoints);
-      const autoLocationFields = buildAutoCableLocationFields(
-        routedCoordinates.map(([lat, lng]) => ({ lat, lng })),
-        allMapAssets,
-      );
 
       const cableRecord = {
         id: crypto.randomUUID(),
@@ -1566,12 +1394,6 @@ export default function JointMapManager({
         assetType: "cable",
         jointType: "Cable",
         notes: notes.trim(),
-        ...autoLocationFields,
-        locationDescription:
-          locationDescription.trim() || autoLocationFields.locationDescription,
-        locationSource: locationDescription.trim()
-          ? "manual"
-          : autoLocationFields.locationSource,
         piaNoiNumber: cablePiaNoiNumber.trim(),
         cableType,
         fibreCount,
@@ -1606,24 +1428,153 @@ export default function JointMapManager({
         ).values(),
       );
 
-      const homes = savedJoints.filter((asset) => asset.assetType === "home");
+      // Homes can live outside savedJoints (for example project GeoJSON homes in
+      // projectHomes), so use allMapAssets here. Using savedJoints only is the
+      // reason DP detection worked while drop generation returned [].
+      const homes = allMapAssets.filter(
+        (asset: any) =>
+          asset?.assetType === "home" ||
+          asset?.type === "home" ||
+          asset?.properties?.UPRN ||
+          asset?.UPRN ||
+          asset?.uprn,
+      );
 
-      // Generate drops globally across all DPs on this cable, so each home goes
-      // to the nearest available DP instead of the last/end DP winning.
-      const autoDrops = createDropCableRecordsFromDPs(fedDps, homes, [
-        ...savedJoints,
-        cableRecord,
-      ]) as SavedMapAsset[];
+      // Generate drops per fed DP/AFN. Each passed DP claims nearby unconnected homes
+      // within the Openreach 68m drop rule, up to that DP's own capacity.
+      const autoDrops = createDropCableRecordsFromDPs({
+        dps: fedDps,
+        homes,
+        existingDrops: [...allMapAssets, cableRecord].filter(
+          (asset: any) =>
+            asset?.assetType === "cable" && asset?.cableType === "Drop",
+        ),
+        maxDistanceM: 68,
+      }) as SavedMapAsset[];
 
-      setSavedJoints((prev) => [
-        ...prev,
-        markAssetForLiveSync(cableRecord, true),
-        ...autoDrops.map((asset) => markAssetForLiveSync(asset, true)),
-      ]);
+      console.log("AUTO DROPS", autoDrops);
+
+      const getHomeConnectionKey = (asset: any): string =>
+        String(
+          asset?.id ??
+            asset?.assetId ??
+            asset?.homeId ??
+            asset?.uprn ??
+            asset?.UPRN ??
+            asset?.properties?.UPRN ??
+            asset?.properties?.uprn ??
+            "",
+        ).trim();
+
+      const dropHomeConnections = new Map<string, { connectedDpId: string }>();
+
+      autoDrops.forEach((drop: any) => {
+        const homeId = String(
+          drop.homeId ??
+            drop.toAssetId ??
+            drop.connectedHomeId ??
+            drop.uprn ??
+            drop.UPRN ??
+            "",
+        ).trim();
+
+        const connectedDpId = String(
+          drop.dpId ?? drop.fromAssetId ?? drop.connectedDpId ?? "",
+        ).trim();
+
+        if (homeId && connectedDpId) {
+          dropHomeConnections.set(homeId, { connectedDpId });
+
+          // GeoJSON imports use IDs like `uprn-72271124`, while some drop
+          // generators expose the raw UPRN as `homeId`. Store both keys.
+          if (!homeId.startsWith("uprn-")) {
+            dropHomeConnections.set(`uprn-${homeId}`, { connectedDpId });
+          }
+        }
+      });
+
+      setSavedJoints((prev) => {
+        const markedCableRecord = markAssetForLiveSync(cableRecord, true);
+        const markedAutoDrops = autoDrops.map((asset) =>
+          markAssetForLiveSync(asset, true),
+        );
+
+        const updatedExistingAssets = prev.map((asset) => {
+          if (asset.assetType !== "home") return asset;
+
+          const update = dropHomeConnections.get(getHomeConnectionKey(asset));
+          if (!update) return asset;
+
+          // Respect a manual override. Auto-generated drops should not overwrite a
+          // home that the user manually assigned to a specific DP.
+          const isManualOverride =
+            String((asset as any).connectionMode || "").toLowerCase() ===
+              "manual" && Boolean((asset as any).connectedDpId);
+
+          if (isManualOverride) return asset;
+
+          return markAssetForLiveSync(
+            {
+              ...asset,
+              connectedDpId: update.connectedDpId,
+              connection: "connected",
+              connectionMode: "auto-dp-drop",
+              properties: {
+                ...((asset as any).properties || {}),
+                connectedDpId: update.connectedDpId,
+                connection: "connected",
+                connectionMode: "auto-dp-drop",
+              },
+            },
+            true,
+          );
+        });
+
+        return [
+          ...updatedExistingAssets,
+          markedCableRecord,
+          ...markedAutoDrops,
+        ];
+      });
+
+      // Project GeoJSON homes are stored separately from savedJoints. Stamp and
+      // persist them here so the home popup can show connected DP immediately and
+      // the metadata survives reloads without changing the chunked map asset save path.
+      if (activeProjectId) {
+        const updatedProjectHomes = projectHomes.map((home) => {
+          const update = dropHomeConnections.get(getHomeConnectionKey(home));
+          if (!update) return home;
+
+          const isManualOverride =
+            String((home as any).connectionMode || "").toLowerCase() ===
+              "manual" && Boolean((home as any).connectedDpId);
+
+          if (isManualOverride) return home;
+
+          return markAssetForLiveSync(
+            {
+              ...home,
+              connectedDpId: update.connectedDpId,
+              connection: "connected",
+              connectionMode: "auto-dp-drop",
+              properties: {
+                ...((home as any).properties || {}),
+                connectedDpId: update.connectedDpId,
+                connection: "connected",
+                connectionMode: "auto-dp-drop",
+              },
+            },
+            true,
+          );
+        });
+
+        setProjectHomes(updatedProjectHomes);
+        await saveProjectHomes(activeProjectId, updatedProjectHomes);
+      }
 
       if (autoDrops.length > 0) {
         alert(
-          `Cable saved. Auto-connected ${autoDrops.length} nearby homes to the AFN/CBT.`,
+          `Cable saved. Auto-connected ${autoDrops.length} nearby homes to the fed DP/AFN within 68m.`,
         );
       }
 
@@ -1673,21 +1624,140 @@ export default function JointMapManager({
       ...prev.slice(index + 1),
     ]);
   };
-  const handleDeleteAsset = (id: string) => {
-    setSavedJoints((prev) =>
-      prev.filter((asset) => {
-        if (asset.id === id) return false;
+  const handleDeleteAsset = async (id: string) => {
+    const deletedId = String(id);
 
-        // If an AFN/CBT or home is deleted, remove its auto-generated drop cables too.
+    const getHomeConnectionKey = (asset: any): string =>
+      String(
+        asset?.id ??
+          asset?.assetId ??
+          asset?.homeId ??
+          asset?.uprn ??
+          asset?.UPRN ??
+          asset?.properties?.UPRN ??
+          asset?.properties?.uprn ??
+          "",
+      ).trim();
+
+    const getDropHomeKeys = (drop: any): string[] => {
+      const rawHomeId = String(
+        drop?.homeId ??
+          drop?.toAssetId ??
+          drop?.connectedHomeId ??
+          drop?.uprn ??
+          drop?.UPRN ??
+          "",
+      ).trim();
+
+      if (!rawHomeId) return [];
+
+      return rawHomeId.startsWith("uprn-")
+        ? [rawHomeId, rawHomeId.replace(/^uprn-/, "")]
+        : [rawHomeId, `uprn-${rawHomeId}`];
+    };
+
+    const homeKeysToUnstamp = new Set<string>();
+
+    savedJoints.forEach((asset: any) => {
+      if (!isDropCable(asset)) return;
+
+      const dropDpId = String(asset?.dpId ?? asset?.fromAssetId ?? "").trim();
+      const dropHomeId = String(asset?.homeId ?? asset?.toAssetId ?? "").trim();
+
+      if (
+        dropDpId === deletedId ||
+        dropHomeId === deletedId ||
+        asset?.id === deletedId
+      ) {
+        getDropHomeKeys(asset).forEach((key) => homeKeysToUnstamp.add(key));
+      }
+    });
+
+    setSavedJoints((prev) => {
+      const filteredAssets = prev.filter((asset: any) => {
+        if (asset?.id === deletedId) return false;
+
+        // If a DP/AFN/CBT/home/drop is deleted, remove related auto-generated
+        // drop cables as well so stale drop lines do not remain on the map.
         if (isDropCable(asset)) {
-          return (
-            (asset as any).fromAssetId !== id && (asset as any).toAssetId !== id
-          );
+          const dropDpId = String(
+            asset?.dpId ?? asset?.fromAssetId ?? "",
+          ).trim();
+          const dropHomeId = String(
+            asset?.homeId ?? asset?.toAssetId ?? "",
+          ).trim();
+
+          return dropDpId !== deletedId && dropHomeId !== deletedId;
         }
 
         return true;
-      }),
-    );
+      });
+
+      return filteredAssets.map((asset: any) => {
+        const connectedDpId = String(
+          asset?.connectedDpId ?? asset?.properties?.connectedDpId ?? "",
+        ).trim();
+        const homeKey = getHomeConnectionKey(asset);
+
+        if (
+          connectedDpId !== deletedId &&
+          (!homeKey || !homeKeysToUnstamp.has(homeKey))
+        ) {
+          return asset;
+        }
+
+        return markAssetForLiveSync(
+          {
+            ...asset,
+            connection: "unconnected",
+            connectedDpId: null,
+            connectionMode: null,
+            properties: {
+              ...((asset as any).properties || {}),
+              connection: "unconnected",
+              connectedDpId: null,
+              connectionMode: null,
+            },
+          },
+          true,
+        );
+      });
+    });
+
+    if (activeProjectId && homeKeysToUnstamp.size > 0) {
+      const updatedProjectHomes = projectHomes.map((home: any) => {
+        const connectedDpId = String(
+          home?.connectedDpId ?? home?.properties?.connectedDpId ?? "",
+        ).trim();
+        const homeKey = getHomeConnectionKey(home);
+
+        if (
+          connectedDpId !== deletedId &&
+          (!homeKey || !homeKeysToUnstamp.has(homeKey))
+        ) {
+          return home;
+        }
+
+        return markAssetForLiveSync(
+          {
+            ...home,
+            connection: "unconnected",
+            connectedDpId: null,
+            connectionMode: null,
+            properties: {
+              ...((home as any).properties || {}),
+              connection: "unconnected",
+              connectedDpId: null,
+              connectionMode: null,
+            },
+          },
+          true,
+        );
+      });
+
+      setProjectHomes(updatedProjectHomes);
+      await saveProjectHomes(activeProjectId, updatedProjectHomes);
+    }
 
     if (editingAssetId === id) {
       resetEditor();
@@ -1739,7 +1809,6 @@ export default function JointMapManager({
         `Area ${(savedJoints ?? []).filter((asset) => asset.assetType === "area").length + 1}`,
       );
       setNotes("");
-      setLocationDescription("");
       setCablePiaNoiNumber("");
       setAreaLevel("L0");
       setPickedLocation(null);
@@ -1769,17 +1838,12 @@ export default function JointMapManager({
     }
     // NEW: Add Joint directly from right-click menu
     if (type === "joint") {
-      const autoLocationFields = buildAutoPointLocationFields(
-        contextMenu.latlng,
-        allMapAssets,
-      );
       const record: SavedMapAsset = {
         id: crypto.randomUUID(),
         name: getNextAssetName(savedJoints, "ag-joint"),
         assetType: "ag-joint",
         jointType: "LMJ (40 trays)",
         notes: "",
-        ...autoLocationFields,
         mappingRows: [],
         geometry: {
           type: "Point",
@@ -1797,7 +1861,6 @@ export default function JointMapManager({
     setAssetType(type as AssetType);
     setJointName(getNextAssetName(savedJoints, type as any));
     setNotes("");
-    setLocationDescription("");
     if (type === "exchange") {
       const exchange: ExchangeAsset = {
         id: crypto.randomUUID(),
@@ -2474,21 +2537,6 @@ export default function JointMapManager({
               onChange={(e) => setNotes(e.target.value)}
               style={{ ...input, height: 80 }}
             />
-
-            {assetType !== "area" ? (
-              <>
-                <div style={{ ...label, marginTop: 10 }}>Location Description</div>
-                <input
-                  value={locationDescription}
-                  onChange={(e) => setLocationDescription(e.target.value)}
-                  style={input}
-                  placeholder="Auto-filled on save, or enter e.g. Footway outside 12 High Street"
-                />
-                <div style={{ color: "#9ca3af", fontSize: "0.78rem", marginTop: 4, lineHeight: 1.35 }}>
-                  Leave blank to auto-fill from the nearest mapped asset or coordinates.
-                </div>
-              </>
-            ) : null}
 
             {editingAssetId &&
             assetType !== "cable" &&

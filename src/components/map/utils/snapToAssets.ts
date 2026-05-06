@@ -33,14 +33,17 @@ const SNAP_TARGET_TYPES = [
 
 export function snapPointToAssets(
   point: LatLngLiteral,
-  assets: SavedMapAsset[],
+  assets: SavedMapAsset[] = [],
   enabled: boolean,
   thresholdMeters = 8
 ): LatLngLiteral {
   if (!enabled) return point;
 
   const snapTargets = assets.filter((asset) => {
+    if (!asset) return false;
+    if (!asset.geometry) return false;
     if (asset.geometry.type !== "Point") return false;
+    if (!Array.isArray(asset.geometry.coordinates)) return false;
 
     return SNAP_TARGET_TYPES.includes(asset.assetType as any);
   });
@@ -49,9 +52,12 @@ export function snapPointToAssets(
   let bestDistance = Infinity;
 
   for (const asset of snapTargets) {
-    if (asset.geometry.type !== "Point") continue;
-
     const [lat, lng] = asset.geometry.coordinates;
+
+    if (typeof lat !== "number" || typeof lng !== "number") {
+      continue;
+    }
+
     const candidate = { lat, lng };
     const distance = getDistanceMeters(point, candidate);
 
