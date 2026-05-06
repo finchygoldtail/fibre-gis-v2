@@ -44,6 +44,10 @@ import ChamberDetailsModal, {
   type ChamberDetails,
 } from "./map/modals/ChamberDetailsModal";
 import { snapPointToAssets } from "./map/utils/snapToAssets";
+import {
+  buildNetworkGraph,
+  findDisconnectedAssets,
+} from "../services/networkGraph";
 
 import { routePointsToRoads } from "./map/utils/routeToRoads";
 import { loadOsmBuildingsAsHomes, type OsmBounds } from "./map/utils/loadOsmBuildings";
@@ -731,6 +735,28 @@ const handleDeleteExchange = async (exchange: ExchangeAsset) => {
     () => (savedJoints ?? []).map(normalizeMapAsset),
     [savedJoints]
   );
+
+  // =====================================================
+  // NETWORK GRAPH TESTING ONLY
+  // Builds an in-memory graph from normalized map assets so we can
+  // inspect disconnected nodes before adding any UI panels.
+  // =====================================================
+  const networkGraph = useMemo(() => {
+    return buildNetworkGraph(normalizedSavedJoints);
+  }, [normalizedSavedJoints]);
+
+  const disconnectedAssets = useMemo(() => {
+    return findDisconnectedAssets(networkGraph);
+  }, [networkGraph]);
+
+  useEffect(() => {
+    console.log("Network graph:", {
+  nodes: networkGraph.nodes.size,
+  edges: networkGraph.edges.size,
+  disconnected: disconnectedAssets.length,
+  disconnectedAssets,
+});
+  }, [networkGraph, disconnectedAssets]);
 
   const normalizedProjectHomes = useMemo(
     () => (projectHomes ?? []).map(normalizeMapAsset),
