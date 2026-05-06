@@ -5,12 +5,18 @@
 
 import React, { useMemo, useState } from "react";
 import type { SavedMapAsset } from "./types";
+import { auditAreaAssets } from "../../services/areaAudit";
 
 type Props = {
   assets: SavedMapAsset[];
   areaAsset?: SavedMapAsset | null;
   onSelectAsset?: (asset: SavedMapAsset) => void;
   onZoomAsset?: (asset: SavedMapAsset) => void;
+  networkStats?: {
+    nodes: number;
+    edges: number;
+    disconnected: number;
+  };
 };
 
 type LatLngTuple = [number, number];
@@ -302,6 +308,7 @@ export default function AreaAssetInspector({
   areaAsset,
   onSelectAsset,
   onZoomAsset,
+  networkStats,
 }: Props) {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -353,6 +360,16 @@ export default function AreaAssetInspector({
 
   const missingPiaCount = rows.filter((row) => row.type === "cable" && !row.piaNoiNumber).length;
 
+  const auditIssues = useMemo(() => {
+    return auditAreaAssets(rows.map((row) => row.asset));
+  }, [rows]);
+
+  const auditIssueCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    auditIssues.forEach((item) => counts.set(item.issue, (counts.get(item.issue) || 0) + 1));
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  }, [auditIssues]);
+
   return (
     <div style={card}>
       <div style={headerRow}>
@@ -373,6 +390,66 @@ export default function AreaAssetInspector({
         >
           Download CSV
         </button>
+      </div>
+
+
+
+      {networkStats && (
+        <div style={qaDebugBox}>
+          <div style={qaDebugTitle}>QA Debug</div>
+          <div style={qaDebugGrid}>
+            <div>
+              <div style={qaDebugNumber}>{networkStats.nodes}</div>
+              <div style={summaryLabel}>Nodes</div>
+            </div>
+            <div>
+              <div style={qaDebugNumber}>{networkStats.edges}</div>
+              <div style={summaryLabel}>Edges</div>
+            </div>
+            <div>
+              <div style={qaDebugNumber}>{networkStats.disconnected}</div>
+              <div style={summaryLabel}>Disconnected</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={auditBox}>
+        <div style={auditHeaderRow}>
+          <div>
+            <div style={qaDebugTitle}>Audit Issues</div>
+            <div style={hint}>Checks assets currently inside the selected area.</div>
+          </div>
+          <div style={auditTotal}>{auditIssues.length}</div>
+        </div>
+
+        {auditIssues.length === 0 ? (
+          <div style={auditEmpty}>No audit issues found in this area.</div>
+        ) : (
+          <>
+            <div style={auditIssueChips}>
+              {auditIssueCounts.map(([issue, count]) => (
+                <span key={issue} style={auditChip}>
+                  {issue}: {count}
+                </span>
+              ))}
+            </div>
+
+            <div style={auditList}>
+              {auditIssues.slice(0, 12).map((item, index) => (
+                <div key={`${item.assetId}-${item.issue}-${index}`} style={auditRow}>
+                  <span style={warningText}>{item.issue}</span>
+                  <span style={auditRowMeta}>
+                    {item.assetType} · {item.assetId}
+                  </span>
+                </div>
+              ))}
+              {auditIssues.length > 12 ? (
+                <div style={auditMore}>+{auditIssues.length - 12} more issues</div>
+              ) : null}
+            </div>
+          </>
+        )}
       </div>
 
       <div style={summaryGrid}>
@@ -591,5 +668,113 @@ const rowMeta: React.CSSProperties = {
 
 const warningText: React.CSSProperties = {
   color: "#fbbf24",
+  fontWeight: 700,
+};
+
+
+const qaDebugBox: React.CSSProperties = {
+  marginTop: 10,
+  padding: 10,
+  borderRadius: 10,
+  background: "#020617",
+  border: "1px solid #334155",
+};
+
+const qaDebugTitle: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 800,
+  color: "#93c5fd",
+  marginBottom: 8,
+  textTransform: "uppercase",
+  letterSpacing: 0.5,
+};
+
+const qaDebugGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, 1fr)",
+  gap: 8,
+};
+
+const qaDebugNumber: React.CSSProperties = {
+  fontSize: 18,
+  fontWeight: 800,
+  color: "#f8fafc",
+};
+
+const auditBox: React.CSSProperties = {
+  marginTop: 10,
+  padding: 10,
+  borderRadius: 10,
+  background: "#0f172a",
+  border: "1px solid #334155",
+};
+
+const auditHeaderRow: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 10,
+  alignItems: "flex-start",
+};
+
+const auditTotal: React.CSSProperties = {
+  minWidth: 34,
+  textAlign: "center",
+  borderRadius: 8,
+  padding: "4px 8px",
+  background: "#7f1d1d",
+  color: "#fecaca",
+  fontWeight: 800,
+};
+
+const auditEmpty: React.CSSProperties = {
+  marginTop: 8,
+  color: "#86efac",
+  fontSize: "0.8rem",
+};
+
+const auditIssueChips: React.CSSProperties = {
+  display: "flex",
+  gap: 6,
+  flexWrap: "wrap",
+  marginTop: 8,
+};
+
+const auditChip: React.CSSProperties = {
+  borderRadius: 999,
+  background: "#1f2937",
+  border: "1px solid #475569",
+  color: "#e5e7eb",
+  padding: "3px 7px",
+  fontSize: "0.72rem",
+};
+
+const auditList: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 6,
+  marginTop: 8,
+  maxHeight: 180,
+  overflowY: "auto",
+};
+
+const auditRow: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 2,
+  borderRadius: 8,
+  background: "#111827",
+  border: "1px solid #374151",
+  padding: 8,
+};
+
+const auditRowMeta: React.CSSProperties = {
+  color: "#cbd5e1",
+  fontSize: "0.72rem",
+  wordBreak: "break-word",
+};
+
+const auditMore: React.CSSProperties = {
+  color: "#93c5fd",
+  fontSize: "0.78rem",
   fontWeight: 700,
 };
