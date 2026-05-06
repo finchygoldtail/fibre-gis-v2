@@ -478,6 +478,40 @@ function getDistributionPoints(allAssets: SavedMapAsset[]): SavedMapAsset[] {
     .sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
 }
 
+function getDpUsage(dp: SavedMapAsset, allAssets: SavedMapAsset[]) {
+  const dpId = String(dp.id || "");
+
+  const connectedHomes = allAssets.filter((asset: any) => {
+    if (asset?.assetType !== "home") return false;
+
+    const connectedDpId = String(
+      asset?.connectedDpId ??
+        asset?.properties?.connectedDpId ??
+        "",
+    );
+
+    return connectedDpId === dpId;
+  });
+
+  const capacity =
+    Number((dp as any).capacity) ||
+    Number((dp as any).dpCapacity) ||
+    Number((dp as any).ports) ||
+    Number((dp as any).dpDetails?.capacity) ||
+    Number((dp as any).dpDetails?.ports) ||
+    16;
+
+  const used = connectedHomes.length;
+  const free = Math.max(0, capacity - used);
+
+  return {
+    capacity,
+    used,
+    free,
+    overCapacity: used > capacity,
+  };
+}
+
 function getIconForAsset(asset: SavedMapAsset, allAssets: SavedMapAsset[]) {
   if (asset.assetType === "distribution-point") {
     return createSquareIcon(getDistributionPointColor(asset), "#ffffff");
@@ -646,6 +680,7 @@ export default function AssetMarkersLayer({
     const icon = getIconForAsset(asset, assets);
     const distributionPoints = getDistributionPoints(assets);
     const connectedDp = asset.assetType === "home" ? getHomeConnectedDp(asset, assets) : null;
+    const dpUsage = asset.assetType === "distribution-point" ? getDpUsage(asset, assets) : null;
     const connectionMode = String((asset as any).connectionMode || "auto").toLowerCase() === "manual" ? "manual" : "auto";
 
     return (
@@ -686,6 +721,14 @@ export default function AssetMarkersLayer({
                   {infoRow("Build Status", asset.dpDetails?.buildStatus)}
                   {infoRow("DP Type", asset.dpDetails?.closureType)}
                   {infoRow("Homes", asset.dpDetails?.connectionsToHomes)}
+                  {dpUsage ? (
+                    <>
+                      {infoRow("Capacity", dpUsage.capacity)}
+                      {infoRow("Used Ports", dpUsage.used)}
+                      {infoRow("Free Ports", dpUsage.free)}
+                      {infoRow("Status", dpUsage.overCapacity ? "Over capacity" : "OK")}
+                    </>
+                  ) : null}
 
                   {asset.dpDetails?.closureType === "AFN" && (
                     <>
