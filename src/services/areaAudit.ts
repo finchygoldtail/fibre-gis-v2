@@ -11,16 +11,16 @@ export type AuditIssue = {
 
 function getAssetId(asset: any): string {
   return (
-    asset.id ||
-    asset.assetId ||
+    asset?.id ||
+    asset?.assetId ||
     "unknown"
   );
 }
 
 function getAssetType(asset: any): string {
   return String(
-    asset.assetType ||
-    asset.type ||
+    asset?.assetType ||
+    asset?.type ||
     "unknown"
   ).toLowerCase();
 }
@@ -57,6 +57,16 @@ function isCableAsset(asset: any): boolean {
   ].includes(type);
 }
 
+function isDropAsset(asset: any): boolean {
+  return (
+    getAssetType(asset) === "drop" ||
+    (
+      getAssetType(asset) === "cable" &&
+      String(asset?.cableType || "").toLowerCase() === "drop"
+    )
+  );
+}
+
 function isLocationAsset(asset: any): boolean {
   const type = getAssetType(asset);
 
@@ -66,6 +76,19 @@ function isLocationAsset(asset: any): boolean {
     "splitter",
     "pole",
     "chamber",
+    "distribution-point",
+    "dp",
+    "afn",
+  ].includes(type);
+}
+
+function isDistributionPointAsset(asset: any): boolean {
+  const type = getAssetType(asset);
+
+  return [
+    "distribution-point",
+    "dp",
+    "afn",
   ].includes(type);
 }
 
@@ -98,6 +121,66 @@ function hasValidCoordinates(asset: any): boolean {
   return false;
 }
 
+function getHomeKey(asset: any): string {
+  return String(
+    asset?.id ??
+      asset?.assetId ??
+      asset?.homeId ??
+      asset?.uprn ??
+      asset?.UPRN ??
+      asset?.properties?.UPRN ??
+      asset?.properties?.uprn ??
+      ""
+  ).trim();
+}
+
+function getConnectedDpId(asset: any): string {
+  return String(
+    asset?.connectedDpId ??
+      asset?.properties?.connectedDpId ??
+      ""
+  ).trim();
+}
+
+function getDropDpId(drop: any): string {
+  return String(
+    drop?.dpId ??
+      drop?.fromAssetId ??
+      drop?.connectedDpId ??
+      ""
+  ).trim();
+}
+
+function getDropHomeId(drop: any): string {
+  return String(
+    drop?.homeId ??
+      drop?.toAssetId ??
+      drop?.connectedHomeId ??
+      drop?.uprn ??
+      drop?.UPRN ??
+      ""
+  ).trim();
+}
+
+function keysMatch(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a === `uprn-${b}`) return true;
+  if (`uprn-${a}` === b) return true;
+  return false;
+}
+
+function getDpCapacity(dp: any): number {
+  const capacity =
+    Number(dp?.capacity) ||
+    Number(dp?.dpCapacity) ||
+    Number(dp?.afnCapacity) ||
+    Number(dp?.ports) ||
+    16;
+
+  return Math.max(0, capacity);
+}
+
 export function auditAsset(
   asset: any
 ): string[] {
@@ -124,10 +207,12 @@ export function auditAsset(
   // CABLE / DROP REFERENCE CHECKS
   // --------------------------------------------------
   // Cables should be checked against fibre/planning metadata instead
-  // of address fields.
+  // of address fields. Auto-generated drops are validated separately
+  // in auditAreaAssets, so they are excluded from this PIA NOI check.
 
   if (
     isCableAsset(asset) &&
+    !isDropAsset(asset) &&
     !hasAnyText(asset, [
       "piaNoiNumber",
       "piaNOINumber",
@@ -173,12 +258,13 @@ export function auditAreaAssets(
   assets: any[] = []
 ): AuditIssue[] {
   const issues: AuditIssue[] = [];
+  const validAssets = assets.filter(Boolean);
 
   // --------------------------------------------------
   // BASIC ASSET CHECKS
   // --------------------------------------------------
 
-  for (const asset of assets) {
+  for (const asset of validAssets) {
     const assetIssues = auditAsset(asset);
 
     for (const issue of assetIssues) {
@@ -196,7 +282,7 @@ export function auditAreaAssets(
 
   const seen = new Map<string, number>();
 
-  for (const asset of assets) {
+  for (const asset of validAssets) {
     const id = getAssetId(asset);
 
     seen.set(id, (seen.get(id) || 0) + 1);
@@ -216,7 +302,7 @@ export function auditAreaAssets(
   // DISCONNECTED ASSETS
   // --------------------------------------------------
 
-  const graph = buildNetworkGraph(assets);
+  const graph = buildNetworkGraph(validAssets);
 
   const disconnected =
     findDisconnectedAssets(graph);
@@ -227,6 +313,123 @@ export function auditAreaAssets(
       assetType: getAssetType(node.asset),
       issue: "Disconnected asset",
     });
+  }
+
+  // --------------------------------------------------
+  // DP / DROP / HOME CONNECTION QA CHECKS
+  // --------------------------------------------------
+
+  const homes = validAssets.filter((asset: any) =>
+    isHomeAsset(asset) ||
+    Boolean(asset?.properties?.UPRN) ||
+    Boolean(asset?.UPRN) ||
+    Boolean(asset?.uprn)
+  );
+
+  const drops = validAssets.filter((asset: any) =>
+    isDropAsset(asset)
+  );
+
+  const dps = validAssets.filter((asset: any) =>
+    isDistributionPointAsset(asset)
+  );
+
+  const assetsById = new Map<string, any>();
+  const homesByKey = new Map<string, any>();
+
+  for (const asset of validAssets) {
+    const id = getAssetId(asset);
+    if (id && id !== "unknown") {
+      assetsById.set(String(id), asset);
+    }
+  }
+
+  for (const home of homes) {
+    const key = getHomeKey(home);
+    if (!key) continue;
+
+    homesByKey.set(key, home);
+
+    if (!key.startsWith("uprn-")) {
+      homesByKey.set(`uprn-${key}`, home);
+    }
+  }
+
+  for (const drop of drops) {
+    const dropId = getAssetId(drop);
+    const dpId = getDropDpId(drop);
+    const homeId = getDropHomeId(drop);
+
+    if (!dpId || !assetsById.has(dpId)) {
+      issues.push({
+        assetId: dropId,
+        assetType: getAssetType(drop),
+        issue: "Drop references missing DP",
+      });
+    }
+
+    if (!homeId || !homesByKey.has(homeId)) {
+      issues.push({
+        assetId: dropId,
+        assetType: getAssetType(drop),
+        issue: "Drop references missing home",
+      });
+    }
+
+    const distanceM = Number(drop?.distanceM);
+
+    if (Number.isFinite(distanceM) && distanceM > 68) {
+      issues.push({
+        assetId: dropId,
+        assetType: getAssetType(drop),
+        issue: `Drop exceeds 68m (${Math.round(distanceM)}m)`,
+      });
+    }
+  }
+
+  for (const home of homes) {
+    const connectedDpId = getConnectedDpId(home);
+    if (!connectedDpId) continue;
+
+    const homeKey = getHomeKey(home);
+
+    const hasDrop = drops.some((drop: any) =>
+      keysMatch(getDropHomeId(drop), homeKey) &&
+      getDropDpId(drop) === connectedDpId
+    );
+
+    if (!hasDrop) {
+      issues.push({
+        assetId: getAssetId(home),
+        assetType: getAssetType(home),
+        issue: "Connected home has no drop cable",
+      });
+    }
+
+    if (!assetsById.has(connectedDpId)) {
+      issues.push({
+        assetId: getAssetId(home),
+        assetType: getAssetType(home),
+        issue: "Home connected to missing DP",
+      });
+    }
+  }
+
+  for (const dp of dps) {
+    const dpId = getAssetId(dp);
+    const capacity = getDpCapacity(dp);
+
+    const usedPorts = homes.filter((home: any) =>
+      getConnectedDpId(home) === dpId
+    ).length;
+
+    if (usedPorts > capacity) {
+      issues.push({
+        assetId: dpId,
+        assetType: getAssetType(dp),
+        issue: `DP over capacity (${usedPorts}/${capacity})`,
+      });
+    }
   }
 
   return issues;
