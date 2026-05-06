@@ -34,7 +34,7 @@ import { convertLmjSheetToStandardRows } from "../logic/lmjSheetConverter";
 import { exportLmjExcelInPlace } from "../logic/exportLmjExcel";
 import { exportAgExcelInPlace } from "../logic/exportAgExcel";
 import { exportStreetCabExcelInPlace } from "../logic/exportStreetCabExcel";
-
+import { getBuildStatusColor } from "../services/statusColors";
 import { ContinuityViewer } from "./ContinuityViewer";
 import { LMJContinuityViewer } from "./LMJContinuityViewer";
 import LMJTrayView from "./LMJTrayView";
@@ -360,6 +360,37 @@ export const FibreTrayEditor: React.FC = () => {
   // Mapping files often contain cable/joint references that are not the asset's
   // user-edited map name, and using them here causes names to be overwritten.
   const currentJointName = selectedMapJoint?.name || "UNKNOWN-JOINT";
+
+  const updateSelectedMapJointMetadata = useCallback(
+    (updates: Record<string, any>) => {
+      if (!selectedJointId) return;
+
+      const now = new Date().toISOString();
+
+      setSavedJoints((prev) =>
+        prev.map((asset) => {
+          if (asset.id !== selectedJointId) return asset;
+
+          return {
+            ...asset,
+            ...updates,
+            updatedAt: now,
+            updatedByUid: auth.currentUser?.uid || "unknown",
+            updatedByEmail: auth.currentUser?.email || "unknown",
+          } as SavedJoint;
+        }),
+      );
+    },
+    [selectedJointId],
+  );
+
+  const selectedLocationDescription = String(
+    (selectedMapJoint as any)?.locationDescription ||
+      (selectedMapJoint as any)?.autoLocationDescription ||
+      "",
+  );
+  const selectedRoadName = String((selectedMapJoint as any)?.roadName || "");
+  const selectedPostcode = String((selectedMapJoint as any)?.postcode || "");
 
   /* -------------------------------------------------------------
     Load persisted project
@@ -1045,6 +1076,65 @@ export const FibreTrayEditor: React.FC = () => {
           </>
         )}
 
+        <label>Location Description</label>
+
+<input
+  value={(selectedMapJoint as any)?.locationDescription || ""}
+  onChange={(e) =>
+    updateSelectedMapJointMetadata({
+      locationDescription: e.target.value,
+    })
+  }
+  placeholder="e.g. Footway outside 12 High Street"
+  style={{
+    width: "100%",
+    padding: 8,
+    borderRadius: 4,
+    border: "1px solid #4b5563",
+    boxSizing: "border-box",
+  }}
+/>
+
+        <label>Postcode</label>
+        <input
+          value={selectedPostcode}
+          disabled={!selectedJointId}
+          onChange={(e) =>
+            updateSelectedMapJointMetadata({
+              postcode: e.target.value.toUpperCase(),
+              locationSource: "manual",
+            })
+          }
+          placeholder="e.g. AB12 3CD"
+          style={{ width: "100%", padding: "0.35rem" }}
+        />
+<label>Build Status</label>
+<select
+  value={(selectedMapJoint as any)?.buildStatus || "0-Backlog"}
+  onChange={(e) =>
+    updateSelectedMapJointMetadata({
+      buildStatus: e.target.value,
+      status: e.target.value,
+    })
+  }
+  style={{
+    width: "100%",
+    padding: 8,
+    borderRadius: 4,
+    border: "1px solid #4b5563",
+    boxSizing: "border-box",
+  }}
+>
+  <option value="0-Backlog">0-Backlog</option>
+  <option value="1-Plan">1-Plan</option>
+  <option value="2-Survey">2-Survey</option>
+  <option value="3-Design">3-Design</option>
+  <option value="4-Plan Done">4-Plan Done</option>
+  <option value="5-ToDo">5-ToDo</option>
+  <option value="6-In Progress">6-In Progress</option>
+  <option value="7-Build Done">7-Build Done</option>
+  <option value="8-RFS">8-RFS</option>
+</select>
         <label>Load Mapping File</label>
         <input
           type="file"

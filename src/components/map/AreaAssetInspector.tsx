@@ -6,6 +6,7 @@
 import React, { useMemo, useState } from "react";
 import type { SavedMapAsset } from "./types";
 import { auditAreaAssets } from "../../services/areaAudit";
+import { exportToCSV } from "../../services/csvExport";
 
 type Props = {
   assets: SavedMapAsset[];
@@ -67,7 +68,10 @@ function pointInPolygon(point: LatLngTuple, polygon: LatLngTuple[]): boolean {
 
     const intersects =
       lngI > lng !== lngJ > lng &&
-      lat < ((latJ - latI) * (lng - lngI)) / (lngJ - lngI || Number.EPSILON) + latI;
+      lat <
+        ((latJ - latI) * (lng - lngI)) /
+          (lngJ - lngI || Number.EPSILON) +
+          latI;
 
     if (intersects) inside = !inside;
   }
@@ -76,8 +80,12 @@ function pointInPolygon(point: LatLngTuple, polygon: LatLngTuple[]): boolean {
 }
 
 function orientation(a: LatLngTuple, b: LatLngTuple, c: LatLngTuple): number {
-  const value = (b[1] - a[1]) * (c[0] - b[0]) - (b[0] - a[0]) * (c[1] - b[1]);
+  const value =
+    (b[1] - a[1]) * (c[0] - b[0]) -
+    (b[0] - a[0]) * (c[1] - b[1]);
+
   if (Math.abs(value) < 1e-12) return 0;
+
   return value > 0 ? 1 : 2;
 }
 
@@ -90,7 +98,12 @@ function onSegment(a: LatLngTuple, b: LatLngTuple, c: LatLngTuple): boolean {
   );
 }
 
-function segmentsIntersect(p1: LatLngTuple, q1: LatLngTuple, p2: LatLngTuple, q2: LatLngTuple): boolean {
+function segmentsIntersect(
+  p1: LatLngTuple,
+  q1: LatLngTuple,
+  p2: LatLngTuple,
+  q2: LatLngTuple
+): boolean {
   const o1 = orientation(p1, q1, p2);
   const o2 = orientation(p1, q1, q2);
   const o3 = orientation(p2, q2, p1);
@@ -105,7 +118,10 @@ function segmentsIntersect(p1: LatLngTuple, q1: LatLngTuple, p2: LatLngTuple, q2
   return false;
 }
 
-function lineIntersectsPolygon(points: LatLngTuple[], polygon: LatLngTuple[]): boolean {
+function lineIntersectsPolygon(
+  points: LatLngTuple[],
+  polygon: LatLngTuple[]
+): boolean {
   if (points.some((point) => pointInPolygon(point, polygon))) return true;
 
   for (let i = 0; i < points.length - 1; i++) {
@@ -116,7 +132,9 @@ function lineIntersectsPolygon(points: LatLngTuple[], polygon: LatLngTuple[]): b
       const polyStart = polygon[j];
       const polyEnd = polygon[(j + 1) % polygon.length];
 
-      if (segmentsIntersect(lineStart, lineEnd, polyStart, polyEnd)) return true;
+      if (segmentsIntersect(lineStart, lineEnd, polyStart, polyEnd)) {
+        return true;
+      }
     }
   }
 
@@ -135,7 +153,7 @@ function getAssetCoordinates(asset: SavedMapAsset): LatLngTuple[] {
   }
 
   if (asset.geometry.type === "Polygon") {
-    return ((asset.geometry.coordinates?.[0] || []) as LatLngTuple[]);
+    return (asset.geometry.coordinates?.[0] || []) as LatLngTuple[];
   }
 
   return [];
@@ -185,25 +203,20 @@ function getAssetUsedFibres(asset: SavedMapAsset): string {
 
   if (asset.assetType === "cable") {
     const allocatedInputFibres = (asset as any).allocatedInputFibres;
+
     if (Array.isArray(allocatedInputFibres)) {
       return String(allocatedInputFibres.length);
     }
   }
 
   const fibreMappings = (asset as any).fibreMappings;
-  if (Array.isArray(fibreMappings)) {
-    return String(fibreMappings.length);
-  }
+  if (Array.isArray(fibreMappings)) return String(fibreMappings.length);
 
   const trayMappings = (asset as any).trayMappings;
-  if (Array.isArray(trayMappings)) {
-    return String(trayMappings.length);
-  }
+  if (Array.isArray(trayMappings)) return String(trayMappings.length);
 
   const mappings = (asset as any).mappings;
-  if (Array.isArray(mappings)) {
-    return String(mappings.length);
-  }
+  if (Array.isArray(mappings)) return String(mappings.length);
 
   return "";
 }
@@ -236,73 +249,6 @@ function makeRow(asset: SavedMapAsset): InspectorRow {
   };
 }
 
-function escapeCsv(value: string): string {
-  const clean = value.replace(/\r?\n/g, " ");
-  if (clean.includes(",") || clean.includes('"')) {
-    return `"${clean.replace(/"/g, '""')}"`;
-  }
-  return clean;
-}
-
-function downloadCsv(rows: InspectorRow[], areaName: string) {
-  const headers = [
-    "Asset ID",
-    "Name",
-    "Type",
-    "Status",
-    "PIA NOI Number",
-    "Cable Type",
-    "Fibre Count",
-    "Used Fibres",
-    "Install Method",
-    "Notes",
-    "Latitude",
-    "Longitude",
-    "Start Latitude",
-    "Start Longitude",
-    "End Latitude",
-    "End Longitude",
-    "Route Points",
-  ];
-
-  const body = rows.map((row) =>
-    [
-      row.id,
-      row.name,
-      row.type,
-      row.status,
-      row.piaNoiNumber,
-      row.cableType,
-      row.fibreCount,
-      row.usedFibres,
-      row.installMethod,
-      row.notes,
-      row.latitude,
-      row.longitude,
-      row.startLatitude,
-      row.startLongitude,
-      row.endLatitude,
-      row.endLongitude,
-      row.routePoints,
-    ]
-      .map(escapeCsv)
-      .join(",")
-  );
-
-  const csv = [headers.join(","), ...body].join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  const safeName = (areaName || "area-assets").replace(/[^a-z0-9-_]+/gi, "-").replace(/^-+|-+$/g, "");
-
-  link.href = url;
-  link.download = `${safeName || "area-assets"}.csv`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
 export default function AreaAssetInspector({
   assets,
   areaAsset,
@@ -332,7 +278,10 @@ export default function AreaAssetInspector({
         return coords.some((point) => pointInPolygon(point, polygon));
       })
       .map(makeRow)
-      .sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name));
+      .sort(
+        (a, b) =>
+          a.type.localeCompare(b.type) || a.name.localeCompare(b.name)
+      );
   }, [assets, areaAsset?.id, polygon]);
 
   const filteredRows = useMemo(() => {
@@ -340,6 +289,7 @@ export default function AreaAssetInspector({
 
     return rows.filter((row) => {
       const matchesType = typeFilter === "all" || row.type === typeFilter;
+
       const matchesQuery =
         !query ||
         row.name.toLowerCase().includes(query) ||
@@ -354,11 +304,19 @@ export default function AreaAssetInspector({
 
   const typeCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    rows.forEach((row) => counts.set(row.type, (counts.get(row.type) || 0) + 1));
-    return Array.from(counts.entries()).sort(([a], [b]) => a.localeCompare(b));
+
+    rows.forEach((row) => {
+      counts.set(row.type, (counts.get(row.type) || 0) + 1);
+    });
+
+    return Array.from(counts.entries()).sort(([a], [b]) =>
+      a.localeCompare(b)
+    );
   }, [rows]);
 
-  const missingPiaCount = rows.filter((row) => row.type === "cable" && !row.piaNoiNumber).length;
+  const missingPiaCount = rows.filter(
+    (row) => row.type === "cable" && !row.piaNoiNumber
+  ).length;
 
   const auditIssues = useMemo(() => {
     return auditAreaAssets(rows.map((row) => row.asset));
@@ -366,9 +324,25 @@ export default function AreaAssetInspector({
 
   const auditIssueCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    auditIssues.forEach((item) => counts.set(item.issue, (counts.get(item.issue) || 0) + 1));
-    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+
+    auditIssues.forEach((item) => {
+      counts.set(item.issue, (counts.get(item.issue) || 0) + 1);
+    });
+
+    return Array.from(counts.entries()).sort(
+      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0])
+    );
   }, [auditIssues]);
+
+  const handleDownloadCSV = () => {
+    const csvRows = auditIssues.map((issue) => ({
+      assetId: issue.assetId,
+      assetType: issue.assetType,
+      issue: issue.issue,
+    }));
+
+    exportToCSV(csvRows, "area-audit-issues.csv");
+  };
 
   return (
     <div style={card}>
@@ -385,14 +359,12 @@ export default function AreaAssetInspector({
         <button
           type="button"
           style={button}
-          disabled={filteredRows.length === 0}
-          onClick={() => downloadCsv(filteredRows, areaAsset?.name || "area-assets")}
+          disabled={!auditIssues.length}
+          onClick={handleDownloadCSV}
         >
-          Download CSV
+          Download Audit CSV
         </button>
       </div>
-
-
 
       {networkStats && (
         <div style={qaDebugBox}>
@@ -437,13 +409,17 @@ export default function AreaAssetInspector({
 
             <div style={auditList}>
               {auditIssues.slice(0, 12).map((item, index) => (
-                <div key={`${item.assetId}-${item.issue}-${index}`} style={auditRow}>
+                <div
+                  key={`${item.assetId}-${item.issue}-${index}`}
+                  style={auditRow}
+                >
                   <span style={warningText}>{item.issue}</span>
                   <span style={auditRowMeta}>
                     {item.assetType} · {item.assetId}
                   </span>
                 </div>
               ))}
+
               {auditIssues.length > 12 ? (
                 <div style={auditMore}>+{auditIssues.length - 12} more issues</div>
               ) : null}
@@ -475,7 +451,11 @@ export default function AreaAssetInspector({
           style={input}
         />
 
-        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} style={select}>
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+          style={select}
+        >
           <option value="all">All types</option>
           {typeCounts.map(([type, count]) => (
             <option key={type} value={type}>
@@ -488,7 +468,9 @@ export default function AreaAssetInspector({
       <div style={tableWrap}>
         {filteredRows.length === 0 ? (
           <div style={emptyState}>
-            {areaAsset ? "No matching assets found inside this area." : "No area selected."}
+            {areaAsset
+              ? "No matching assets found inside this area."
+              : "No area selected."}
           </div>
         ) : (
           filteredRows.map((row) => (
@@ -670,7 +652,6 @@ const warningText: React.CSSProperties = {
   color: "#fbbf24",
   fontWeight: 700,
 };
-
 
 const qaDebugBox: React.CSSProperties = {
   marginTop: 10,

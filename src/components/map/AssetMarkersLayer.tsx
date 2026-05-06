@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import type { SavedMapAsset } from "./types";
-
+import { getBuildStatusColor } from "../../services/statusColors";
 type LayerVisibility = {
   agJoints: boolean;
   streetCabs: boolean;
@@ -187,7 +187,6 @@ function getPointLatLng(asset: SavedMapAsset): [number, number] | null {
 
 const streetCabIcon = createSquareIcon("#2563eb", "#ffffff");
 const chamberIcon = createSquareIcon("#6b7280", "#ffffff");
-const agJointIcon = createCircleIcon("#10b981", "#ffffff");
 const poleIcon = createCircleIcon("#8b5a2b", "#ffffff");
 
 function isVisible(asset: SavedMapAsset, visibleLayers: LayerVisibility): boolean {
@@ -470,15 +469,27 @@ function getDistributionPoints(allAssets: SavedMapAsset[]): SavedMapAsset[] {
     .sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
 }
 
+function getAssetBuildStatus(asset: SavedMapAsset): string {
+  return String(
+    (asset as any).buildStatus ||
+      (asset as any).status ||
+      (asset as any).liveStatus ||
+      (asset as any).state ||
+      ""
+  );
+}
+
 function getIconForAsset(asset: SavedMapAsset, allAssets: SavedMapAsset[]) {
   if (asset.assetType === "distribution-point") {
     return createSquareIcon(getDistributionPointColor(asset), "#ffffff");
   }
+
   if (asset.assetType === "street-cab") return streetCabIcon;
   if (asset.assetType === "chamber") return chamberIcon;
   if (asset.assetType === "pole") return poleIcon;
   if (asset.assetType === "home") return getHomeIconForStatus(getHomeConnectionStatus(asset, allAssets));
-  return agJointIcon;
+
+  return createCircleIcon(getBuildStatusColor(getAssetBuildStatus(asset)), "#ffffff");
 }
 
 
@@ -662,6 +673,8 @@ export default function AssetMarkersLayer({
 
             <div style={sectionStyle}>
               {infoRow("Coordinates", `${lat.toFixed(5)}, ${lng.toFixed(5)}`)}
+              {asset.assetType === "ag-joint" ? infoRow("Build Status", getAssetBuildStatus(asset) || "Not set") : null}
+              {asset.assetType === "ag-joint" ? infoRow("Location", (asset as any).locationDescription) : null}
 
               {asset.assetType === "pole" ? (
                 <>

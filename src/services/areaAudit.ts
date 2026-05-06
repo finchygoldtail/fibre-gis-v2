@@ -18,11 +18,55 @@ function getAssetId(asset: any): string {
 }
 
 function getAssetType(asset: any): string {
-  return (
+  return String(
     asset.assetType ||
     asset.type ||
     "unknown"
-  );
+  ).toLowerCase();
+}
+
+function hasText(value: unknown): boolean {
+  return value !== undefined &&
+    value !== null &&
+    String(value).trim() !== "";
+}
+
+function hasAnyText(asset: any, fields: string[]): boolean {
+  return fields.some((field) => hasText(asset?.[field]));
+}
+
+function isHomeAsset(asset: any): boolean {
+  const type = getAssetType(asset);
+
+  return [
+    "home",
+    "premise",
+    "premises",
+    "property",
+    "building",
+  ].includes(type);
+}
+
+function isCableAsset(asset: any): boolean {
+  const type = getAssetType(asset);
+
+  return [
+    "cable",
+    "drop",
+    "duct",
+  ].includes(type);
+}
+
+function isLocationAsset(asset: any): boolean {
+  const type = getAssetType(asset);
+
+  return [
+    "joint",
+    "cabinet",
+    "splitter",
+    "pole",
+    "chamber",
+  ].includes(type);
 }
 
 function hasValidCoordinates(asset: any): boolean {
@@ -60,16 +104,58 @@ export function auditAsset(
   const issues: string[] = [];
 
   // --------------------------------------------------
-  // MISSING ADDRESS
+  // HOME / PREMISE ADDRESS CHECKS
   // --------------------------------------------------
+  // Only homes/premises should be required to have a true address.
+  // Network assets such as joints and cables usually do not have one.
 
-  const address =
-    asset.address ||
-    asset.fullAddress ||
-    asset.propertyAddress;
-
-  if (!address || String(address).trim() === "") {
+  if (
+    isHomeAsset(asset) &&
+    !hasAnyText(asset, [
+      "address",
+      "fullAddress",
+      "propertyAddress",
+    ])
+  ) {
     issues.push("Missing address");
+  }
+
+  // --------------------------------------------------
+  // CABLE / DROP REFERENCE CHECKS
+  // --------------------------------------------------
+  // Cables should be checked against fibre/planning metadata instead
+  // of address fields.
+
+  if (
+    isCableAsset(asset) &&
+    !hasAnyText(asset, [
+      "piaNoiNumber",
+      "piaNOINumber",
+      "noiNumber",
+      "ductRef",
+      "routeRef",
+    ])
+  ) {
+    issues.push("Missing PIA NOI");
+  }
+
+  // --------------------------------------------------
+  // JOINT / CABINET / POLE / CHAMBER LOCATION CHECKS
+  // --------------------------------------------------
+  // These assets may not have postal addresses, but a human-readable
+  // location note is useful for field QA.
+
+  if (
+    isLocationAsset(asset) &&
+    !hasAnyText(asset, [
+      "locationDescription",
+      "location",
+      "nearestAddress",
+      "roadName",
+      "notes",
+    ])
+  ) {
+    issues.push("Missing location description");
   }
 
   // --------------------------------------------------

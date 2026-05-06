@@ -290,6 +290,126 @@ function getAssetPoint(asset: SavedMapAsset): LatLngLiteral | null {
   return null;
 }
 
+
+type AutoLocationFields = {
+  locationDescription?: string;
+  autoLocationDescription?: string;
+  locationSource?: "manual" | "auto-nearest-asset" | "auto-coordinate";
+  roadName?: string;
+  postcode?: string;
+  fromLocation?: string;
+  toLocation?: string;
+  midpointLocation?: string;
+};
+
+function formatCoordinateLocation(point: LatLngLiteral): string {
+  return `${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}`;
+}
+
+function getAssetLocationLabel(asset: SavedMapAsset): string {
+  const raw =
+    (asset as any).address ||
+    (asset as any).fullAddress ||
+    (asset as any).displayAddress ||
+    (asset as any).locationDescription ||
+    asset.name ||
+    asset.id ||
+    "nearby asset";
+
+  return String(raw).trim();
+}
+
+function getNearestAssetLocation(
+  point: LatLngLiteral,
+  assets: SavedMapAsset[],
+  maxDistanceMeters = 80,
+): { label: string; distance: number; asset: SavedMapAsset } | null {
+  let best: { label: string; distance: number; asset: SavedMapAsset } | null =
+    null;
+
+  for (const asset of assets || []) {
+    if (asset.assetType === "area" || asset.assetType === "cable") continue;
+
+    const assetPoint = getAssetPoint(asset);
+    if (!assetPoint) continue;
+
+    const label = getAssetLocationLabel(asset);
+    if (!label) continue;
+
+    const distance = getPathDistanceMeters([point, assetPoint]);
+    if (distance > maxDistanceMeters) continue;
+
+    if (!best || distance < best.distance) {
+      best = { label, distance, asset };
+    }
+  }
+
+  return best;
+}
+
+function buildAutoPointLocationFields(
+  point: LatLngLiteral,
+  assets: SavedMapAsset[],
+): AutoLocationFields {
+  const nearest = getNearestAssetLocation(point, assets);
+  const coordinateLabel = formatCoordinateLocation(point);
+
+  if (nearest) {
+    const roadName = String((nearest.asset as any).roadName || "").trim();
+    const postcode = String((nearest.asset as any).postcode || "").trim();
+    const label = `Near ${nearest.label}`;
+
+    return {
+      locationDescription: label,
+      autoLocationDescription: label,
+      locationSource: "auto-nearest-asset",
+      roadName: roadName || undefined,
+      postcode: postcode || undefined,
+    };
+  }
+
+  const label = `Map location ${coordinateLabel}`;
+
+  return {
+    locationDescription: label,
+    autoLocationDescription: label,
+    locationSource: "auto-coordinate",
+  };
+}
+
+function buildAutoCableLocationFields(
+  points: LatLngLiteral[],
+  assets: SavedMapAsset[],
+): AutoLocationFields {
+  if (points.length === 0) return {};
+
+  const first = points[0];
+  const last = points[points.length - 1];
+  const midpoint = points[Math.floor(points.length / 2)] || first;
+
+  const fromLocation = buildAutoPointLocationFields(first, assets).locationDescription;
+  const toLocation = buildAutoPointLocationFields(last, assets).locationDescription;
+  const midpointLocation = buildAutoPointLocationFields(midpoint, assets).locationDescription;
+  const description =
+    fromLocation && toLocation
+      ? `From ${fromLocation} to ${toLocation}`
+      : midpointLocation || `Cable route near ${formatCoordinateLocation(midpoint)}`;
+
+  return {
+    locationDescription: description,
+    autoLocationDescription: description,
+    locationSource: "auto-nearest-asset",
+    fromLocation,
+    toLocation,
+    midpointLocation,
+  };
+}
+
+function shouldReplaceAutoLocation(asset: SavedMapAsset): boolean {
+  const source = String((asset as any).locationSource || "");
+  return !(asset as any).locationDescription || source.startsWith("auto-");
+}
+
 function findDpAtCableEnd(assets: SavedMapAsset[], point: LatLngLiteral) {
   return assets.find((asset) => {
     if (asset.assetType !== "distribution-point") return false;
@@ -689,6 +809,7 @@ export default function JointMapManager({
     currentJointType || "CMJ (12 trays)",
   );
   const [notes, setNotes] = useState("");
+  const [locationDescription, setLocationDescription] = useState("");
   const [cablePiaNoiNumber, setCablePiaNoiNumber] = useState("");
   const [areaLevel, setAreaLevel] = useState<AreaLevel>("L0");
 
@@ -1042,6 +1163,7 @@ export default function JointMapManager({
     setEditingAreaId(null);
     setPickedLocation(null);
     setNotes("");
+    setLocationDescription("");
     setCablePiaNoiNumber("");
     setAreaLevel("L0");
     setMapMode("pick");
@@ -1071,6 +1193,7 @@ export default function JointMapManager({
     setJointType("Cable");
     setJointName(getNextAssetName(savedJoints, "cable"));
     setNotes("");
+    setLocationDescription("");
     setCablePiaNoiNumber("");
     setCableType("Feeder Cable");
     setFibreCount("12F");
@@ -1096,6 +1219,7 @@ export default function JointMapManager({
     setJointName(asset.name || "");
     setJointType(asset.jointType || "");
     setNotes(asset.notes || "");
+    setLocationDescription((asset as any).locationDescription || "");
     setCablePiaNoiNumber((asset as any).piaNoiNumber || "");
     setAreaLevel(normaliseAreaLevel((asset as any).areaLevel));
     setCableType(asset.cableType || "Feeder Cable");
@@ -1198,8 +1322,25 @@ export default function JointMapManager({
         if (asset.geometry?.type === "Point") {
           if (!pickedLocation) return asset;
 
+          const autoLocationFields = buildAutoPointLocationFields(
+            pickedLocation,
+            allMapAssets.filter((item) => item.id !== asset.id),
+          );
+          const locationFields = shouldReplaceAutoLocation(asset)
+            ? autoLocationFields
+            : {};
+
           return markAssetForLiveSync({
             ...asset,
+            ...locationFields,
+            locationDescription:
+              locationDescription.trim() ||
+              (locationFields as any).locationDescription ||
+              (asset as any).locationDescription,
+            locationSource: locationDescription.trim()
+              ? "manual"
+              : (locationFields as any).locationSource ||
+                (asset as any).locationSource,
             name: jointName.trim() || asset.name,
             jointType:
               assetType === "street-cab"
@@ -1227,8 +1368,27 @@ export default function JointMapManager({
           });
         }
 
+        const finalCablePoints =
+          routedCableCoordinates || draftCablePoints.map((p) => [p.lat, p.lng] as [number, number]);
+        const autoLocationFields = buildAutoCableLocationFields(
+          finalCablePoints.map(([lat, lng]) => ({ lat, lng })),
+          allMapAssets.filter((item) => item.id !== asset.id),
+        );
+        const locationFields = shouldReplaceAutoLocation(asset)
+          ? autoLocationFields
+          : {};
+
         return markAssetForLiveSync({
           ...asset,
+          ...locationFields,
+          locationDescription:
+            locationDescription.trim() ||
+            (locationFields as any).locationDescription ||
+            (asset as any).locationDescription,
+          locationSource: locationDescription.trim()
+            ? "manual"
+            : (locationFields as any).locationSource ||
+              (asset as any).locationSource,
           name: jointName.trim() || asset.name,
           jointType: "Cable",
           notes: notes.trim(),
@@ -1242,9 +1402,7 @@ export default function JointMapManager({
           routeMode: routedCableCoordinates ? "road" : undefined,
           geometry: {
             type: "LineString",
-            coordinates:
-              routedCableCoordinates ||
-              draftCablePoints.map((p) => [p.lat, p.lng]),
+            coordinates: finalCablePoints,
           },
         });
       }),
@@ -1298,6 +1456,10 @@ export default function JointMapManager({
     const nextDpDetails = detailOverrides?.dpDetails ?? dpDetails;
     const nextChamberDetails =
       detailOverrides?.chamberDetails ?? chamberDetails;
+    const autoLocationFields = buildAutoPointLocationFields(
+      pickedLocation,
+      allMapAssets,
+    );
 
     const record: SavedMapAsset = {
       id: crypto.randomUUID(),
@@ -1316,6 +1478,12 @@ export default function JointMapManager({
                   ? "Home"
                   : jointType,
       notes: notes.trim(),
+      ...autoLocationFields,
+      locationDescription:
+        locationDescription.trim() || autoLocationFields.locationDescription,
+      locationSource: locationDescription.trim()
+        ? "manual"
+        : autoLocationFields.locationSource,
       mappingRows: [],
       poleDetails: assetType === "pole" ? nextPoleDetails : undefined,
       dpDetails: assetType === "distribution-point" ? nextDpDetails : undefined,
@@ -1387,6 +1555,10 @@ export default function JointMapManager({
 
     try {
       const routedCoordinates = await routePointsToRoads(draftCablePoints);
+      const autoLocationFields = buildAutoCableLocationFields(
+        routedCoordinates.map(([lat, lng]) => ({ lat, lng })),
+        allMapAssets,
+      );
 
       const cableRecord = {
         id: crypto.randomUUID(),
@@ -1394,6 +1566,12 @@ export default function JointMapManager({
         assetType: "cable",
         jointType: "Cable",
         notes: notes.trim(),
+        ...autoLocationFields,
+        locationDescription:
+          locationDescription.trim() || autoLocationFields.locationDescription,
+        locationSource: locationDescription.trim()
+          ? "manual"
+          : autoLocationFields.locationSource,
         piaNoiNumber: cablePiaNoiNumber.trim(),
         cableType,
         fibreCount,
@@ -1561,6 +1739,7 @@ export default function JointMapManager({
         `Area ${(savedJoints ?? []).filter((asset) => asset.assetType === "area").length + 1}`,
       );
       setNotes("");
+      setLocationDescription("");
       setCablePiaNoiNumber("");
       setAreaLevel("L0");
       setPickedLocation(null);
@@ -1590,12 +1769,17 @@ export default function JointMapManager({
     }
     // NEW: Add Joint directly from right-click menu
     if (type === "joint") {
+      const autoLocationFields = buildAutoPointLocationFields(
+        contextMenu.latlng,
+        allMapAssets,
+      );
       const record: SavedMapAsset = {
         id: crypto.randomUUID(),
         name: getNextAssetName(savedJoints, "ag-joint"),
         assetType: "ag-joint",
         jointType: "LMJ (40 trays)",
         notes: "",
+        ...autoLocationFields,
         mappingRows: [],
         geometry: {
           type: "Point",
@@ -1613,6 +1797,7 @@ export default function JointMapManager({
     setAssetType(type as AssetType);
     setJointName(getNextAssetName(savedJoints, type as any));
     setNotes("");
+    setLocationDescription("");
     if (type === "exchange") {
       const exchange: ExchangeAsset = {
         id: crypto.randomUUID(),
@@ -2289,6 +2474,21 @@ export default function JointMapManager({
               onChange={(e) => setNotes(e.target.value)}
               style={{ ...input, height: 80 }}
             />
+
+            {assetType !== "area" ? (
+              <>
+                <div style={{ ...label, marginTop: 10 }}>Location Description</div>
+                <input
+                  value={locationDescription}
+                  onChange={(e) => setLocationDescription(e.target.value)}
+                  style={input}
+                  placeholder="Auto-filled on save, or enter e.g. Footway outside 12 High Street"
+                />
+                <div style={{ color: "#9ca3af", fontSize: "0.78rem", marginTop: 4, lineHeight: 1.35 }}>
+                  Leave blank to auto-fill from the nearest mapped asset or coordinates.
+                </div>
+              </>
+            ) : null}
 
             {editingAssetId &&
             assetType !== "cable" &&
