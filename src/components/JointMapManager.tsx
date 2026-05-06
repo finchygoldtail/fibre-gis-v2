@@ -481,6 +481,49 @@ function isAreaVisibleForLevel(
   return true;
 }
 
+// Firebase stores older/chunked map assets in a flattened shape:
+//   geometryType + geometryCoordinatesJson
+// The map layers need a real geometry object. Normalise once before
+// filtering/rendering so cables, polygons, homes and markers all reappear.
+function normalizeMapAsset(asset: SavedMapAsset): SavedMapAsset {
+  const copy: any = { ...(asset as any) };
+
+  if (!copy.geometry && copy.geometryType && copy.geometryCoordinatesJson) {
+    try {
+      copy.geometry = {
+        type: copy.geometryType,
+        coordinates: JSON.parse(copy.geometryCoordinatesJson),
+      };
+    } catch (err) {
+      console.warn("Could not parse geometry for map asset:", copy.id, err);
+    }
+  }
+
+  if (!copy.mappingRows && copy.mappingRowsJson) {
+    try {
+      copy.mappingRows = JSON.parse(copy.mappingRowsJson);
+    } catch {
+      copy.mappingRows = [];
+    }
+  }
+
+  // Backfill assetType for legacy assets that only have jointType/geometryType.
+  if (!copy.assetType) {
+    const jointType = String(copy.jointType || "").toLowerCase();
+    const geometryType = String(copy.geometry?.type || copy.geometryType || "").toLowerCase();
+
+    if (geometryType === "polygon" || jointType.includes("polygon") || jointType.includes("area")) {
+      copy.assetType = "area";
+    } else if (geometryType === "linestring" || jointType.includes("cable")) {
+      copy.assetType = "cable";
+    } else {
+      copy.assetType = inferAssetTypeFromName(copy.name || copy.jointName || copy.label || jointType);
+    }
+  }
+
+  return copy as SavedMapAsset;
+}
+
 export default function JointMapManager({
   currentJointName,
   currentJointType,
@@ -684,6 +727,16 @@ const handleDeleteExchange = async (exchange: ExchangeAsset) => {
   const [loadedHomesProjectId, setLoadedHomesProjectId] = useState<string | null>(null);
   const [mapBounds, setMapBounds] = useState<OsmBounds | null>(null);
 
+  const normalizedSavedJoints = useMemo(
+    () => (savedJoints ?? []).map(normalizeMapAsset),
+    [savedJoints]
+  );
+
+  const normalizedProjectHomes = useMemo(
+    () => (projectHomes ?? []).map(normalizeMapAsset),
+    [projectHomes]
+  );
+
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean;
     x: number;
@@ -742,10 +795,10 @@ const handleDeleteExchange = async (exchange: ExchangeAsset) => {
 
   const allMapAssets = useMemo(() => {
     const byId = new Map<string, SavedMapAsset>();
-    (savedJoints ?? []).forEach((asset) => byId.set(asset.id, asset));
-    projectHomes.forEach((asset) => byId.set(asset.id, asset));
+    normalizedSavedJoints.forEach((asset) => byId.set(asset.id, asset));
+    normalizedProjectHomes.forEach((asset) => byId.set(asset.id, asset));
     return Array.from(byId.values());
-  }, [savedJoints, projectHomes]);
+  }, [normalizedSavedJoints, normalizedProjectHomes]);
 
   useEffect(() => {
     let cancelled = false;
@@ -818,12 +871,12 @@ const handleDeleteExchange = async (exchange: ExchangeAsset) => {
 
   const projectAreas = useMemo(
     () =>
-      (savedJoints ?? []).filter(
+      allMapAssets.filter(
         (asset) =>
           asset.assetType === "area" &&
           asset.geometry?.type === "Polygon"
       ),
-    [savedJoints]
+    [allMapAssets]
   );
 
   useEffect(() => {
@@ -1854,7 +1907,7 @@ if (type === "exchange") {
 
   const availableParentCablesForBranchAllocation = useMemo(
     () =>
-      (savedJoints ?? []).filter((asset) => {
+      allMapAssets.filter((asset) => {
         if (asset.assetType !== "cable") return false;
         if (asset.geometry?.type !== "LineString") return false;
         if (asset.id === editingAssetId) return false;
@@ -1870,21 +1923,21 @@ if (type === "exchange") {
           asset.installMethod === "OH"
         );
       }),
-    [savedJoints, editingAssetId]
+    [allMapAssets, editingAssetId]
   );
 
   const allDistributionPointsForAfnAllocation = useMemo(
     () =>
-      (savedJoints ?? []).filter(
+      allMapAssets.filter(
         (asset) => asset.assetType === "distribution-point"
       ),
-    [savedJoints]
+    [allMapAssets]
   );
 
   const connectedHomesForSelectedDp = useMemo(() => {
     if (!editingAssetId) return [];
 
-    const drops = (savedJoints ?? []).filter((asset) => {
+    const drops = allMapAssets.filter((asset) => {
       return (
         isDropCable(asset) &&
         (((asset as any).fromAssetId === editingAssetId) || ((asset as any).toAssetId === editingAssetId))
@@ -1896,7 +1949,7 @@ if (type === "exchange") {
         const fromId = (drop as any).fromAssetId;
         const toId = (drop as any).toAssetId;
         const homeId = fromId === editingAssetId ? toId : fromId;
-        const home = (savedJoints ?? []).find((asset) => asset.id === homeId);
+        const home = allMapAssets.find((asset) => asset.id === homeId);
         const status =
           (home as any)?.customerStatus ||
           (home as any)?.homeStatus ||
@@ -1914,7 +1967,7 @@ if (type === "exchange") {
         };
       })
       .sort((a, b) => a.port - b.port);
-  }, [editingAssetId, savedJoints]);
+  }, [editingAssetId, allMapAssets]);
 
   // =====================================================
   // HANDLER: TOP GPS BUTTON

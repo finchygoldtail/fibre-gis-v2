@@ -30,7 +30,8 @@ import {
 import { loadMappingFile } from "../logic/mappingParser";
 import * as XLSX from "xlsx";
 import { convertLmjSheetToStandardRows } from "../logic/lmjSheetConverter";
-
+import { normalizeMapAssets } from "../services/mapAssetAdapter";
+import { loadMapAssets } from "../services/mapAssetStorage";
 // =====================================================
 // HELPERS
 // =====================================================
@@ -184,13 +185,21 @@ const CombinedViewer: React.FC = () => {
       ref,
       async (snap) => {
         if (snap.exists()) {
-          const loadedJoints = parseSavedJointsFromFirestore(snap.data());
+          const parsedJoints = parseSavedJointsFromFirestore(snap.data());
 
-          lastSavedJsonRef.current = JSON.stringify(
-            cleanForFirebase(loadedJoints)
-          );
+const normalizedJoints = normalizeMapAssets(parsedJoints);
 
-          setSavedJoints(loadedJoints);
+// Prevent bad/empty normalization wiping valid state
+if (parsedJoints.length > 0 && normalizedJoints.length === 0) {
+  console.warn("Normalization failed — keeping existing map state");
+  return;
+}
+
+lastSavedJsonRef.current = JSON.stringify(
+  cleanForFirebase(normalizedJoints)
+);
+
+setSavedJoints(normalizedJoints);
         } else {
           const now = new Date().toISOString();
 
@@ -228,22 +237,21 @@ const CombinedViewer: React.FC = () => {
 
   useEffect(() => {
     const refreshFromFirestore = async () => {
-      try {
-        const ref = doc(db, "businesses", "fibre-gis-v2");
-        const snap = await getDoc(ref);
-        if (!snap.exists()) return;
+  try {
+    const normalizedJoints = await loadMapAssets(
+      db,
+      parseSavedJointsFromFirestore
+    );
 
-        const loadedJoints = parseSavedJointsFromFirestore(snap.data());
+    lastSavedJsonRef.current = JSON.stringify(
+      cleanForFirebase(normalizedJoints)
+    );
 
-        lastSavedJsonRef.current = JSON.stringify(
-          cleanForFirebase(loadedJoints)
-        );
-
-        setSavedJoints(loadedJoints);
-      } catch (err) {
-        console.error("Firebase refresh failed:", err);
-      }
-    };
+    setSavedJoints(normalizedJoints);
+  } catch (err) {
+    console.error("Firebase refresh failed:", err);
+  }
+};
 
     const handleVisibilityOrFocus = () => {
       if (document.visibilityState === "visible") {
