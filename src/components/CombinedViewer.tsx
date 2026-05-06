@@ -32,6 +32,7 @@ import * as XLSX from "xlsx";
 import { convertLmjSheetToStandardRows } from "../logic/lmjSheetConverter";
 import { normalizeMapAssets } from "../services/mapAssetAdapter";
 import { loadMapAssets } from "../services/mapAssetStorage";
+
 // =====================================================
 // HELPERS
 // =====================================================
@@ -300,7 +301,6 @@ setSavedJoints(normalizedJoints);
       console.error("Firebase save failed:", err);
     });
   }, [savedJoints, firebaseLoaded]);
-
   // =====================================================
   // ACTION: OPEN JOINT FROM MAP
   // =====================================================
