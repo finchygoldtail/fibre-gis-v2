@@ -43,6 +43,17 @@ import DistributionPointDetailsModal from "./map/modals/DistributionPointDetails
 import ChamberDetailsModal, {
   type ChamberDetails,
 } from "./map/modals/ChamberDetailsModal";
+
+import MaintenanceAuditOverlay from "./map/audit/MaintenanceAuditOverlay";
+import { createAssetChangeLog } from "./map/audit/assetChangeLogStorage";
+import type { AssetChangeAction } from "./map/audit/types";
+import {
+  createAssetActivityLog,
+  formatActivityTimestamp,
+  getAssetActivityMetadata,
+  withAssetEditedMetadata,
+  withAssetViewedMetadata,
+} from "../services/assetActivityService";
 import { snapPointToAssets } from "./map/utils/snapToAssets";
 import {
   buildNetworkGraph,
@@ -63,6 +74,7 @@ import {
   saveProjectHomes,
 } from "./map/projects/projectHomesStorage";
 import { ExchangeMarkersLayer } from "./map/ExchangeMarkersLayer";
+import AssetDetailsSidebarSections from "./map/AssetDetailsSidebarSections";
 import type {
   AssetType,
   CableType,
@@ -90,6 +102,15 @@ L.Icon.Default.mergeOptions({
   shadowUrl: markerShadow,
 });
 
+function makeMeasureLabelIcon(text: string) {
+  return L.divIcon({
+    className: "alistra-measure-label",
+    html: `<div style="background:#0f172a;color:#ffffff;border:1px solid #60a5fa;border-radius:999px;padding:4px 8px;font-size:12px;font-weight:700;box-shadow:0 4px 12px rgba(15,23,42,0.35);white-space:nowrap;">${text}</div>`,
+    iconSize: [1, 1],
+    iconAnchor: [0, 0],
+  });
+}
+
 type Props = {
   currentJointName: string;
   currentJointType: string;
@@ -113,21 +134,111 @@ function markAssetForLiveSync(
   const user = auth.currentUser;
   const now = new Date().toISOString();
 
+  const currentMetadata = ((asset as any).metadata || {}) as Record<string, unknown>;
+  const userEmail = user?.email || "unknown";
+  const userUid = user?.uid || "unknown";
+
   return {
     ...(asset as any),
     ...(isNew
       ? {
           createdAt: (asset as any).createdAt || now,
-          createdByUid: (asset as any).createdByUid || user?.uid || "unknown",
-          createdByEmail:
-            (asset as any).createdByEmail || user?.email || "unknown",
+          createdByUid: (asset as any).createdByUid || userUid,
+          createdByEmail: (asset as any).createdByEmail || userEmail,
         }
       : {}),
     updatedAt: now,
-    updatedByUid: user?.uid || "unknown",
-    updatedByEmail: user?.email || "unknown",
+    updatedByUid: userUid,
+    updatedByEmail: userEmail,
+    lastEditedAt: now,
+    lastEditedByUid: userUid,
+    lastEditedByEmail: userEmail,
+    metadata: {
+      ...currentMetadata,
+      ...(isNew
+        ? {
+            createdAt: currentMetadata.createdAt || now,
+            createdBy: currentMetadata.createdBy || userEmail,
+            createdByUid: currentMetadata.createdByUid || userUid,
+          }
+        : {}),
+      lastEditedAt: now,
+      lastEditedBy: userEmail,
+      lastEditedByUid: userUid,
+    },
     syncRevision: now,
   } as SavedMapAsset;
+}
+
+
+function requestChangeReason(action: AssetChangeAction, assetName?: string): string | null {
+  const label = assetName ? ` for ${assetName}` : "";
+  const reason = window.prompt(
+    `Reason required: why was this asset ${action}${label}?`,
+    "",
+  );
+
+  if (reason === null) return null;
+
+  const trimmed = reason.trim();
+  if (!trimmed) {
+    alert("A reason is required so this change can be audited later.");
+    return null;
+  }
+
+  return trimmed;
+}
+
+function AssetActivityMiniSummary({ asset }: { asset: SavedMapAsset | null }) {
+  if (!asset) return null;
+  const activity = getAssetActivityMetadata(asset);
+  const rowStyle: React.CSSProperties = {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 8,
+    fontSize: 11,
+    color: "#cbd5e1",
+    marginTop: 4,
+  };
+  const labelStyle: React.CSSProperties = { color: "#94a3b8" };
+
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        padding: 10,
+        border: "1px solid #334155",
+        borderRadius: 8,
+        background: "#020617",
+      }}
+    >
+      <div style={{ fontWeight: 700, color: "#e5e7eb", marginBottom: 6 }}>
+        Asset Activity
+      </div>
+      <div style={rowStyle}>
+        <span style={labelStyle}>Last viewed</span>
+        <span>{formatActivityTimestamp(activity.lastViewedAt)}</span>
+      </div>
+      <div style={rowStyle}>
+        <span style={labelStyle}>Viewed by</span>
+        <span>{activity.lastViewedBy || "Not recorded"}</span>
+      </div>
+      <div style={rowStyle}>
+        <span style={labelStyle}>Last edited</span>
+        <span>{formatActivityTimestamp(activity.lastEditedAt)}</span>
+      </div>
+      <div style={rowStyle}>
+        <span style={labelStyle}>Edited by</span>
+        <span>{activity.lastEditedBy || "Not recorded"}</span>
+      </div>
+      {activity.lastChangeReason ? (
+        <div style={{ ...rowStyle, alignItems: "flex-start" }}>
+          <span style={labelStyle}>Last reason</span>
+          <span style={{ textAlign: "right", maxWidth: 150 }}>{activity.lastChangeReason}</span>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 type MapMode = "pick" | "measure" | "draw-cable" | "draw-area";
@@ -394,56 +505,61 @@ function isDropCable(asset: SavedMapAsset): boolean {
   );
 }
 
-function MapBaseLayers({
+const FREE_LEAFLET_TILE_URLS: Record<BasemapType, { url: string; attribution: string }> = {
+  // Free OpenStreetMap raster tiles. This keeps the existing Leaflet renderer
+  // aligned with polygons, cables, joints, drops, popups, drawing, and editing.
+  street: {
+    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  },
+
+  // Free Carto dark tiles. Safe Leaflet raster basemap, no MapTiler key.
+  dark: {
+    url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  },
+
+  // Free satellite imagery is not realistically available without usage limits/API terms.
+  // These fall back to OSM street tiles so assets remain stable and aligned.
+  satellite: {
+    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  },
+  hybrid: {
+    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  },
+};
+
+function FreeLeafletBaseLayer({
   basemap,
   roadOverlayVisible,
 }: {
   basemap: BasemapType;
   roadOverlayVisible: boolean;
 }) {
+  const selected = FREE_LEAFLET_TILE_URLS[basemap] || FREE_LEAFLET_TILE_URLS.street;
+
   return (
     <>
-      {basemap === "street" ? (
-        <TileLayer
-          attribution="&copy; MapTiler &copy; OpenStreetMap contributors"
-          url="https://api.maptiler.com/maps/streets-v4/{z}/{x}/{y}.png?key=FMa5odRKrNLiyoaXSW4N"
-          maxZoom={22}
-        />
-      ) : null}
+      <TileLayer
+        key={`base-${basemap}`}
+        url={selected.url}
+        attribution={selected.attribution}
+        maxZoom={22}
+        maxNativeZoom={19}
+      />
 
-      {basemap === "satellite" ? (
+      {roadOverlayVisible && basemap !== "street" && (
         <TileLayer
-          attribution="&copy; MapTiler &copy; OpenStreetMap contributors"
-          url="https://api.maptiler.com/maps/satellite/{z}/{x}/{y}.jpg?key=FMa5odRKrNLiyoaXSW4N"
+          key={`roads-${basemap}`}
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          opacity={0.35}
           maxZoom={22}
+          maxNativeZoom={19}
         />
-      ) : null}
-
-      {basemap === "dark" ? (
-        <TileLayer
-          attribution="&copy; MapTiler &copy; OpenStreetMap contributors"
-          url="https://api.maptiler.com/maps/dataviz-dark/{z}/{x}/{y}.png?key=FMa5odRKrNLiyoaXSW4N"
-          maxZoom={22}
-        />
-      ) : null}
-
-      {basemap === "hybrid" ? (
-        <TileLayer
-          attribution="&copy; MapTiler &copy; OpenStreetMap contributors"
-          url="https://api.maptiler.com/maps/hybrid/{z}/{x}/{y}.jpg?key=FMa5odRKrNLiyoaXSW4N"
-          maxZoom={22}
-          opacity={0.95}
-        />
-      ) : null}
-
-      {roadOverlayVisible && basemap !== "hybrid" ? (
-        <TileLayer
-          attribution="&copy; MapTiler &copy; OpenStreetMap contributors"
-          url="https://api.maptiler.com/maps/uk-openzoomstack-road/{z}/{x}/{y}.png?key=FMa5odRKrNLiyoaXSW4N"
-          maxZoom={22}
-          opacity={basemap === "satellite" ? 0.9 : 0.65}
-        />
-      ) : null}
+      )}
     </>
   );
 }
@@ -808,6 +924,9 @@ export default function JointMapManager({
   const [showPoleModal, setShowPoleModal] = useState(false);
   const [showDpModal, setShowDpModal] = useState(false);
   const [showChamberModal, setShowChamberModal] = useState(false);
+  const [maintenanceAsset, setMaintenanceAsset] =
+    useState<SavedMapAsset | null>(null);
+  const [showMaintenancePanel, setShowMaintenancePanel] = useState(false);
 
   const [openStreetCabAsset, setOpenStreetCabAsset] =
     useState<SavedMapAsset | null>(null);
@@ -843,6 +962,47 @@ export default function JointMapManager({
     return syncedAsset;
   };
 
+
+
+  const writeAssetAuditLog = (args: {
+    asset: SavedMapAsset;
+    action: AssetChangeAction;
+    reason: string;
+    comment?: string;
+    before?: unknown;
+    after?: unknown;
+  }) => {
+    void createAssetChangeLog({
+      projectId: activeProjectIdRef.current,
+      asset: args.asset,
+      action: args.action,
+      reason: args.reason,
+      comment: args.comment,
+      before: args.before,
+      after: args.after,
+    }).catch((err) => {
+      console.error("Failed to write asset audit log", err);
+    });
+
+    void createAssetActivityLog({
+      projectId: activeProjectIdRef.current,
+      asset: args.asset,
+      action: args.action === "updated" ? "updated" : (args.action as any),
+      reason: args.reason,
+      comment: args.comment,
+      context: "map-asset-editor",
+      before: args.before,
+      after: args.after,
+    }).catch((err) => {
+      console.error("Failed to write asset activity log", err);
+    });
+  };
+
+  const openMaintenanceHistory = (asset: SavedMapAsset | null) => {
+    if (!asset) return;
+    setMaintenanceAsset(asset);
+    setShowMaintenancePanel(true);
+  };
   useEffect(() => {
     setJointName(currentJointName || "");
     setJointType(currentJointType || "CMJ (12 trays)");
@@ -855,6 +1015,11 @@ export default function JointMapManager({
     normalizedProjectHomes.forEach((asset) => byId.set(asset.id, asset));
     return Array.from(byId.values());
   }, [normalizedSavedJoints, normalizedProjectHomes]);
+
+  const currentEditingAsset = useMemo(
+    () => allMapAssets.find((asset) => asset.id === editingAssetId) || null,
+    [allMapAssets, editingAssetId],
+  );
 
   const networkGraph = useMemo(
     () => buildNetworkGraph(allMapAssets),
@@ -1075,8 +1240,14 @@ export default function JointMapManager({
     setCableType("Feeder Cable");
     setFibreCount("12F");
     setInstallMethod("Underground");
+    setParentCableId(undefined);
+    setAllocatedInputFibres([]);
+    setPickedLocation(null);
+    setDraftAreaPoints([]);
     setDraftCablePoints([]);
-    setShowCableModal(true);
+    setMapMode("pick");
+    setShowCableModal(false);
+    setIsPanelOpen(true);
   };
 
   const startCableDrawing = () => {
@@ -1091,29 +1262,41 @@ export default function JointMapManager({
   };
 
   const handleEditAsset = (asset: SavedMapAsset) => {
-    setEditingAssetId(asset.id);
-    setAssetType(asset.assetType || "ag-joint");
-    setJointName(asset.name || "");
-    setJointType(asset.jointType || "");
-    setNotes(asset.notes || "");
-    setCablePiaNoiNumber((asset as any).piaNoiNumber || "");
-    setAreaLevel(normaliseAreaLevel((asset as any).areaLevel));
-    setCableType(asset.cableType || "Feeder Cable");
-    setFibreCount(asset.fibreCount || "12F");
-    setInstallMethod(asset.installMethod || "Underground");
-    setParentCableId((asset as any).parentCableId);
-    setAllocatedInputFibres(
-      ((asset as any).allocatedInputFibres || []) as number[],
+    const viewedAsset = withAssetViewedMetadata(asset, "map-edit-panel");
+    setSavedJoints((prev) =>
+      (prev ?? []).map((item) => (item.id === viewedAsset.id ? viewedAsset : item)),
     );
-    setPoleDetails(asset.poleDetails || {});
+    void createAssetActivityLog({
+      projectId: activeProjectIdRef.current,
+      asset: viewedAsset,
+      action: "viewed",
+      reason: "Asset opened",
+      context: "map-edit-panel",
+    });
+
+    setEditingAssetId(viewedAsset.id);
+    setAssetType(viewedAsset.assetType || "ag-joint");
+    setJointName(viewedAsset.name || "");
+    setJointType(viewedAsset.jointType || "");
+    setNotes(viewedAsset.notes || "");
+    setCablePiaNoiNumber((viewedAsset as any).piaNoiNumber || "");
+    setAreaLevel(normaliseAreaLevel((viewedAsset as any).areaLevel));
+    setCableType(viewedAsset.cableType || "Feeder Cable");
+    setFibreCount(viewedAsset.fibreCount || "12F");
+    setInstallMethod(viewedAsset.installMethod || "Underground");
+    setParentCableId((viewedAsset as any).parentCableId);
+    setAllocatedInputFibres(
+      ((viewedAsset as any).allocatedInputFibres || []) as number[],
+    );
+    setPoleDetails(viewedAsset.poleDetails || {});
     setDpDetails(
-      asset.dpDetails || {
+      viewedAsset.dpDetails || {
         powerReadings: ["", "", "", ""],
         closureType: "CBT",
         connectionsToHomes: 8,
       },
     );
-    setChamberDetails(asset.chamberDetails || {});
+    setChamberDetails(viewedAsset.chamberDetails || {});
 
     if (asset.geometry?.type === "Point") {
       const [lat, lng] = asset.geometry.coordinates;
@@ -1121,15 +1304,10 @@ export default function JointMapManager({
       setDraftCablePoints([]);
       setMapMode("pick");
 
-      if (asset.assetType === "pole") {
-        setShowPoleModal(true);
-      } else if (asset.assetType === "distribution-point") {
-        setShowDpModal(true);
-      } else if (asset.assetType === "chamber") {
-        setShowChamberModal(true);
-      } else {
-        setShowCableModal(false);
-      }
+      setShowPoleModal(false);
+      setShowDpModal(false);
+      setShowChamberModal(false);
+      setShowCableModal(false);
     } else if (asset.geometry?.type === "Polygon") {
       setPickedLocation(null);
       setDraftCablePoints([]);
@@ -1147,7 +1325,7 @@ export default function JointMapManager({
       setDraftCablePoints(
         asset.geometry.coordinates.map(([lat, lng]) => ({ lat, lng })),
       );
-      setShowCableModal(true);
+      setShowCableModal(false);
     }
   };
 
@@ -1158,6 +1336,11 @@ export default function JointMapManager({
   }) => {
     if (!editingAssetId) return;
 
+    const beforeAsset = (savedJoints ?? []).find((asset) => asset.id === editingAssetId);
+    const reason = requestChangeReason("updated", beforeAsset?.name || jointName);
+    if (!reason) return;
+
+    let savedAfterAsset: SavedMapAsset | null = null;
     let routedCableCoordinates: [number, number][] | null = null;
 
     if (assetType === "cable" && draftCablePoints.length >= 2) {
@@ -1181,7 +1364,7 @@ export default function JointMapManager({
         if (assetType === "area") {
           if (draftAreaPoints.length < 3) return asset;
 
-          return markAssetForLiveSync({
+          savedAfterAsset = withAssetEditedMetadata(markAssetForLiveSync({
             ...asset,
             name: jointName.trim() || asset.name,
             jointType: "Polygon Area",
@@ -1192,13 +1375,14 @@ export default function JointMapManager({
               type: "Polygon",
               coordinates: [draftAreaPoints.map((p) => [p.lat, p.lng])],
             },
-          });
+          }), "updated", reason);
+          return savedAfterAsset;
         }
 
         if (asset.geometry?.type === "Point") {
           if (!pickedLocation) return asset;
 
-          return markAssetForLiveSync({
+          savedAfterAsset = withAssetEditedMetadata(markAssetForLiveSync({
             ...asset,
             name: jointName.trim() || asset.name,
             jointType:
@@ -1224,10 +1408,11 @@ export default function JointMapManager({
               type: "Point",
               coordinates: [pickedLocation.lat, pickedLocation.lng],
             },
-          });
+          }), "updated", reason);
+          return savedAfterAsset;
         }
 
-        return markAssetForLiveSync({
+        savedAfterAsset = withAssetEditedMetadata(markAssetForLiveSync({
           ...asset,
           name: jointName.trim() || asset.name,
           jointType: "Cable",
@@ -1246,9 +1431,20 @@ export default function JointMapManager({
               routedCableCoordinates ||
               draftCablePoints.map((p) => [p.lat, p.lng]),
           },
-        });
+        }), "updated", reason);
+        return savedAfterAsset;
       }),
     );
+
+    if (savedAfterAsset) {
+      writeAssetAuditLog({
+        asset: savedAfterAsset,
+        action: "updated",
+        reason,
+        before: beforeAsset,
+        after: savedAfterAsset,
+      });
+    }
 
     resetEditor();
   };
@@ -1299,6 +1495,9 @@ export default function JointMapManager({
     const nextChamberDetails =
       detailOverrides?.chamberDetails ?? chamberDetails;
 
+    const reason = requestChangeReason("created", jointName.trim());
+    if (!reason) return;
+
     const record: SavedMapAsset = {
       id: crypto.randomUUID(),
       name: jointName.trim(),
@@ -1326,7 +1525,14 @@ export default function JointMapManager({
       },
     };
 
-    setSavedJoints((prev) => [...prev, markAssetForLiveSync(record, true)]);
+    const savedRecord = markAssetForLiveSync(record, true);
+    setSavedJoints((prev) => [...prev, savedRecord]);
+    writeAssetAuditLog({
+      asset: savedRecord,
+      action: "created",
+      reason,
+      after: savedRecord,
+    });
     resetEditor();
   };
 
@@ -1339,6 +1545,9 @@ export default function JointMapManager({
     const areaName =
       jointName.trim() ||
       `Area ${(savedJoints ?? []).filter((asset) => asset.assetType === "area").length + 1}`;
+
+    const reason = requestChangeReason("created", areaName);
+    if (!reason) return;
 
     const areaRecord: SavedMapAsset = {
       id: crypto.randomUUID(),
@@ -1354,7 +1563,14 @@ export default function JointMapManager({
       },
     };
 
-    setSavedJoints((prev) => [...prev, markAssetForLiveSync(areaRecord, true)]);
+    const savedAreaRecord = markAssetForLiveSync(areaRecord, true);
+    setSavedJoints((prev) => [...prev, savedAreaRecord]);
+    writeAssetAuditLog({
+      asset: savedAreaRecord,
+      action: "created",
+      reason,
+      after: savedAreaRecord,
+    });
     resetEditor();
   };
 
@@ -1626,6 +1842,9 @@ export default function JointMapManager({
   };
   const handleDeleteAsset = async (id: string) => {
     const deletedId = String(id);
+    const deletedAsset = (savedJoints ?? []).find((asset) => asset.id === deletedId);
+    const reason = requestChangeReason("deleted", deletedAsset?.name || deletedId);
+    if (!reason) return;
 
     const getHomeConnectionKey = (asset: any): string =>
       String(
@@ -1724,6 +1943,15 @@ export default function JointMapManager({
       });
     });
 
+    if (deletedAsset) {
+      writeAssetAuditLog({
+        asset: deletedAsset,
+        action: "deleted",
+        reason,
+        before: deletedAsset,
+      });
+    }
+
     if (activeProjectId && homeKeysToUnstamp.size > 0) {
       const updatedProjectHomes = projectHomes.map((home: any) => {
         const connectedDpId = String(
@@ -1766,6 +1994,7 @@ export default function JointMapManager({
 
   const handleClearMeasurement = () => {
     setMeasurePoints([]);
+    setMapMode("pick");
   };
 
   const handleUndoMeasurementPoint = () => {
@@ -1794,7 +2023,36 @@ export default function JointMapManager({
   };
 
   const handleContextAddAsset = (type: MapContextAction) => {
+    const clickedPoint = contextMenu.latlng;
+
+    if (type === "measure") {
+      setMapMode("measure");
+      setIsPanelOpen(false);
+      handleCloseContextMenu();
+      return;
+    }
+
+    if (type === "pick-location") {
+      if (clickedPoint) setPickedLocation(clickedPoint);
+      setMapMode("pick");
+      setIsPanelOpen(true);
+      handleCloseContextMenu();
+      return;
+    }
+
     setEditingAssetId(null);
+    setEditingAreaId(null);
+    setShowCableModal(false);
+    setShowPoleModal(false);
+    setShowDpModal(false);
+    setShowChamberModal(false);
+    setDraftCablePoints([]);
+    setDraftAreaPoints([]);
+    setNotes("");
+    setCablePiaNoiNumber("");
+    setParentCableId(undefined);
+    setAllocatedInputFibres([]);
+    setIsPanelOpen(true);
 
     if (type === "cable") {
       openCableModalForNew();
@@ -1808,27 +2066,25 @@ export default function JointMapManager({
       setJointName(
         `Area ${(savedJoints ?? []).filter((asset) => asset.assetType === "area").length + 1}`,
       );
-      setNotes("");
-      setCablePiaNoiNumber("");
       setAreaLevel("L0");
       setPickedLocation(null);
-      setDraftCablePoints([]);
-      setDraftAreaPoints(contextMenu.latlng ? [contextMenu.latlng] : []);
+      setDraftAreaPoints(clickedPoint ? [clickedPoint] : []);
       setMapMode("draw-area");
       handleCloseContextMenu();
       return;
     }
 
-    if (!contextMenu.latlng) return;
-    // =============================
-    // ADD EXCHANGE (⭐)
-    // =============================
+    if (!clickedPoint) {
+      handleCloseContextMenu();
+      return;
+    }
+
     if (type === "exchange") {
       const exchange: ExchangeAsset = {
         id: crypto.randomUUID(),
         name: `Exchange ${savedExchanges.length + 1}`,
-        lat: contextMenu.latlng.lat,
-        lng: contextMenu.latlng.lng,
+        lat: clickedPoint.lat,
+        lng: clickedPoint.lng,
       };
 
       handleSaveExchange(exchange);
@@ -1836,48 +2092,21 @@ export default function JointMapManager({
       handleCloseContextMenu();
       return;
     }
-    // NEW: Add Joint directly from right-click menu
-    if (type === "joint") {
-      const record: SavedMapAsset = {
-        id: crypto.randomUUID(),
-        name: getNextAssetName(savedJoints, "ag-joint"),
-        assetType: "ag-joint",
-        jointType: "LMJ (40 trays)",
-        notes: "",
-        mappingRows: [],
-        geometry: {
-          type: "Point",
-          coordinates: [contextMenu.latlng.lat, contextMenu.latlng.lng],
-        },
-      };
 
-      setSavedJoints((prev) => [...prev, markAssetForLiveSync(record, true)]);
-      handleCloseContextMenu();
-      onOpenJoint(record);
-      return;
-    }
-
-    setPickedLocation(contextMenu.latlng);
+    setPickedLocation(clickedPoint);
     setAssetType(type as AssetType);
-    setJointName(getNextAssetName(savedJoints, type as any));
-    setNotes("");
-    if (type === "exchange") {
-      const exchange: ExchangeAsset = {
-        id: crypto.randomUUID(),
-        name: `Exchange ${savedExchanges.length + 1}`,
-        lat: contextMenu.latlng.lat,
-        lng: contextMenu.latlng.lng,
-      };
+    setJointName(getNextAssetName(savedJoints, type === "joint" ? "ag-joint" : (type as any)));
+    setMapMode("pick");
 
-      handleSaveExchange(exchange);
-      setOpenExchangeAsset(exchange);
-      handleCloseContextMenu();
-      return;
+    if (type === "joint") {
+      setAssetType("ag-joint");
+      setJointName(getNextAssetName(savedJoints, "ag-joint"));
+      setJointType("LMJ (40 trays)");
     }
+
     if (type === "pole") {
       setJointType("Pole");
       setPoleDetails({});
-      setShowPoleModal(true);
     }
 
     if (type === "distribution-point") {
@@ -1887,20 +2116,17 @@ export default function JointMapManager({
         closureType: "CBT",
         connectionsToHomes: 8,
       });
-      setShowDpModal(true);
     }
 
     if (type === "chamber") {
       setJointType("Chamber");
       setChamberDetails({});
-      setShowChamberModal(true);
     }
 
     if (type === "street-cab") {
       setJointType("Street Cab");
     }
 
-    setMapMode("pick");
     handleCloseContextMenu();
   };
 
@@ -2409,7 +2635,7 @@ export default function JointMapManager({
         onClick={() => setIsPanelOpen((prev) => !prev)}
         style={drawerToggleButton}
       >
-        {isPanelOpen ? "× Close" : "☰ Tools"}
+        {isPanelOpen ? "× Close" : "☰ Asset Panel"}
       </button>
 
       {!isPanelOpen && (
@@ -2418,8 +2644,7 @@ export default function JointMapManager({
             Welcome to Alistra GIS
           </div>
           <div style={{ color: "#cbd5e1", marginTop: 6 }}>
-            Open Tools to create assets, draw cables, inspect areas, or manage
-            project data.
+            Right click the map to create assets, measure distance, pick locations, or open the active asset panel.
           </div>
         </div>
       )}
@@ -2467,20 +2692,16 @@ export default function JointMapManager({
         </div>
 
         <details open style={card}>
-          <summary style={sectionSummary}>Create / Edit Asset</summary>
+          <summary style={sectionSummary}>
+            {editingAssetId ? "Asset Details" : "Asset Editor"}
+          </summary>
           <div style={sectionBody}>
             <div style={label}>Asset Type</div>
             <select
               value={assetType}
               onChange={(e) => setAssetType(e.target.value as AssetType)}
               style={input}
-              disabled={
-                !!editingAssetId ||
-                showCableModal ||
-                showPoleModal ||
-                showDpModal ||
-                showChamberModal
-              }
+              disabled={!!editingAssetId}
             >
               <option value="ag-joint">AG Joint</option>
               <option value="street-cab">Street Cab</option>
@@ -2492,13 +2713,103 @@ export default function JointMapManager({
               <option value="cable">Cable</option>
             </select>
 
-            <div style={{ ...label, marginTop: 10 }}>Name</div>
+            <div style={{ ...label, marginTop: 10 }}>
+              {assetType === "cable" ? "Cable Name" : "Name"}
+            </div>
             <input
               value={jointName}
               onChange={(e) => setJointName(e.target.value)}
               style={input}
               placeholder="Asset name"
             />
+
+            {assetType === "cable" ? (
+              <>
+                <div style={{ ...label, marginTop: 10 }}>PIA NOI Number</div>
+                <input
+                  value={cablePiaNoiNumber}
+                  onChange={(e) => setCablePiaNoiNumber(e.target.value)}
+                  style={input}
+                  placeholder="e.g. NOI-123456"
+                />
+
+                <div style={{ ...label, marginTop: 10 }}>Cable Type</div>
+                <select
+                  value={cableType}
+                  onChange={(e) => setCableType(e.target.value as CableType)}
+                  style={input}
+                >
+                  <option>Feeder Cable</option>
+                  <option>Link Cable</option>
+                  <option>Distribution Cable</option>
+                  <option>Drop</option>
+                  <option>Spine Cable</option>
+                </select>
+
+                <div style={{ ...label, marginTop: 10 }}>Fibre Count</div>
+                <select
+                  value={fibreCount}
+                  onChange={(e) => setFibreCount(e.target.value as FibreCount)}
+                  style={input}
+                >
+                  <option>12F</option>
+                  <option>24F</option>
+                  <option>48F</option>
+                  <option>96F</option>
+                  <option>144F</option>
+                  <option>288F</option>
+                </select>
+
+                <div style={{ ...label, marginTop: 10 }}>Used Fibres</div>
+                <input
+                  type="number"
+                  min={0}
+                  max={Number(String(fibreCount).replace(/\D/g, "")) || 288}
+                  value={allocatedInputFibres.length}
+                  onChange={(e) => {
+                    const max = Number(String(fibreCount).replace(/\D/g, "")) || 288;
+                    const next = Math.max(0, Math.min(max, Number(e.target.value) || 0));
+                    setAllocatedInputFibres(Array.from({ length: next }, (_, index) => index + 1));
+                  }}
+                  style={input}
+                />
+
+                <div style={{ ...label, marginTop: 10 }}>Install Method</div>
+                <select
+                  value={installMethod}
+                  onChange={(e) => setInstallMethod(e.target.value as InstallMethod)}
+                  style={input}
+                >
+                  <option>Underground</option>
+                  <option>Overhead</option>
+                  <option>Existing Duct</option>
+                  <option>New Duct</option>
+                </select>
+
+                <div style={{ ...label, marginTop: 10 }}>Parent / Through Cable</div>
+                <select
+                  value={parentCableId || ""}
+                  onChange={(e) => setParentCableId(e.target.value || undefined)}
+                  style={input}
+                >
+                  <option value="">No parent cable</option>
+                  {availableParentCablesForBranchAllocation.map((cable) => (
+                    <option key={cable.id} value={cable.id}>
+                      {cable.name} — {cable.fibreCount || "Unknown size"}
+                    </option>
+                  ))}
+                </select>
+
+                {!editingAssetId && mapMode !== "draw-cable" ? (
+                  <button
+                    onClick={startCableDrawing}
+                    style={{ ...btnPrimary, marginTop: 10, width: "100%" }}
+                  >
+                    Start Drawing Cable
+                  </button>
+                ) : null}
+              </>
+            ) : null}
 
             {assetType === "area" ? (
               <>
@@ -2531,6 +2842,25 @@ export default function JointMapManager({
               </>
             ) : null}
 
+
+            <AssetDetailsSidebarSections
+              assetType={assetType}
+              poleDetails={poleDetails}
+              chamberDetails={chamberDetails}
+              dpDetails={dpDetails}
+              onChangePoleDetails={setPoleDetails}
+              onChangeChamberDetails={setChamberDetails}
+              onChangeDpDetails={setDpDetails}
+              connectedHomes={connectedHomesForSelectedDp}
+              availableThroughCables={availableParentCablesForBranchAllocation}
+              allDistributionPoints={allDistributionPointsForAfnAllocation}
+              allAssets={allMapAssets}
+              currentDpId={editingAssetId}
+              inputStyle={input}
+              labelStyle={{ ...label, marginTop: 10 }}
+              secondaryButtonStyle={btnSecondary}
+            />
+
             <div style={{ ...label, marginTop: 10 }}>Notes</div>
             <textarea
               value={notes}
@@ -2538,13 +2868,77 @@ export default function JointMapManager({
               style={{ ...input, height: 80 }}
             />
 
-            {editingAssetId &&
-            assetType !== "cable" &&
-            !showPoleModal &&
-            !showDpModal &&
-            !showChamberModal ? (
-              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                <button onClick={handleSaveEdits} style={btnPrimary}>
+            {editingAssetId ? (
+              <>
+                {currentEditingAsset?.assetType === "ag-joint" ? (
+                  <button
+                    onClick={() => currentEditingAsset && onOpenJoint(currentEditingAsset)}
+                    style={{ ...btnPrimary, marginTop: 10 }}
+                  >
+                    Open Joint Editor
+                  </button>
+                ) : null}
+
+                {currentEditingAsset?.assetType === "street-cab" ? (
+                  <button
+                    onClick={() => currentEditingAsset && setOpenStreetCabAsset(currentEditingAsset)}
+                    style={{ ...btnPrimary, marginTop: 10 }}
+                  >
+                    Open Street Cab Editor
+                  </button>
+                ) : null}
+
+                <AssetActivityMiniSummary asset={currentEditingAsset} />
+                <button
+                  onClick={() => openMaintenanceHistory(currentEditingAsset)}
+                  style={{ ...btnSecondary, marginTop: 10 }}
+                >
+                  Changes / Maintenance History
+                </button>
+              </>
+            ) : null}
+
+            {!editingAssetId ? (
+              <>
+                <div style={{ ...label, marginTop: 12 }}>Selected Location</div>
+                <div style={{ color: "#9ca3af" }}>
+                  {pickedLocation
+                    ? `${pickedLocation.lat.toFixed(5)}, ${pickedLocation.lng.toFixed(5)}`
+                    : "Right click the map to choose what you want to create here."}
+                </div>
+
+                <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                  <button onClick={() => setMapMode("pick")} style={mapMode === "pick" ? btnPrimary : btnSecondary}>
+                    Pick Location
+                  </button>
+                  <button onClick={handleSaveJoint} style={btnPrimary} disabled={!pickedLocation && assetType !== "cable" && assetType !== "area"}>
+                    Save Asset
+                  </button>
+                  <button onClick={openCableModalForNew} style={btnSecondary}>
+                    Prepare Cable
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAssetType("area");
+                      setJointType("Polygon Area");
+                      setJointName(
+                        `Area ${(savedJoints ?? []).filter((asset) => asset.assetType === "area").length + 1}`,
+                      );
+                      setPickedLocation(null);
+                      setDraftCablePoints([]);
+                      setMapMode("draw-area");
+                    }}
+                    style={btnSecondary}
+                  >
+                    Prepare Area
+                  </button>
+                </div>
+              </>
+            ) : null}
+
+            {editingAssetId ? (
+              <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                <button onClick={() => handleSaveEdits()} style={btnPrimary}>
                   Save Changes
                 </button>
                 <button onClick={resetEditor} style={btnSecondary}>
@@ -2552,288 +2946,49 @@ export default function JointMapManager({
                 </button>
               </div>
             ) : null}
-          </div>
-        </details>
 
-        <details open style={card}>
-          <summary style={sectionSummary}>Map Tools</summary>
-          <div style={sectionBody}>
-            <div style={label}>Map Tool</div>
-
-            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              <button
-                onClick={() => setMapMode("pick")}
-                style={mapMode === "pick" ? btnPrimary : btnSecondary}
-              >
-                Pick
-              </button>
-
-              <button
-                onClick={() => setMapMode("measure")}
-                style={mapMode === "measure" ? btnPrimary : btnSecondary}
-              >
-                Measure
-              </button>
-
-              <button
-                onClick={openCableModalForNew}
-                style={mapMode === "draw-cable" ? btnPrimary : btnSecondary}
-              >
-                Cable
-              </button>
-
-              <button
-                onClick={() => {
-                  setAssetType("area");
-                  setJointType("Polygon Area");
-                  setJointName(
-                    `Area ${(savedJoints ?? []).filter((asset) => asset.assetType === "area").length + 1}`,
-                  );
-                  setPickedLocation(null);
-                  setDraftCablePoints([]);
-                  setMapMode("draw-area");
-                }}
-                style={mapMode === "draw-area" ? btnPrimary : btnSecondary}
-              >
-                Area
-              </button>
-            </div>
-
-            <label style={{ ...layerRow, marginTop: 10 }}>
-              <input
-                type="checkbox"
-                checked={snapEnabled}
-                onChange={() => setSnapEnabled((v) => !v)}
-              />
-              <span>Snap to nearby assets</span>
-            </label>
-
-            {mapMode === "pick" && !editingAssetId && (
-              <>
-                <div style={{ ...label, marginTop: 12 }}>Picked Location</div>
+            {mapMode === "draw-area" ? (
+              <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid #334155" }}>
+                <div style={label}>{editingAssetId ? "Edit Polygon Area" : "Polygon Area Drawing"}</div>
                 <div style={{ color: "#9ca3af" }}>
-                  {pickedLocation
-                    ? `${pickedLocation.lat.toFixed(5)}, ${pickedLocation.lng.toFixed(5)}`
-                    : "Left click to pick. Right click to add Pole, Distribution Point, Chamber, or Cable."}
+                  Click around the boundary. Drag blue area point markers to adjust it.
                 </div>
-
-                <div
-                  style={{
-                    marginTop: 8,
-                    fontSize: "0.85rem",
-                    color: "#cbd5e1",
-                  }}
-                >
-                  Create the asset first, then click it to upload/view splice
-                  data.
-                </div>
-
-                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                  <button onClick={handleSaveJoint} style={btnPrimary}>
-                    Create Asset Here
-                  </button>
-                  <button
-                    onClick={() => setPickedLocation(null)}
-                    style={btnSecondary}
-                  >
-                    Clear Pick
-                  </button>
-                </div>
-              </>
-            )}
-
-            {mapMode === "measure" && (
-              <>
-                <div style={{ ...label, marginTop: 12 }}>Measurement</div>
-                <div style={{ color: "#9ca3af" }}>
-                  Click points on the map to measure distance.
-                </div>
-
-                <div
-                  style={{ marginTop: 8, fontSize: "0.9rem", color: "#e5e7eb" }}
-                >
-                  Points: {measurePoints.length}
-                </div>
-
-                <div
-                  style={{
-                    fontSize: "1rem",
-                    fontWeight: 700,
-                    color: "#93c5fd",
-                  }}
-                >
-                  Total: {formatDistance(measuredDistance)}
-                </div>
-
-                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                  <button
-                    onClick={handleUndoMeasurementPoint}
-                    style={btnSecondary}
-                    disabled={measurePoints.length === 0}
-                  >
-                    Undo Last Point
-                  </button>
-
-                  <button
-                    onClick={handleClearMeasurement}
-                    style={btnSecondary}
-                    disabled={measurePoints.length === 0}
-                  >
-                    Clear Measurement
-                  </button>
-                </div>
-              </>
-            )}
-
-            {mapMode === "draw-area" && (
-              <>
-                <div style={{ ...label, marginTop: 12 }}>
-                  {editingAssetId
-                    ? "Edit Polygon Area"
-                    : "Polygon Area Drawing"}
-                </div>
-                <div style={{ color: "#9ca3af" }}>
-                  Click around the boundary. Drag any blue area point marker to
-                  adjust it. Use Finish Area when you have at least three
-                  points.
-                </div>
-
-                <div style={{ marginTop: 10 }}>
-                  <div style={label}>Polygon Level</div>
-                  <select
-                    value={areaLevel}
-                    onChange={(e) => setAreaLevel(e.target.value as AreaLevel)}
-                    style={input}
-                  >
-                    <option value="L0">L0</option>
-                    <option value="L1">L1</option>
-                    <option value="L2">L2</option>
-                    <option value="L3">L3</option>
-                  </select>
-                </div>
-
-                <div
-                  style={{ marginTop: 8, fontSize: "0.9rem", color: "#e5e7eb" }}
-                >
-                  Points: {draftAreaPoints.length}
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    marginTop: 10,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <button
-                    onClick={handleUndoAreaPoint}
-                    style={btnSecondary}
-                    disabled={draftAreaPoints.length === 0}
-                  >
-                    Undo Last Point
-                  </button>
-
-                  <button
-                    onClick={handleClearArea}
-                    style={btnSecondary}
-                    disabled={draftAreaPoints.length === 0}
-                  >
-                    Clear Area
-                  </button>
-
+                <div style={{ marginTop: 8, color: "#e5e7eb" }}>Points: {draftAreaPoints.length}</div>
+                <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                  <button onClick={handleUndoAreaPoint} style={btnSecondary} disabled={draftAreaPoints.length === 0}>Undo</button>
+                  <button onClick={handleClearArea} style={btnSecondary} disabled={draftAreaPoints.length === 0}>Clear</button>
                   {!editingAssetId ? (
-                    <button
-                      onClick={handleFinishArea}
-                      style={btnPrimary}
-                      disabled={draftAreaPoints.length < 3}
-                    >
-                      Finish Area
-                    </button>
+                    <button onClick={handleFinishArea} style={btnPrimary} disabled={draftAreaPoints.length < 3}>Finish Area</button>
                   ) : (
-                    <button
-                      onClick={handleSaveEdits}
-                      style={btnPrimary}
-                      disabled={draftAreaPoints.length < 3}
-                    >
-                      Save Changes
-                    </button>
+                    <button onClick={() => handleSaveEdits()} style={btnPrimary} disabled={draftAreaPoints.length < 3}>Save Area</button>
                   )}
                 </div>
-              </>
-            )}
+              </div>
+            ) : null}
 
-            {mapMode === "draw-cable" && (
-              <>
-                <div style={{ ...label, marginTop: 12 }}>
-                  {editingAssetId ? "Edit Cable Route" : "Cable Drawing"}
-                </div>
+            {mapMode === "draw-cable" ? (
+              <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid #334155" }}>
+                <div style={label}>{editingAssetId ? "Edit Cable Route" : "Cable Drawing"}</div>
                 <div style={{ color: "#9ca3af" }}>
-                  Click the map to add points. Drag points to move them. Click a
-                  cable segment to insert a point. Use the marker popup to
-                  delete a point.
+                  Click the map to add points. Drag points to move them. Click a segment to insert a point.
                 </div>
-
-                <div
-                  style={{ marginTop: 8, fontSize: "0.9rem", color: "#e5e7eb" }}
-                >
-                  Points: {draftCablePoints.length}
-                </div>
-
-                <div
-                  style={{
-                    fontSize: "1rem",
-                    fontWeight: 700,
-                    color: "#fbbf24",
-                  }}
-                >
-                  Length: {formatDistance(draftCableDistance)}
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    marginTop: 10,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <button
-                    onClick={handleUndoCablePoint}
-                    style={btnSecondary}
-                    disabled={draftCablePoints.length === 0}
-                  >
-                    Undo Last Point
-                  </button>
-
-                  <button
-                    onClick={handleClearCable}
-                    style={btnSecondary}
-                    disabled={draftCablePoints.length === 0}
-                  >
-                    Clear Cable
-                  </button>
-
+                <div style={{ marginTop: 8, color: "#e5e7eb" }}>Points: {draftCablePoints.length}</div>
+                <div style={{ fontWeight: 700, color: "#fbbf24" }}>Length: {formatDistance(draftCableDistance)}</div>
+                <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                  <button onClick={handleUndoCablePoint} style={btnSecondary} disabled={draftCablePoints.length === 0}>Undo</button>
+                  <button onClick={handleClearCable} style={btnSecondary} disabled={draftCablePoints.length === 0}>Clear</button>
                   {!editingAssetId ? (
-                    <button
-                      onClick={handleFinishCable}
-                      style={btnPrimary}
-                      disabled={draftCablePoints.length < 2 || isRoutingCable}
-                    >
+                    <button onClick={handleFinishCable} style={btnPrimary} disabled={draftCablePoints.length < 2 || isRoutingCable}>
                       {isRoutingCable ? "Routing Cable..." : "Finish Cable"}
                     </button>
                   ) : (
-                    <button
-                      onClick={handleSaveEdits}
-                      style={btnPrimary}
-                      disabled={draftCablePoints.length < 2 || isRoutingCable}
-                    >
-                      {isRoutingCable ? "Routing Cable..." : "Save Changes"}
+                    <button onClick={() => handleSaveEdits()} style={btnPrimary} disabled={draftCablePoints.length < 2 || isRoutingCable}>
+                      {isRoutingCable ? "Routing Cable..." : "Save Route"}
                     </button>
                   )}
                 </div>
-              </>
-            )}
+              </div>
+            ) : null}
           </div>
         </details>
 
@@ -2943,7 +3098,7 @@ export default function JointMapManager({
           rotateControl={true}
           style={{ height: "100%", width: "100%" }}
         >
-          <MapBaseLayers
+          <FreeLeafletBaseLayer
             basemap={basemap}
             roadOverlayVisible={roadOverlayVisible}
           />
@@ -2996,29 +3151,44 @@ export default function JointMapManager({
             assets={visibleProjectAssets}
             visibleLayers={visibleLayers}
             onOpenAsset={(asset) => {
-              if (asset.assetType === "street-cab") {
-                setOpenStreetCabAsset(asset);
-                return;
-              }
-              onOpenJoint(asset);
+              handleEditAsset(asset);
+              setIsPanelOpen(true);
             }}
             onDeleteAsset={handleDeleteAsset}
             onEditAsset={handleEditAsset}
             onMoveAsset={(id, lat, lng) => {
+              const beforeAsset = (savedJoints ?? []).find((asset) => asset.id === id);
+              const reason = requestChangeReason("moved", beforeAsset?.name || id);
+              if (!reason) return;
+
+              let movedAsset: SavedMapAsset | null = null;
+
               setSavedJoints((prev) =>
                 prev.map((asset) => {
                   if (asset.id !== id) return asset;
                   if (asset.geometry?.type !== "Point") return asset;
 
-                  return markAssetForLiveSync({
+                  movedAsset = markAssetForLiveSync({
                     ...asset,
                     geometry: {
                       type: "Point",
                       coordinates: [lat, lng],
                     },
                   });
+
+                  return movedAsset;
                 }),
               );
+
+              if (movedAsset) {
+                writeAssetAuditLog({
+                  asset: movedAsset,
+                  action: "moved",
+                  reason,
+                  before: beforeAsset,
+                  after: movedAsset,
+                });
+              }
             }}
           />
 
@@ -3071,6 +3241,38 @@ export default function JointMapManager({
                 (p) => [p.lat, p.lng] as [number, number],
               )}
               pathOptions={{ color: "#60a5fa", weight: 3 }}
+            />
+          )}
+
+          {visibleLayers.measurements &&
+            measurePoints.length >= 2 &&
+            measurePoints.slice(1).map((point, index) => {
+              const previous = measurePoints[index];
+              const segmentDistance = getPathDistanceMeters([previous, point]);
+              const midpoint = {
+                lat: (previous.lat + point.lat) / 2,
+                lng: (previous.lng + point.lng) / 2,
+              };
+
+              return (
+                <Marker
+                  key={`measure-label-${index}`}
+                  position={[midpoint.lat, midpoint.lng]}
+                  icon={makeMeasureLabelIcon(formatDistance(segmentDistance))}
+                  interactive={false}
+                />
+              );
+            })}
+
+          {visibleLayers.measurements && measurePoints.length >= 2 && (
+            <Marker
+              key="measure-total-label"
+              position={[
+                measurePoints[measurePoints.length - 1].lat,
+                measurePoints[measurePoints.length - 1].lng,
+              ]}
+              icon={makeMeasureLabelIcon(`Total: ${formatDistance(measuredDistance)}`)}
+              interactive={false}
             />
           )}
 
@@ -3213,7 +3415,7 @@ export default function JointMapManager({
         />
 
         <CableDetailsModal
-          visible={showCableModal}
+          visible={false}
           name={jointName}
           notes={notes}
           piaNoiNumber={cablePiaNoiNumber}
@@ -3241,7 +3443,7 @@ export default function JointMapManager({
         />
 
         <PoleDetailsModal
-          visible={showPoleModal}
+          visible={false}
           name={jointName}
           details={poleDetails}
           onChangeName={setJointName}
@@ -3258,7 +3460,7 @@ export default function JointMapManager({
         />
 
         <DistributionPointDetailsModal
-          visible={showDpModal}
+          visible={false}
           name={jointName}
           details={dpDetails}
           connectedHomes={connectedHomesForSelectedDp}
@@ -3281,7 +3483,7 @@ export default function JointMapManager({
         />
 
         <ChamberDetailsModal
-          visible={showChamberModal}
+          visible={false}
           name={jointName}
           notes={notes}
           details={chamberDetails}
@@ -3301,6 +3503,16 @@ export default function JointMapManager({
             }
           }}
           onCancel={resetEditor}
+        />
+
+        <MaintenanceAuditOverlay
+          visible={showMaintenancePanel}
+          asset={maintenanceAsset}
+          projectId={activeProjectId}
+          onClose={() => {
+            setShowMaintenancePanel(false);
+            setMaintenanceAsset(null);
+          }}
         />
       </div>
 
@@ -3324,37 +3536,48 @@ export default function JointMapManager({
           setRoadOverlayVisible={setRoadOverlayVisible}
           snapEnabled={snapEnabled}
           setSnapEnabled={setSnapEnabled}
+          measurementDistance={measuredDistance}
+          measurementPointCount={measurePoints.length}
+          isMeasuring={mapMode === "measure"}
+          onStartMeasurement={() => setMapMode("measure")}
+          onStopMeasurement={() => setMapMode("pick")}
+          onUndoMeasurementPoint={handleUndoMeasurementPoint}
+          onClearMeasurements={handleClearMeasurement}
         />
       </div>
 
-      <button
-        onClick={handleGpsLocate}
-        style={{
-          ...topMapButton,
-          right: isMobile ? 92 : isLayersOpen ? 430 : 92,
-        }}
-      >
-        GPS
-      </button>
+      {!showMaintenancePanel && (
+        <>
+          <button
+            onClick={handleGpsLocate}
+            style={{
+              ...topMapButton,
+              right: isMobile ? 92 : isLayersOpen ? 430 : 92,
+            }}
+          >
+            GPS
+          </button>
 
-      <button
-        onClick={() => setIsLayersOpen((prev) => !prev)}
-        style={{
-          position: "absolute",
-          top: 16,
-          right: isMobile ? 16 : isLayersOpen ? 340 : 16,
-          zIndex: 1200,
-          background: "#2563eb",
-          color: "white",
-          border: "none",
-          padding: "10px 14px",
-          borderRadius: "8px",
-          cursor: "pointer",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.35)",
-        }}
-      >
-        {isLayersOpen ? "Hide Layers" : "Layers"}
-      </button>
+          <button
+            onClick={() => setIsLayersOpen((prev) => !prev)}
+            style={{
+              position: "absolute",
+              top: 16,
+              right: isMobile ? 16 : isLayersOpen ? 340 : 16,
+              zIndex: 1200,
+              background: "#2563eb",
+              color: "white",
+              border: "none",
+              padding: "10px 14px",
+              borderRadius: "8px",
+              cursor: "pointer",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.35)",
+            }}
+          >
+            {isLayersOpen ? "Hide Layers" : "Layers"}
+          </button>
+        </>
+      )}
 
       {openStreetCabAsset && (
         <div

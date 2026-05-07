@@ -503,11 +503,72 @@ function buildCabFromCleanPatchingSheet(workbook: XLSX.WorkBook): {
   };
 }
 
+
+function useDrawerMobileScreen() {
+  const [isMobile, setIsMobile] = React.useState(() =>
+    typeof window !== "undefined" ? window.innerWidth < 900 : false
+  );
+
+  React.useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 900);
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  return isMobile;
+}
+
+const mobileDrawerButtonStyle: React.CSSProperties = {
+  border: "1px solid #4b5563",
+  background: "#2563eb",
+  color: "white",
+  borderRadius: 8,
+  padding: "10px 12px",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const mobileDrawerOverlayStyle: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(0,0,0,0.55)",
+  zIndex: 9998,
+};
+
+const makeMobileDrawerStyle = (side: "left" | "right"): React.CSSProperties => ({
+  position: "fixed",
+  top: 0,
+  bottom: 0,
+  [side]: 0,
+  width: "min(88vw, 360px)",
+  maxWidth: "100vw",
+  overflowY: "auto",
+  overflowX: "hidden",
+  background: "#1f2937",
+  zIndex: 9999,
+  boxShadow: side === "left" ? "12px 0 30px rgba(0,0,0,0.35)" : "-12px 0 30px rgba(0,0,0,0.35)",
+  WebkitOverflowScrolling: "touch",
+});
+
+const drawerCloseButtonStyle: React.CSSProperties = {
+  border: "1px solid #4b5563",
+  background: "#111827",
+  color: "white",
+  borderRadius: 8,
+  padding: "8px 10px",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
 export default function StreetCabDesigner({
   asset,
   onClose,
   onSave,
 }: Props) {
+  const isMobile = useDrawerMobileScreen();
+  const [leftDrawerOpen, setLeftDrawerOpen] = React.useState(false);
+  const [rightDrawerOpen, setRightDrawerOpen] = React.useState(false);
   const initialStreetCab = asset.streetCabDetails as
     | (StreetCabDetails & {
         importMappingRows?: ImportMappingRow[];
@@ -1305,15 +1366,18 @@ export default function StreetCabDesigner({
   return (
     <div
       style={{
-        height: "100vh",
+        height: "100dvh",
         width: "100vw",
-        display: "grid",
-        gridTemplateColumns: "280px 1fr 320px",
+        display: isMobile ? "flex" : "grid",
+        flexDirection: isMobile ? "column" : undefined,
+        gridTemplateColumns: isMobile ? undefined : "280px 1fr 320px",
         background: "#111827",
         color: "white",
+        overflow: "hidden",
       }}
     >
-      <div style={sidebar}>
+      <div style={isMobile ? { ...makeMobileDrawerStyle("left"), display: leftDrawerOpen ? "block" : "none" } : sidebar}>
+        {isMobile && <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}><button type="button" onClick={() => setLeftDrawerOpen(false)} style={drawerCloseButtonStyle}>✕ Close</button></div>}
         <div
           style={{
             display: "flex",
@@ -1385,7 +1449,7 @@ export default function StreetCabDesigner({
       </div>
 
       <div
-        style={{ padding: 14, overflowY: "auto" }}
+        style={{ padding: isMobile ? 12 : 14, overflowY: "auto", overflowX: "hidden", flex: 1, minWidth: 0 }}
         onDragOver={(e) => e.preventDefault()}
         onDrop={() => setDragStartPort(null)}
       >
@@ -1498,7 +1562,8 @@ export default function StreetCabDesigner({
         </div>
       </div>
 
-      <div style={sidebar}>
+      <div style={isMobile ? { ...makeMobileDrawerStyle("right"), display: rightDrawerOpen ? "block" : "none" } : sidebar}>
+        {isMobile && <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}><button type="button" onClick={() => setRightDrawerOpen(false)} style={drawerCloseButtonStyle}>✕ Close</button></div>}
         <h3 style={{ marginTop: 0 }}>Selection</h3>
 
         {selectedPanel ? (
@@ -1702,7 +1767,16 @@ export default function StreetCabDesigner({
           <div>{connections.length}</div>
         </div>
       </div>
-    </div>
+    {isMobile && (leftDrawerOpen || rightDrawerOpen) && (
+        <div
+          style={mobileDrawerOverlayStyle}
+          onClick={() => {
+            setLeftDrawerOpen(false);
+            setRightDrawerOpen(false);
+          }}
+        />
+      )}
+      </div>
   );
 }
 

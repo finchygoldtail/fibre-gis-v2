@@ -121,7 +121,68 @@ function matchesSearch(values: unknown[], search: string) {
   return values.some((value) => String(value ?? "").toLowerCase().includes(term));
 }
 
+
+function useDrawerMobileScreen() {
+  const [isMobile, setIsMobile] = React.useState(() =>
+    typeof window !== "undefined" ? window.innerWidth < 900 : false
+  );
+
+  React.useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 900);
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  return isMobile;
+}
+
+const mobileDrawerButtonStyle: React.CSSProperties = {
+  border: "1px solid #4b5563",
+  background: "#2563eb",
+  color: "white",
+  borderRadius: 8,
+  padding: "10px 12px",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const mobileDrawerOverlayStyle: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(0,0,0,0.55)",
+  zIndex: 9998,
+};
+
+const makeMobileDrawerStyle = (side: "left" | "right"): React.CSSProperties => ({
+  position: "fixed",
+  top: 0,
+  bottom: 0,
+  [side]: 0,
+  width: "min(88vw, 360px)",
+  maxWidth: "100vw",
+  overflowY: "auto",
+  overflowX: "hidden",
+  background: "#1f2937",
+  zIndex: 9999,
+  boxShadow: side === "left" ? "12px 0 30px rgba(0,0,0,0.35)" : "-12px 0 30px rgba(0,0,0,0.35)",
+  WebkitOverflowScrolling: "touch",
+});
+
+const drawerCloseButtonStyle: React.CSSProperties = {
+  border: "1px solid #4b5563",
+  background: "#111827",
+  color: "white",
+  borderRadius: 8,
+  padding: "8px 10px",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
 export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
+  const isMobile = useDrawerMobileScreen();
+  const [leftDrawerOpen, setLeftDrawerOpen] = React.useState(false);
+  const [rightDrawerOpen, setRightDrawerOpen] = React.useState(false);
   // =====================================================
   // 1) CORE STATE
   // =====================================================
@@ -565,7 +626,8 @@ const handleConvertImportedWorkbook = async () => {
   return (
     <div style={layout}>
       {/* LEFT */}
-      <div style={leftPanel}>
+      <div style={isMobile ? { ...makeMobileDrawerStyle("left"), display: leftDrawerOpen ? "block" : "none" } : leftPanel}>
+        {isMobile && <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}><button type="button" onClick={() => setLeftDrawerOpen(false)} style={drawerCloseButtonStyle}>✕ Close</button></div>}
         <button onClick={onClose} style={btnSecondary}>
           ← Back to Map
         </button>
@@ -685,7 +747,13 @@ const handleConvertImportedWorkbook = async () => {
       </div>
 
       {/* CENTRE */}
-      <div style={mainPanel}>
+      <div style={isMobile ? { ...mainPanel, padding: 12, overflow: "auto", minWidth: 0, flex: 1 } : mainPanel}>
+        {isMobile && (
+          <div style={{ display: "flex", gap: 8, marginBottom: 12, position: "sticky", top: 0, zIndex: 20, background: "#111827", paddingBottom: 8 }}>
+            <button type="button" onClick={() => setLeftDrawerOpen(true)} style={mobileDrawerButtonStyle}>☰ Build</button>
+            <button type="button" onClick={() => setRightDrawerOpen(true)} style={mobileDrawerButtonStyle}>Selection</button>
+          </div>
+        )}
         <div style={pageHeader}>
           <div>
             <div style={{ color: "#cbd5e1", fontSize: 13 }}>Exchange Designer</div>
@@ -1050,7 +1118,8 @@ const handleConvertImportedWorkbook = async () => {
       </div>
 
       {/* RIGHT */}
-      <div style={rightPanel}>
+      <div style={isMobile ? { ...makeMobileDrawerStyle("right"), display: rightDrawerOpen ? "block" : "none" } : rightPanel}>
+        {isMobile && <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}><button type="button" onClick={() => setRightDrawerOpen(false)} style={drawerCloseButtonStyle}>✕ Close</button></div>}
         <SelectionPanel
           selectedDetails={selectedDetails}
           onClear={() => setSelectedNode(null)}
@@ -1072,6 +1141,15 @@ const handleConvertImportedWorkbook = async () => {
           }}
         />
       </div>
+    {isMobile && (leftDrawerOpen || rightDrawerOpen) && (
+        <div
+          style={mobileDrawerOverlayStyle}
+          onClick={() => {
+            setLeftDrawerOpen(false);
+            setRightDrawerOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

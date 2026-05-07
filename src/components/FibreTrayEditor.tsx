@@ -41,6 +41,9 @@ import LMJTrayView from "./LMJTrayView";
 import MapView from "./MapView";
 import NetworkTreeView from "./NetworkTreeView";
 import JointMapManager, { type SavedJoint } from "./JointMapManager";
+import ChangesDashboard from "./audit/ChangesDashboard";
+import ChangeReasonModal from "./audit/ChangeReasonModal";
+import { createAssetAccessLog, createAssetChangeLog } from "../services/auditService";
 import StreetCabEditor from "./StreetCabEditor";
 import {
   cleanSavedJointsForFirebase,
@@ -169,6 +172,26 @@ function isValidJointType(value: any): value is JointTypeLabel {
     value === "CMJ (12 trays)" ||
     value === "MMJ (20 trays)" ||
     value === "LMJ (40 trays)"
+  );
+}
+
+
+function cloneTrayModel(model: FibreCell[]): FibreCell[] {
+  return model.map((cell) => ({ ...cell }));
+}
+
+function isPersistedTrayModel(value: any): value is FibreCell[] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((cell) =>
+      cell &&
+      typeof cell === "object" &&
+      typeof cell.globalNo === "number" &&
+      typeof cell.tray === "number" &&
+      typeof cell.pos === "number" &&
+      typeof cell.label === "string",
+    )
   );
 }
 
@@ -301,12 +324,24 @@ function deriveJointNameFromRows(rows: any[][]): string {
   return areaPrefix || "UNKNOWN-JOINT";
 }
 
+type PendingFibreMove = {
+  id: string;
+  jointId: string;
+  jointName: string;
+  tray: number;
+  fromFibre: number;
+  toFibre: number;
+  fromLabelBefore: string;
+  toLabelBefore: string;
+  movedAt: string;
+};
+
 /* -------------------------------------------------------------
   MAIN COMPONENT
 ------------------------------------------------------------- */
 export const FibreTrayEditor: React.FC = () => {
   const [activeView, setActiveView] = useState<
-    "editor" | "map" | "network" | "joint-map"
+    "editor" | "map" | "network" | "joint-map" | "changes"
   >("joint-map");
 
   const [assetType, setAssetType] = useState<"ag-joint" | "street-cab">(
@@ -333,6 +368,8 @@ export const FibreTrayEditor: React.FC = () => {
   const [moveMode, setMoveMode] = useState(false);
   const [moveSrc, setMoveSrc] = useState<FibreCell | null>(null);
   const [selectedFibre, setSelectedFibre] = useState<number | null>(null);
+  const [pendingFibreMoves, setPendingFibreMoves] = useState<PendingFibreMove[]>([]);
+  const [showChangeReasonModal, setShowChangeReasonModal] = useState(false);
 
   const [trayFilter, setTrayFilter] = useState<number | "all">("all");
   const trayContainerRef = useRef<HTMLDivElement | null>(null);
@@ -588,11 +625,21 @@ export const FibreTrayEditor: React.FC = () => {
     setMoveMode(false);
     setMoveSrc(null);
     setSelectedFibre(null);
+    setPendingFibreMoves([]);
     setTrayFilter("all");
+
+    void createAssetAccessLog({
+      asset: joint,
+      context: "fibre-tray-editor",
+    });
 
     const jt = (
       joint.jointType in JOINT_TYPES ? joint.jointType : "CMJ (12 trays)"
     ) as JointTypeLabel;
+
+    const persistedTrayModel = isPersistedTrayModel((joint as any).trayModel)
+      ? cloneTrayModel((joint as any).trayModel)
+      : null;
 
     if (isStreetCab) {
       setAssetType("street-cab");
@@ -600,7 +647,7 @@ export const FibreTrayEditor: React.FC = () => {
     } else {
       setAssetType("ag-joint");
       setJointType(jt);
-      setModel(buildJoint(jt));
+      setModel(persistedTrayModel || buildJoint(jt));
       setActiveView("editor");
     }
 
@@ -618,7 +665,9 @@ export const FibreTrayEditor: React.FC = () => {
       setMappingRows(rows);
 
       if (!isStreetCab) {
-        if (rows.length > 0) {
+        if (persistedTrayModel) {
+          setModel(persistedTrayModel);
+        } else if (rows.length > 0) {
           applyMappingRowsToModel(rows, jt);
         } else {
           setModel(buildJoint(jt));
@@ -826,6 +875,9 @@ export const FibreTrayEditor: React.FC = () => {
       const aNo = moveSrc.globalNo;
       const bNo = cell.globalNo;
 
+      const fromLabelBefore = moveSrc.label || "";
+      const toLabelBefore = cell.label || "";
+
       updateModel((prev) => {
         const a = prev.find((f) => f.globalNo === aNo);
         const b = prev.find((f) => f.globalNo === bNo);
@@ -835,11 +887,95 @@ export const FibreTrayEditor: React.FC = () => {
         return prev;
       });
 
+      if (selectedJointId) {
+        setPendingFibreMoves((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            jointId: selectedJointId,
+            jointName: currentJointName,
+            tray: moveSrc.tray,
+            fromFibre: aNo,
+            toFibre: bNo,
+            fromLabelBefore,
+            toLabelBefore,
+            movedAt: new Date().toISOString(),
+          },
+        ]);
+      }
+
       setMoveSrc(null);
       return;
     }
 
     setSelectedFibre(cell.globalNo);
+  };
+
+  const saveCurrentJoint = async (reason?: string, comment?: string) => {
+    if (!selectedJointId) {
+      alert("Open/select a joint first.");
+      return;
+    }
+
+    const movesToLog = [...pendingFibreMoves];
+
+    if (movesToLog.length > 0 && !reason?.trim()) {
+      setShowChangeReasonModal(true);
+      return;
+    }
+
+    const beforeAsset = selectedMapJoint ? { ...selectedMapJoint } : null;
+    const now = new Date().toISOString();
+
+    let updatedAsset: SavedJoint | null = null;
+
+    const updatedJoints = savedJoints.map((asset) => {
+      if (asset.id !== selectedJointId) return asset;
+
+      updatedAsset = {
+        ...asset,
+        name: asset.name,
+        jointType,
+        mappingRowsRef: true,
+        mappingRowsCount: mappingRows.length,
+        mappingRowsSummary: {
+          rowCount: mappingRows.length,
+        },
+        trayModel: cloneTrayModel(model),
+        trayModelUpdatedAt: now,
+        updatedAt: now,
+        updatedByUid: auth.currentUser?.uid || "unknown",
+        updatedByEmail: auth.currentUser?.email || "unknown",
+        lastChangeReason: reason?.trim() || (asset as any).lastChangeReason || "Manual save",
+      } as any;
+
+      return updatedAsset;
+    });
+
+    setSavedJoints(updatedJoints);
+    await saveSavedJointsToFirestoreNow(updatedJoints);
+
+    if (updatedAsset && movesToLog.length > 0) {
+      await createAssetChangeLog({
+        asset: updatedAsset,
+        action: "fibre-moved",
+        reason: reason || "Fibre move",
+        comment,
+        context: "fibre-tray-editor-move-mode",
+        before: {
+          asset: beforeAsset,
+          moves: movesToLog,
+        },
+        after: {
+          asset: updatedAsset,
+          moves: movesToLog,
+          trayModel: cloneTrayModel(model),
+        },
+      });
+      setPendingFibreMoves([]);
+    }
+
+    alert("Joint saved to Firestore.");
   };
 
   /* -------------------------------------------------------------
@@ -959,6 +1095,15 @@ export const FibreTrayEditor: React.FC = () => {
     );
   }
 
+  if (activeView === "changes") {
+    return (
+      <ChangesDashboard
+        asset={selectedMapJoint}
+        onBack={() => setActiveView("editor")}
+      />
+    );
+  }
+
   if (activeView === "joint-map") {
     return (
       <JointMapManager
@@ -1001,6 +1146,18 @@ export const FibreTrayEditor: React.FC = () => {
         color: "white",
       }}
     >
+      <ChangeReasonModal
+        visible={showChangeReasonModal}
+        title="Reason required for fibre move"
+        description="You moved fibres in Move Mode. Add why this change was made before saving the joint."
+        confirmLabel="Save Joint + Log Change"
+        onCancel={() => setShowChangeReasonModal(false)}
+        onSubmit={(reason, comment) => {
+          setShowChangeReasonModal(false);
+          void saveCurrentJoint(reason, comment);
+        }}
+      />
+
       {/* LEFT PANEL */}
       <div
         style={{
@@ -1013,16 +1170,17 @@ export const FibreTrayEditor: React.FC = () => {
           background: "#111827",
         }}
       >
-        <button style={btnSecondary} onClick={() => setActiveView("map")}>
-          Open Map
-        </button>
 
         <button style={btnSecondary} onClick={() => setActiveView("network")}>
           Full Network Map
         </button>
 
         <button style={btnSecondary} onClick={() => setActiveView("joint-map")}>
-          Joint Map Manager
+          Back To Map
+        </button>
+
+        <button style={btnSecondary} onClick={() => setActiveView("changes")}>
+          Changes / History
         </button>
 
         <label>Asset Type</label>
@@ -1143,48 +1301,8 @@ export const FibreTrayEditor: React.FC = () => {
         />
         <button
           style={btnSecondary}
-          onClick={async () => {
-            if (!selectedJointId) {
-              alert("Open/select a joint first.");
-              return;
-            }
-
-            const now = new Date().toISOString();
-
-            const updatedJoints = savedJoints.map((asset) => {
-              if (asset.id !== selectedJointId) return asset;
-
-              return {
-                ...asset,
-                // Preserve the map asset name exactly as the user set it.
-                // Do not overwrite from spreadsheet contents/current editor name.
-                name: asset.name,
-                jointType,
-                mappingRowsRef: true,
-                mappingRowsCount: mappingRows.length,
-                mappingRowsSummary: {
-                  rowCount: mappingRows.length,
-                },
-                updatedAt: now,
-                updatedByUid: auth.currentUser?.uid || "unknown",
-                updatedByEmail: auth.currentUser?.email || "unknown",
-              } as any;
-            });
-
-            setSavedJoints(updatedJoints);
-
-            await setDoc(
-              doc(db, ...FIRESTORE_REF_PATH),
-              {
-                savedJoints: cleanSavedJointsForFirebase(updatedJoints),
-                updatedAt: now,
-                updatedByUid: auth.currentUser?.uid || "unknown",
-                updatedByEmail: auth.currentUser?.email || "unknown",
-              },
-              { merge: true },
-            );
-
-            alert("Joint saved to Firestore.");
+          onClick={() => {
+            void saveCurrentJoint();
           }}
         >
           Save Joint

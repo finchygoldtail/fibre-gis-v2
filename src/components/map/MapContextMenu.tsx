@@ -8,7 +8,9 @@ export type MapContextAction =
   | "street-cab"
   | "exchange"
   | "cable"
-  | "area";
+  | "area"
+  | "measure"
+  | "pick-location";
 
 type Props = {
   visible: boolean;
@@ -18,7 +20,7 @@ type Props = {
   onClose: () => void;
 };
 
-type SubmenuKey = "assets" | "draw" | null;
+type SubmenuKey = "assets" | "draw" | "tools" | null;
 
 export default function MapContextMenu({
   visible,
@@ -77,28 +79,42 @@ export default function MapContextMenu({
           onMouseEnter={() => setOpenSubmenu("draw")}
         />
 
+        <MenuRow
+          label="Map Tools"
+          hasSubmenu
+          active={openSubmenu === "tools"}
+          onMouseEnter={() => setOpenSubmenu("tools")}
+        />
+
         <Divider />
 
         <MenuRow label="Cancel" danger onClick={onClose} />
 
         {openSubmenu === "assets" && (
           <Submenu top={4}>
-            <MenuRow label="Joint" onClick={() => select("joint")} />
-            <MenuRow label="Pole" onClick={() => select("pole")} />
+            <MenuRow label="Create Joint" onClick={() => select("joint")} />
+            <MenuRow label="Create Pole" onClick={() => select("pole")} />
             <MenuRow
-              label="Distribution Point"
+              label="Create DP"
               onClick={() => select("distribution-point")}
             />
-            <MenuRow label="Chamber" onClick={() => select("chamber")} />
-            <MenuRow label="Street Cab" onClick={() => select("street-cab")} />
-            <MenuRow label="Exchange" onClick={() => select("exchange")} />
+            <MenuRow label="Create Chamber" onClick={() => select("chamber")} />
+            <MenuRow label="Create Street Cab" onClick={() => select("street-cab")} />
+            <MenuRow label="Create Exchange" onClick={() => select("exchange")} />
           </Submenu>
         )}
 
         {openSubmenu === "draw" && (
           <Submenu top={34}>
-            <MenuRow label="Cable" onClick={() => select("cable")} />
-            <MenuRow label="Polygon Area" onClick={() => select("area")} />
+            <MenuRow label="Create Cable" onClick={() => select("cable")} />
+            <MenuRow label="Create Polygon / Area" onClick={() => select("area")} />
+          </Submenu>
+        )}
+
+        {openSubmenu === "tools" && (
+          <Submenu top={64}>
+            <MenuRow label="Measure Distance" onClick={() => select("measure")} />
+            <MenuRow label="Pick Location" onClick={() => select("pick-location")} />
           </Submenu>
         )}
       </div>
