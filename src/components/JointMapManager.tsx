@@ -686,6 +686,7 @@ export default function JointMapManager({
   onClose,
   onOpenJoint,
 }: Props) {
+  const { activeMode, requiresAuditReason } = useAppMode();
   // =====================================================
   // 1) CORE MAP / PROJECT STATE
   // =====================================================
@@ -844,7 +845,6 @@ export default function JointMapManager({
   const [isLayersOpen, setIsLayersOpen] = useState(false);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const { activeMode, requiresAuditReason } = useAppMode();
 
   useEffect(() => {
     const updateMobile = () => setIsMobile(window.innerWidth < 600);
@@ -1331,6 +1331,23 @@ export default function JointMapManager({
     }
   };
 
+
+  // =====================================================
+  // APP MODE / AUDIT BEHAVIOUR
+  // Survey + Build save fast with no reason popup.
+  // Maintenance requires a reason popup for traceability.
+  // =====================================================
+  const getChangeReasonForCurrentMode = (
+    action: AssetChangeAction,
+    assetName?: string,
+  ): string | null => {
+    if (requiresAuditReason) {
+      return requestChangeReason(action, assetName);
+    }
+
+    return `${activeMode} mode ${action}`;
+  };
+
   const handleSaveEdits = async (detailOverrides?: {
     poleDetails?: PoleDetails;
     dpDetails?: DistributionPointDetails;
@@ -1339,7 +1356,7 @@ export default function JointMapManager({
     if (!editingAssetId) return;
 
     const beforeAsset = (savedJoints ?? []).find((asset) => asset.id === editingAssetId);
-    const reason = requestChangeReason("updated", beforeAsset?.name || jointName);
+    const reason = getChangeReasonForCurrentMode("updated", beforeAsset?.name || jointName);
     if (!reason) return;
 
     let savedAfterAsset: SavedMapAsset | null = null;
@@ -1497,7 +1514,7 @@ export default function JointMapManager({
     const nextChamberDetails =
       detailOverrides?.chamberDetails ?? chamberDetails;
 
-    const reason = requestChangeReason("created", jointName.trim());
+    const reason = getChangeReasonForCurrentMode("created", jointName.trim());
     if (!reason) return;
 
     const record: SavedMapAsset = {
@@ -1548,7 +1565,7 @@ export default function JointMapManager({
       jointName.trim() ||
       `Area ${(savedJoints ?? []).filter((asset) => asset.assetType === "area").length + 1}`;
 
-    const reason = requestChangeReason("created", areaName);
+    const reason = getChangeReasonForCurrentMode("created", areaName);
     if (!reason) return;
 
     const areaRecord: SavedMapAsset = {
@@ -1845,7 +1862,7 @@ export default function JointMapManager({
   const handleDeleteAsset = async (id: string) => {
     const deletedId = String(id);
     const deletedAsset = (savedJoints ?? []).find((asset) => asset.id === deletedId);
-    const reason = requestChangeReason("deleted", deletedAsset?.name || deletedId);
+    const reason = getChangeReasonForCurrentMode("deleted", deletedAsset?.name || deletedId);
     if (!reason) return;
 
     const getHomeConnectionKey = (asset: any): string =>
@@ -2003,14 +2020,7 @@ export default function JointMapManager({
     setMeasurePoints((prev) => prev.slice(0, -1));
   };
 
-  
-  // =====================================================
-  // APP MODE / AUDIT BEHAVIOUR
-  // =====================================================
-
-  const shouldAskForChangeReason = requiresAuditReason;
-
-const handleMapRightClick = (
+  const handleMapRightClick = (
     pos: LatLngLiteral,
     screen: { x: number; y: number },
   ) => {
@@ -3167,7 +3177,7 @@ const handleMapRightClick = (
             onEditAsset={handleEditAsset}
             onMoveAsset={(id, lat, lng) => {
               const beforeAsset = (savedJoints ?? []).find((asset) => asset.id === id);
-              const reason = requestChangeReason("moved", beforeAsset?.name || id);
+              const reason = getChangeReasonForCurrentMode("moved", beforeAsset?.name || id);
               if (!reason) return;
 
               let movedAsset: SavedMapAsset | null = null;
@@ -3555,20 +3565,22 @@ const handleMapRightClick = (
         />
       </div>
 
-      
-      <div
-        style={{
-          position: "absolute",
-          top: 12,
-          left: "50%",
-          transform: "translateX(-50%)",
-          zIndex: 1200,
-        }}
-      >
-        <AppModeSwitch />
-      </div>
 
-{!showMaintenancePanel && (
+      {!showMaintenancePanel && (
+        <div
+          style={{
+            position: "absolute",
+            top: 12,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 1200,
+          }}
+        >
+          <AppModeSwitch />
+        </div>
+      )}
+
+      {!showMaintenancePanel && (
         <>
           <button
             onClick={handleGpsLocate}
