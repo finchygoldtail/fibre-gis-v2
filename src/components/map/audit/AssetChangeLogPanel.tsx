@@ -261,33 +261,47 @@ function formatDate(value?: string) {
 }
 
 const overlayStyle: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 8000,
+  background: "rgba(15, 23, 42, 0.45)",
+  pointerEvents: "auto",
+  overflow: "hidden",
+};
+
+const panelStyle: React.CSSProperties = {
   position: "absolute",
   top: 0,
   right: 0,
   bottom: 0,
   width: 420,
-  maxWidth: "calc(100vw - 16px)",
-  zIndex: 2800,
-  background: "rgba(15, 23, 42, 0.45)",
-};
-
-const panelStyle: React.CSSProperties = {
-  height: "100%",
-  overflowY: "auto",
+  maxWidth: "100vw",
+  height: "100dvh",
+  maxHeight: "100dvh",
+  overflowY: "scroll",
+  overflowX: "hidden",
+  WebkitOverflowScrolling: "touch",
+  overscrollBehavior: "contain",
   background: "#111827",
   color: "#f9fafb",
   padding: 16,
+  paddingBottom: 96,
   boxSizing: "border-box",
   borderLeft: "1px solid #374151",
   boxShadow: "-12px 0 30px rgba(0,0,0,0.35)",
 };
 
 const headerStyle: React.CSSProperties = {
+  position: "sticky",
+  top: 0,
+  zIndex: 2,
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
   gap: 10,
   marginBottom: 12,
+  paddingBottom: 10,
+  background: "#111827",
 };
 
 const cardStyle: React.CSSProperties = {
