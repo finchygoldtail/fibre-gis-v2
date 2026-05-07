@@ -23,7 +23,8 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet-rotate";
 import { auth } from "../firebase";
-
+import { useAppMode } from "../context/AppModeContext";
+import AppModeSwitch from "./AppModeSwitch";
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
@@ -843,6 +844,7 @@ export default function JointMapManager({
   const [isLayersOpen, setIsLayersOpen] = useState(false);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const { activeMode, requiresAuditReason } = useAppMode();
 
   useEffect(() => {
     const updateMobile = () => setIsMobile(window.innerWidth < 600);
@@ -2001,7 +2003,14 @@ export default function JointMapManager({
     setMeasurePoints((prev) => prev.slice(0, -1));
   };
 
-  const handleMapRightClick = (
+  
+  // =====================================================
+  // APP MODE / AUDIT BEHAVIOUR
+  // =====================================================
+
+  const shouldAskForChangeReason = requiresAuditReason;
+
+const handleMapRightClick = (
     pos: LatLngLiteral,
     screen: { x: number; y: number },
   ) => {
@@ -3546,7 +3555,20 @@ export default function JointMapManager({
         />
       </div>
 
-      {!showMaintenancePanel && (
+      
+      <div
+        style={{
+          position: "absolute",
+          top: 12,
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 1200,
+        }}
+      >
+        <AppModeSwitch />
+      </div>
+
+{!showMaintenancePanel && (
         <>
           <button
             onClick={handleGpsLocate}

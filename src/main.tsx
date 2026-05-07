@@ -4,8 +4,14 @@ import App from "./App";
 import AuthGate from "./components/AuthGate";
 import "./index.css";
 
+import { AppModeProvider } from "./context/AppModeContext";
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
-  <AuthGate>
-    <App />
-  </AuthGate>
+  <React.StrictMode>
+    <AuthGate>
+      <AppModeProvider>
+        <App />
+      </AppModeProvider>
+    </AuthGate>
+  </React.StrictMode>
 );
