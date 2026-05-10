@@ -44,7 +44,7 @@ import DistributionPointDetailsModal from "./map/modals/DistributionPointDetails
 import ChamberDetailsModal, {
   type ChamberDetails,
 } from "./map/modals/ChamberDetailsModal";
-
+import UserMenu from "./UserMenu";
 import MaintenanceAuditOverlay from "./map/audit/MaintenanceAuditOverlay";
 import { createAssetChangeLog } from "./map/audit/assetChangeLogStorage";
 import type { AssetChangeAction } from "./map/audit/types";
@@ -506,29 +506,32 @@ function isDropCable(asset: SavedMapAsset): boolean {
   );
 }
 
-const FREE_LEAFLET_TILE_URLS: Record<BasemapType, { url: string; attribution: string }> = {
-  // Free OpenStreetMap raster tiles. This keeps the existing Leaflet renderer
-  // aligned with polygons, cables, joints, drops, popups, drawing, and editing.
+const FREE_LEAFLET_TILE_URLS: Record<
+  BasemapType,
+  { url: string; attribution: string }
+> = {
   street: {
     url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   },
 
-  // Free Carto dark tiles. Safe Leaflet raster basemap, no MapTiler key.
   dark: {
     url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
   },
 
-  // Free satellite imagery is not realistically available without usage limits/API terms.
-  // These fall back to OSM street tiles so assets remain stable and aligned.
   satellite: {
-    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    attribution:
+      "Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community",
   },
+
   hybrid: {
-    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    attribution:
+      "Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community",
   },
 };
 
@@ -742,7 +745,14 @@ export default function JointMapManager({
     hdSplitterPanels: [],
   });
 
-  const handleOpenExchange = async (exchange: ExchangeAsset) => {
+  
+  // =====================================================
+  // MODE AWARE AUDIT SYSTEM
+  // =====================================================
+
+  const shouldAskForChangeReason = requiresAuditReason;
+
+const handleOpenExchange = async (exchange: ExchangeAsset) => {
     try {
       const fullExchange = await loadExchange(exchange.id);
       setOpenExchangeAsset(fullExchange ?? exchange);
@@ -2657,16 +2667,6 @@ export default function JointMapManager({
         {isPanelOpen ? "× Close" : "☰ Asset Panel"}
       </button>
 
-      {!isPanelOpen && (
-        <div style={welcomeCard}>
-          <div style={{ fontWeight: 800, fontSize: 18 }}>
-            Welcome to Alistra GIS
-          </div>
-          <div style={{ color: "#cbd5e1", marginTop: 6 }}>
-            Right click the map to create assets, measure distance, pick locations, or open the active asset panel.
-          </div>
-        </div>
-      )}
       {/* =====================================================
           EXCHANGE SIDE PANEL
           Opens when a ⭐ exchange marker is clicked.
@@ -2709,6 +2709,8 @@ export default function JointMapManager({
             Back
           </button>
         </div>
+
+        <UserMenu variant="sidebar" />
 
         <details open style={card}>
           <summary style={sectionSummary}>
@@ -3687,20 +3689,6 @@ const drawerToggleButton: React.CSSProperties = {
   boxShadow: "0 8px 22px rgba(0,0,0,0.35)",
 };
 
-const welcomeCard: React.CSSProperties = {
-  position: "absolute",
-  top: 72,
-  left: 16,
-  zIndex: 1000,
-  width: 300,
-  maxWidth: "calc(100vw - 32px)",
-  background: "rgba(17, 24, 39, 0.92)",
-  color: "white",
-  border: "1px solid #334155",
-  borderRadius: 14,
-  padding: "14px 16px",
-  boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
-};
 
 const topMapButton: React.CSSProperties = {
   position: "absolute",

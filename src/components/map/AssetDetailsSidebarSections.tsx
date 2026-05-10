@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { useAppMode } from "../../context/AppModeContext";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { storage } from "../../firebase";
 import type { ChamberDetails, DistributionPointDetails, PoleDetails, SavedMapAsset } from "./types";
@@ -92,6 +93,52 @@ const docRow: React.CSSProperties = {
   fontSize: "0.85rem",
 };
 
+
+const modeBannerStyle = (
+  activeMode: "survey" | "build" | "maintenance",
+): React.CSSProperties => ({
+  background:
+    activeMode === "maintenance"
+      ? "#7f1d1d"
+      : activeMode === "build"
+      ? "#1e3a8a"
+      : "#14532d",
+  border: "1px solid rgba(255,255,255,0.12)",
+  borderRadius: 12,
+  padding: 12,
+  marginBottom: 16,
+});
+
+function WorkflowModeBanner({
+  activeMode,
+}: {
+  activeMode: "survey" | "build" | "maintenance";
+}) {
+  return (
+    <>
+      <WorkflowModeBanner activeMode={activeMode} />
+    <div style={modeBannerStyle(activeMode)}>
+      <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4 }}>
+        Current Workflow Mode
+      </div>
+
+      <div style={{ fontWeight: 800, fontSize: 16 }}>
+        {activeMode === "survey" && "Survey Mode"}
+        {activeMode === "build" && "Build Mode"}
+        {activeMode === "maintenance" && "Maintenance Mode"}
+      </div>
+
+      <div style={{ fontSize: 12, opacity: 0.75, marginTop: 6 }}>
+        {activeMode === "survey" && "Fast planning and survey workflow active."}
+        {activeMode === "build" && "Operational build workflow active."}
+        {activeMode === "maintenance" &&
+          "Audit and maintenance traceability active."}
+      </div>
+    </div>
+    </>
+  );
+}
+
 export default function AssetDetailsSidebarSections({
   assetType,
   poleDetails,
@@ -109,6 +156,7 @@ export default function AssetDetailsSidebarSections({
   labelStyle,
   secondaryButtonStyle,
 }: Props) {
+  const { activeMode } = useAppMode();
   const [uploading, setUploading] = useState(false);
   const [connectedHomesOpen, setConnectedHomesOpen] = useState(false);
 
