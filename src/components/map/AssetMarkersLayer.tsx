@@ -34,6 +34,10 @@ type Props = {
   onDeleteAsset: (id: string) => void;
   onEditAsset: (asset: SavedMapAsset) => void;
   onMoveAsset?: (id: string, lat: number, lng: number) => void;
+  moveHomesMode?: boolean;
+  selectedMoveHomeIds?: string[];
+  onToggleMoveHome?: (asset: SavedMapAsset) => void;
+  onMoveHomesTargetDp?: (asset: SavedMapAsset) => void;
 };
 
 function createSquareIcon(background: string, border: string) {
@@ -620,6 +624,10 @@ export default function AssetMarkersLayer({
   onDeleteAsset,
   onEditAsset,
   onMoveAsset,
+  moveHomesMode = false,
+  selectedMoveHomeIds = [],
+  onToggleMoveHome,
+  onMoveHomesTargetDp,
 }: Props) {
   const map = useMap();
   const [mapView, setMapView] = useState(() => ({
@@ -677,7 +685,10 @@ export default function AssetMarkersLayer({
     const latLng = getPointLatLng(asset);
     if (!latLng) return null;
     const [lat, lng] = latLng;
-    const icon = getIconForAsset(asset, assets);
+    const isSelectedMoveHome = moveHomesMode && asset.assetType === "home" && selectedMoveHomeIds.includes(asset.id);
+    const icon = isSelectedMoveHome
+      ? createHomeIcon("#38bdf8", "#075985")
+      : getIconForAsset(asset, assets);
     const distributionPoints = getDistributionPoints(assets);
     const connectedDp = asset.assetType === "home" ? getHomeConnectedDp(asset, assets) : null;
     const dpUsage = asset.assetType === "distribution-point" ? getDpUsage(asset, assets) : null;
@@ -695,6 +706,18 @@ export default function AssetMarkersLayer({
             const position = marker.getLatLng();
 
             onMoveAsset?.(asset.id, position.lat, position.lng);
+          },
+          click: () => {
+            if (!moveHomesMode) return;
+
+            if (asset.assetType === "home") {
+              onToggleMoveHome?.(asset);
+              return;
+            }
+
+            if (asset.assetType === "distribution-point") {
+              onMoveHomesTargetDp?.(asset);
+            }
           },
         }}
       >
@@ -765,6 +788,7 @@ export default function AssetMarkersLayer({
                   {infoRow("Connection", getHomeConnectionStatus(asset, assets))}
                   {infoRow("Mode", connectionMode === "manual" ? "Manual" : "Auto")}
                   {infoRow("Connected DP", connectedDp?.name || ((asset as any).connectedDpId ? "Unknown DP" : "Not connected"))}
+                  {moveHomesMode ? infoRow("Move Selection", isSelectedMoveHome ? "Selected" : "Click home to select") : null}
                   {infoRow("OSM ID", asset.osmId)}
 
                   <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
@@ -855,6 +879,18 @@ export default function AssetMarkersLayer({
               {asset.assetType === "ag-joint" || asset.assetType === "street-cab" ? (
                 <button style={actionButtonStyle} onClick={() => onOpenAsset(asset)}>
                   Open
+                </button>
+              ) : null}
+
+              {moveHomesMode && asset.assetType === "home" ? (
+                <button style={actionButtonStyle} onClick={() => onToggleMoveHome?.(asset)}>
+                  {isSelectedMoveHome ? "Unselect" : "Select to Move"}
+                </button>
+              ) : null}
+
+              {moveHomesMode && asset.assetType === "distribution-point" ? (
+                <button style={actionButtonStyle} onClick={() => onMoveHomesTargetDp?.(asset)}>
+                  Move Selected Here
                 </button>
               ) : null}
 

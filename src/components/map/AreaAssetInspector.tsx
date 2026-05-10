@@ -1,6 +1,7 @@
 // =====================================================
 // FILE: AreaAssetInspector.tsx
-// PURPOSE: Area scan panel, issue summary, asset search, and CSV export.
+// PURPOSE: Network Operations dashboard for selected area,
+//          QA summary, topology health, asset search, and CSV export.
 // =====================================================
 
 import React, { useMemo, useState } from "react";
@@ -54,7 +55,7 @@ function getAreaPolygon(areaAsset?: SavedMapAsset | null): LatLngTuple[] {
       (point) =>
         Array.isArray(point) &&
         typeof point[0] === "number" &&
-        typeof point[1] === "number"
+        typeof point[1] === "number",
     );
 }
 
@@ -102,7 +103,7 @@ function segmentsIntersect(
   p1: LatLngTuple,
   q1: LatLngTuple,
   p2: LatLngTuple,
-  q2: LatLngTuple
+  q2: LatLngTuple,
 ): boolean {
   const o1 = orientation(p1, q1, p2);
   const o2 = orientation(p1, q1, q2);
@@ -120,7 +121,7 @@ function segmentsIntersect(
 
 function lineIntersectsPolygon(
   points: LatLngTuple[],
-  polygon: LatLngTuple[]
+  polygon: LatLngTuple[],
 ): boolean {
   if (points.some((point) => pointInPolygon(point, polygon))) return true;
 
@@ -165,6 +166,10 @@ function getAssetStatus(asset: SavedMapAsset): string {
     (asset as any).liveStatus ||
     (asset as any).buildStatus ||
     (asset as any).state ||
+    (asset as any).dpDetails?.buildStatus ||
+    (asset as any).properties?.status ||
+    (asset as any).properties?.buildStatus ||
+    (asset as any).properties?.connection ||
     "Unknown";
 
   return String(raw);
@@ -249,6 +254,167 @@ function makeRow(asset: SavedMapAsset): InspectorRow {
   };
 }
 
+function normalise(value: unknown): string {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isHomeAsset(row: InspectorRow): boolean {
+  const type = normalise(row.type);
+  return type === "home" || type.includes("home") || type.includes("premise");
+}
+
+function isConnectedStatus(status: string): boolean {
+  const value = normalise(status);
+  return (
+    value.includes("connected") ||
+    value.includes("live") ||
+    value.includes("rfs") ||
+    value.includes("ready for service")
+  );
+}
+
+function isBuildCompleteStatus(status: string): boolean {
+  const value = normalise(status);
+  return (
+    value.includes("build complete") ||
+    value.includes("built") ||
+    value.includes("complete") ||
+    value.includes("rfs") ||
+    value.includes("live")
+  );
+}
+
+function parseFibreCount(value: string): number {
+  const match = String(value || "").match(/\d+/);
+  return match ? Number(match[0]) : 0;
+}
+
+function formatPercent(value: number): string {
+  if (!Number.isFinite(value)) return "0%";
+  return `${Math.round(value)}%`;
+}
+
+function distanceMeters(a: LatLngTuple, b: LatLngTuple): number {
+  const radius = 6371000;
+  const lat1 = (a[0] * Math.PI) / 180;
+  const lat2 = (b[0] * Math.PI) / 180;
+  const dLat = ((b[0] - a[0]) * Math.PI) / 180;
+  const dLng = ((b[1] - a[1]) * Math.PI) / 180;
+
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+
+  return 2 * radius * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+function routeLengthMeters(asset: SavedMapAsset): number {
+  const points = getAssetCoordinates(asset);
+  if (points.length < 2) return 0;
+
+  return points.reduce((total, point, index) => {
+    if (index === 0) return total;
+    return total + distanceMeters(points[index - 1], point);
+  }, 0);
+}
+
+function formatDistance(value: number): string {
+  if (value >= 1000) return `${(value / 1000).toFixed(2)} km`;
+  return `${Math.round(value)} m`;
+}
+
+
+function getAssetKey(asset: any): string {
+  return String(
+    asset?.id ??
+      asset?.assetId ??
+      asset?.homeId ??
+      asset?.uprn ??
+      asset?.UPRN ??
+      asset?.properties?.UPRN ??
+      asset?.properties?.uprn ??
+      "",
+  ).trim();
+}
+
+function isDropCable(asset: any): boolean {
+  const cableType = normalise(asset?.cableType);
+  return asset?.assetType === "cable" && cableType.includes("drop");
+}
+
+function getConnectedHomeIdsFromDrops(assets: SavedMapAsset[]): Set<string> {
+  const connected = new Set<string>();
+
+  assets.filter(isDropCable).forEach((drop: any) => {
+    const homeId = String(
+      drop?.homeId ??
+        drop?.toAssetId ??
+        drop?.connectedHomeId ??
+        drop?.uprn ??
+        drop?.UPRN ??
+        "",
+    ).trim();
+
+    if (!homeId) return;
+
+    connected.add(homeId);
+    if (!homeId.startsWith("uprn-")) connected.add(`uprn-${homeId}`);
+  });
+
+  return connected;
+}
+
+function isHomeConnected(asset: SavedMapAsset, connectedHomeIds: Set<string>): boolean {
+  const directConnection =
+    Boolean((asset as any).connectedDpId) ||
+    Boolean((asset as any).properties?.connectedDpId) ||
+    normalise((asset as any).connection) === "connected" ||
+    normalise((asset as any).properties?.connection) === "connected";
+
+  if (directConnection) return true;
+
+  const key = getAssetKey(asset);
+  if (key && connectedHomeIds.has(key)) return true;
+
+  const uprn = String(
+    (asset as any).uprn ??
+      (asset as any).UPRN ??
+      (asset as any).properties?.uprn ??
+      (asset as any).properties?.UPRN ??
+      "",
+  ).trim();
+
+  return Boolean(uprn && (connectedHomeIds.has(uprn) || connectedHomeIds.has(`uprn-${uprn}`)));
+}
+
+function getCableCapacity(row: InspectorRow): number {
+  return parseFibreCount(row.fibreCount);
+}
+
+function getCableUsedFibres(row: InspectorRow): number {
+  return parseFibreCount(row.usedFibres);
+}
+
+function isCableOverCapacity(row: InspectorRow): boolean {
+  const capacity = getCableCapacity(row);
+  const used = getCableUsedFibres(row);
+  return capacity > 0 && used > capacity;
+}
+
+function hasConnectionReference(asset: SavedMapAsset): boolean {
+  const data = asset as any;
+  return Boolean(
+    data.fromAssetId ||
+      data.toAssetId ||
+      data.parentCableId ||
+      data.connectedDpId ||
+      data.properties?.connectedDpId ||
+      data.dpId ||
+      data.homeId ||
+      data.connectedHomeId,
+  );
+}
+
 export default function AreaAssetInspector({
   assets,
   areaAsset,
@@ -280,7 +446,7 @@ export default function AreaAssetInspector({
       .map(makeRow)
       .sort(
         (a, b) =>
-          a.type.localeCompare(b.type) || a.name.localeCompare(b.name)
+          a.type.localeCompare(b.type) || a.name.localeCompare(b.name),
       );
   }, [assets, areaAsset?.id, polygon]);
 
@@ -310,12 +476,67 @@ export default function AreaAssetInspector({
     });
 
     return Array.from(counts.entries()).sort(([a], [b]) =>
-      a.localeCompare(b)
+      a.localeCompare(b),
     );
   }, [rows]);
 
+  const operationsMetrics = useMemo(() => {
+    const rowAssets = rows.map((row) => row.asset);
+    const connectedHomeIds = getConnectedHomeIdsFromDrops(rowAssets);
+
+    const homes = rows.filter(isHomeAsset);
+    const connectedHomes = homes.filter(
+      (row) => isConnectedStatus(row.status) || isHomeConnected(row.asset, connectedHomeIds),
+    );
+
+    const buildComplete = rows.filter((row) => isBuildCompleteStatus(row.status));
+    const cables = rows.filter((row) => row.type === "cable");
+    const joints = rows.filter((row) => row.type.includes("joint"));
+    const dps = rows.filter((row) => row.type.includes("distribution"));
+    const dropCables = cables.filter((row) => isDropCable(row.asset));
+    const overCapacityCables = cables.filter(isCableOverCapacity);
+
+    const orphanedAssets = rows.filter((row) => {
+      if (row.type === "home" || row.type === "area") return false;
+      if (row.type === "cable") return !hasConnectionReference(row.asset);
+      return !hasConnectionReference(row.asset) && row.type !== "pole" && row.type !== "chamber";
+    });
+
+    const routeLength = cables.reduce(
+      (total, row) => total + routeLengthMeters(row.asset),
+      0,
+    );
+
+    const totalFibre = cables.reduce(
+      (total, row) => total + getCableCapacity(row),
+      0,
+    );
+    const usedFibre = cables.reduce(
+      (total, row) => total + getCableUsedFibres(row),
+      0,
+    );
+
+    return {
+      homesPassed: homes.length,
+      homesConnected: connectedHomes.length,
+      buildComplete: buildComplete.length,
+      buildPercent: rows.length ? (buildComplete.length / rows.length) * 100 : 0,
+      rfsPercent: homes.length ? (connectedHomes.length / homes.length) * 100 : 0,
+      cables: cables.length,
+      joints: joints.length,
+      dps: dps.length,
+      dropCables: dropCables.length,
+      overCapacityCables: overCapacityCables.length,
+      orphanedAssets: orphanedAssets.length,
+      routeLength,
+      totalFibre,
+      usedFibre,
+      fibreUtilisation: totalFibre ? (usedFibre / totalFibre) * 100 : 0,
+    };
+  }, [rows]);
+
   const missingPiaCount = rows.filter(
-    (row) => row.type === "cable" && !row.piaNoiNumber
+    (row) => row.type === "cable" && !row.piaNoiNumber,
   ).length;
 
   const auditIssues = useMemo(() => {
@@ -330,45 +551,153 @@ export default function AreaAssetInspector({
     });
 
     return Array.from(counts.entries()).sort(
-      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0])
+      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
     );
   }, [auditIssues]);
 
-  const handleDownloadCSV = () => {
-    const csvRows = auditIssues.map((issue) => ({
-      assetId: issue.assetId,
-      assetType: issue.assetType,
-      issue: issue.issue,
-    }));
+  const networkHealthStatus =
+    auditIssues.length > 0 || missingPiaCount > 0 || (networkStats?.disconnected || 0) > 0
+      ? "Attention Required"
+      : "Healthy";
 
-    exportToCSV(csvRows, "area-audit-issues.csv");
+  const handleDownloadCSV = () => {
+    const csvRows = [
+      {
+        section: "summary",
+        assetId: areaAsset?.id || "",
+        assetName: areaAsset?.name || "",
+        metric: "homesPassed",
+        value: operationsMetrics.homesPassed,
+        assetType: "area",
+        issue: "",
+      },
+      {
+        section: "summary",
+        assetId: areaAsset?.id || "",
+        assetName: areaAsset?.name || "",
+        metric: "homesConnected",
+        value: operationsMetrics.homesConnected,
+        assetType: "area",
+        issue: "",
+      },
+      {
+        section: "summary",
+        assetId: areaAsset?.id || "",
+        assetName: areaAsset?.name || "",
+        metric: "buildPercent",
+        value: formatPercent(operationsMetrics.buildPercent),
+        assetType: "area",
+        issue: "",
+      },
+      {
+        section: "summary",
+        assetId: areaAsset?.id || "",
+        assetName: areaAsset?.name || "",
+        metric: "overCapacityCables",
+        value: operationsMetrics.overCapacityCables,
+        assetType: "area",
+        issue: "",
+      },
+      {
+        section: "summary",
+        assetId: areaAsset?.id || "",
+        assetName: areaAsset?.name || "",
+        metric: "orphanedAssets",
+        value: operationsMetrics.orphanedAssets,
+        assetType: "area",
+        issue: "",
+      },
+      ...auditIssues.map((issue) => ({
+        section: "audit",
+        assetId: issue.assetId,
+        assetName: "",
+        metric: "issue",
+        value: "",
+        assetType: issue.assetType,
+        issue: issue.issue,
+      })),
+    ];
+
+    exportToCSV(csvRows, "network-operations-area-audit.csv");
   };
 
   return (
     <div style={card}>
       <div style={headerRow}>
         <div>
-          <div style={title}>Area Asset Inspector</div>
+          <div style={title}>Network Operations</div>
           <div style={hint}>
             {areaAsset
-              ? `Scanning: ${areaAsset.name || areaAsset.id}`
-              : "Select a project area to scan assets inside it."}
+              ? `Operational scan: ${areaAsset.name || areaAsset.id}`
+              : "Select a project area to scan build, QA, and network health."}
           </div>
         </div>
 
         <button
           type="button"
           style={button}
-          disabled={!auditIssues.length}
+          disabled={!areaAsset}
           onClick={handleDownloadCSV}
         >
-          Download Audit CSV
+          Export CSV
         </button>
+      </div>
+
+      <div style={statusBanner(networkHealthStatus)}>
+        <div>
+          <div style={statusTitle}>{networkHealthStatus}</div>
+          <div style={hint}>
+            {areaAsset
+              ? "Area-level build, QA, and topology indicators."
+              : "Pick an area polygon to activate the dashboard."}
+          </div>
+        </div>
+        <div style={statusPill}>{auditIssues.length} issues</div>
+      </div>
+
+      <div style={sectionTitle}>Area Overview</div>
+      <div style={kpiGrid}>
+        <KpiCard label="Homes Passed" value={operationsMetrics.homesPassed} />
+        <KpiCard label="Homes Connected" value={operationsMetrics.homesConnected} />
+        <KpiCard label="RFS" value={formatPercent(operationsMetrics.rfsPercent)} tone="green" />
+        <KpiCard label="Build" value={formatPercent(operationsMetrics.buildPercent)} tone="blue" />
+      </div>
+
+      <div style={sectionTitle}>Network Capacity</div>
+      <div style={summaryGrid}>
+        <KpiCard label="Assets" value={rows.length} small />
+        <KpiCard label="Cables" value={operationsMetrics.cables} small />
+        <KpiCard label="Joints" value={operationsMetrics.joints} small />
+        <KpiCard label="DPs" value={operationsMetrics.dps} small />
+        <KpiCard label="Drop Cables" value={operationsMetrics.dropCables} small />
+        <KpiCard label="Route Length" value={formatDistance(operationsMetrics.routeLength)} small />
+        <KpiCard label="Fibre Usage" value={formatPercent(operationsMetrics.fibreUtilisation)} small />
+      </div>
+
+      <div style={sectionTitle}>QA Status</div>
+      <div style={qaGrid}>
+        <HealthCard label="Audit Issues" value={auditIssues.length} danger={auditIssues.length > 0} />
+        <HealthCard label="Missing PIA" value={missingPiaCount} danger={missingPiaCount > 0} />
+        <HealthCard
+          label="Disconnected"
+          value={networkStats?.disconnected ?? 0}
+          danger={(networkStats?.disconnected ?? 0) > 0}
+        />
+        <HealthCard
+          label="Over Capacity"
+          value={operationsMetrics.overCapacityCables}
+          danger={operationsMetrics.overCapacityCables > 0}
+        />
+        <HealthCard
+          label="Orphaned"
+          value={operationsMetrics.orphanedAssets}
+          danger={operationsMetrics.orphanedAssets > 0}
+        />
       </div>
 
       {networkStats && (
         <div style={qaDebugBox}>
-          <div style={qaDebugTitle}>QA Debug</div>
+          <div style={qaDebugTitle}>Topology Debug</div>
           <div style={qaDebugGrid}>
             <div>
               <div style={qaDebugNumber}>{networkStats.nodes}</div>
@@ -389,14 +718,14 @@ export default function AreaAssetInspector({
       <div style={auditBox}>
         <div style={auditHeaderRow}>
           <div>
-            <div style={qaDebugTitle}>Audit Issues</div>
+            <div style={qaDebugTitle}>Operational Issues</div>
             <div style={hint}>Checks assets currently inside the selected area.</div>
           </div>
-          <div style={auditTotal}>{auditIssues.length}</div>
+          <div style={auditTotal(auditIssues.length)}>{auditIssues.length}</div>
         </div>
 
         {auditIssues.length === 0 ? (
-          <div style={auditEmpty}>No audit issues found in this area.</div>
+          <div style={auditEmpty}>No operational issues found in this area.</div>
         ) : (
           <>
             <div style={auditIssueChips}>
@@ -428,22 +757,8 @@ export default function AreaAssetInspector({
         )}
       </div>
 
-      <div style={summaryGrid}>
-        <div style={summaryBox}>
-          <div style={summaryNumber}>{rows.length}</div>
-          <div style={summaryLabel}>Assets</div>
-        </div>
-        <div style={summaryBox}>
-          <div style={summaryNumber}>{typeCounts.length}</div>
-          <div style={summaryLabel}>Types</div>
-        </div>
-        <div style={summaryBox}>
-          <div style={summaryNumber}>{missingPiaCount}</div>
-          <div style={summaryLabel}>Cables missing PIA</div>
-        </div>
-      </div>
-
-      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+      <div style={sectionTitle}>Asset Search</div>
+      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -491,7 +806,7 @@ export default function AreaAssetInspector({
 
               <div style={rowMeta}>
                 <span>Status: {row.status}</span>
-                {row.fibreCount ? <span>Fibre Count: {row.fibreCount}</span> : null}
+                {row.fibreCount ? <span>Fibre: {row.fibreCount}</span> : null}
                 {row.usedFibres ? <span>Used: {row.usedFibres}</span> : null}
                 {row.piaNoiNumber ? <span>PIA: {row.piaNoiNumber}</span> : null}
                 {row.type === "cable" && !row.piaNoiNumber ? (
@@ -502,6 +817,42 @@ export default function AreaAssetInspector({
           ))
         )}
       </div>
+    </div>
+  );
+}
+
+function KpiCard({
+  label,
+  value,
+  tone = "default",
+  small = false,
+}: {
+  label: string;
+  value: React.ReactNode;
+  tone?: "default" | "green" | "blue";
+  small?: boolean;
+}) {
+  return (
+    <div style={small ? summaryBox : kpiBox}>
+      <div style={kpiNumber(tone, small)}>{value}</div>
+      <div style={summaryLabel}>{label}</div>
+    </div>
+  );
+}
+
+function HealthCard({
+  label,
+  value,
+  danger,
+}: {
+  label: string;
+  value: number;
+  danger: boolean;
+}) {
+  return (
+    <div style={healthBox(danger)}>
+      <div style={healthNumber(danger)}>{value}</div>
+      <div style={summaryLabel}>{label}</div>
     </div>
   );
 }
@@ -523,8 +874,8 @@ const headerRow: React.CSSProperties = {
 
 const title: React.CSSProperties = {
   color: "white",
-  fontWeight: 700,
-  fontSize: "0.95rem",
+  fontWeight: 900,
+  fontSize: "1rem",
 };
 
 const hint: React.CSSProperties = {
@@ -542,13 +893,72 @@ const button: React.CSSProperties = {
   border: "none",
   cursor: "pointer",
   whiteSpace: "nowrap",
+  fontWeight: 800,
+};
+
+const statusBanner = (status: string): React.CSSProperties => ({
+  marginTop: 10,
+  padding: 10,
+  borderRadius: 10,
+  background: status === "Healthy" ? "rgba(22, 101, 52, 0.18)" : "rgba(146, 64, 14, 0.18)",
+  border: status === "Healthy" ? "1px solid #166534" : "1px solid #92400e",
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 10,
+  alignItems: "center",
+});
+
+const statusTitle: React.CSSProperties = {
+  color: "#f8fafc",
+  fontWeight: 900,
+};
+
+const statusPill: React.CSSProperties = {
+  borderRadius: 999,
+  background: "#020617",
+  color: "#e5e7eb",
+  border: "1px solid #334155",
+  padding: "3px 8px",
+  fontSize: "0.72rem",
+  fontWeight: 800,
+  whiteSpace: "nowrap",
+};
+
+const sectionTitle: React.CSSProperties = {
+  marginTop: 12,
+  color: "#93c5fd",
+  fontSize: 12,
+  fontWeight: 900,
+  textTransform: "uppercase",
+  letterSpacing: 0.5,
+};
+
+const kpiGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 8,
+  marginTop: 8,
 };
 
 const summaryGrid: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
   gap: 8,
-  marginTop: 10,
+  marginTop: 8,
+};
+
+const qaGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 8,
+  marginTop: 8,
+};
+
+const kpiBox: React.CSSProperties = {
+  background: "#1f2937",
+  border: "1px solid #374151",
+  borderRadius: 10,
+  padding: 10,
 };
 
 const summaryBox: React.CSSProperties = {
@@ -558,11 +968,27 @@ const summaryBox: React.CSSProperties = {
   padding: 8,
 };
 
-const summaryNumber: React.CSSProperties = {
-  color: "#93c5fd",
-  fontWeight: 800,
+const kpiNumber = (
+  tone: "default" | "green" | "blue",
+  small: boolean,
+): React.CSSProperties => ({
+  color: tone === "green" ? "#86efac" : tone === "blue" ? "#93c5fd" : "#f8fafc",
+  fontWeight: 900,
+  fontSize: small ? "0.95rem" : "1.25rem",
+});
+
+const healthBox = (danger: boolean): React.CSSProperties => ({
+  background: danger ? "rgba(127, 29, 29, 0.28)" : "rgba(22, 101, 52, 0.16)",
+  border: danger ? "1px solid #7f1d1d" : "1px solid #166534",
+  borderRadius: 8,
+  padding: 8,
+});
+
+const healthNumber = (danger: boolean): React.CSSProperties => ({
+  color: danger ? "#fecaca" : "#86efac",
+  fontWeight: 900,
   fontSize: "1rem",
-};
+});
 
 const summaryLabel: React.CSSProperties = {
   color: "#cbd5e1",
@@ -663,7 +1089,7 @@ const qaDebugBox: React.CSSProperties = {
 
 const qaDebugTitle: React.CSSProperties = {
   fontSize: 12,
-  fontWeight: 800,
+  fontWeight: 900,
   color: "#93c5fd",
   marginBottom: 8,
   textTransform: "uppercase",
@@ -678,7 +1104,7 @@ const qaDebugGrid: React.CSSProperties = {
 
 const qaDebugNumber: React.CSSProperties = {
   fontSize: 18,
-  fontWeight: 800,
+  fontWeight: 900,
   color: "#f8fafc",
 };
 
@@ -697,15 +1123,15 @@ const auditHeaderRow: React.CSSProperties = {
   alignItems: "flex-start",
 };
 
-const auditTotal: React.CSSProperties = {
+const auditTotal = (count: number): React.CSSProperties => ({
   minWidth: 34,
   textAlign: "center",
   borderRadius: 8,
   padding: "4px 8px",
-  background: "#7f1d1d",
-  color: "#fecaca",
-  fontWeight: 800,
-};
+  background: count > 0 ? "#7f1d1d" : "#166534",
+  color: count > 0 ? "#fecaca" : "#bbf7d0",
+  fontWeight: 900,
+});
 
 const auditEmpty: React.CSSProperties = {
   marginTop: 8,
@@ -757,5 +1183,5 @@ const auditRowMeta: React.CSSProperties = {
 const auditMore: React.CSSProperties = {
   color: "#93c5fd",
   fontSize: "0.78rem",
-  fontWeight: 700,
+  fontWeight: 800,
 };
