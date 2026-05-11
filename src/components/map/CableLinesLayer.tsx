@@ -124,9 +124,16 @@ function getCableColor(asset: SavedMapAsset): string {
   return "#f59e0b";
 }
 
+/* =========================================================
+   CABLE STYLE HELPERS
+   Keeps install method visuals consistent across normal map render.
+   OH / Overhead cables are dashed. UG cables stay solid.
+========================================================= */
 function getDashArray(asset: SavedMapAsset): string | undefined {
-  return asset.installMethod === "OH" ? "10, 8" : undefined;
+  const method = String(asset.installMethod || "").toLowerCase();
+  return method === "oh" || method === "overhead" ? "10, 8" : undefined;
 }
+/* ======================= END CABLE STYLE HELPERS ======================= */
 
 function getMidpoint(a: [number, number], b: [number, number]): [number, number] {
   return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];

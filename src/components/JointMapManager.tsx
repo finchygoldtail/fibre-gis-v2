@@ -14,7 +14,6 @@ import {
   Popup,
   Polyline,
   Polygon,
-  CircleMarker,
   Tooltip,
   useMapEvents,
   useMap,
@@ -23,7 +22,8 @@ import type { LatLngLiteral } from "leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet-rotate";
-import { auth } from "../firebase";
+import { auth, db } from "../firebase";
+import { collection, getDocs } from "firebase/firestore";
 import { useAppMode } from "../context/AppModeContext";
 import AppModeSwitch from "./AppModeSwitch";
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
@@ -32,7 +32,6 @@ import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import AreaPolygonsLayer from "./map/AreaPolygonsLayer";
 import ExchangeDesigner from "./exchange/ExchangeDesigner";
 import { formatDistance, getPathDistanceMeters } from "../utils/mapMeasure";
-import { traceNetworkFromAsset } from "../utils/networkTracing";
 import { getNextAssetName } from "../utils/mapAssetNames";
 import MapContextMenu, { type MapContextAction } from "./map/MapContextMenu";
 import LayersPanel from "./map/LayersPanel";
@@ -62,6 +61,7 @@ import {
   buildNetworkGraph,
   findDisconnectedAssets,
 } from "../services/networkGraph";
+import { buildFibreTrayTopologySummary, normalizeCableName } from "../utils/jointAwareNetwork";
 
 import { routePointsToRoads } from "./map/utils/routeToRoads";
 import {
@@ -122,7 +122,7 @@ type Props = {
   setSavedJoints: React.Dispatch<React.SetStateAction<SavedMapAsset[]>>;
   onClose: () => void;
   onOpenJoint: (joint: SavedMapAsset) => void;
-  onOpenAutoNetwork?: (areaAsset?: SavedMapAsset | null, scopedAssets?: SavedMapAsset[]) => void;
+  onOpenAutoNetwork?: (areaAsset?: SavedMapAsset | null) => void;
 };
 
 // =====================================================
@@ -944,8 +944,6 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
   // 4) MAP DRAWING / LAYER UI STATE
   // =====================================================
   const [mapMode, setMapMode] = useState<MapMode>("pick");
-  const [traceMode, setTraceMode] = useState(false);
-  const [selectedTraceAssetId, setSelectedTraceAssetId] = useState<string | null>(null);
   const [selectedMoveHomeIds, setSelectedMoveHomeIds] = useState<string[]>([]);
   const [basemap, setBasemap] = useState<BasemapType>("street");
   const [roadOverlayVisible, setRoadOverlayVisible] = useState(false);
@@ -1143,6 +1141,102 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
     [networkGraph],
   );
 
+  // =====================================================
+  // FIBRE TRAY TOPOLOGY READER
+  // Reads the same chunked mapping rows saved by FibreTrayEditor
+  // and checks whether those cable IDs exist as live map cables.
+  // =====================================================
+  const [fibreTrayRowsByJointId, setFibreTrayRowsByJointId] = useState<Record<string, any[][]>>({});
+  const [isLoadingFibreTrayTopology, setIsLoadingFibreTrayTopology] = useState(false);
+  const [fibreTrayTopologyError, setFibreTrayTopologyError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadFibreTrayTopologyRows = async () => {
+      setIsLoadingFibreTrayTopology(true);
+      setFibreTrayTopologyError(null);
+
+      try {
+        const jointMappingsRef = collection(
+          db,
+          "businesses",
+          "fibre-gis-v2",
+          "jointMappings",
+        );
+        const jointMappingsSnapshot = await getDocs(jointMappingsRef);
+        const nextRowsByJointId: Record<string, any[][]> = {};
+
+        await Promise.all(
+          jointMappingsSnapshot.docs.map(async (jointDoc) => {
+            const chunksRef = collection(
+              db,
+              "businesses",
+              "fibre-gis-v2",
+              "jointMappings",
+              jointDoc.id,
+              "chunks",
+            );
+            const chunksSnapshot = await getDocs(chunksRef);
+            const chunks = chunksSnapshot.docs
+              .map((chunkDoc) => {
+                const data = chunkDoc.data() as any;
+                let rows: any[][] = [];
+
+                try {
+                  rows = typeof data.rowsJson === "string" ? JSON.parse(data.rowsJson) : [];
+                } catch {
+                  rows = [];
+                }
+
+                const index =
+                  typeof data.chunkIndex === "number"
+                    ? data.chunkIndex
+                    : Number(String(chunkDoc.id).replace("chunk_", ""));
+
+                return {
+                  id: chunkDoc.id,
+                  index: Number.isFinite(index) ? index : 0,
+                  rows,
+                };
+              })
+              .sort((a, b) => a.index - b.index || a.id.localeCompare(b.id));
+
+            const rows = chunks.flatMap((chunk) =>
+              Array.isArray(chunk.rows) ? chunk.rows : [],
+            );
+
+            if (rows.length > 0) {
+              nextRowsByJointId[jointDoc.id] = rows;
+            }
+          }),
+        );
+
+        // Also include the currently open FibreTrayEditor rows before they are saved,
+        // so the panel can be used while testing an uploaded sheet.
+        if (currentJointName && Array.isArray(currentMappingRows) && currentMappingRows.length > 0) {
+          nextRowsByJointId[currentJointName] = currentMappingRows;
+        }
+
+        if (!cancelled) setFibreTrayRowsByJointId(nextRowsByJointId);
+      } catch (err: any) {
+        console.error("Failed to load fibre tray topology rows", err);
+        if (!cancelled) {
+          setFibreTrayTopologyError(err?.message || "Failed to load fibre tray rows");
+          setFibreTrayRowsByJointId({});
+        }
+      } finally {
+        if (!cancelled) setIsLoadingFibreTrayTopology(false);
+      }
+    };
+
+    void loadFibreTrayTopologyRows();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentJointName, currentMappingRows]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -1247,6 +1341,40 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
     [activeProjectArea, allMapAssets],
   );
 
+  /* =========================================================
+     FIBRE TRAY TOPOLOGY — AREA SCOPED
+     Reads saved FibreTrayEditor rows, but only validates the
+     joints and live cables inside the currently selected polygon.
+  ========================================================= */
+  const visibleFibreTrayRowsByJointId = useMemo(() => {
+    if (!activeProjectArea) return fibreTrayRowsByJointId;
+
+    const visibleJointKeys = new Set<string>();
+
+    visibleProjectAssets.forEach((asset: any) => {
+      if (asset.assetType !== "ag-joint" && asset.assetType !== "joint" && asset.assetType !== "street-cab") return;
+
+      [asset.id, asset.name, asset.label, asset.title].forEach((value) => {
+        const key = normalizeCableName(value);
+        if (key) visibleJointKeys.add(key);
+      });
+    });
+
+    const scopedRows: Record<string, any[][]> = {};
+
+    Object.entries(fibreTrayRowsByJointId).forEach(([jointId, rows]) => {
+      const jointKey = normalizeCableName(jointId);
+      if (visibleJointKeys.has(jointKey)) scopedRows[jointId] = rows;
+    });
+
+    return scopedRows;
+  }, [activeProjectArea, fibreTrayRowsByJointId, visibleProjectAssets]);
+
+  const fibreTrayTopology = useMemo(
+    () => buildFibreTrayTopologySummary(visibleFibreTrayRowsByJointId, visibleProjectAssets),
+    [visibleFibreTrayRowsByJointId, visibleProjectAssets],
+  );
+
   const visibleProjectAreas = useMemo(
     () =>
       activeProjectId
@@ -1254,40 +1382,6 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
         : projectAreas,
     [activeProjectId, projectAreas],
   );
-
-
-  // =====================================================
-  // NETWORK TRACE ENGINE — PHASE 1
-  // Preview-only topology intelligence. This does not alter saved assets,
-  // chunk storage, drop generation, or fibre allocation logic.
-  // =====================================================
-  const traceAssets = useMemo(
-    () => (activeProjectArea ? visibleProjectAssets : allMapAssets),
-    [activeProjectArea, allMapAssets, visibleProjectAssets],
-  );
-
-  const selectedTraceAsset = useMemo(
-    () => traceAssets.find((asset) => asset.id === selectedTraceAssetId) || null,
-    [selectedTraceAssetId, traceAssets],
-  );
-
-  const traceResult = useMemo(
-    () =>
-      selectedTraceAssetId
-        ? traceNetworkFromAsset(traceAssets, selectedTraceAssetId)
-        : null,
-    [selectedTraceAssetId, traceAssets],
-  );
-
-  const handleTraceAsset = (asset: SavedMapAsset) => {
-    setTraceMode(true);
-    setSelectedTraceAssetId(asset.id);
-    setIsPanelOpen(true);
-  };
-
-  const clearNetworkTrace = () => {
-    setSelectedTraceAssetId(null);
-  };
 
   const handleSelectProject = (projectId: string) => {
     activeProjectIdRef.current = projectId;
@@ -1483,7 +1577,6 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
   // Feeder/link cables are never touched.
   // =====================================================
   const handleToggleMoveHomesMode = () => {
-    setTraceMode(false);
     setMapMode((prev) => (prev === "move-homes" ? "pick" : "move-homes"));
     setIsPanelOpen(true);
     setContextMenu((prev) => ({ ...prev, visible: false }));
@@ -2812,27 +2905,22 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
 
   const availableParentCablesForBranchAllocation = useMemo(
     () =>
-      allMapAssets
-        .filter((asset: any) => {
-          if (asset?.assetType !== "cable") return false;
-          if (asset?.geometry?.type !== "LineString") return false;
-          if (asset?.id === editingAssetId) return false;
+      allMapAssets.filter((asset) => {
+        if (asset.assetType !== "cable") return false;
+        if (asset.geometry?.type !== "LineString") return false;
+        if (asset.id === editingAssetId) return false;
 
-          // IMPORTANT:
-          // This list feeds the DP/AFN "Select through cable" dropdown.
-          // Do not restrict it to only known feeder/link labels, because newly
-          // created live cables may have a different cableType while they are
-          // still valid through cables. The only cable type we must exclude here
-          // is Drop, otherwise new feeder/link/route cables disappear from the
-          // dropdown even though they exist on the map.
-          const typeText = String(asset?.cableType || asset?.jointType || "").toLowerCase();
-          return !typeText.includes("drop");
-        })
-        .sort((a: any, b: any) => {
-          const aName = String(a?.name || "").toLowerCase();
-          const bName = String(b?.name || "").toLowerCase();
-          return aName.localeCompare(bName);
-        }),
+        // Parent / through cable options need to include link cables as well as
+        // feeder/spine/ULW cables. Previously Link Cable was excluded, so cables
+        // like BD-BAW-LC011 could not be selected as a BAS parent cable.
+        return (
+          asset.cableType === "AFN Spine Cable" ||
+          asset.cableType === "Feeder Cable" ||
+          asset.cableType === "ULW Cable" ||
+          asset.cableType === "Link Cable" ||
+          asset.installMethod === "OH"
+        );
+      }),
     [allMapAssets, editingAssetId],
   );
 
@@ -2934,8 +3022,6 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
         {isPanelOpen ? "× Close" : "☰ Asset Panel"}
       </button>
 
-      
-
       {/* =====================================================
           EXCHANGE SIDE PANEL
           Opens when a ⭐ exchange marker is clicked.
@@ -2981,62 +3067,83 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
 
         <UserMenu variant="sidebar" />
 
-      
-
-        <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 10 }}>
-          Scope: {activeProjectArea ? activeProjectArea.name || "Selected area" : "Select project area first"}
-        </div>
-
         <details open style={card}>
-          <summary style={sectionSummary}>Network Trace</summary>
+          <summary style={sectionSummary}>Fibre Tray Topology</summary>
           <div style={sectionBody}>
-            <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.4 }}>
-              Click an asset while trace mode is active to highlight its connected route.
+            <div style={{ color: "#cbd5e1", fontSize: "0.82rem", marginBottom: 10 }}>
+              Reads Fibre Tray Editor mapping rows and matches Cable IDs to live map cables.
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                setTraceMode((prev) => !prev);
-                setMapMode("pick");
-                setIsPanelOpen(true);
-              }}
-              style={traceMode ? btnPrimary : btnSecondary}
-            >
-              {traceMode ? "✓ Trace Mode Active" : "Trace Network"}
-            </button>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <div style={{ ...statTile }}>
+                <strong>{fibreTrayTopology.mappedJoints}</strong>
+                <span>Mapped joints</span>
+              </div>
+              <div style={{ ...statTile }}>
+                <strong>{fibreTrayTopology.mappingRows}</strong>
+                <span>Rows</span>
+              </div>
+              <div style={{ ...statTile }}>
+                <strong>{fibreTrayTopology.cableRefs}</strong>
+                <span>Cable IDs</span>
+              </div>
+              <div style={{ ...statTile }}>
+                <strong>{fibreTrayTopology.routeLinks}</strong>
+                <span>Route links</span>
+              </div>
+            </div>
 
-            {traceResult ? (
-              <div style={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 10, padding: 10 }}>
-                <div style={{ fontWeight: 900, color: "#e0f2fe", marginBottom: 8 }}>
-                  {selectedTraceAsset?.name || traceResult.startAssetName}
+            <div
+              style={{
+                marginTop: 10,
+                padding: 10,
+                borderRadius: 8,
+                background: fibreTrayTopology.unmatchedCableRefs.length ? "#451a03" : "#052e16",
+                border: fibreTrayTopology.unmatchedCableRefs.length
+                  ? "1px solid #f97316"
+                  : "1px solid #16a34a",
+                color: fibreTrayTopology.unmatchedCableRefs.length ? "#fed7aa" : "#86efac",
+                fontWeight: 700,
+                fontSize: "0.82rem",
+              }}
+            >
+              {isLoadingFibreTrayTopology
+                ? "Loading fibre tray topology..."
+                : fibreTrayTopologyError
+                  ? `Topology reader error: ${fibreTrayTopologyError}`
+                  : fibreTrayTopology.unmatchedCableRefs.length
+                    ? `${fibreTrayTopology.unmatchedCableRefs.length} cable IDs do not match live map cables.`
+                    : fibreTrayTopology.cableRefs > 0
+                      ? "Fibre tray cable IDs are matching live map cables."
+                      : "No fibre tray rows found yet."}
+            </div>
+
+            {fibreTrayTopology.unmatchedCableRefs.length > 0 ? (
+              <div style={{ marginTop: 10 }}>
+                <div style={label}>Unmatched Cable IDs</div>
+                <div
+                  style={{
+                    maxHeight: 140,
+                    overflow: "auto",
+                    border: "1px solid #334155",
+                    borderRadius: 8,
+                    padding: 8,
+                    background: "#020617",
+                    color: "#e5e7eb",
+                    fontSize: "0.78rem",
+                  }}
+                >
+                  {fibreTrayTopology.unmatchedCableRefs.slice(0, 50).map((name) => (
+                    <div key={name}>{name}</div>
+                  ))}
+                  {fibreTrayTopology.unmatchedCableRefs.length > 50 ? (
+                    <div style={{ color: "#94a3b8", marginTop: 6 }}>
+                      +{fibreTrayTopology.unmatchedCableRefs.length - 50} more
+                    </div>
+                  ) : null}
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 12 }}>
-                  <div><b>{traceResult.nodeAssets.length}</b><br />Nodes</div>
-                  <div><b>{traceResult.connectedCables}</b><br />Cables</div>
-                  <div><b>{traceResult.connectedHomes}</b><br />Homes</div>
-                  <div><b>{traceResult.connectedDps}</b><br />DPs</div>
-                  <div><b>{traceResult.connectedJoints}</b><br />Joints</div>
-                  <div><b>{formatDistance(traceResult.routeLengthMeters)}</b><br />Route</div>
-                </div>
-                {traceResult.disconnected ? (
-                  <div style={{ marginTop: 8, color: "#f87171", fontWeight: 800 }}>
-                    This asset looks disconnected.
-                  </div>
-                ) : (
-                  <div style={{ marginTop: 8, color: "#86efac", fontWeight: 800 }}>
-                    Connected route found.
-                  </div>
-                )}
-                <button type="button" onClick={clearNetworkTrace} style={{ ...btnSecondary, marginTop: 10 }}>
-                  Clear Trace
-                </button>
               </div>
-            ) : (
-              <div style={{ fontSize: 12, color: "#94a3b8" }}>
-                No trace selected yet.
-              </div>
-            )}
+            ) : null}
           </div>
         </details>
 
@@ -3549,75 +3656,6 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
             onExchangeDelete={handleDeleteExchange}
           />
 
-
-          {/* =====================================================
-              NETWORK TRACE CLICK CAPTURE LAYER
-              This sits above normal markers/cables while Trace Mode is on.
-              It avoids Leaflet popups swallowing the click before the trace
-              engine can select the asset. Preview-only: does not save/change data.
-              ===================================================== */}
-          {traceMode &&
-            visibleProjectAssets.map((asset) => {
-              if (asset.geometry?.type === "Point") {
-                const [lat, lng] = asset.geometry.coordinates as [number, number];
-                if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-                return (
-                  <CircleMarker
-                    key={`trace-click-point-${asset.id}`}
-                    center={[lat, lng]}
-                    radius={14}
-                    pane="markerPane"
-                    eventHandlers={{
-                      click: (event) => {
-                        event.originalEvent?.preventDefault?.();
-                        event.originalEvent?.stopPropagation?.();
-                        handleTraceAsset(asset);
-                      },
-                    }}
-                    pathOptions={{
-                      color: selectedTraceAssetId === asset.id ? "#f97316" : "#38bdf8",
-                      weight: selectedTraceAssetId === asset.id ? 4 : 2,
-                      fillColor: selectedTraceAssetId === asset.id ? "#fde68a" : "#0f172a",
-                      fillOpacity: selectedTraceAssetId === asset.id ? 0.75 : 0.2,
-                      opacity: 0.95,
-                    }}
-                  >
-                    <Tooltip direction="top" offset={[0, -8]} opacity={1}>
-                      Trace {asset.name || asset.id}
-                    </Tooltip>
-                  </CircleMarker>
-                );
-              }
-
-              if (asset.geometry?.type === "LineString") {
-                const positions = ((asset.geometry.coordinates || []) as [number, number][])
-                  .map(([lat, lng]) => [lat, lng] as [number, number])
-                  .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
-                if (positions.length < 2) return null;
-                return (
-                  <Polyline
-                    key={`trace-click-line-${asset.id}`}
-                    positions={positions}
-                    pane="overlayPane"
-                    eventHandlers={{
-                      click: (event) => {
-                        event.originalEvent?.preventDefault?.();
-                        event.originalEvent?.stopPropagation?.();
-                        handleTraceAsset(asset);
-                      },
-                    }}
-                    pathOptions={{
-                      color: selectedTraceAssetId === asset.id ? "#f97316" : "#38bdf8",
-                      weight: selectedTraceAssetId === asset.id ? 9 : 7,
-                      opacity: selectedTraceAssetId === asset.id ? 0.9 : 0.25,
-                    }}
-                  />
-                );
-              }
-
-              return null;
-            })}
-
           {/* =====================================================
               EXISTING JOINT / CAB / POLE / DP / CHAMBER MARKERS
               ===================================================== */}
@@ -3625,10 +3663,6 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
             assets={visibleProjectAssets}
             visibleLayers={visibleLayers}
             onOpenAsset={(asset) => {
-              if (traceMode) {
-                handleTraceAsset(asset);
-                return;
-              }
               handleEditAsset(asset);
               setIsPanelOpen(true);
             }}
@@ -3696,38 +3730,6 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
             onDeleteAsset={handleDeleteAsset}
             onEditAsset={handleEditAsset}
           />
-
-          {traceResult?.cableAssets.map((cable) => {
-            if (cable.geometry?.type !== "LineString") return null;
-            const positions = ((cable.geometry.coordinates || []) as [number, number][]).map(
-              ([lat, lng]) => [lat, lng] as [number, number],
-            );
-            if (positions.length < 2) return null;
-            return (
-              <Polyline
-                key={`trace-cable-${cable.id}`}
-                positions={positions}
-                pathOptions={{ color: "#f97316", weight: 8, opacity: 0.9 }}
-              />
-            );
-          })}
-
-          {traceResult?.nodeAssets.map((asset) => {
-            if (asset.geometry?.type !== "Point") return null;
-            const [lat, lng] = asset.geometry.coordinates as [number, number];
-            return (
-              <CircleMarker
-                key={`trace-node-${asset.id}`}
-                center={[lat, lng]}
-                radius={10}
-                pathOptions={{ color: "#f97316", weight: 4, fillColor: "#fde68a", fillOpacity: 0.7 }}
-              >
-                <Tooltip direction="top" offset={[0, -8]} opacity={1}>
-                  {asset.name || asset.id}
-                </Tooltip>
-              </CircleMarker>
-            );
-          })}
 
           {pickedLocation && mapMode === "pick" && (
             <Marker position={[pickedLocation.lat, pickedLocation.lng]}>
@@ -4183,6 +4185,21 @@ const drawerToggleButton: React.CSSProperties = {
 };
 
 
+const welcomeCard: React.CSSProperties = {
+  position: "absolute",
+  top: 72,
+  left: 16,
+  zIndex: 1000,
+  width: 300,
+  maxWidth: "calc(100vw - 32px)",
+  background: "rgba(17, 24, 39, 0.92)",
+  color: "white",
+  border: "1px solid #334155",
+  borderRadius: 14,
+  padding: "14px 16px",
+  boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
+};
+
 const topMapButton: React.CSSProperties = {
   position: "absolute",
   top: 16,
@@ -4235,6 +4252,22 @@ const card: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
   gap: 8,
+};
+
+/* =========================================================
+   STYLE: SMALL KPI / TOPOLOGY STAT TILE
+========================================================= */
+const statTile: React.CSSProperties = {
+  background: "#111827",
+  border: "1px solid #334155",
+  borderRadius: 8,
+  padding: "10px 8px",
+  minHeight: 58,
+  display: "flex",
+  flexDirection: "column",
+  justifyContent: "center",
+  gap: 4,
+  color: "white",
 };
 
 const label: React.CSSProperties = {
