@@ -15,6 +15,8 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { db, auth } from "../firebase";
+import { useAppMode } from "../context/AppModeContext";
+import { useUserRole } from "../context/UserRoleContext";
 
 import { buildJoint, JOINT_TYPES } from "../logic/jointConfig";
 import type { FibreCell, JointTypeLabel } from "../logic/jointConfig";
@@ -73,6 +75,25 @@ function parseFibreNumber(value: any): number | null {
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;
+}
+
+function dedupeMappingRows(rows: any[][]): any[][] {
+  const byFibre = new Map<number, any[]>();
+  const withoutFibre: any[][] = [];
+
+  rows.forEach((row) => {
+    const fibre = parseFibreNumber(row?.[1]);
+    if (fibre === null) {
+      withoutFibre.push(row);
+      return;
+    }
+
+    // One current mapping row per fibre number. If older duplicate rows exist,
+    // keep the latest row so a move cannot reload as two labels on the tray.
+    byFibre.set(fibre, row);
+  });
+
+  return [...withoutFibre, ...Array.from(byFibre.values())];
 }
 
 async function saveJointMappingRowsToFirestore(jointId: string, rows: any[][]) {
@@ -193,6 +214,73 @@ function isPersistedTrayModel(value: any): value is FibreCell[] {
       typeof cell.label === "string",
     )
   );
+}
+
+function getMaxFibreNumberFromRows(rows: any[][]): number {
+  return rows.reduce((max, row) => {
+    const fibre = parseFibreNumber(row?.[1]);
+    return fibre !== null ? Math.max(max, fibre) : max;
+  }, 0);
+}
+
+function expandTrayModelToFibreCount(
+  model: FibreCell[],
+  fibreCount: number,
+  fibresPerTray: number,
+): FibreCell[] {
+  if (!Number.isFinite(fibreCount) || fibreCount <= 0) return cloneTrayModel(model);
+
+  const next = cloneTrayModel(model);
+  const existing = new Set(next.map((cell) => cell.globalNo));
+  const safeFibresPerTray = Math.max(1, fibresPerTray || 12);
+
+  for (let globalNo = 1; globalNo <= fibreCount; globalNo += 1) {
+    if (existing.has(globalNo)) continue;
+
+    next.push({
+      globalNo,
+      tray: Math.floor((globalNo - 1) / safeFibresPerTray),
+      pos: (globalNo - 1) % safeFibresPerTray,
+      label: "",
+    });
+  }
+
+  return next.sort((a, b) => a.globalNo - b.globalNo);
+}
+
+function buildJointForRows(
+  targetJointType: JointTypeLabel,
+  rows: any[][],
+): FibreCell[] {
+  const cfg = JOINT_TYPES[targetJointType];
+  const base = buildJoint(targetJointType);
+  return expandTrayModelToFibreCount(
+    base,
+    getMaxFibreNumberFromRows(rows),
+    cfg?.fibresPerTray || 12,
+  );
+}
+
+function applyStandardRowsToTrayModel(
+  model: FibreCell[],
+  rows: any[][],
+  options: { overwriteExistingLabels?: boolean } = {},
+): FibreCell[] {
+  const next = cloneTrayModel(model);
+
+  rows.forEach((row: any[]) => {
+    const fibre = parseFibreNumber(row?.[1]);
+    const fullChain = extractChain(row).join(" → ");
+
+    if (fibre !== null) {
+      const cell = next.find((f) => f.globalNo === fibre);
+      if (cell && (options.overwriteExistingLabels || !cell.label.trim())) {
+        cell.label = fullChain;
+      }
+    }
+  });
+
+  return next;
 }
 
 /* -------------------------------------------------------------
@@ -340,6 +428,9 @@ type PendingFibreMove = {
   MAIN COMPONENT
 ------------------------------------------------------------- */
 export const FibreTrayEditor: React.FC = () => {
+  const { activeMode, requiresAuditReason } = useAppMode();
+  const { isMaintenanceUser, canSeeFullOperations } = useUserRole();
+
   const [activeView, setActiveView] = useState<
     "editor" | "map" | "network" | "joint-map" | "changes"
   >("joint-map");
@@ -593,20 +684,17 @@ export const FibreTrayEditor: React.FC = () => {
     rows: any[][],
     targetJointType: JointTypeLabel,
   ) => {
-    const base = buildJoint(targetJointType);
+    const base = buildJointForRows(targetJointType, rows);
 
     if (targetJointType === "LMJ (40 trays)") {
       applyLmjRowsToModel(rows, base, (row) => extractChain(row).join(" → "));
     } else {
-      rows.forEach((row: any[]) => {
-        const fibre = parseFibreNumber(row[1]);
-        const fullChain = extractChain(row).join(" → ");
-
-        if (fibre !== null) {
-          const cell = base.find((f) => f.globalNo === fibre);
-          if (cell) cell.label = fullChain;
-        }
-      });
+      setModel(
+        applyStandardRowsToTrayModel(base, rows, {
+          overwriteExistingLabels: true,
+        }),
+      );
+      return;
     }
 
     setModel(base);
@@ -666,7 +754,17 @@ export const FibreTrayEditor: React.FC = () => {
 
       if (!isStreetCab) {
         if (persistedTrayModel) {
-          setModel(persistedTrayModel);
+          const expandedPersistedModel = expandTrayModelToFibreCount(
+            persistedTrayModel,
+            getMaxFibreNumberFromRows(rows),
+            JOINT_TYPES[jt]?.fibresPerTray || 12,
+          );
+
+          setModel(
+            applyStandardRowsToTrayModel(expandedPersistedModel, rows, {
+              overwriteExistingLabels: false,
+            }),
+          );
         } else if (rows.length > 0) {
           applyMappingRowsToModel(rows, jt);
         } else {
@@ -751,20 +849,14 @@ export const FibreTrayEditor: React.FC = () => {
         setJointType(detectedJointType);
         setModel(base);
       } else if (detectedAssetType === "ag-joint") {
-        const base = buildJoint(detectedJointType);
-
-        rows.forEach((row: any[]) => {
-          const fibre = parseFibreNumber(row[1]);
-          const fullChain = extractChain(row).join(" → ");
-
-          if (fibre !== null) {
-            const cell = base.find((f) => f.globalNo === fibre);
-            if (cell) cell.label = fullChain;
-          }
-        });
+        const base = buildJointForRows(detectedJointType, rows);
 
         setJointType(detectedJointType);
-        setModel(base);
+        setModel(
+          applyStandardRowsToTrayModel(base, rows, {
+            overwriteExistingLabels: true,
+          }),
+        );
       }
 
       e.target.value = "";
@@ -887,6 +979,19 @@ export const FibreTrayEditor: React.FC = () => {
         return prev;
       });
 
+      setMappingRows((prevRows) =>
+        dedupeMappingRows(
+          prevRows.map((row) => {
+            const fibre = parseFibreNumber(row?.[1]);
+            if (fibre !== aNo && fibre !== bNo) return row;
+
+            const nextRow = [...row];
+            nextRow[1] = fibre === aNo ? bNo : aNo;
+            return nextRow;
+          }),
+        ),
+      );
+
       if (selectedJointId) {
         setPendingFibreMoves((prev) => [
           ...prev,
@@ -919,13 +1024,14 @@ export const FibreTrayEditor: React.FC = () => {
 
     const movesToLog = [...pendingFibreMoves];
 
-    if (movesToLog.length > 0 && !reason?.trim()) {
+    if ((movesToLog.length > 0 || requiresAuditReason || isMaintenanceUser) && !reason?.trim()) {
       setShowChangeReasonModal(true);
       return;
     }
 
     const beforeAsset = selectedMapJoint ? { ...selectedMapJoint } : null;
     const now = new Date().toISOString();
+    const dedupedMappingRows = dedupeMappingRows(mappingRows);
 
     let updatedAsset: SavedJoint | null = null;
 
@@ -937,9 +1043,9 @@ export const FibreTrayEditor: React.FC = () => {
         name: asset.name,
         jointType,
         mappingRowsRef: true,
-        mappingRowsCount: mappingRows.length,
+        mappingRowsCount: dedupedMappingRows.length,
         mappingRowsSummary: {
-          rowCount: mappingRows.length,
+          rowCount: dedupedMappingRows.length,
         },
         trayModel: cloneTrayModel(model),
         trayModelUpdatedAt: now,
@@ -953,15 +1059,19 @@ export const FibreTrayEditor: React.FC = () => {
     });
 
     setSavedJoints(updatedJoints);
+    setMappingRows(dedupedMappingRows);
+    await saveJointMappingRowsToFirestore(selectedJointId, dedupedMappingRows);
     await saveSavedJointsToFirestoreNow(updatedJoints);
 
-    if (updatedAsset && movesToLog.length > 0) {
+    if (updatedAsset && (movesToLog.length > 0 || requiresAuditReason || isMaintenanceUser)) {
       await createAssetChangeLog({
         asset: updatedAsset,
-        action: "fibre-moved",
-        reason: reason || "Fibre move",
+        action: movesToLog.length > 0 ? "fibre-moved" : "updated",
+        reason: reason || "Maintenance update",
         comment,
-        context: "fibre-tray-editor-move-mode",
+        context: movesToLog.length > 0
+          ? "fibre-tray-editor-move-mode"
+          : "fibre-tray-editor-maintenance-save",
         before: {
           asset: beforeAsset,
           moves: movesToLog,
@@ -1127,9 +1237,14 @@ export const FibreTrayEditor: React.FC = () => {
   const gap = 26;
   const top = 20;
 
+  const renderedTrayCount = Math.max(
+    cfg.trays,
+    model.reduce((maxTray, cell) => Math.max(maxTray, cell.tray + 1), 0),
+  );
+
   const visibleTrays =
     trayFilter === "all"
-      ? Array.from({ length: cfg.trays }, (_, i) => i)
+      ? Array.from({ length: renderedTrayCount }, (_, i) => i)
       : [trayFilter];
 
   const svgWidth = left + cfg.fibresPerTray * gap + 60;
@@ -1148,9 +1263,9 @@ export const FibreTrayEditor: React.FC = () => {
     >
       <ChangeReasonModal
         visible={showChangeReasonModal}
-        title="Reason required for fibre move"
-        description="You moved fibres in Move Mode. Add why this change was made before saving the joint."
-        confirmLabel="Save Joint + Log Change"
+        title={isMaintenanceUser || requiresAuditReason ? "Maintenance note required" : "Reason required for fibre move"}
+        description={isMaintenanceUser || requiresAuditReason ? "Add an accountability note before saving maintenance changes to this joint." : "You moved fibres in Move Mode. Add why this change was made before saving the joint."}
+        confirmLabel={isMaintenanceUser || requiresAuditReason ? "Save Joint + Maintenance Log" : "Save Joint + Log Change"}
         onCancel={() => setShowChangeReasonModal(false)}
         onSubmit={(reason, comment) => {
           setShowChangeReasonModal(false);
@@ -1171,17 +1286,27 @@ export const FibreTrayEditor: React.FC = () => {
         }}
       >
 
-        <button style={btnSecondary} onClick={() => setActiveView("network")}>
-          Full Network Map
-        </button>
+        {canSeeFullOperations && (
+          <button style={btnSecondary} onClick={() => setActiveView("network")}>
+            Full Network Map
+          </button>
+        )}
 
         <button style={btnSecondary} onClick={() => setActiveView("joint-map")}>
           Back To Map
         </button>
 
-        <button style={btnSecondary} onClick={() => setActiveView("changes")}>
-          Changes / History
-        </button>
+        {canSeeFullOperations && (
+          <button style={btnSecondary} onClick={() => setActiveView("changes")}>
+            Changes / History
+          </button>
+        )}
+
+        {isMaintenanceUser && (
+          <div style={{ background: "#451a03", border: "1px solid #f59e0b", borderRadius: 8, padding: 10, color: "#fef3c7", fontSize: 12, lineHeight: 1.4 }}>
+            Maintenance edits are allowed here, but every save requires an accountability note.
+          </div>
+        )}
 
         <label>Asset Type</label>
         <div style={{ fontSize: "0.9rem", color: "#cbd5e1" }}>
@@ -1223,7 +1348,7 @@ export const FibreTrayEditor: React.FC = () => {
                   style={{ width: "100%", padding: "0.35rem" }}
                 >
                   <option value="all">All Trays</option>
-                  {Array.from({ length: cfg.trays }, (_, i) => (
+                  {Array.from({ length: renderedTrayCount }, (_, i) => (
                     <option key={i + 1} value={i}>
                       Tray {i + 1}
                     </option>

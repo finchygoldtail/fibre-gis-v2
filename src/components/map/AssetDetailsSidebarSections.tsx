@@ -51,6 +51,39 @@ function niceDocName(doc: string) {
   return decodeURIComponent(doc.split("/").pop()?.split("?")[0] || "Document");
 }
 
+function normaliseCableLabel(value: unknown): string {
+  return String(value || "").trim();
+}
+
+function fibreNumber(value: unknown): number {
+  return Number(String(value || "").replace(/\D/g, "")) || 0;
+}
+
+function isThroughCableOption(asset: SavedMapAsset): boolean {
+  const item = asset as any;
+  const assetType = String(item.assetType || "").toLowerCase();
+  const cableType = String(item.cableType || "").toLowerCase();
+  const name = String(item.name || item.cableId || item.id || "").toLowerCase();
+
+  if (item.geometry?.type !== "LineString") return false;
+  if (assetType && assetType !== "cable") return false;
+
+  // Drops are end-customer cables and must not appear as AFN through-cables.
+  if (cableType.includes("drop") || name.includes("drop")) return false;
+
+  // Keep this deliberately broad: through-cables may be Feeder, Link, Spine,
+  // Distribution, ULW, OH, or older saved records with only a fibre count.
+  return (
+    cableType.includes("feeder") ||
+    cableType.includes("link") ||
+    cableType.includes("spine") ||
+    cableType.includes("distribution") ||
+    cableType.includes("ulw") ||
+    String(item.installMethod || "").toLowerCase() === "oh" ||
+    fibreNumber(item.fibreCount) >= 12
+  );
+}
+
 const helpText: React.CSSProperties = {
   color: "#9ca3af",
   fontSize: "0.82rem",
@@ -212,7 +245,23 @@ export default function AssetDetailsSidebarSections({
   }
 
   const selectedCableId = dpDetails.afnDetails?.throughCableId || "";
-  const selectedCable = availableThroughCables.find((cable) => cable.id === selectedCableId);
+
+  const afnThroughCableOptions = useMemo(() => {
+    const byId = new Map<string, SavedMapAsset>();
+
+    [...availableThroughCables, ...allAssets.filter(isThroughCableOption)].forEach((cable) => {
+      if (!cable?.id || cable.id === currentDpId) return;
+      byId.set(cable.id, cable);
+    });
+
+    return Array.from(byId.values()).sort((a, b) => {
+      const aName = normaliseCableLabel((a as any).name || (a as any).cableId || a.id);
+      const bName = normaliseCableLabel((b as any).name || (b as any).cableId || b.id);
+      return aName.localeCompare(bName, undefined, { numeric: true, sensitivity: "base" });
+    });
+  }, [availableThroughCables, allAssets, currentDpId]);
+
+  const selectedCable = afnThroughCableOptions.find((cable) => cable.id === selectedCableId);
   const currentInputFibres = dpDetails.afnDetails?.inputFibres || [];
 
   const usedByOtherAfns = useMemo(() => {
@@ -375,7 +424,7 @@ export default function AssetDetailsSidebarSections({
           <div style={labelStyle}>Through Cable</div>
           <select value={selectedCableId} onChange={(e) => updateAfnDetails({ throughCableId: e.target.value || undefined, inputFibres: [], fibreCountUsed: 0 })} style={inputStyle}>
             <option value="">Select through cable</option>
-            {availableThroughCables.map((cable) => <option key={cable.id} value={cable.id}>{cable.name || cable.id} — {cable.fibreCount || "48F"}</option>)}
+            {afnThroughCableOptions.map((cable) => <option key={cable.id} value={cable.id}>{(cable as any).name || (cable as any).cableId || cable.id} — {(cable as any).fibreCount || "48F"}</option>)}
           </select>
           {selectedCableId ? <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 5, marginTop: 8, maxHeight: 185, overflowY: "auto" }}>
             {Array.from({ length: fibreTotal }, (_, index) => {

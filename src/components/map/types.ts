@@ -7,8 +7,9 @@ export type AssetType =
   | "chamber"
   | "home"
   | "area"
+  | "pia-route"
   | "cable";
-export type CableType = "Feeder Cable" | "ULW Cable" | "Link Cable" | "AFN Spine Cable";
+export type CableType = "Feeder Cable" | "ULW Cable" | "Link Cable" | "AFN Spine Cable" | "PIA Overlay";
 
 export type FibreCount =
   | "12F"

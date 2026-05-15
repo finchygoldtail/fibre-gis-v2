@@ -6,7 +6,7 @@
 
 import React, { useMemo, useState } from "react";
 import type { SavedMapAsset } from "./types";
-import { auditAreaAssets } from "../../services/areaAudit";
+import { auditAreaAssets, type AuditIssue, type AuditSeverity } from "../../services/areaAudit";
 import { exportToCSV } from "../../services/csvExport";
 
 type Props = {
@@ -415,6 +415,49 @@ function hasConnectionReference(asset: SavedMapAsset): boolean {
   );
 }
 
+const severityRank: Record<AuditSeverity, number> = {
+  high: 0,
+  medium: 1,
+  low: 2,
+};
+
+function compareAuditIssues(a: AuditIssue, b: AuditIssue): number {
+  const severityDiff = severityRank[a.severity] - severityRank[b.severity];
+  if (severityDiff !== 0) return severityDiff;
+
+  const categoryDiff = a.category.localeCompare(b.category);
+  if (categoryDiff !== 0) return categoryDiff;
+
+  return a.issue.localeCompare(b.issue);
+}
+
+function getSeverityColours(severity: AuditSeverity) {
+  if (severity === "high") {
+    return {
+      bg: "rgba(127, 29, 29, 0.34)",
+      border: "#991b1b",
+      text: "#fecaca",
+      strong: "#fca5a5",
+    };
+  }
+
+  if (severity === "medium") {
+    return {
+      bg: "rgba(120, 53, 15, 0.34)",
+      border: "#92400e",
+      text: "#fed7aa",
+      strong: "#fdba74",
+    };
+  }
+
+  return {
+    bg: "rgba(30, 64, 175, 0.28)",
+    border: "#1d4ed8",
+    text: "#bfdbfe",
+    strong: "#93c5fd",
+  };
+}
+
 export default function AreaAssetInspector({
   assets,
   areaAsset,
@@ -539,21 +582,47 @@ export default function AreaAssetInspector({
     (row) => row.type === "cable" && !row.piaNoiNumber,
   ).length;
 
-  const auditIssues = useMemo(() => {
+  const auditIssues = useMemo<AuditIssue[]>(() => {
     return auditAreaAssets(rows.map((row) => row.asset));
   }, [rows]);
 
-  const auditIssueCounts = useMemo(() => {
-    const counts = new Map<string, number>();
+  const sortedAuditIssues = useMemo(() => {
+    return [...auditIssues].sort(compareAuditIssues);
+  }, [auditIssues]);
 
-    auditIssues.forEach((item) => {
-      counts.set(item.issue, (counts.get(item.issue) || 0) + 1);
+  const severityCounts = useMemo(() => {
+    return sortedAuditIssues.reduce(
+      (counts, item) => {
+        counts[item.severity] += 1;
+        return counts;
+      },
+      { high: 0, medium: 0, low: 0 } as Record<AuditSeverity, number>,
+    );
+  }, [sortedAuditIssues]);
+
+  const auditIssueCounts = useMemo(() => {
+    const counts = new Map<string, { count: number; severity: AuditSeverity; category: string }>();
+
+    sortedAuditIssues.forEach((item) => {
+      const current = counts.get(item.issue);
+
+      if (current) {
+        current.count += 1;
+      } else {
+        counts.set(item.issue, {
+          count: 1,
+          severity: item.severity,
+          category: item.category,
+        });
+      }
     });
 
-    return Array.from(counts.entries()).sort(
-      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
-    );
-  }, [auditIssues]);
+    return Array.from(counts.entries()).sort((a, b) => {
+      const severityDiff = severityRank[a[1].severity] - severityRank[b[1].severity];
+      if (severityDiff !== 0) return severityDiff;
+      return b[1].count - a[1].count || a[0].localeCompare(b[0]);
+    });
+  }, [sortedAuditIssues]);
 
   const networkHealthStatus =
     auditIssues.length > 0 || missingPiaCount > 0 || (networkStats?.disconnected || 0) > 0
@@ -607,13 +676,15 @@ export default function AreaAssetInspector({
         assetType: "area",
         issue: "",
       },
-      ...auditIssues.map((issue) => ({
+      ...sortedAuditIssues.map((issue) => ({
         section: "audit",
         assetId: issue.assetId,
-        assetName: "",
+        assetName: issue.assetName || "",
         metric: "issue",
         value: "",
         assetType: issue.assetType,
+        severity: issue.severity,
+        category: issue.category,
         issue: issue.issue,
       })),
     ];
@@ -675,6 +746,12 @@ export default function AreaAssetInspector({
       </div>
 
       <div style={sectionTitle}>QA Status</div>
+      <div style={severityGrid}>
+        <SeverityCard label="High" value={severityCounts.high} severity="high" />
+        <SeverityCard label="Medium" value={severityCounts.medium} severity="medium" />
+        <SeverityCard label="Low" value={severityCounts.low} severity="low" />
+      </div>
+
       <div style={qaGrid}>
         <HealthCard label="Audit Issues" value={auditIssues.length} danger={auditIssues.length > 0} />
         <HealthCard label="Missing PIA" value={missingPiaCount} danger={missingPiaCount > 0} />
@@ -729,28 +806,32 @@ export default function AreaAssetInspector({
         ) : (
           <>
             <div style={auditIssueChips}>
-              {auditIssueCounts.map(([issue, count]) => (
-                <span key={issue} style={auditChip}>
-                  {issue}: {count}
+              {auditIssueCounts.map(([issue, data]) => (
+                <span key={issue} style={auditChip(data.severity)}>
+                  {data.severity.toUpperCase()} · {issue}: {data.count}
                 </span>
               ))}
             </div>
 
             <div style={auditList}>
-              {auditIssues.slice(0, 12).map((item, index) => (
+              {sortedAuditIssues.slice(0, 14).map((item, index) => (
                 <div
                   key={`${item.assetId}-${item.issue}-${index}`}
-                  style={auditRow}
+                  style={auditRow(item.severity)}
                 >
-                  <span style={warningText}>{item.issue}</span>
+                  <div style={auditRowTop}>
+                    <span style={warningText}>{item.issue}</span>
+                    <span style={severityPill(item.severity)}>{item.severity.toUpperCase()}</span>
+                  </div>
+
                   <span style={auditRowMeta}>
-                    {item.assetType} · {item.assetId}
+                    {item.category} · {item.assetType} · {item.assetName || item.assetId}
                   </span>
                 </div>
               ))}
 
-              {auditIssues.length > 12 ? (
-                <div style={auditMore}>+{auditIssues.length - 12} more issues</div>
+              {sortedAuditIssues.length > 14 ? (
+                <div style={auditMore}>+{sortedAuditIssues.length - 14} more issues</div>
               ) : null}
             </div>
           </>
@@ -835,6 +916,25 @@ function KpiCard({
   return (
     <div style={small ? summaryBox : kpiBox}>
       <div style={kpiNumber(tone, small)}>{value}</div>
+      <div style={summaryLabel}>{label}</div>
+    </div>
+  );
+}
+
+function SeverityCard({
+  label,
+  value,
+  severity,
+}: {
+  label: string;
+  value: number;
+  severity: AuditSeverity;
+}) {
+  const colours = getSeverityColours(severity);
+
+  return (
+    <div style={severityBox(severity)}>
+      <div style={{ ...severityNumber, color: colours.strong }}>{value}</div>
       <div style={summaryLabel}>{label}</div>
     </div>
   );
@@ -947,6 +1047,13 @@ const summaryGrid: React.CSSProperties = {
   marginTop: 8,
 };
 
+const severityGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  gap: 8,
+  marginTop: 8,
+};
+
 const qaGrid: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
@@ -976,6 +1083,22 @@ const kpiNumber = (
   fontWeight: 900,
   fontSize: small ? "0.95rem" : "1.25rem",
 });
+
+const severityBox = (severity: AuditSeverity): React.CSSProperties => {
+  const colours = getSeverityColours(severity);
+
+  return {
+    background: colours.bg,
+    border: `1px solid ${colours.border}`,
+    borderRadius: 8,
+    padding: 8,
+  };
+};
+
+const severityNumber: React.CSSProperties = {
+  fontWeight: 900,
+  fontSize: "1.05rem",
+};
 
 const healthBox = (danger: boolean): React.CSSProperties => ({
   background: danger ? "rgba(127, 29, 29, 0.28)" : "rgba(22, 101, 52, 0.16)",
@@ -1146,13 +1269,18 @@ const auditIssueChips: React.CSSProperties = {
   marginTop: 8,
 };
 
-const auditChip: React.CSSProperties = {
-  borderRadius: 999,
-  background: "#1f2937",
-  border: "1px solid #475569",
-  color: "#e5e7eb",
-  padding: "3px 7px",
-  fontSize: "0.72rem",
+const auditChip = (severity: AuditSeverity): React.CSSProperties => {
+  const colours = getSeverityColours(severity);
+
+  return {
+    borderRadius: 999,
+    background: colours.bg,
+    border: `1px solid ${colours.border}`,
+    color: colours.text,
+    padding: "3px 7px",
+    fontSize: "0.72rem",
+    fontWeight: 800,
+  };
 };
 
 const auditList: React.CSSProperties = {
@@ -1164,14 +1292,40 @@ const auditList: React.CSSProperties = {
   overflowY: "auto",
 };
 
-const auditRow: React.CSSProperties = {
+const auditRow = (severity: AuditSeverity): React.CSSProperties => {
+  const colours = getSeverityColours(severity);
+
+  return {
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+    borderRadius: 8,
+    background: "#111827",
+    border: `1px solid ${colours.border}`,
+    padding: 8,
+  };
+};
+
+const auditRowTop: React.CSSProperties = {
   display: "flex",
-  flexDirection: "column",
-  gap: 2,
-  borderRadius: 8,
-  background: "#111827",
-  border: "1px solid #374151",
-  padding: 8,
+  justifyContent: "space-between",
+  gap: 8,
+  alignItems: "flex-start",
+};
+
+const severityPill = (severity: AuditSeverity): React.CSSProperties => {
+  const colours = getSeverityColours(severity);
+
+  return {
+    borderRadius: 999,
+    background: colours.bg,
+    border: `1px solid ${colours.border}`,
+    color: colours.text,
+    padding: "2px 6px",
+    fontSize: "0.65rem",
+    fontWeight: 900,
+    whiteSpace: "nowrap",
+  };
 };
 
 const auditRowMeta: React.CSSProperties = {

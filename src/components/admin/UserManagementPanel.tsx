@@ -36,6 +36,9 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
 
   const [users, setUsers] = useState<AppUserProfile[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
+  const [saveError, setSaveError] = useState("");
   const [newUid, setNewUid] = useState("");
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
@@ -45,15 +48,21 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
     setIsLoading(true);
 
     try {
-      const usersRef = collection(db, "businesses", BUSINESS_ID, "users");
-      const snapshot = await getDocs(query(usersRef, orderBy("email", "asc")));
+      const profileDocs = new Map<string, AppUserProfile>();
 
-      setUsers(
-        snapshot.docs.map((item) => {
+      const readUserCollection = async (pathName: "business" | "root") => {
+        const usersRef =
+          pathName === "business"
+            ? collection(db, "businesses", BUSINESS_ID, "users")
+            : collection(db, "users");
+
+        const snapshot = await getDocs(query(usersRef, orderBy("email", "asc")));
+
+        snapshot.docs.forEach((item) => {
           const data = item.data();
           const role = normaliseRole(data.role);
 
-          return {
+          profileDocs.set(item.id, {
             uid: item.id,
             name: data.name || data.email || item.id,
             email: data.email || "",
@@ -62,11 +71,30 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
               ...ROLE_PERMISSIONS[role],
               ...(data.permissions || {}),
             },
-          };
-        }),
+          });
+        });
+      };
+
+      try {
+        await readUserCollection("business");
+      } catch (err) {
+        console.warn("Could not load business user profiles", err);
+      }
+
+      try {
+        await readUserCollection("root");
+      } catch (err) {
+        console.warn("Could not load root user profiles", err);
+      }
+
+      setUsers(
+        Array.from(profileDocs.values()).sort((a, b) =>
+          (a.email || a.name || a.uid).localeCompare(b.email || b.name || b.uid),
+        ),
       );
     } catch (err) {
       console.error("Failed to load users", err);
+      setSaveError("Could not load users. Check Firestore rules in the console.");
     } finally {
       setIsLoading(false);
     }
@@ -87,41 +115,80 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
       role: UserRole;
     },
   ) => {
+    const cleanUid = uid.trim();
+    const cleanEmail = (patch.email || "").trim().toLowerCase();
     const permissions = ROLE_PERMISSIONS[patch.role];
+    const payload = {
+      uid: cleanUid,
+      name: (patch.name || "").trim(),
+      email: cleanEmail,
+      role: patch.role,
+      permissions,
+      updatedAt: serverTimestamp(),
+    };
 
-    await setDoc(
-      doc(db, "businesses", BUSINESS_ID, "users", uid),
-      {
-        uid,
-        name: patch.name || "",
-        email: patch.email || "",
-        role: patch.role,
-        permissions,
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    );
+    setIsSaving(true);
+    setSaveMessage("");
+    setSaveError("");
 
-    await loadUsers();
+    try {
+      const writes = await Promise.allSettled([
+        setDoc(doc(db, "businesses", BUSINESS_ID, "users", cleanUid), payload, {
+          merge: true,
+        }),
+        setDoc(doc(db, "users", cleanUid), payload, { merge: true }),
+      ]);
+
+      const successfulWrites = writes.filter((item) => item.status === "fulfilled");
+
+      if (successfulWrites.length === 0) {
+        const firstError = writes.find(
+          (item): item is PromiseRejectedResult => item.status === "rejected",
+        );
+        throw firstError?.reason || new Error("No Firestore writes succeeded");
+      }
+
+      if (writes.some((item) => item.status === "rejected")) {
+        console.warn("One user-profile path could not be written", writes);
+      }
+
+      setSaveMessage(`Saved permissions for ${cleanEmail || cleanUid}.`);
+      await loadUsers();
+    } catch (err) {
+      console.error("Failed to save user permissions", err);
+      setSaveError(
+        "Save failed. Open the browser console for the Firebase error, and check your Firestore rules allow Super Users to write user profiles.",
+      );
+      throw err;
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCreateOrUpdateUser = async () => {
-    if (!newUid.trim()) {
+    const uid = newUid.trim();
+
+    if (!uid) {
       alert("Add the user's Firebase UID.");
       return;
     }
 
-    await saveUserRole(newUid.trim(), {
-      name: newName.trim(),
-      email: newEmail.trim(),
-      role: newRole,
-    });
+    try {
+      await saveUserRole(uid, {
+        name: newName.trim(),
+        email: newEmail.trim(),
+        role: newRole,
+      });
 
-    setNewUid("");
-    setNewName("");
-    setNewEmail("");
-    setNewRole("survey_user");
+      setNewUid("");
+      setNewName("");
+      setNewEmail("");
+      setNewRole("survey_user");
+    } catch {
+      // saveUserRole already sets a visible error message.
+    }
   };
+
 
   if (!isSuperUser) {
     return (
@@ -195,10 +262,18 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
         <button
           type="button"
           onClick={() => void handleCreateOrUpdateUser()}
-          style={primaryButtonStyle}
+          disabled={isSaving}
+          style={{
+            ...primaryButtonStyle,
+            opacity: isSaving ? 0.65 : 1,
+            cursor: isSaving ? "not-allowed" : "pointer",
+          }}
         >
-          Save User Permissions
+          {isSaving ? "Saving..." : "Save User Permissions"}
         </button>
+
+        {saveMessage && <div style={successStyle}>{saveMessage}</div>}
+        {saveError && <div style={errorStyle}>{saveError}</div>}
       </div>
 
       <div style={cardStyle}>
@@ -225,7 +300,7 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
                       name: user.name,
                       email: user.email,
                       role: event.target.value as UserRole,
-                    })
+                    }).catch(() => undefined)
                   }
                   style={inputStyle}
                 >
@@ -328,6 +403,28 @@ const primaryButtonStyle: React.CSSProperties = {
   padding: "10px 12px",
   fontWeight: 900,
   cursor: "pointer",
+};
+
+const successStyle: React.CSSProperties = {
+  marginTop: 10,
+  color: "#bbf7d0",
+  background: "#14532d",
+  border: "1px solid #16a34a",
+  borderRadius: 9,
+  padding: "8px 10px",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const errorStyle: React.CSSProperties = {
+  marginTop: 10,
+  color: "#fecaca",
+  background: "#7f1d1d",
+  border: "1px solid #dc2626",
+  borderRadius: 9,
+  padding: "8px 10px",
+  fontSize: 12,
+  fontWeight: 800,
 };
 
 const smallButtonStyle: React.CSSProperties = {

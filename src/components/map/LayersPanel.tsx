@@ -3,6 +3,16 @@ import { formatDistance } from "../../utils/mapMeasure";
 
 type BasemapType = "street" | "satellite" | "hybrid" | "dark";
 
+type OpenreachLayerKey =
+  | "ducts"
+  | "trenches"
+  | "spans"
+  | "chambers"
+  | "poles"
+  | "labels";
+
+type OpenreachLayers = Record<OpenreachLayerKey, boolean>;
+
 type Props = {
   visibleLayers: Record<string, boolean>;
   setVisibleLayers: React.Dispatch<React.SetStateAction<any>>;
@@ -19,6 +29,9 @@ type Props = {
   onStopMeasurement?: () => void;
   onUndoMeasurementPoint?: () => void;
   onClearMeasurements?: () => void;
+
+  openreachLayers?: OpenreachLayers;
+  onOpenreachLayerChange?: (key: OpenreachLayerKey, value: boolean) => void;
 };
 
 type LayerOption = { label: string; key: string };
@@ -78,6 +91,7 @@ const layerGroups: LayerGroup[] = [
       { label: "All Cables", key: "cables" },
       { label: "Feeders", key: "feeders" },
       { label: "Links", key: "links" },
+      { label: "Drop Cables", key: "dropCables" },
       { label: "48 ULW", key: "ulw48" },
       { label: "36 ULW", key: "ulw36" },
       { label: "24 ULW", key: "ulw24" },
@@ -107,6 +121,15 @@ const layerGroups: LayerGroup[] = [
       { label: "Cable distances", key: "cableDistances" },
     ],
   },
+];
+
+const openreachOptions: { label: string; key: OpenreachLayerKey }[] = [
+  { label: "OR Ducts", key: "ducts" },
+  { label: "OR Trenches", key: "trenches" },
+  { label: "OR Spans", key: "spans" },
+  { label: "OR Chambers", key: "chambers" },
+  { label: "OR Poles", key: "poles" },
+  { label: "OR Labels", key: "labels" },
 ];
 
 const panel: React.CSSProperties = {
@@ -237,9 +260,19 @@ export default function LayersPanel({
   onStopMeasurement,
   onUndoMeasurementPoint,
   onClearMeasurements,
+  openreachLayers = {
+    ducts: true,
+    trenches: true,
+    spans: true,
+    chambers: true,
+    poles: true,
+    labels: false,
+  },
+  onOpenreachLayerChange,
 }: Props) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     measurements: true,
+    openreach: true,
   });
 
   const toggleLayer = (key: string) =>
@@ -351,6 +384,37 @@ export default function LayersPanel({
             </div>
           );
         })}
+
+        <div style={layerGroupCard}>
+          <button
+            type="button"
+            onClick={() => toggleGroup("openreach")}
+            style={layerButton}
+            aria-expanded={!!openGroups.openreach}
+          >
+            <span>Openreach / PIA</span>
+            <span aria-hidden="true" style={{ fontSize: "0.85rem", lineHeight: 1 }}>
+              {openGroups.openreach ? "▲" : "▼"}
+            </span>
+          </button>
+
+          {openGroups.openreach && (
+            <div style={dropdown}>
+              {openreachOptions.map((option) => (
+                <label key={option.key} style={layerRow}>
+                  <input
+                    type="checkbox"
+                    checked={openreachLayers[option.key] !== false}
+                    onChange={(event) =>
+                      onOpenreachLayerChange?.(option.key, event.target.checked)
+                    }
+                  />
+                  <span>{option.label}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <div style={{ ...card, padding: "0.7rem" }}>

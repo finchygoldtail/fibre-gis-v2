@@ -34,7 +34,12 @@ type Props = {
   onDeleteAsset: (id: string) => void;
   onEditAsset: (asset: SavedMapAsset) => void;
   onMoveAsset?: (id: string, lat: number, lng: number) => void;
+  assetMovementEnabled?: boolean;
+  activeMoveAssetId?: string;
   moveHomesMode?: boolean;
+  surveyDeleteHomesMode?: boolean;
+  selectedSurveyDeleteHomeIds?: string[];
+  onToggleSurveyDeleteHome?: (asset: SavedMapAsset) => void;
   selectedMoveHomeIds?: string[];
   onToggleMoveHome?: (asset: SavedMapAsset) => void;
   onMoveHomesTargetDp?: (asset: SavedMapAsset) => void;
@@ -624,9 +629,14 @@ export default function AssetMarkersLayer({
   onDeleteAsset,
   onEditAsset,
   onMoveAsset,
+  assetMovementEnabled = false,
+  activeMoveAssetId,
   moveHomesMode = false,
+  surveyDeleteHomesMode = false,
   selectedMoveHomeIds = [],
+  selectedSurveyDeleteHomeIds = [],
   onToggleMoveHome,
+  onToggleSurveyDeleteHome,
   onMoveHomesTargetDp,
 }: Props) {
   const map = useMap();
@@ -686,9 +696,12 @@ export default function AssetMarkersLayer({
     if (!latLng) return null;
     const [lat, lng] = latLng;
     const isSelectedMoveHome = moveHomesMode && asset.assetType === "home" && selectedMoveHomeIds.includes(asset.id);
-    const icon = isSelectedMoveHome
-      ? createHomeIcon("#38bdf8", "#075985")
-      : getIconForAsset(asset, assets);
+    const isSelectedSurveyDeleteHome = surveyDeleteHomesMode && asset.assetType === "home" && selectedSurveyDeleteHomeIds.includes(asset.id);
+    const icon = isSelectedSurveyDeleteHome
+      ? createHomeIcon("#ef4444", "#7f1d1d")
+      : isSelectedMoveHome
+        ? createHomeIcon("#38bdf8", "#075985")
+        : getIconForAsset(asset, assets);
     const distributionPoints = getDistributionPoints(assets);
     const connectedDp = asset.assetType === "home" ? getHomeConnectedDp(asset, assets) : null;
     const dpUsage = asset.assetType === "distribution-point" ? getDpUsage(asset, assets) : null;
@@ -699,15 +712,23 @@ export default function AssetMarkersLayer({
         key={asset.id}
         position={[lat, lng]}
         icon={icon}
-        draggable={asset.assetType !== "home"}
+        draggable={assetMovementEnabled && activeMoveAssetId === asset.id && asset.assetType !== "home"}
         eventHandlers={{
           dragend: (e) => {
+            if (!assetMovementEnabled || activeMoveAssetId !== asset.id) return;
             const marker = e.target as L.Marker;
             const position = marker.getLatLng();
 
             onMoveAsset?.(asset.id, position.lat, position.lng);
           },
           click: () => {
+            if (surveyDeleteHomesMode) {
+              if (asset.assetType === "home") {
+                onToggleSurveyDeleteHome?.(asset);
+              }
+              return;
+            }
+
             if (!moveHomesMode) return;
 
             if (asset.assetType === "home") {
@@ -789,6 +810,7 @@ export default function AssetMarkersLayer({
                   {infoRow("Mode", connectionMode === "manual" ? "Manual" : "Auto")}
                   {infoRow("Connected DP", connectedDp?.name || ((asset as any).connectedDpId ? "Unknown DP" : "Not connected"))}
                   {moveHomesMode ? infoRow("Move Selection", isSelectedMoveHome ? "Selected" : "Click home to select") : null}
+                  {surveyDeleteHomesMode ? infoRow("Survey Delete", isSelectedSurveyDeleteHome ? "Selected for delete" : "Click home to select") : null}
                   {infoRow("OSM ID", asset.osmId)}
 
                   <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
@@ -885,6 +907,12 @@ export default function AssetMarkersLayer({
               {moveHomesMode && asset.assetType === "home" ? (
                 <button style={actionButtonStyle} onClick={() => onToggleMoveHome?.(asset)}>
                   {isSelectedMoveHome ? "Unselect" : "Select to Move"}
+                </button>
+              ) : null}
+
+              {surveyDeleteHomesMode && asset.assetType === "home" ? (
+                <button style={deleteButtonStyle} onClick={() => onToggleSurveyDeleteHome?.(asset)}>
+                  {isSelectedSurveyDeleteHome ? "Unselect Delete" : "Select for Delete"}
                 </button>
               ) : null}
 

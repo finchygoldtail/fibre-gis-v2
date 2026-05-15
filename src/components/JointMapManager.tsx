@@ -22,8 +22,7 @@ import type { LatLngLiteral } from "leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet-rotate";
-import { auth, db } from "../firebase";
-import { collection, getDocs } from "firebase/firestore";
+import { auth } from "../firebase";
 import { useAppMode } from "../context/AppModeContext";
 import AppModeSwitch from "./AppModeSwitch";
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
@@ -37,6 +36,7 @@ import MapContextMenu, { type MapContextAction } from "./map/MapContextMenu";
 import LayersPanel from "./map/LayersPanel";
 import AssetMarkersLayer from "./map/AssetMarkersLayer";
 import CableLinesLayer from "./map/CableLinesLayer";
+import OpenreachOverlayLayer from "./map/OpenreachOverlayLayer";
 import CableDetailsModal from "./map/CableDetailsModal";
 import AreaAssetInspector from "./map/AreaAssetInspector";
 import { loadMapView, saveMapView } from "./map/mapViewMemory";
@@ -61,7 +61,6 @@ import {
   buildNetworkGraph,
   findDisconnectedAssets,
 } from "../services/networkGraph";
-import { buildFibreTrayTopologySummary, normalizeCableName } from "../utils/jointAwareNetwork";
 
 import { routePointsToRoads } from "./map/utils/routeToRoads";
 import {
@@ -78,6 +77,7 @@ import {
 } from "./map/projects/projectHomesStorage";
 import { ExchangeMarkersLayer } from "./map/ExchangeMarkersLayer";
 import AssetDetailsSidebarSections from "./map/AssetDetailsSidebarSections";
+import ProjectWorkspace from "./project/ProjectWorkspace";
 import type {
   AssetType,
   CableType,
@@ -94,6 +94,10 @@ import {
   saveExchange,
   type ExchangeAsset,
 } from "./map/storage/exchangeStorage";
+import {
+  loadSplitMapAssets,
+  saveSplitMapAssets,
+} from "../services/mapAssetSplitStorage";
 export type SavedJoint = SavedMapAsset;
 export type { SavedMapAsset };
 
@@ -245,7 +249,7 @@ function AssetActivityMiniSummary({ asset }: { asset: SavedMapAsset | null }) {
   );
 }
 
-type MapMode = "pick" | "measure" | "draw-cable" | "draw-area" | "move-homes";
+type MapMode = "pick" | "measure" | "draw-cable" | "draw-area" | "move-homes" | "survey-delete-homes";
 
 type BasemapType = "street" | "satellite" | "hybrid" | "dark";
 
@@ -349,22 +353,41 @@ function MapBoundsTracker({
 }) {
   const map = useMap();
 
+  /* =====================================================
+     LEAFLET SAFE BOUNDS TRACKER
+     The project workspace unmounts/remounts the map.
+     Leaflet can briefly have no internal pane position during
+     that transition, so bounds reads must be defensive.
+  ===================================================== */
   const updateBounds = () => {
-    const bounds = map.getBounds();
-    onBoundsChange({
-      south: bounds.getSouth(),
-      west: bounds.getWest(),
-      north: bounds.getNorth(),
-      east: bounds.getEast(),
-    });
+    try {
+      const container = map.getContainer?.();
+      if (!container || !container.isConnected) return;
+      if (!(map as any)._loaded) return;
+
+      const bounds = map.getBounds();
+      if (!bounds) return;
+
+      onBoundsChange({
+        south: bounds.getSouth(),
+        west: bounds.getWest(),
+        north: bounds.getNorth(),
+        east: bounds.getEast(),
+      });
+    } catch {
+      // Leaflet can throw while the map is being remounted.
+      // Ignore this one frame; the next move/zoom/load will update bounds.
+    }
   };
 
   useEffect(() => {
-    updateBounds();
+    const timeoutId = window.setTimeout(updateBounds, 120);
+    return () => window.clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [map]);
 
   useMapEvents({
+    load: updateBounds,
     moveend: updateBounds,
     zoomend: updateBounds,
   });
@@ -372,11 +395,17 @@ function MapBoundsTracker({
   return null;
 }
 
-function MapRefTracker({ onReady }: { onReady: (map: L.Map) => void }) {
+function MapRefTracker({ onReady }: { onReady: (map: L.Map | null) => void }) {
   const map = useMap();
 
+  /* =====================================================
+     MAP REF LIFECYCLE
+     Clears the external map ref when the Leaflet map unmounts
+     so Back To Map / workspace transitions do not use a stale map.
+  ===================================================== */
   useEffect(() => {
     onReady(map);
+    return () => onReady(null);
   }, [map, onReady]);
 
   return null;
@@ -799,6 +828,13 @@ export default function JointMapManager({
     () => initialMapViewRef.current?.activeProjectId ?? null,
   );
   const activeProjectIdRef = useRef<string | null>(activeProjectId);
+  // =====================================================
+  // PROJECT WORKSPACE STATE
+  // First-stage migration from crowded map sidebar into a
+  // dedicated project operations screen.
+  // =====================================================
+  const [isProjectWorkspaceOpen, setIsProjectWorkspaceOpen] = useState(false);
+  const [isProjectWorkspaceLoading, setIsProjectWorkspaceLoading] = useState(false);
   const [assetType, setAssetType] = useState<AssetType>(
     inferAssetTypeFromName(currentJointName),
   );
@@ -945,6 +981,7 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
   // =====================================================
   const [mapMode, setMapMode] = useState<MapMode>("pick");
   const [selectedMoveHomeIds, setSelectedMoveHomeIds] = useState<string[]>([]);
+  const [selectedSurveyDeleteHomeIds, setSelectedSurveyDeleteHomeIds] = useState<string[]>([]);
   const [basemap, setBasemap] = useState<BasemapType>("street");
   const [roadOverlayVisible, setRoadOverlayVisible] = useState(false);
   const [measurePoints, setMeasurePoints] = useState<LatLngLiteral[]>([]);
@@ -969,6 +1006,7 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
     distributionPoints: true,
     chambers: true,
     cables: true,
+    dropCables: true,
     areas: true,
     measurements: true,
     cableDistances: false,
@@ -998,6 +1036,15 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
     liveNotReady: true,
   });
 
+  const [openreachLayers, setOpenreachLayers] = useState({
+    ducts: true,
+    trenches: true,
+    spans: true,
+    chambers: true,
+    poles: true,
+    labels: false,
+  });
+
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [isRoutingCable, setIsRoutingCable] = useState(false);
   const [isLoadingOsmHomes, setIsLoadingOsmHomes] = useState(false);
@@ -1012,6 +1059,79 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
     () => (savedJoints ?? []).map(normalizeMapAsset),
     [savedJoints],
   );
+
+  // =====================================================
+  // SPLIT MAP ASSET STORAGE MIGRATION
+  // Keeps the old master chunk path untouched, but also mirrors
+  // assets into safer per-type chunk buckets:
+  //   mapAssets/cables/chunks
+  //   mapAssets/polygons/chunks
+  //   mapAssets/streetCabs/chunks
+  // and the rest of the asset buckets.
+  //
+  // Load behaviour:
+  // - If split chunks already exist, they are preferred in this component.
+  // - If they do not exist yet, the existing parent/legacy load remains active.
+  // Save behaviour:
+  // - Once legacy/main assets are present, they are mirrored to split chunks.
+  // - Empty arrays are never written, so an early blank render cannot wipe data.
+  // =====================================================
+  const splitStorageLoadAttemptedRef = useRef(false);
+  const splitStorageLastSavedSignatureRef = useRef("");
+
+  useEffect(() => {
+    if (splitStorageLoadAttemptedRef.current) return;
+    splitStorageLoadAttemptedRef.current = true;
+
+    let cancelled = false;
+
+    loadSplitMapAssets()
+      .then((splitAssets) => {
+        if (cancelled || splitAssets.length === 0) return;
+
+        setSavedJoints((prev) => {
+          const merged = new Map<string, SavedMapAsset>();
+          (prev ?? []).map(normalizeMapAsset).forEach((asset) => {
+            if (asset?.id) merged.set(asset.id, asset);
+          });
+          splitAssets.map(normalizeMapAsset).forEach((asset) => {
+            if (asset?.id) merged.set(asset.id, asset);
+          });
+          return Array.from(merged.values());
+        });
+      })
+      .catch((err) => {
+        console.warn(
+          "Split map asset chunks not loaded; using legacy main chunks fallback.",
+          err,
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [setSavedJoints]);
+
+  useEffect(() => {
+    if (normalizedSavedJoints.length === 0) return;
+
+    const saveSignature = normalizedSavedJoints
+      .map((asset: any) => `${asset.id}:${asset.updatedAt || asset.syncRevision || ""}`)
+      .sort()
+      .join("|");
+
+    if (saveSignature === splitStorageLastSavedSignatureRef.current) return;
+
+    const timer = window.setTimeout(() => {
+      splitStorageLastSavedSignatureRef.current = saveSignature;
+
+      saveSplitMapAssets(normalizedSavedJoints).catch((err) => {
+        console.error("Failed to mirror map assets into split chunks", err);
+      });
+    }, 1500);
+
+    return () => window.clearTimeout(timer);
+  }, [normalizedSavedJoints]);
 
   const normalizedProjectHomes = useMemo(
     () => (projectHomes ?? []).map(normalizeMapAsset),
@@ -1141,102 +1261,6 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
     [networkGraph],
   );
 
-  // =====================================================
-  // FIBRE TRAY TOPOLOGY READER
-  // Reads the same chunked mapping rows saved by FibreTrayEditor
-  // and checks whether those cable IDs exist as live map cables.
-  // =====================================================
-  const [fibreTrayRowsByJointId, setFibreTrayRowsByJointId] = useState<Record<string, any[][]>>({});
-  const [isLoadingFibreTrayTopology, setIsLoadingFibreTrayTopology] = useState(false);
-  const [fibreTrayTopologyError, setFibreTrayTopologyError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadFibreTrayTopologyRows = async () => {
-      setIsLoadingFibreTrayTopology(true);
-      setFibreTrayTopologyError(null);
-
-      try {
-        const jointMappingsRef = collection(
-          db,
-          "businesses",
-          "fibre-gis-v2",
-          "jointMappings",
-        );
-        const jointMappingsSnapshot = await getDocs(jointMappingsRef);
-        const nextRowsByJointId: Record<string, any[][]> = {};
-
-        await Promise.all(
-          jointMappingsSnapshot.docs.map(async (jointDoc) => {
-            const chunksRef = collection(
-              db,
-              "businesses",
-              "fibre-gis-v2",
-              "jointMappings",
-              jointDoc.id,
-              "chunks",
-            );
-            const chunksSnapshot = await getDocs(chunksRef);
-            const chunks = chunksSnapshot.docs
-              .map((chunkDoc) => {
-                const data = chunkDoc.data() as any;
-                let rows: any[][] = [];
-
-                try {
-                  rows = typeof data.rowsJson === "string" ? JSON.parse(data.rowsJson) : [];
-                } catch {
-                  rows = [];
-                }
-
-                const index =
-                  typeof data.chunkIndex === "number"
-                    ? data.chunkIndex
-                    : Number(String(chunkDoc.id).replace("chunk_", ""));
-
-                return {
-                  id: chunkDoc.id,
-                  index: Number.isFinite(index) ? index : 0,
-                  rows,
-                };
-              })
-              .sort((a, b) => a.index - b.index || a.id.localeCompare(b.id));
-
-            const rows = chunks.flatMap((chunk) =>
-              Array.isArray(chunk.rows) ? chunk.rows : [],
-            );
-
-            if (rows.length > 0) {
-              nextRowsByJointId[jointDoc.id] = rows;
-            }
-          }),
-        );
-
-        // Also include the currently open FibreTrayEditor rows before they are saved,
-        // so the panel can be used while testing an uploaded sheet.
-        if (currentJointName && Array.isArray(currentMappingRows) && currentMappingRows.length > 0) {
-          nextRowsByJointId[currentJointName] = currentMappingRows;
-        }
-
-        if (!cancelled) setFibreTrayRowsByJointId(nextRowsByJointId);
-      } catch (err: any) {
-        console.error("Failed to load fibre tray topology rows", err);
-        if (!cancelled) {
-          setFibreTrayTopologyError(err?.message || "Failed to load fibre tray rows");
-          setFibreTrayRowsByJointId({});
-        }
-      } finally {
-        if (!cancelled) setIsLoadingFibreTrayTopology(false);
-      }
-    };
-
-    void loadFibreTrayTopologyRows();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [currentJointName, currentMappingRows]);
-
   useEffect(() => {
     let cancelled = false;
 
@@ -1314,12 +1338,25 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
     return getPathDistanceMeters(draftCablePoints);
   }, [draftCablePoints]);
 
+  const isProjectAreaAsset = (asset: SavedMapAsset) => {
+    const item = asset as any;
+    const assetType = String(item.assetType ?? "").toLowerCase();
+    const jointType = String(item.jointType ?? "").toLowerCase();
+    const geometryType = String(item.geometryType ?? item.geometry?.type ?? "").toLowerCase();
+
+    return (
+      geometryType === "polygon" &&
+      (
+        assetType === "area" ||
+        assetType === "polygon" ||
+        assetType === "project-area" ||
+        jointType.includes("polygon area")
+      )
+    );
+  };
+
   const projectAreas = useMemo(
-    () =>
-      allMapAssets.filter(
-        (asset) =>
-          asset.assetType === "area" && asset.geometry?.type === "Polygon",
-      ),
+    () => allMapAssets.filter(isProjectAreaAsset),
     [allMapAssets],
   );
 
@@ -1335,53 +1372,80 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
   const visibleProjectAssets = useMemo(
     () =>
       filterAssetsForProjectArea(
-        allMapAssets.filter((asset) => asset.assetType !== "area"),
+        allMapAssets.filter((asset) => !isProjectAreaAsset(asset)),
         activeProjectArea,
       ),
     [activeProjectArea, allMapAssets],
   );
 
-  /* =========================================================
-     FIBRE TRAY TOPOLOGY — AREA SCOPED
-     Reads saved FibreTrayEditor rows, but only validates the
-     joints and live cables inside the currently selected polygon.
-  ========================================================= */
-  const visibleFibreTrayRowsByJointId = useMemo(() => {
-    if (!activeProjectArea) return fibreTrayRowsByJointId;
-
-    const visibleJointKeys = new Set<string>();
-
-    visibleProjectAssets.forEach((asset: any) => {
-      if (asset.assetType !== "ag-joint" && asset.assetType !== "joint" && asset.assetType !== "street-cab") return;
-
-      [asset.id, asset.name, asset.label, asset.title].forEach((value) => {
-        const key = normalizeCableName(value);
-        if (key) visibleJointKeys.add(key);
-      });
-    });
-
-    const scopedRows: Record<string, any[][]> = {};
-
-    Object.entries(fibreTrayRowsByJointId).forEach(([jointId, rows]) => {
-      const jointKey = normalizeCableName(jointId);
-      if (visibleJointKeys.has(jointKey)) scopedRows[jointId] = rows;
-    });
-
-    return scopedRows;
-  }, [activeProjectArea, fibreTrayRowsByJointId, visibleProjectAssets]);
-
-  const fibreTrayTopology = useMemo(
-    () => buildFibreTrayTopologySummary(visibleFibreTrayRowsByJointId, visibleProjectAssets),
-    [visibleFibreTrayRowsByJointId, visibleProjectAssets],
-  );
-
   const visibleProjectAreas = useMemo(
-    () =>
-      activeProjectId
-        ? projectAreas.filter((area) => area.id === activeProjectId)
-        : projectAreas,
-    [activeProjectId, projectAreas],
+    () => projectAreas,
+    [projectAreas],
   );
+
+  // =====================================================
+  // PROJECT WORKSPACE SUMMARY STATS
+  // Kept intentionally lightweight and derived from the same
+  // area-scoped assets already used by the map.
+  // =====================================================
+  const projectWorkspaceStats = useMemo(() => {
+    const norm = (value: unknown) => String(value ?? "").toLowerCase();
+
+    const isType = (asset: SavedMapAsset, tokens: string[]) => {
+      const item = asset as any;
+      const haystack = `${norm(item.assetType)} ${norm(item.type)} ${norm(item.jointType)} ${norm(item.name)} ${norm(item.dpType)}`;
+      return tokens.some((token) => haystack.includes(token));
+    };
+
+    const cables = visibleProjectAssets.filter((asset) => isType(asset, ["cable"]));
+    const homes = visibleProjectAssets.filter((asset) => isType(asset, ["home", "uprn", "sdu", "mdu", "flat"]));
+    const connectedHomes = homes.filter((asset: any) =>
+      Boolean(asset.connectedDpId || asset.connectedDP || asset.dpId || asset.connection === "connected" || asset.status === "connected"),
+    );
+
+    const routeLengthMeters = cables.reduce((total, asset) => {
+      if (asset.geometry?.type !== "LineString") return total;
+      const points = asset.geometry.coordinates.map(([lat, lng]) => ({ lat, lng }));
+      return total + getPathDistanceMeters(points);
+    }, 0);
+
+    const issueCount = visibleProjectAssets.filter((asset: any) => {
+      const status = norm(asset.status);
+      return Boolean(asset.auditIssue || asset.auditFail || asset.missingPia || status.includes("fail") || status.includes("issue"));
+    }).length;
+
+    return {
+      homesPassed: homes.length,
+      homesConnected: connectedHomes.length,
+      rfsPercent: homes.length ? Math.round((connectedHomes.length / homes.length) * 100) : 0,
+      issueCount,
+      topologyLinks: networkGraph.edges.size,
+      splicePoints: visibleProjectAssets.filter((asset) => isType(asset, ["joint", "cmj", "lmj", "mmj"])).length,
+      joints: visibleProjectAssets.filter((asset) => isType(asset, ["joint", "cmj", "lmj", "mmj"])).length,
+      dps: visibleProjectAssets.filter((asset) => isType(asset, ["distribution point", "dp", "afn", "cbt"])).length,
+      streetCabs: visibleProjectAssets.filter((asset) => isType(asset, ["street cab", "streetcab", "cabinet"])).length,
+      poles: visibleProjectAssets.filter((asset) => isType(asset, ["pole"])).length,
+      chambers: visibleProjectAssets.filter((asset) => isType(asset, ["chamber", "manhole"])).length,
+      cables: cables.length,
+      routeLengthMeters,
+    };
+  }, [visibleProjectAssets, networkGraph.edges.size]);
+
+  useEffect(() => {
+    if (!activeProjectArea) {
+      setIsProjectWorkspaceOpen(false);
+      setIsProjectWorkspaceLoading(false);
+      return;
+    }
+
+    setIsProjectWorkspaceLoading(true);
+    const timer = window.setTimeout(() => {
+      setIsProjectWorkspaceLoading(false);
+      setIsProjectWorkspaceOpen(true);
+    }, 650);
+
+    return () => window.clearTimeout(timer);
+  }, [activeProjectArea?.id]);
 
   const handleSelectProject = (projectId: string) => {
     activeProjectIdRef.current = projectId;
@@ -1570,6 +1634,108 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
   };
 
 
+
+
+  // =====================================================
+  // SURVEY DELETE HOMES WORKFLOW
+  // Lets survey users select multiple incorrect imported homes and
+  // delete them in one controlled batch. Related auto drop cables are
+  // also removed so orphaned purple drop routes are not left behind.
+  // Feeder, link, PIA/Openreach and designed network assets are not touched.
+  // =====================================================
+  const handleToggleSurveyDeleteHomesMode = () => {
+    setMapMode((prev) => (prev === "survey-delete-homes" ? "pick" : "survey-delete-homes"));
+    setIsPanelOpen(true);
+    setContextMenu((prev) => ({ ...prev, visible: false }));
+  };
+
+  const handleToggleSurveyDeleteHomeSelection = (home: SavedMapAsset) => {
+    if (mapMode !== "survey-delete-homes") return;
+    if (home.assetType !== "home") return;
+
+    const homeId = String(home.id || "");
+    if (!homeId) return;
+
+    setSelectedSurveyDeleteHomeIds((prev) =>
+      prev.includes(homeId)
+        ? prev.filter((id) => id !== homeId)
+        : [...prev, homeId],
+    );
+  };
+
+  const handleClearSurveyDeleteHomeSelection = () => {
+    setSelectedSurveyDeleteHomeIds([]);
+  };
+
+  const handleDeleteSelectedSurveyHomes = async () => {
+    if (selectedSurveyDeleteHomeIds.length === 0) {
+      alert("Select one or more wrong homes first.");
+      return;
+    }
+
+    const selectedHomeIds = new Set(selectedSurveyDeleteHomeIds.map(String));
+
+    // Project GeoJSON / OSM homes can live in projectHomes instead of savedJoints.
+    // Build a wider key set so deletion works for both normal IDs and UPRN IDs,
+    // and so related drop cables are removed even when they reference homeId/uprn.
+    const selectedHomeKeySet = new Set<string>();
+    allMapAssets.forEach((asset: any) => {
+      if (asset?.assetType !== "home") return;
+      const assetId = String(asset.id || "");
+      if (!selectedHomeIds.has(assetId)) return;
+      selectedHomeKeySet.add(assetId);
+      getHomeDropKeys(asset).forEach((key) => selectedHomeKeySet.add(key));
+    });
+
+    selectedHomeIds.forEach((id) => selectedHomeKeySet.add(id));
+
+    const ok = window.confirm(
+      `Delete ${selectedSurveyDeleteHomeIds.length} selected home${selectedSurveyDeleteHomeIds.length === 1 ? "" : "s"} and any related drop cables?\n\nThis will not delete DPs, joints, feeder cables, link cables, PIA/Openreach overlay or project areas.`,
+    );
+
+    if (!ok) return;
+
+    const shouldRemoveAsset = (asset: SavedMapAsset) => {
+      const assetId = String(asset.id || "");
+
+      if (asset.assetType === "home" && selectedHomeIds.has(assetId)) {
+        return true;
+      }
+
+      const cableType = String((asset as any).cableType || "").toLowerCase();
+      const isRelatedDropCable =
+        asset.assetType === "cable" &&
+        (cableType.includes("drop") ||
+          String((asset as any).isDropCable || "").toLowerCase() === "true" ||
+          String((asset as any).autoGeneratedDrop || "").toLowerCase() === "true" ||
+          String((asset as any).autoGenerated || "").toLowerCase() === "true" ||
+          String((asset as any).generated || "").toLowerCase() === "true") &&
+        getDropHomeKeys(asset).some((key) => selectedHomeKeySet.has(key));
+
+      return isRelatedDropCable;
+    };
+
+    setSavedJoints((prev) => (prev ?? []).filter((asset) => !shouldRemoveAsset(asset)));
+
+    if (activeProjectId) {
+      const updatedProjectHomes = (projectHomes ?? []).filter((home) => {
+        const homeId = String(home.id || "");
+        return !selectedHomeIds.has(homeId);
+      });
+
+      setProjectHomes(updatedProjectHomes);
+
+      try {
+        await saveProjectHomes(activeProjectId, updatedProjectHomes);
+      } catch (err) {
+        console.error("Failed to save project homes after survey cleanup delete", err);
+        alert("Homes were removed from the map view, but saving project homes failed. Check the console before refreshing.");
+      }
+    }
+
+    setSelectedSurveyDeleteHomeIds([]);
+    setMapMode("pick");
+  };
   // =====================================================
   // MOVE HOMES TO DP WORKFLOW
   // Select one or many UPRNs/homes, then click a target DP.
@@ -2750,7 +2916,10 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
         if (loadedExistingHomes) return;
 
         const geojson = JSON.parse(String(e.target?.result || ""));
-        const homes = createHomeAssetsFromGeoJson(geojson, map.getBounds());
+        const importedHomes = createHomeAssetsFromGeoJson(geojson, map.getBounds());
+        const homes = activeProjectArea
+          ? filterAssetsForProjectArea(importedHomes, activeProjectArea)
+          : importedHomes;
 
         if (homes.length === 0) {
           alert("No new GeoJSON homes found in the current map view.");
@@ -2880,6 +3049,679 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
     URL.revokeObjectURL(url);
   };
 
+
+
+  const normalisePiaGeoJsonCoordinate = (coord: any): [number, number] | null => {
+    if (!Array.isArray(coord) || coord.length < 2) return null;
+
+    const x = Number(coord[0]);
+    const y = Number(coord[1]);
+
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+
+    // Normal GeoJSON WGS84 is [lng, lat].
+    if (Math.abs(x) <= 180 && Math.abs(y) <= 90) {
+      return [y, x];
+    }
+
+    // Many QGIS/KML exports arrive as EPSG:3857 Web Mercator metres.
+    // Example from the user's PIA file: x=-168793, y=7087372.
+    if (Math.abs(x) <= 20037508.34 && Math.abs(y) <= 20037508.34) {
+      const earthRadius = 6378137;
+      const lng = (x / earthRadius) * (180 / Math.PI);
+      const lat =
+        (2 * Math.atan(Math.exp(y / earthRadius)) - Math.PI / 2) *
+        (180 / Math.PI);
+
+      if (
+        Number.isFinite(lat) &&
+        Number.isFinite(lng) &&
+        Math.abs(lat) <= 90 &&
+        Math.abs(lng) <= 180
+      ) {
+        return [lat, lng];
+      }
+    }
+
+    return null;
+  };
+
+
+  const createPiaOverlayAssetsFromGeoJson = (geojson: any): SavedMapAsset[] => {
+    if (!geojson?.features || !Array.isArray(geojson.features)) {
+      throw new Error("Invalid GeoJSON FeatureCollection");
+    }
+
+    const existingPiaKeys = new Set(
+      savedJoints
+        .filter((asset) => String((asset as any).source || "") === "pia-overlay")
+        .map((asset) => String((asset as any).piaRef || asset.name || asset.id || "").trim())
+        .filter(Boolean),
+    );
+
+    return geojson.features
+      .map((feature: any, index: number) => {
+        if (feature?.geometry?.type !== "LineString") return null;
+        if (!Array.isArray(feature.geometry.coordinates)) return null;
+
+        const coords = feature.geometry.coordinates
+          .map((coord: any) => normalisePiaGeoJsonCoordinate(coord))
+          .filter(Boolean) as [number, number][];
+
+        if (coords.length < 2) return null;
+
+        const props = feature.properties || {};
+        const rawName = String(
+          props.Name ||
+            props.name ||
+            props.id ||
+            feature.id ||
+            `PIA Route ${index + 1}`,
+        ).trim();
+
+        const description = String(props.description || props.Description || "").trim();
+        const lowerName = rawName.toLowerCase();
+        const lowerDescription = description.toLowerCase();
+
+        const piaKind =
+          lowerName.includes("trnch") || lowerDescription.includes("trench")
+            ? "trench"
+            : lowerName.includes("cnd") || lowerDescription.includes("duct")
+              ? "duct"
+              : "route";
+
+        const piaKey = rawName || `${piaKind}-${index + 1}`;
+
+        // if (existingPiaKeys.has(piaKey)) return null;
+        existingPiaKeys.add(piaKey);
+
+        return markAssetForLiveSync(
+          {
+            id: `pia-${crypto.randomUUID()}`,
+            name: rawName || `PIA Route ${index + 1}`,
+            assetType: "pia-route",
+            jointType: "PIA Route",
+            source: "pia-overlay",
+            cableType: "PIA Overlay",
+            installMethod: "Underground",
+            notes: description,
+            status: "Live",
+            piaRef: piaKey,
+            piaKind,
+            piaProperties: props,
+            geometry: {
+              type: "LineString",
+              coordinates: coords,
+            },
+          } as SavedMapAsset,
+          true,
+        );
+      })
+      .filter(Boolean) as SavedMapAsset[];
+  };
+
+  const loadPiaOverlayGeoJson = async (file: File) => {
+    const reader = new FileReader();
+
+    reader.onload = async (e) => {
+      try {
+        const geojson = JSON.parse(String(e.target?.result || ""));
+        const piaAssets = createPiaOverlayAssetsFromGeoJson(geojson);
+
+        if (!piaAssets.length) {
+          alert("No new PIA LineString routes found in that GeoJSON.");
+          return;
+        }
+
+        setSavedJoints((prev) => [
+          ...prev.filter((asset) => String((asset as any).source || "") !== "pia-overlay"),
+          ...piaAssets,
+        ]);
+        alert(`Imported ${piaAssets.length} PIA overlay routes. Existing PIA overlay routes were replaced.`);
+      } catch (err: any) {
+        console.error(err);
+        alert(`PIA overlay import failed: ${err.message || String(err)}`);
+      }
+    };
+
+    reader.readAsText(file);
+  };
+
+
+  // =====================================================
+  // ONE-BUTTON GEOJSON MAP ASSET IMPORTER
+  // Accepts mixed GeoJSON containing DPs/AFNs/CBTs, poles,
+  // chambers, street cabs, project polygons, cables/routes,
+  // PIA overlay routes, exchanges and UPRN/home points.
+  // Homes still save to projectHomes chunks. Network assets save
+  // to saved map assets and are mirrored by split storage.
+  // =====================================================
+
+  const readGeoJsonProp = (props: any, keys: string[], fallback = ""): string => {
+    for (const key of keys) {
+      const value = props?.[key];
+      if (value !== undefined && value !== null && String(value).trim() !== "") {
+        return String(value).trim();
+      }
+    }
+    return fallback;
+  };
+
+  const buildGeoJsonAssetText = (feature: any): string => {
+    const props = feature?.properties || {};
+    return [
+      props.assetType,
+      props.jointType,
+      props.type,
+      props.category,
+      props.class,
+      props.name,
+      props.Name,
+      props.id,
+      props.dpType,
+      props.chamberType,
+      props.cableType,
+      props.description,
+      props.Description,
+      feature?.geometry?.type,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+  };
+
+  const classifyGeoJsonFeature = (feature: any): AssetType | "pia-route" | "home" | "area" | "cable" => {
+    const geometryType = String(feature?.geometry?.type || "");
+    const text = buildGeoJsonAssetText(feature);
+    const props = feature?.properties || {};
+    const propKeys = Object.keys(props).join(" ").toLowerCase();
+
+    if (geometryType.includes("Polygon")) return "area";
+
+    // UPRN home GeoJSON often stores the useful clue in the FIELD NAME
+    // e.g. { UPRN: "123..." }, not in the field value. The old logic only
+    // searched values, so 300k Bradford UPRN points were being imported as DPs.
+    if (
+      geometryType === "Point" &&
+      (
+        propKeys.includes("uprn") ||
+        propKeys.includes("udprn") ||
+        propKeys.includes("toid") ||
+        text.includes("uprn") ||
+        text.includes("home") ||
+        text.includes("premise") ||
+        text.includes("building") ||
+        text.includes("residential")
+      )
+    ) {
+      return "home";
+    }
+
+    if (
+      text.includes("pia") ||
+      text.includes("openreach") ||
+      text.includes("osp:trnch") ||
+      text.includes("trnch") ||
+      text.includes("osp:cnd") ||
+      text.includes("duct") ||
+      text.includes("trench")
+    ) {
+      return "pia-route";
+    }
+
+    if (geometryType.includes("LineString")) return "cable";
+
+    if (text.includes("street cab") || text.includes("streetcab") || text.includes("cabinet") || text.includes("cab")) {
+      return "street-cab" as AssetType;
+    }
+
+    if (text.includes("chamber") || text.includes("fw2") || text.includes("fw4") || text.includes("fw6") || text.includes("fw10")) {
+      return "chamber" as AssetType;
+    }
+
+    if (text.includes("pole")) return "pole" as AssetType;
+
+    if (
+      text.includes("distribution") ||
+      text.includes(" dp") ||
+      text.startsWith("dp") ||
+      text.includes(" afn") ||
+      text.startsWith("afn") ||
+      text.includes(" cbt") ||
+      text.startsWith("cbt")
+    ) {
+      return "distribution-point" as AssetType;
+    }
+
+    if (text.includes("exchange")) return "exchange" as AssetType;
+    if (text.includes("lmj") || text.includes("cmj") || text.includes("ag")) return "ag-joint" as AssetType;
+
+    return geometryType === "Point" ? ("distribution-point" as AssetType) : "cable";
+  };
+
+  const convertGeoJsonPoint = (coordinates: any): [number, number] | null => {
+    return normalisePiaGeoJsonCoordinate(coordinates);
+  };
+
+  const convertGeoJsonLine = (coordinates: any): [number, number][] => {
+    if (!Array.isArray(coordinates)) return [];
+    return coordinates
+      .map((coord: any) => normalisePiaGeoJsonCoordinate(coord))
+      .filter(Boolean) as [number, number][];
+  };
+
+  const convertGeoJsonPolygon = (coordinates: any): [number, number][][] => {
+    if (!Array.isArray(coordinates)) return [];
+    return coordinates
+      .map((ring: any) => convertGeoJsonLine(ring))
+      .filter((ring: [number, number][]) => ring.length >= 3);
+  };
+
+  const buildImportedAssetBase = (feature: any, index: number, importKind: string) => {
+    const props = feature?.properties || {};
+    const existingId = readGeoJsonProp(props, ["id", "ID", "assetId", "AssetId"]);
+    const name = readGeoJsonProp(
+      props,
+      ["name", "Name", "label", "Label", "ref", "Ref", "id", "ID"],
+      `Imported ${importKind} ${index + 1}`,
+    );
+
+    return {
+      id: existingId ? `${importKind}-${existingId}` : `${importKind}-${crypto.randomUUID()}`,
+      name,
+      notes: readGeoJsonProp(props, ["notes", "Notes", "description", "Description"]),
+      status: readGeoJsonProp(props, ["status", "Status"], "Planned"),
+      source: readGeoJsonProp(props, ["source", "Source"], "geojson-import"),
+      importedProperties: props,
+      projectId: activeProjectId || undefined,
+    };
+  };
+
+  const createMapAssetsFromAnyGeoJson = (geojson: any) => {
+    if (!geojson?.features || !Array.isArray(geojson.features)) {
+      throw new Error("Invalid GeoJSON FeatureCollection");
+    }
+
+    const networkAssets: SavedMapAsset[] = [];
+    const homeAssets: SavedMapAsset[] = [];
+    const counts: Record<string, number> = {};
+
+    geojson.features.forEach((feature: any, index: number) => {
+      const geometryType = String(feature?.geometry?.type || "");
+      const props = feature?.properties || {};
+      const classifiedType = classifyGeoJsonFeature(feature);
+      counts[classifiedType] = (counts[classifiedType] || 0) + 1;
+
+      if (classifiedType === "home") {
+        if (geometryType !== "Point") return;
+        const point = convertGeoJsonPoint(feature.geometry.coordinates);
+        if (!point) return;
+
+        const rawUprn = readGeoJsonProp(props, ["UPRN", "uprn", "Uprn", "id", "ID"]);
+        const id = rawUprn ? `uprn-${rawUprn}` : `home-${crypto.randomUUID()}`;
+        homeAssets.push(
+          markAssetForLiveSync(
+            {
+              id,
+              name: rawUprn ? `UPRN ${rawUprn}` : readGeoJsonProp(props, ["name", "Name"], "Home"),
+              assetType: "home",
+              jointType: "Home",
+              uprn: rawUprn || undefined,
+              projectId: activeProjectId || undefined,
+              connectionMode: "auto",
+              notes: readGeoJsonProp(props, ["notes", "Notes", "description", "Description"]),
+              importedProperties: props,
+              geometry: {
+                type: "Point",
+                coordinates: point,
+              },
+            } as SavedMapAsset,
+            true,
+          ),
+        );
+        return;
+      }
+
+      if (classifiedType === "pia-route") {
+        if (geometryType === "LineString") {
+          const coords = convertGeoJsonLine(feature.geometry.coordinates);
+          if (coords.length < 2) return;
+          networkAssets.push(
+            markAssetForLiveSync(
+              {
+                ...buildImportedAssetBase(feature, index, "pia"),
+                id: `pia-${crypto.randomUUID()}`,
+                assetType: "pia-route" as any,
+                jointType: "PIA Route",
+                cableType: "PIA Overlay",
+                installMethod: "Underground",
+                piaKind: buildGeoJsonAssetText(feature).includes("trench") || buildGeoJsonAssetText(feature).includes("trnch") ? "trench" : "duct",
+                geometry: {
+                  type: "LineString",
+                  coordinates: coords,
+                },
+              } as SavedMapAsset,
+              true,
+            ),
+          );
+        }
+        return;
+      }
+
+      if (geometryType === "Point") {
+        const point = convertGeoJsonPoint(feature.geometry.coordinates);
+        if (!point) return;
+        const base = buildImportedAssetBase(feature, index, String(classifiedType));
+        const jointType = readGeoJsonProp(
+          props,
+          ["jointType", "JointType", "type", "Type", "dpType", "DPType"],
+          classifiedType === "distribution-point" ? "DP" : String(classifiedType),
+        );
+
+        networkAssets.push(
+          markAssetForLiveSync(
+            {
+              ...base,
+              assetType: classifiedType as AssetType,
+              jointType,
+              dpDetails:
+                classifiedType === "distribution-point"
+                  ? ({ dpType: jointType || "DP", status: base.status } as any)
+                  : undefined,
+              geometry: {
+                type: "Point",
+                coordinates: point,
+              },
+            } as SavedMapAsset,
+            true,
+          ),
+        );
+        return;
+      }
+
+      if (geometryType === "LineString") {
+        const coords = convertGeoJsonLine(feature.geometry.coordinates);
+        if (coords.length < 2) return;
+        const base = buildImportedAssetBase(feature, index, "cable");
+        networkAssets.push(
+          markAssetForLiveSync(
+            {
+              ...base,
+              assetType: "cable" as AssetType,
+              jointType: readGeoJsonProp(props, ["jointType", "JointType"], "Cable"),
+              cableType: readGeoJsonProp(props, ["cableType", "CableType"], "Feeder"),
+              fibreCount: readGeoJsonProp(props, ["fibreCount", "FibreCount", "fibres"], ""),
+              installMethod: readGeoJsonProp(props, ["installMethod", "InstallMethod"], "Underground"),
+              geometry: {
+                type: "LineString",
+                coordinates: coords,
+              },
+            } as SavedMapAsset,
+            true,
+          ),
+        );
+        return;
+      }
+
+      if (geometryType === "MultiLineString") {
+        if (!Array.isArray(feature.geometry.coordinates)) return;
+        feature.geometry.coordinates.forEach((line: any, lineIndex: number) => {
+          const coords = convertGeoJsonLine(line);
+          if (coords.length < 2) return;
+          const base = buildImportedAssetBase(feature, index, "cable");
+          networkAssets.push(
+            markAssetForLiveSync(
+              {
+                ...base,
+                id: `${base.id}-${lineIndex + 1}`,
+                name: `${base.name} ${lineIndex + 1}`,
+                assetType: "cable" as AssetType,
+                jointType: "Cable",
+                cableType: readGeoJsonProp(props, ["cableType", "CableType"], "Feeder"),
+                installMethod: readGeoJsonProp(props, ["installMethod", "InstallMethod"], "Underground"),
+                geometry: {
+                  type: "LineString",
+                  coordinates: coords,
+                },
+              } as SavedMapAsset,
+              true,
+            ),
+          );
+        });
+        return;
+      }
+
+      if (geometryType === "Polygon") {
+        const rings = convertGeoJsonPolygon(feature.geometry.coordinates);
+        if (!rings.length) return;
+        networkAssets.push(
+          markAssetForLiveSync(
+            {
+              ...buildImportedAssetBase(feature, index, "area"),
+              assetType: "area" as AssetType,
+              jointType: "Polygon Area",
+              areaLevel: readGeoJsonProp(props, ["areaLevel", "level", "Level"], "L0"),
+              geometry: {
+                type: "Polygon",
+                coordinates: rings,
+              },
+            } as SavedMapAsset,
+            true,
+          ),
+        );
+        return;
+      }
+
+      if (geometryType === "MultiPolygon") {
+        if (!Array.isArray(feature.geometry.coordinates)) return;
+        feature.geometry.coordinates.forEach((polygon: any, polygonIndex: number) => {
+          const rings = convertGeoJsonPolygon(polygon);
+          if (!rings.length) return;
+          const base = buildImportedAssetBase(feature, index, "area");
+          networkAssets.push(
+            markAssetForLiveSync(
+              {
+                ...base,
+                id: `${base.id}-${polygonIndex + 1}`,
+                name: `${base.name} ${polygonIndex + 1}`,
+                assetType: "area" as AssetType,
+                jointType: "Polygon Area",
+                areaLevel: readGeoJsonProp(props, ["areaLevel", "level", "Level"], "L0"),
+                geometry: {
+                  type: "Polygon",
+                  coordinates: rings,
+                },
+              } as SavedMapAsset,
+              true,
+            ),
+          );
+        });
+      }
+    });
+
+    return { networkAssets, homeAssets, counts };
+  };
+
+  const loadAnyGeoJsonMapAssets = (file: File) => {
+    const reader = new FileReader();
+
+    reader.onload = async (e) => {
+      try {
+        const geojson = JSON.parse(String(e.target?.result || ""));
+        const { networkAssets: rawNetworkAssets, homeAssets: rawHomeAssets } = createMapAssetsFromAnyGeoJson(geojson);
+
+        const networkAssets = activeProjectArea
+          ? filterAssetsForProjectArea(rawNetworkAssets, activeProjectArea)
+          : rawNetworkAssets;
+        const homeAssets = activeProjectArea
+          ? filterAssetsForProjectArea(rawHomeAssets, activeProjectArea)
+          : rawHomeAssets;
+
+        if (!networkAssets.length && !homeAssets.length) {
+          alert("No supported GeoJSON map assets found inside the selected project area. Check the area polygon is selected before importing.");
+          return;
+        }
+
+        let savedHomeCount = 0;
+        if (homeAssets.length) {
+          if (!activeProjectId) {
+            alert("This file contains homes/UPRNs. Select a project area first so homes can be saved to project home chunks.");
+            return;
+          }
+
+          const existingHomes = loadedHomesProjectId === activeProjectId ? projectHomes : await loadProjectHomes(activeProjectId);
+          const existingHomeKeys = new Set(
+            existingHomes.map((home: any) => String(home.uprn || home.id || home.name || "").trim()).filter(Boolean),
+          );
+          const newHomes = homeAssets.filter((home: any) => {
+            const key = String(home.uprn || home.id || home.name || "").trim();
+            if (!key || existingHomeKeys.has(key)) return false;
+            existingHomeKeys.add(key);
+            return true;
+          });
+
+          if (newHomes.length) {
+            const mergedHomes = [...existingHomes, ...newHomes.map((home) => ({ ...home, projectId: activeProjectId }))];
+            await saveProjectHomes(activeProjectId, mergedHomes);
+            setProjectHomes(mergedHomes);
+            setLoadedHomesProjectId(activeProjectId);
+            savedHomeCount = newHomes.length;
+          }
+        }
+
+        if (networkAssets.length) {
+          const existingIds = new Set(savedJoints.map((asset) => String(asset.id)));
+          const dedupedNetworkAssets = networkAssets.filter((asset) => {
+            const id = String(asset.id);
+            if (existingIds.has(id)) return false;
+            existingIds.add(id);
+            return true;
+          });
+          setSavedJoints((prev) => [...prev, ...dedupedNetworkAssets]);
+        }
+
+        alert(`Imported ${networkAssets.length} network asset(s) and ${savedHomeCount} home(s) from GeoJSON.`);
+      } catch (err: any) {
+        console.error(err);
+        alert(`GeoJSON map asset import failed: ${err.message || String(err)}`);
+      }
+    };
+
+    reader.readAsText(file);
+  };
+
+  const isPiaOverlayAsset = (asset: SavedMapAsset): boolean => {
+    const item = asset as any;
+    const source = String(item.source || "").trim().toLowerCase();
+    const assetType = String(item.assetType || "").trim().toLowerCase();
+    const jointType = String(item.jointType || "").trim().toLowerCase();
+    const cableType = String(item.cableType || "").trim().toLowerCase();
+    const routeType = String(item.routeType || item.importedProperties?.routeType || "").trim().toLowerCase();
+
+    return (
+      source === "pia-overlay" ||
+      source.includes("pia screenshot") ||
+      source.includes("openreach") ||
+      assetType === "pia-route" ||
+      assetType === "or-duct" ||
+      assetType === "or-pole" ||
+      assetType === "or-chamber" ||
+      jointType === "pia route" ||
+      jointType === "or duct" ||
+      jointType === "or pole" ||
+      jointType === "or chamber" ||
+      routeType === "or duct" ||
+      routeType.includes("duct") ||
+      cableType === "pia overlay"
+    );
+  };
+
+  const getAssetLinePositions = (asset: SavedMapAsset): [number, number][] => {
+    const coords = (asset as any).geometry?.coordinates;
+    if (!Array.isArray(coords)) return [];
+
+    return coords
+      .filter((point: any) => Array.isArray(point) && point.length >= 2)
+      .map((point: any) => [Number(point[0]), Number(point[1])] as [number, number])
+      .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
+  };
+
+  const getAssetPointPosition = (asset: SavedMapAsset): [number, number] | null => {
+    const coords = (asset as any).geometry?.coordinates;
+    if (!Array.isArray(coords) || coords.length < 2) return null;
+
+    const lat = Number(coords[0]);
+    const lng = Number(coords[1]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    return [lat, lng];
+  };
+
+  const isImportedOrDuctAsset = (asset: SavedMapAsset): boolean => {
+    const item = asset as any;
+    const source = String(item.source || "").trim().toLowerCase();
+    const assetType = String(item.assetType || "").trim().toLowerCase();
+    const jointType = String(item.jointType || "").trim().toLowerCase();
+    const cableType = String(item.cableType || "").trim().toLowerCase();
+    const routeType = String(item.routeType || item.importedProperties?.routeType || "").trim().toLowerCase();
+    const geometryType = String(item.geometry?.type || item.geometryType || "").trim().toLowerCase();
+
+    return (
+      geometryType === "linestring" &&
+      (assetType === "pia-route" ||
+        assetType === "or-duct" ||
+        jointType.includes("duct") ||
+        routeType.includes("duct") ||
+        cableType === "pia overlay" ||
+        source.includes("pia screenshot"))
+    );
+  };
+
+  const isImportedOrChamberAsset = (asset: SavedMapAsset): boolean => {
+    const item = asset as any;
+    const assetType = String(item.assetType || "").trim().toLowerCase();
+    const jointType = String(item.jointType || "").trim().toLowerCase();
+    return assetType === "chamber" || assetType === "or-chamber" || jointType.includes("chamber");
+  };
+
+  const isImportedOrPoleAsset = (asset: SavedMapAsset): boolean => {
+    const item = asset as any;
+    const assetType = String(item.assetType || "").trim().toLowerCase();
+    const jointType = String(item.jointType || "").trim().toLowerCase();
+    return assetType === "pole" || assetType === "or-pole" || jointType.includes("pole");
+  };
+
+  const handleDeletePiaOverlayForActiveProject = () => {
+    if (!activeProjectArea) {
+      alert("Select a project area first, then delete the PIA / Openreach overlay for that area.");
+      return;
+    }
+
+    const scopedPiaAssets = filterAssetsForProjectArea(
+      savedJoints.filter((asset) => isPiaOverlayAsset(asset)),
+      activeProjectArea,
+    );
+
+    if (!scopedPiaAssets.length) {
+      alert("No PIA / Openreach overlay assets were found inside this selected project area.");
+      return;
+    }
+
+    const areaName = activeProjectArea.name || "this selected area";
+    const confirmed = window.confirm(
+      `Delete ${scopedPiaAssets.length} PIA / Openreach overlay route(s) from ${areaName}?
+
+Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
+    );
+
+    if (!confirmed) return;
+
+    const deleteIds = new Set(scopedPiaAssets.map((asset) => String(asset.id)));
+
+    setSavedJoints((prev) => prev.filter((asset) => !deleteIds.has(String(asset.id))));
+    alert(`Deleted ${scopedPiaAssets.length} PIA / Openreach overlay route(s) from ${areaName}.`);
+  };
+
+
   const handleImportJson = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -2905,22 +3747,40 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
 
   const availableParentCablesForBranchAllocation = useMemo(
     () =>
-      allMapAssets.filter((asset) => {
-        if (asset.assetType !== "cable") return false;
-        if (asset.geometry?.type !== "LineString") return false;
-        if (asset.id === editingAssetId) return false;
+      allMapAssets
+        .filter((asset) => {
+          const item = asset as any;
+          const assetType = String(item.assetType || "").toLowerCase();
+          const cableType = String(item.cableType || "").toLowerCase();
+          const name = String(item.name || item.cableId || item.id || "").toLowerCase();
+          const fibreNumber = Number(String(item.fibreCount || "").replace(/\D/g, "")) || 0;
 
-        // Parent / through cable options need to include link cables as well as
-        // feeder/spine/ULW cables. Previously Link Cable was excluded, so cables
-        // like BD-BAW-LC011 could not be selected as a BAS parent cable.
-        return (
-          asset.cableType === "AFN Spine Cable" ||
-          asset.cableType === "Feeder Cable" ||
-          asset.cableType === "ULW Cable" ||
-          asset.cableType === "Link Cable" ||
-          asset.installMethod === "OH"
-        );
-      }),
+          if (asset.id === editingAssetId) return false;
+          if (asset.geometry?.type !== "LineString") return false;
+          if (assetType && assetType !== "cable") return false;
+
+          // Customer drops are not valid AFN through/parent cables.
+          if (isDropCable(asset) || cableType.includes("drop") || name.includes("drop")) return false;
+
+          // Keep broad so newly drawn Link/Distribution/Spine/ULW/OH cables
+          // appear immediately, including older saved records with only size.
+          return (
+            cableType.includes("feeder") ||
+            cableType.includes("link") ||
+            cableType.includes("spine") ||
+            cableType.includes("distribution") ||
+            cableType.includes("ulw") ||
+            String(item.installMethod || "").toLowerCase() === "oh" ||
+            fibreNumber >= 12
+          );
+        })
+        .sort((a, b) =>
+          String((a as any).name || (a as any).cableId || a.id).localeCompare(
+            String((b as any).name || (b as any).cableId || b.id),
+            undefined,
+            { numeric: true, sensitivity: "base" },
+          ),
+        ),
     [allMapAssets, editingAssetId],
   );
 
@@ -2998,6 +3858,61 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
   };
 
   // =====================================================
+  // PROJECT WORKSPACE FULL SCREEN MODE
+  // Keeps Leaflet mounted separately from the workspace shell.
+  // This prevents map pane/marker position errors while the
+  // project workspace is loading or open.
+  // =====================================================
+  if (isProjectWorkspaceLoading && activeProjectArea) {
+    return (
+      <div style={projectWorkspaceLoadingOverlay}>
+        <div style={projectWorkspaceLoadingCard}>
+          <div style={{ fontSize: 13, color: "#93c5fd", fontWeight: 800 }}>Opening Project</div>
+          <div style={{ fontSize: 26, fontWeight: 900, marginTop: 8 }}>
+            {activeProjectArea.name || "Selected Project"}
+          </div>
+          <div style={{ color: "#cbd5e1", marginTop: 8 }}>
+            Loading area assets, topology, QA status and fibre continuity…
+          </div>
+          <div style={projectWorkspaceProgressTrack}>
+            <div style={projectWorkspaceProgressBar} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isProjectWorkspaceOpen && activeProjectArea) {
+    return (
+      <ProjectWorkspace
+        projectName={activeProjectArea.name || "Selected Project"}
+        status="Build Phase"
+        stats={projectWorkspaceStats}
+        projectArea={activeProjectArea}
+        projectAssets={visibleProjectAssets}
+        onBackToMap={() => setIsProjectWorkspaceOpen(false)}
+        onOpenTrace={() => {
+          setIsProjectWorkspaceOpen(false);
+          setIsPanelOpen(true);
+        }}
+        onOpenQA={() => {
+          setIsProjectWorkspaceOpen(false);
+          setIsPanelOpen(true);
+        }}
+        onOpenFibreTopology={() => {
+          setIsProjectWorkspaceOpen(false);
+          setIsPanelOpen(true);
+        }}
+        onOpenJointEditor={(asset) => {
+          setIsProjectWorkspaceOpen(false);
+          onOpenJoint(asset);
+        }}
+        onExport={handleExportGeoJson}
+      />
+    );
+  }
+
+  // =====================================================
   // RENDER
   // =====================================================
   return (
@@ -3011,6 +3926,7 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
         color: "white",
       }}
     >
+
       {/* =====================================================
           TOP LEFT: TOOLS DRAWER TOGGLE
           Keeps the first view clean and lets the full editor slide out.
@@ -3067,83 +3983,93 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
 
         <UserMenu variant="sidebar" />
 
+        {activeProjectArea && (
+          <button
+            type="button"
+            onClick={() => setIsProjectWorkspaceOpen(true)}
+            style={{ ...btnPrimary, width: "100%", marginTop: 10, marginBottom: 6 }}
+          >
+            Open Project Workspace
+          </button>
+        )}
+
+        {activeProjectArea && (
+          <button
+            type="button"
+            onClick={handleDeletePiaOverlayForActiveProject}
+            style={{ ...btnDanger, width: "100%", marginBottom: 6 }}
+          >
+            Delete PIA / Openreach Overlay In This Area
+          </button>
+        )}
+
+        <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 10 }}>
+          Scope: {activeProjectArea ? activeProjectArea.name || "Selected area" : "Whole network"}
+        </div>
+
+
+
         <details open style={card}>
-          <summary style={sectionSummary}>Fibre Tray Topology</summary>
+          <summary style={sectionSummary}>Survey Cleanup</summary>
           <div style={sectionBody}>
-            <div style={{ color: "#cbd5e1", fontSize: "0.82rem", marginBottom: 10 }}>
-              Reads Fibre Tray Editor mapping rows and matches Cable IDs to live map cables.
+            <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.4 }}>
+              Select wrong imported homes on the map and delete them in one batch. This does not touch DPs, joints, feeder/link cables, project areas or PIA/Openreach overlay.
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <div style={{ ...statTile }}>
-                <strong>{fibreTrayTopology.mappedJoints}</strong>
-                <span>Mapped joints</span>
-              </div>
-              <div style={{ ...statTile }}>
-                <strong>{fibreTrayTopology.mappingRows}</strong>
-                <span>Rows</span>
-              </div>
-              <div style={{ ...statTile }}>
-                <strong>{fibreTrayTopology.cableRefs}</strong>
-                <span>Cable IDs</span>
-              </div>
-              <div style={{ ...statTile }}>
-                <strong>{fibreTrayTopology.routeLinks}</strong>
-                <span>Route links</span>
-              </div>
-            </div>
-
-            <div
-              style={{
-                marginTop: 10,
-                padding: 10,
-                borderRadius: 8,
-                background: fibreTrayTopology.unmatchedCableRefs.length ? "#451a03" : "#052e16",
-                border: fibreTrayTopology.unmatchedCableRefs.length
-                  ? "1px solid #f97316"
-                  : "1px solid #16a34a",
-                color: fibreTrayTopology.unmatchedCableRefs.length ? "#fed7aa" : "#86efac",
-                fontWeight: 700,
-                fontSize: "0.82rem",
-              }}
+            <button
+              type="button"
+              onClick={handleToggleSurveyDeleteHomesMode}
+              style={mapMode === "survey-delete-homes" ? btnDanger : btnSecondary}
             >
-              {isLoadingFibreTrayTopology
-                ? "Loading fibre tray topology..."
-                : fibreTrayTopologyError
-                  ? `Topology reader error: ${fibreTrayTopologyError}`
-                  : fibreTrayTopology.unmatchedCableRefs.length
-                    ? `${fibreTrayTopology.unmatchedCableRefs.length} cable IDs do not match live map cables.`
-                    : fibreTrayTopology.cableRefs > 0
-                      ? "Fibre tray cable IDs are matching live map cables."
-                      : "No fibre tray rows found yet."}
-            </div>
+              {mapMode === "survey-delete-homes" ? "✓ Delete Homes Mode Active" : "Delete Wrong Homes"}
+            </button>
 
-            {fibreTrayTopology.unmatchedCableRefs.length > 0 ? (
-              <div style={{ marginTop: 10 }}>
-                <div style={label}>Unmatched Cable IDs</div>
-                <div
-                  style={{
-                    maxHeight: 140,
-                    overflow: "auto",
-                    border: "1px solid #334155",
-                    borderRadius: 8,
-                    padding: 8,
-                    background: "#020617",
-                    color: "#e5e7eb",
-                    fontSize: "0.78rem",
-                  }}
-                >
-                  {fibreTrayTopology.unmatchedCableRefs.slice(0, 50).map((name) => (
-                    <div key={name}>{name}</div>
-                  ))}
-                  {fibreTrayTopology.unmatchedCableRefs.length > 50 ? (
-                    <div style={{ color: "#94a3b8", marginTop: 6 }}>
-                      +{fibreTrayTopology.unmatchedCableRefs.length - 50} more
-                    </div>
-                  ) : null}
+            {mapMode === "survey-delete-homes" ? (
+              <div
+                style={{
+                  background: "#450a0a",
+                  border: "1px solid #ef4444",
+                  borderRadius: 10,
+                  padding: 10,
+                  fontSize: 12,
+                  color: "#fee2e2",
+                }}
+              >
+                <div style={{ fontWeight: 800, marginBottom: 4 }}>
+                  {selectedSurveyDeleteHomeIds.length} home{selectedSurveyDeleteHomeIds.length === 1 ? "" : "s"} selected
                 </div>
+                <div>Click incorrect homes to select/unselect them, then bulk delete.</div>
               </div>
             ) : null}
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={handleDeleteSelectedSurveyHomes}
+                style={btnDanger}
+                disabled={selectedSurveyDeleteHomeIds.length === 0}
+              >
+                Delete Selected Homes
+              </button>
+              <button
+                type="button"
+                onClick={handleClearSurveyDeleteHomeSelection}
+                style={btnSecondary}
+                disabled={selectedSurveyDeleteHomeIds.length === 0}
+              >
+                Clear Selection
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedSurveyDeleteHomeIds([]);
+                  setMapMode("pick");
+                }}
+                style={btnSecondary}
+              >
+                Exit
+              </button>
+            </div>
           </div>
         </details>
 
@@ -3544,30 +4470,21 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
                 : "Load OSM Homes in View"}
             </button>
 
-            <div style={{ marginTop: 10 }}>
-              <div style={label}>Load GeoJSON / UPRN Homes</div>
-              <input
-                type="file"
-                accept=".geojson,.json,application/geo+json,application/json"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) loadGeoJsonHomes(file);
-                  e.target.value = "";
-                }}
-              />
-            </div>
 
             <div style={{ marginTop: 10 }}>
-              <div style={label}>Load GeoJSON / UPRN Homes in View</div>
+              <div style={label}>Load GeoJSON Map Assets</div>
               <input
                 type="file"
                 accept=".geojson,.json,application/geo+json,application/json"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) loadGeoJsonHomesInView(file);
+                  if (file) loadAnyGeoJsonMapAssets(file);
                   e.target.value = "";
                 }}
               />
+              <div style={{ fontSize: "0.78rem", color: "#94a3b8", marginTop: 4 }}>
+                One importer for DPs / AFNs / CBTs, poles, chambers, street cabs, areas, cables, PIA routes and UPRN homes.
+              </div>
             </div>
 
             {isLoadingProjectHomes && (
@@ -3620,12 +4537,18 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
               const map = mapRef.current;
               if (!map) return;
 
-              const center = map.getCenter();
-              saveMapView({
-                center: { lat: center.lat, lng: center.lng },
-                zoom: map.getZoom(),
-                activeProjectId: activeProjectIdRef.current,
-              });
+              try {
+                const container = map.getContainer?.();
+                if (!container || !container.isConnected) return;
+                const center = map.getCenter();
+                saveMapView({
+                  center: { lat: center.lat, lng: center.lng },
+                  zoom: map.getZoom(),
+                  activeProjectId: activeProjectIdRef.current,
+                });
+              } catch {
+                // Ignore stale Leaflet map refs during workspace transitions.
+              }
             }}
           />
           <MapRefTracker
@@ -3672,6 +4595,11 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
             selectedMoveHomeIds={selectedMoveHomeIds}
             onToggleMoveHome={handleToggleMoveHomeSelection}
             onMoveHomesTargetDp={handleMoveSelectedHomesToDp}
+            assetMovementEnabled={Boolean(editingAssetId)}
+            activeMoveAssetId={editingAssetId || undefined}
+            surveyDeleteHomesMode={mapMode === "survey-delete-homes"}
+            selectedSurveyDeleteHomeIds={selectedSurveyDeleteHomeIds}
+            onToggleSurveyDeleteHome={handleToggleSurveyDeleteHomeSelection}
             onMoveAsset={(id, lat, lng) => {
               const beforeAsset = (savedJoints ?? []).find((asset) => asset.id === id);
               const reason = getChangeReasonForCurrentMode("moved", beforeAsset?.name || id);
@@ -3721,6 +4649,165 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
               onDelete={handleDeleteAsset}
             />
           )}
+
+          <OpenreachOverlayLayer
+            assets={visibleProjectAssets}
+            visibleLayers={openreachLayers}
+          />
+
+          {/* =====================================================
+              IMPORTED OR / PIA GEOJSON FALLBACK RENDERER
+              This keeps screenshot-traced ducts, chambers and poles visible
+              even when the external OpenreachOverlayLayer does not recognise
+              the imported assetType / jointType combination yet.
+              ===================================================== */}
+          {openreachLayers.ducts &&
+            visibleProjectAssets
+              .filter((asset) => isImportedOrDuctAsset(asset))
+              .map((asset) => {
+                const positions = getAssetLinePositions(asset);
+                if (positions.length < 2) return null;
+
+                return (
+                  <Polyline
+                    key={`or-duct-fallback-${asset.id}`}
+                    positions={positions}
+                    pathOptions={{ color: "#06b6d4", weight: 3, dashArray: "7, 7", opacity: 0.9 }}
+                    eventHandlers={{
+                      click: () => {
+                        handleEditAsset(asset);
+                        setIsPanelOpen(true);
+                      },
+                    }}
+                  >
+                    <Tooltip sticky>{asset.name || "OR duct"}</Tooltip>
+                    <Popup>
+                      <div style={{ minWidth: 190 }}>
+                        <b>{asset.name || "OR duct"}</b>
+                        <br />
+                        {String((asset as any).jointType || (asset as any).routeType || "Imported OR duct")}
+                        <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
+                          <button
+                            type="button"
+                            style={btnSecondary}
+                            onClick={() => {
+                              handleEditAsset(asset);
+                              setIsPanelOpen(true);
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            style={btnDanger}
+                            onClick={() => handleDeleteAsset(asset.id)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </Popup>
+                  </Polyline>
+                );
+              })}
+
+          {openreachLayers.chambers &&
+            visibleProjectAssets
+              .filter((asset) => isImportedOrChamberAsset(asset))
+              .map((asset) => {
+                const position = getAssetPointPosition(asset);
+                if (!position) return null;
+
+                return (
+                  <Marker
+                    key={`or-chamber-fallback-${asset.id}`}
+                    position={position}
+                    eventHandlers={{
+                      click: () => {
+                        handleEditAsset(asset);
+                        setIsPanelOpen(true);
+                      },
+                    }}
+                  >
+                    <Tooltip sticky>{asset.name || "OR chamber"}</Tooltip>
+                    <Popup>
+                      <div style={{ minWidth: 190 }}>
+                        <b>{asset.name || "OR chamber"}</b>
+                        <br />
+                        {String((asset as any).jointType || "Chamber")}
+                        <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
+                          <button
+                            type="button"
+                            style={btnSecondary}
+                            onClick={() => {
+                              handleEditAsset(asset);
+                              setIsPanelOpen(true);
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            style={btnDanger}
+                            onClick={() => handleDeleteAsset(asset.id)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </Popup>
+                  </Marker>
+                );
+              })}
+
+          {openreachLayers.poles &&
+            visibleProjectAssets
+              .filter((asset) => isImportedOrPoleAsset(asset))
+              .map((asset) => {
+                const position = getAssetPointPosition(asset);
+                if (!position) return null;
+
+                return (
+                  <Marker
+                    key={`or-pole-fallback-${asset.id}`}
+                    position={position}
+                    eventHandlers={{
+                      click: () => {
+                        handleEditAsset(asset);
+                        setIsPanelOpen(true);
+                      },
+                    }}
+                  >
+                    <Tooltip sticky>{asset.name || "OR pole"}</Tooltip>
+                    <Popup>
+                      <div style={{ minWidth: 190 }}>
+                        <b>{asset.name || "OR pole"}</b>
+                        <br />
+                        {String((asset as any).jointType || "Pole")}
+                        <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
+                          <button
+                            type="button"
+                            style={btnSecondary}
+                            onClick={() => {
+                              handleEditAsset(asset);
+                              setIsPanelOpen(true);
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            style={btnDanger}
+                            onClick={() => handleDeleteAsset(asset.id)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </Popup>
+                  </Marker>
+                );
+              })}
 
           <CableLinesLayer
             assets={visibleProjectAssets}
@@ -4059,6 +5146,13 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
           onStopMeasurement={() => setMapMode("pick")}
           onUndoMeasurementPoint={handleUndoMeasurementPoint}
           onClearMeasurements={handleClearMeasurement}
+          openreachLayers={openreachLayers}
+          onOpenreachLayerChange={(key, value) =>
+            setOpenreachLayers((prev) => ({
+              ...prev,
+              [key]: value,
+            }))
+          }
         />
       </div>
 
@@ -4167,7 +5261,47 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
 }
 
 // =====================================================
-// STYLES: DRAWER / WELCOME / TOP MAP ACTIONS
+// STYLES: PROJECT WORKSPACE LOADING SCREEN
+// =====================================================
+const projectWorkspaceLoadingOverlay: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 10000,
+  background: "radial-gradient(circle at 60% 40%, rgba(37, 99, 235, 0.22), transparent 36%), #020617",
+  color: "white",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 24,
+  boxSizing: "border-box",
+};
+
+const projectWorkspaceLoadingCard: React.CSSProperties = {
+  width: "min(620px, calc(100vw - 48px))",
+  background: "rgba(15, 23, 42, 0.94)",
+  border: "1px solid rgba(96, 165, 250, 0.35)",
+  borderRadius: 20,
+  padding: 28,
+  boxShadow: "0 24px 80px rgba(0,0,0,0.55)",
+};
+
+const projectWorkspaceProgressTrack: React.CSSProperties = {
+  height: 8,
+  background: "rgba(148, 163, 184, 0.22)",
+  borderRadius: 999,
+  overflow: "hidden",
+  marginTop: 22,
+};
+
+const projectWorkspaceProgressBar: React.CSSProperties = {
+  height: "100%",
+  width: "72%",
+  borderRadius: 999,
+  background: "linear-gradient(90deg, #2563eb, #22c55e)",
+};
+
+// =====================================================
+// STYLES: DRAWER / TOP MAP ACTIONS
 // =====================================================
 const drawerToggleButton: React.CSSProperties = {
   position: "absolute",
@@ -4185,20 +5319,6 @@ const drawerToggleButton: React.CSSProperties = {
 };
 
 
-const welcomeCard: React.CSSProperties = {
-  position: "absolute",
-  top: 72,
-  left: 16,
-  zIndex: 1000,
-  width: 300,
-  maxWidth: "calc(100vw - 32px)",
-  background: "rgba(17, 24, 39, 0.92)",
-  color: "white",
-  border: "1px solid #334155",
-  borderRadius: 14,
-  padding: "14px 16px",
-  boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
-};
 
 const topMapButton: React.CSSProperties = {
   position: "absolute",
@@ -4254,22 +5374,6 @@ const card: React.CSSProperties = {
   gap: 8,
 };
 
-/* =========================================================
-   STYLE: SMALL KPI / TOPOLOGY STAT TILE
-========================================================= */
-const statTile: React.CSSProperties = {
-  background: "#111827",
-  border: "1px solid #334155",
-  borderRadius: 8,
-  padding: "10px 8px",
-  minHeight: 58,
-  display: "flex",
-  flexDirection: "column",
-  justifyContent: "center",
-  gap: 4,
-  color: "white",
-};
-
 const label: React.CSSProperties = {
   fontSize: "0.9rem",
   fontWeight: 600,
@@ -4301,6 +5405,16 @@ const btnSecondary: React.CSSProperties = {
   borderRadius: 6,
   cursor: "pointer",
   border: "1px solid #4b5563",
+};
+
+const btnDanger: React.CSSProperties = {
+  background: "#991b1b",
+  color: "white",
+  padding: "0.5rem",
+  borderRadius: 6,
+  cursor: "pointer",
+  border: "1px solid #ef4444",
+  fontWeight: 800,
 };
 
 const layerRow: React.CSSProperties = {

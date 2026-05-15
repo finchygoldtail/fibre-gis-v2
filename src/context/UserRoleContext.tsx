@@ -1,10 +1,14 @@
 import React, {
   createContext,
   useContext,
+  useEffect,
   useMemo,
+  useState,
 } from "react";
 
 import type { User } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "../firebase";
 
 export type UserRole =
   | "super_user"
@@ -32,22 +36,19 @@ type UserRoleContextValue = {
   isLoadingProfile: boolean;
   permissions: UserPermissions;
   isSuperUser: boolean;
+  isMaintenanceUser: boolean;
+  isBuildUser: boolean;
+  isSurveyUser: boolean;
 };
 
-export const ROLE_LABELS: Record<
-  UserRole,
-  string
-> = {
+export const ROLE_LABELS: Record<UserRole, string> = {
   super_user: "Super User",
   maintenance_user: "Maintenance User",
   build_user: "Build User",
   survey_user: "Survey User",
 };
 
-export const ROLE_PERMISSIONS: Record<
-  UserRole,
-  UserPermissions
-> = {
+export const ROLE_PERMISSIONS: Record<UserRole, UserPermissions> = {
   super_user: {
     survey: true,
     build: true,
@@ -56,8 +57,8 @@ export const ROLE_PERMISSIONS: Record<
   },
 
   maintenance_user: {
-    survey: true,
-    build: true,
+    survey: false,
+    build: false,
     maintenance: true,
     manageUsers: false,
   },
@@ -77,67 +78,115 @@ export const ROLE_PERMISSIONS: Record<
   },
 };
 
-const ROLE_BY_EMAIL: Record<
-  string,
-  UserRole
-> = {
-  "alistairlgrantham@gmail.com":
-    "super_user",
-
-  "benedict.almond@brsk.co.uk":
-    "super_user",
-
-  "adam.whittaker@brsk.co.uk":
-    "super_user",
-
-  "james.oliver@brsk.co.uk":
-    "super_user",
-
-  "alistair.grantham@brsk.co.uk":
-    "super_user",
-
-  "ben.almond@brsk.co.uk":
-    "super_user",
+const ROLE_BY_EMAIL: Record<string, UserRole> = {
+  "alistairlgrantham@gmail.com": "super_user",
+  "benedict.almond@brsk.co.uk": "super_user",
+  "adam.whittaker@brsk.co.uk": "super_user",
+  "james.oliver@brsk.co.uk": "super_user",
+  "alistair.grantham@brsk.co.uk": "super_user",
+  "ben.almond@brsk.co.uk": "super_user",
 };
 
-const LOCKED_DOWN_PERMISSIONS: UserPermissions =
-  {
-    survey: true,
-    build: false,
-    maintenance: false,
-    manageUsers: false,
+const LOCKED_DOWN_PERMISSIONS: UserPermissions = {
+  survey: false,
+  build: false,
+  maintenance: false,
+  manageUsers: false,
+};
+
+const UserRoleContext = createContext<UserRoleContextValue | null>(null);
+
+function normaliseRole(value: unknown): UserRole {
+  if (
+    value === "super_user" ||
+    value === "maintenance_user" ||
+    value === "build_user" ||
+    value === "survey_user"
+  ) {
+    return value;
+  }
+
+  return "survey_user";
+}
+
+function normalisePermissions(
+  role: UserRole,
+  value: unknown,
+): UserPermissions {
+  const fallback = ROLE_PERMISSIONS[role];
+
+  if (!value || typeof value !== "object") {
+    return fallback;
+  }
+
+  const record = value as Partial<Record<keyof UserPermissions, unknown>>;
+
+  return {
+    survey:
+      typeof record.survey === "boolean"
+        ? record.survey
+        : fallback.survey,
+    build:
+      typeof record.build === "boolean"
+        ? record.build
+        : fallback.build,
+    maintenance:
+      typeof record.maintenance === "boolean"
+        ? record.maintenance
+        : fallback.maintenance,
+    manageUsers:
+      typeof record.manageUsers === "boolean"
+        ? record.manageUsers
+        : fallback.manageUsers,
   };
+}
 
-const UserRoleContext =
-  createContext<UserRoleContextValue | null>(
-    null,
-  );
-
-function buildProfileFromUser(
-  user: User,
-): AppUserProfile {
-  const email =
-    user.email?.toLowerCase() || "";
-
-  const role =
-    ROLE_BY_EMAIL[email] ||
-    "survey_user";
+function buildFallbackProfileFromUser(user: User): AppUserProfile {
+  const email = user.email?.toLowerCase() || "";
+  const role = ROLE_BY_EMAIL[email] || "survey_user";
 
   return {
     uid: user.uid,
-
-    name:
-      user.displayName ||
-      user.email ||
-      "User",
-
+    name: user.displayName || user.email || "User",
     email,
-
     role,
-
-    permissions:
-      ROLE_PERMISSIONS[role],
+    permissions: ROLE_PERMISSIONS[role],
   };
+}
+
+async function loadFirestoreProfile(user: User): Promise<AppUserProfile> {
+  const fallbackProfile = buildFallbackProfileFromUser(user);
+
+  const profileRefs = [
+    doc(db, "businesses", "fibre-gis-v2", "users", user.uid),
+    doc(db, "users", user.uid),
+  ];
+
+  for (const profileRef of profileRefs) {
+    const snapshot = await getDoc(profileRef);
+
+    if (!snapshot.exists()) continue;
+
+    const data = snapshot.data();
+    const role = normaliseRole(data.role);
+    const permissions = normalisePermissions(role, data.permissions);
+
+    return {
+      uid: user.uid,
+      name:
+        typeof data.name === "string" && data.name.trim()
+          ? data.name
+          : fallbackProfile.name,
+      email:
+        typeof data.email === "string" && data.email.trim()
+          ? data.email.toLowerCase()
+          : fallbackProfile.email,
+      role,
+      permissions,
+    };
+  }
+
+  return fallbackProfile;
 }
 
 export function UserRoleProvider({
@@ -147,47 +196,71 @@ export function UserRoleProvider({
   user: User | null;
   children: React.ReactNode;
 }) {
-  const profile = user
-    ? buildProfileFromUser(user)
-    : null;
+  const [profile, setProfile] = useState<AppUserProfile | null>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
 
-  const permissions =
-    profile?.permissions ??
-    LOCKED_DOWN_PERMISSIONS;
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!user) {
+      setProfile(null);
+      setIsLoadingProfile(false);
+      return;
+    }
+
+    setIsLoadingProfile(true);
+
+    loadFirestoreProfile(user)
+      .then((loadedProfile) => {
+        if (!cancelled) {
+          setProfile(loadedProfile);
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to load user role profile", error);
+
+        if (!cancelled) {
+          setProfile(buildFallbackProfileFromUser(user));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoadingProfile(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  const permissions = profile?.permissions ?? LOCKED_DOWN_PERMISSIONS;
 
   const value = useMemo(
     () => ({
       profile,
-
-      isLoadingProfile: false,
-
+      isLoadingProfile,
       permissions,
-
-      isSuperUser:
-        !!permissions.manageUsers,
+      isSuperUser: profile?.role === "super_user",
+      isMaintenanceUser: profile?.role === "maintenance_user",
+      isBuildUser: profile?.role === "build_user",
+      isSurveyUser: profile?.role === "survey_user",
     }),
-
-    [profile, permissions],
+    [profile, isLoadingProfile, permissions],
   );
 
   return (
-    <UserRoleContext.Provider
-      value={value}
-    >
+    <UserRoleContext.Provider value={value}>
       {children}
     </UserRoleContext.Provider>
   );
 }
 
 export function useUserRole() {
-  const ctx = useContext(
-    UserRoleContext,
-  );
+  const ctx = useContext(UserRoleContext);
 
   if (!ctx) {
-    throw new Error(
-      "useUserRole must be used inside UserRoleProvider",
-    );
+    throw new Error("useUserRole must be used inside UserRoleProvider");
   }
 
   return ctx;
