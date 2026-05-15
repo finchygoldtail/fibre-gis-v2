@@ -77,7 +77,7 @@ import {
 } from "./map/projects/projectHomesStorage";
 import { ExchangeMarkersLayer } from "./map/ExchangeMarkersLayer";
 import AssetDetailsSidebarSections from "./map/AssetDetailsSidebarSections";
-import ProjectWorkspace from "./project/ProjectWorkspace";
+import ProjectWorkspace from "./Project/ProjectWorkspace";
 import type {
   AssetType,
   CableType,
