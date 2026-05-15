@@ -231,6 +231,151 @@ function StatCard({ label, value, tone = "default" }: { label: string; value: Re
   );
 }
 
+
+type WorkspaceInsight = {
+  label: string;
+  value: React.ReactNode;
+  detail: string;
+  tone: "good" | "warn" | "bad" | "default";
+};
+
+function percent(part: number, total: number): number {
+  if (!total) return 0;
+  return Math.round((part / total) * 100);
+}
+
+function countAssetsByType(projectAssets: SavedMapAsset[]) {
+  return projectAssets.reduce(
+    (counts, asset) => {
+      const item = asset as any;
+      const type = String(item.assetType || item.type || item.jointType || "other").toLowerCase();
+      if (isDesignCableAsset(asset)) counts.designCables += 1;
+      else if (isHomeDropCableAsset(asset)) counts.dropCables += 1;
+      else if (type.includes("home") || type.includes("premise")) counts.homes += 1;
+      else if (type.includes("joint") || type.includes("lmj") || type.includes("cmj") || type.includes("ag")) counts.joints += 1;
+      else if (type.includes("distribution") || type === "dp" || type.includes("cbt") || type.includes("afn")) counts.dps += 1;
+      else if (type.includes("pole")) counts.poles += 1;
+      else if (type.includes("chamber")) counts.chambers += 1;
+      else if (type.includes("street") || type.includes("cab")) counts.streetCabs += 1;
+      else if (type.includes("polygon") || type.includes("area")) counts.areas += 1;
+      else counts.other += 1;
+      return counts;
+    },
+    {
+      homes: 0,
+      joints: 0,
+      dps: 0,
+      poles: 0,
+      chambers: 0,
+      streetCabs: 0,
+      designCables: 0,
+      dropCables: 0,
+      areas: 0,
+      other: 0,
+    },
+  );
+}
+
+function getOperationalAssetName(asset: SavedMapAsset): string {
+  const item = asset as any;
+  return String(item.name || item.jointName || item.label || item.cableId || item.id || "Asset");
+}
+
+function buildWorkspaceInsights(args: {
+  stats: ProjectWorkspaceStats;
+  auditIssues: AuditIssue[];
+  disconnectedAssets: any[];
+  graphWarnings: number;
+  assetCounts: ReturnType<typeof countAssetsByType>;
+}): WorkspaceInsight[] {
+  const { stats, auditIssues, disconnectedAssets, graphWarnings, assetCounts } = args;
+  const connectedPercent = percent(stats.homesConnected, stats.homesPassed);
+  const highIssues = auditIssues.filter((issue) => issue.severity === "high").length;
+  const missingDrops = Math.max(0, assetCounts.homes - assetCounts.dropCables);
+
+  return [
+    {
+      label: "RFS Readiness",
+      value: `${connectedPercent}%`,
+      detail: `${formatNumber(stats.homesConnected)} connected from ${formatNumber(stats.homesPassed)} homes passed`,
+      tone: connectedPercent >= 80 ? "good" : connectedPercent >= 50 ? "warn" : "bad",
+    },
+    {
+      label: "QA Pressure",
+      value: auditIssues.length,
+      detail: highIssues ? `${highIssues} high priority issue${highIssues === 1 ? "" : "s"}` : "No high priority blockers",
+      tone: highIssues ? "bad" : auditIssues.length ? "warn" : "good",
+    },
+    {
+      label: "Topology Health",
+      value: disconnectedAssets.length,
+      detail: graphWarnings ? `${graphWarnings} graph warning${graphWarnings === 1 ? "" : "s"}` : "Cable graph links are clean",
+      tone: disconnectedAssets.length || graphWarnings ? "warn" : "good",
+    },
+    {
+      label: "Drop Coverage",
+      value: assetCounts.dropCables,
+      detail: missingDrops ? `${formatNumber(missingDrops)} homes do not show a drop asset yet` : "Every visible home has drop coverage",
+      tone: missingDrops > 0 ? "warn" : "good",
+    },
+  ];
+}
+
+function WorkspaceCommandCentre({
+  insights,
+  assetCounts,
+  onOpenQA,
+  onOpenTopology,
+  onShowOpenreach,
+  onShowAll,
+  onBoundaryOnly,
+}: {
+  insights: WorkspaceInsight[];
+  assetCounts: ReturnType<typeof countAssetsByType>;
+  onOpenQA: () => void;
+  onOpenTopology: () => void;
+  onShowOpenreach: () => void;
+  onShowAll: () => void;
+  onBoundaryOnly: () => void;
+}) {
+  return (
+    <section style={commandCentre}>
+      <div style={commandHeader}>
+        <div>
+          <div style={operationKicker}>PROJECT COMMAND CENTRE</div>
+          <div style={commandTitle}>Workspace Intelligence</div>
+        </div>
+        <div style={commandActions}>
+          <button type="button" style={smallButton} onClick={onOpenTopology}>Topology</button>
+          <button type="button" style={smallButton} onClick={onOpenQA}>QA</button>
+          <button type="button" style={smallButton} onClick={onShowOpenreach}>OR / PIA Only</button>
+          <button type="button" style={smallButton} onClick={onShowAll}>All Layers</button>
+          <button type="button" style={smallButton} onClick={onBoundaryOnly}>Boundary</button>
+        </div>
+      </div>
+
+      <div style={insightGrid}>
+        {insights.map((insight) => (
+          <div key={insight.label} style={{ ...insightCard, borderColor: insight.tone === "bad" ? "rgba(248,113,113,0.45)" : insight.tone === "warn" ? "rgba(251,191,36,0.42)" : "rgba(74,222,128,0.32)" }}>
+            <div style={insightLabel}>{insight.label}</div>
+            <div style={insightValue}>{insight.value}</div>
+            <div style={insightDetail}>{insight.detail}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={assetStrip}>
+        <span>Homes {formatNumber(assetCounts.homes)}</span>
+        <span>Design Cables {formatNumber(assetCounts.designCables)}</span>
+        <span>Drop Cables {formatNumber(assetCounts.dropCables)}</span>
+        <span>Joints {formatNumber(assetCounts.joints)}</span>
+        <span>DPs {formatNumber(assetCounts.dps)}</span>
+        <span>Civils {formatNumber(assetCounts.poles + assetCounts.chambers)}</span>
+      </div>
+    </section>
+  );
+}
+
 export default function ProjectWorkspace({
   projectName,
   status = "Build Phase",
@@ -261,6 +406,7 @@ export default function ProjectWorkspace({
   const networkGraph = useMemo(() => buildNetworkGraph(projectAssets), [projectAssets]);
   const disconnectedAssets = useMemo(() => findDisconnectedAssets(networkGraph), [networkGraph]);
 
+
   const designCableCount = useMemo(
     () => projectAssets.filter(isDesignCableAsset).length,
     [projectAssets],
@@ -272,6 +418,18 @@ export default function ProjectWorkspace({
       cables: designCableCount,
     }),
     [stats, designCableCount],
+  );
+
+  const assetCounts = useMemo(() => countAssetsByType(projectAssets), [projectAssets]);
+  const workspaceInsights = useMemo(
+    () => buildWorkspaceInsights({
+      stats: displayStats,
+      auditIssues,
+      disconnectedAssets,
+      graphWarnings: networkGraph.stats?.warningCount ?? 0,
+      assetCounts,
+    }),
+    [displayStats, auditIssues, disconnectedAssets, networkGraph.stats?.warningCount, assetCounts],
   );
 
   const issueBuckets = useMemo(
@@ -458,6 +616,16 @@ export default function ProjectWorkspace({
           </button>
         ))}
       </nav>
+
+      <WorkspaceCommandCentre
+        insights={workspaceInsights}
+        assetCounts={assetCounts}
+        onOpenQA={() => openOperationPanel("qa", "qa")}
+        onOpenTopology={() => openOperationPanel("topology", "topology")}
+        onShowOpenreach={showOnlyOpenreachLayers}
+        onShowAll={showAllLayers}
+        onBoundaryOnly={hideAllLayers}
+      />
 
       <div style={workspaceBody}>
         {/* =====================================================
@@ -823,6 +991,79 @@ const emptyPanel: React.CSSProperties = {
   color: "#cbd5e1",
 };
 
+
+
+const commandCentre: React.CSSProperties = {
+  display: "grid",
+  gap: 12,
+  padding: "12px 18px",
+  borderBottom: "1px solid rgba(148, 163, 184, 0.14)",
+  background: "linear-gradient(180deg, #0b1626 0%, #081120 100%)",
+};
+
+const commandHeader: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 14,
+};
+
+const commandTitle: React.CSSProperties = {
+  marginTop: 3,
+  fontSize: 18,
+  fontWeight: 900,
+};
+
+const commandActions: React.CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  justifyContent: "flex-end",
+  gap: 8,
+};
+
+const insightGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, minmax(180px, 1fr))",
+  gap: 10,
+};
+
+const insightCard: React.CSSProperties = {
+  background: "rgba(15, 23, 42, 0.72)",
+  border: "1px solid rgba(148, 163, 184, 0.18)",
+  borderRadius: 12,
+  padding: "11px 13px",
+  minHeight: 86,
+};
+
+const insightLabel: React.CSSProperties = {
+  color: "#93c5fd",
+  fontSize: 11,
+  fontWeight: 900,
+  letterSpacing: 0.4,
+  textTransform: "uppercase",
+};
+
+const insightValue: React.CSSProperties = {
+  marginTop: 5,
+  fontSize: 26,
+  fontWeight: 950,
+};
+
+const insightDetail: React.CSSProperties = {
+  marginTop: 4,
+  color: "#cbd5e1",
+  fontSize: 12,
+  lineHeight: 1.35,
+};
+
+const assetStrip: React.CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 8,
+  color: "#cbd5e1",
+  fontSize: 12,
+  fontWeight: 800,
+};
 
 const workspaceRoot: React.CSSProperties = {
   position: "absolute",

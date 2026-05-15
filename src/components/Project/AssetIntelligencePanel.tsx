@@ -876,6 +876,39 @@ function buildCablePathIntelligence(asset: SavedMapAsset | null, projectAssets: 
   };
 }
 
+
+function buildEngineeringRecommendations(asset: SavedMapAsset | null, cablePath: CablePathIntelligence, dpInfo: any, selectedQaIssues: AuditIssue[]): string[] {
+  const recommendations: string[] = [];
+
+  if (!asset) return recommendations;
+
+  if (isCable(asset)) {
+    if (!cablePath.upstreamAsset) recommendations.push("Snap or name the upstream endpoint so the cable can trace back through the topology.");
+    if (!cablePath.downstreamAsset) recommendations.push("Snap or name the downstream endpoint so the next joint / DP can be resolved.");
+    if (cablePath.usedFibres === null) recommendations.push("Add used-fibre count from the joint mapping so utilisation can be trusted.");
+    if (cablePath.fibreCapacity !== null && cablePath.usedFibres !== null && cablePath.usedFibres > cablePath.fibreCapacity) recommendations.push("Used fibres exceed cable capacity — check tray allocation and cable size.");
+    if (cablePath.longestSpanMeters !== null && cablePath.longestSpanMeters > 85) recommendations.push("Longest span is over 85m — review OH route, pole dip or chamber option.");
+    if (!cablePath.connectedDps.length && !cablePath.connectedJoints.length) recommendations.push("No DPs or joints detected along this cable path within tolerance.");
+  }
+
+  if (isDp(asset)) {
+    const capacityNumber = Number(dpInfo.capacity);
+    const usedPortsNumber = Number(dpInfo.usedPorts);
+    if (Number.isFinite(capacityNumber) && Number.isFinite(usedPortsNumber) && usedPortsNumber > capacityNumber) recommendations.push("DP used ports exceed capacity — check connected homes or DP type.");
+    if (!dpInfo.throughCable || dpInfo.throughCable === "—") recommendations.push("DP has no visible through/feed cable link in this workspace.");
+  }
+
+  if (isJoint(asset)) {
+    const item = asset as any;
+    if (!item.mappingRows?.length && !item.mappingRowsCount) recommendations.push("Joint has no visible tray mapping rows — open Joint Editor and check imported Excel.");
+    if (!item.importedFiles?.length) recommendations.push("No imported file history found for this joint.");
+  }
+
+  if (selectedQaIssues.some((issue) => issue.severity === "high")) recommendations.push("Resolve high severity QA issues before marking this asset build complete.");
+
+  return Array.from(new Set(recommendations)).slice(0, 8);
+}
+
 // =====================================================
 // COMPONENT
 // =====================================================
@@ -949,6 +982,10 @@ export default function AssetIntelligencePanel({
     return buildJointIntelligence(asset);
   }, [asset]);
 
+  const engineeringRecommendations = useMemo(() => {
+    return buildEngineeringRecommendations(asset, cablePath, dpInfo, selectedQaIssues);
+  }, [asset, cablePath, dpInfo, selectedQaIssues]);
+
   if (!asset) {
     return (
       <aside style={panelRoot}>
@@ -990,6 +1027,18 @@ export default function AssetIntelligencePanel({
           <button type="button" style={operationButton} onClick={() => copyText(getAssetCopyText(asset))}>Copy Info</button>
           <button type="button" style={dangerOperationButton} onClick={onClose}>Clear</button>
         </div>
+      </PanelSection>
+
+      <PanelSection title="Engineering Decision Support">
+        {engineeringRecommendations.length ? (
+          <div style={recommendationList}>
+            {engineeringRecommendations.map((recommendation) => (
+              <div key={recommendation} style={recommendationRow}>✓ {recommendation}</div>
+            ))}
+          </div>
+        ) : (
+          <div style={goodState}>No immediate engineering actions suggested for this asset.</div>
+        )}
       </PanelSection>
 
       {isCable(asset) && (
@@ -1213,6 +1262,24 @@ function InfoRow({ label, value }: { label: string; value: RowValue }) {
 // =====================================================
 // STYLES
 // =====================================================
+
+
+const recommendationList: React.CSSProperties = {
+  display: "grid",
+  gap: 7,
+};
+
+const recommendationRow: React.CSSProperties = {
+  background: "rgba(14, 165, 233, 0.1)",
+  border: "1px solid rgba(14, 165, 233, 0.22)",
+  borderRadius: 9,
+  padding: "9px 10px",
+  color: "#dbeafe",
+  fontSize: 12,
+  lineHeight: 1.35,
+  fontWeight: 700,
+};
+
 
 const panelRoot: React.CSSProperties = {
   minHeight: 260,
