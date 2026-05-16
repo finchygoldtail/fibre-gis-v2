@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import WorkspaceMap, { type WorkspaceLayerVisibility } from "./WorkspaceMap";
 import type { OpenreachLayerVisibility } from "../map/OpenreachOverlayLayer";
 import AssetIntelligencePanel from "./AssetIntelligencePanel";
+import TraceTopologyPanel from "../topology/TraceTopologyPanel";
 import WorkspaceTabContent from "./workspace/WorkspaceTabContent";
 import type { SavedMapAsset } from "../map/types";
 import { collection, getDocs } from "firebase/firestore";
@@ -637,83 +638,6 @@ export default function ProjectWorkspace({
       .filter((asset) => assetSearchText(asset).includes(query))
       .slice(0, 12);
   }, [workspaceAssets, searchTerm]);
-
-  const selectedTraceRows = useMemo(() => {
-    if (!fullSelectedWorkspaceAsset)
-      return [] as {
-        id: string;
-        title: string;
-        type: string;
-        asset: SavedMapAsset | any;
-      }[];
-
-    const selectedKeys = new Set(
-      getAssetIdentityKeys(fullSelectedWorkspaceAsset),
-    );
-    const selectedNode = Array.from(networkGraph.nodes.values()).find((node) =>
-      getAssetIdentityKeys(node.asset).some((key) => selectedKeys.has(key)),
-    );
-    const selectedEdge = Array.from(networkGraph.edges.values()).find((edge) =>
-      getAssetIdentityKeys(edge.asset).some((key) => selectedKeys.has(key)),
-    );
-
-    const rows: {
-      id: string;
-      title: string;
-      type: string;
-      asset: SavedMapAsset | any;
-    }[] = [];
-
-    if (selectedNode) {
-      selectedNode.connectedTo.forEach((edgeId) => {
-        const edge = networkGraph.edges.get(edgeId);
-        if (!edge) return;
-        rows.push({
-          id: edge.id,
-          title: getWorkspaceAssetTitle(edge.asset),
-          type: `Connected cable / route`,
-          asset: edge.asset,
-        });
-      });
-    }
-
-    if (selectedEdge) {
-      Array.from(networkGraph.nodes.values())
-        .filter((node) => node.connectedTo.includes(selectedEdge.id))
-        .forEach((node) => {
-          rows.push({
-            id: node.id,
-            title: getWorkspaceAssetTitle(node.asset),
-            type: `Connected ${getWorkspaceAssetType(node.asset)}`,
-            asset: node.asset,
-          });
-        });
-    }
-
-    return rows;
-  }, [fullSelectedWorkspaceAsset, networkGraph]);
-
-  const selectedTraceSummary = useMemo(() => {
-    const lowerType = (asset: any) =>
-      String(asset?.assetType || asset?.type || asset?.jointType || asset?.cableType || "").toLowerCase();
-
-    return {
-      connectedAssets: selectedTraceRows.length,
-      branchCables: selectedTraceRows.filter((row) => {
-        const type = lowerType(row.asset);
-        return type.includes("cable") || row.asset?.geometry?.type === "LineString";
-      }).length,
-      connectedHomes: selectedTraceRows.filter((row) => lowerType(row.asset).includes("home")).length,
-      connectedDps: selectedTraceRows.filter((row) => {
-        const type = lowerType(row.asset);
-        return type.includes("distribution") || type.includes("dp") || type.includes("cbt") || type.includes("afn");
-      }).length,
-      connectedJoints: selectedTraceRows.filter((row) => {
-        const type = lowerType(row.asset);
-        return type.includes("joint") || type.includes("ag") || type.includes("lmj") || type.includes("cmj");
-      }).length,
-    };
-  }, [selectedTraceRows]);
 
   const designCableCount = useMemo(
     () => workspaceAssets.filter(isDesignCableAsset).length,
@@ -1485,61 +1409,16 @@ export default function ProjectWorkspace({
               )}
 
               {activeOperationPanel === "trace" && (
-                <div style={operationStack}>
-                  {fullSelectedWorkspaceAsset ? (
-                    <>
-                      <div style={traceSelectedCard}>
-                        <div style={operationKicker}>TRACE SELECTED</div>
-                        <strong>
-                          {getWorkspaceAssetTitle(fullSelectedWorkspaceAsset)}
-                        </strong>
-                        <span>
-                          {getWorkspaceAssetType(fullSelectedWorkspaceAsset)}
-                        </span>
-                      </div>
-
-                      <div style={operationGrid}>
-                        <InfoRow label="Connected Assets" value={formatNumber(selectedTraceSummary.connectedAssets)} />
-                        <InfoRow label="Branch Cables" value={formatNumber(selectedTraceSummary.branchCables)} />
-                        <InfoRow label="Connected DPs" value={formatNumber(selectedTraceSummary.connectedDps)} />
-                        <InfoRow label="Connected Homes" value={formatNumber(selectedTraceSummary.connectedHomes)} />
-                        <InfoRow label="Connected Joints" value={formatNumber(selectedTraceSummary.connectedJoints)} />
-                      </div>
-
-                      <div style={operationList}>
-                        {selectedTraceRows.length === 0 ? (
-                          <div style={emptyPanel}>
-                            No connected graph links found for this asset yet.
-                            Check the cable endpoint snapping or select a cable
-                            that touches this asset.
-                          </div>
-                        ) : (
-                          selectedTraceRows.map((row) => (
-                            <button
-                              key={row.id}
-                              type="button"
-                              style={traceResultButton}
-                              onClick={() =>
-                                setSelectedWorkspaceAsset(
-                                  row.asset as SavedMapAsset,
-                                )
-                              }
-                            >
-                              <strong>{row.title}</strong>
-                              <span>{row.type}</span>
-                            </button>
-                          ))
-                        )}
-                      </div>
-                    </>
-                  ) : (
-                    <div style={emptyPanel}>
-                      Select a cable, joint, DP, pole, chamber or street cabinet
-                      on the workspace map. The trace links will show here
-                      without leaving this workspace.
-                    </div>
-                  )}
-                </div>
+                <TraceTopologyPanel
+                  selectedAsset={fullSelectedWorkspaceAsset}
+                  assets={workspaceAssets}
+                  networkGraph={networkGraph}
+                  auditIssues={auditIssues}
+                  onSelectAsset={(asset) => {
+                    setSelectedWorkspaceAsset(asset);
+                    setSearchTerm(getWorkspaceAssetTitle(asset));
+                  }}
+                />
               )}
 
               {activeOperationPanel === "addAsset" && (
@@ -2190,27 +2069,4 @@ const quickAction: React.CSSProperties = {
   ...smallButton,
   minHeight: 54,
   background: "#111827",
-};
-
-const traceSelectedCard: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 5,
-  background: "rgba(15, 23, 42, 0.85)",
-  border: "1px solid rgba(96, 165, 250, 0.35)",
-  borderRadius: 10,
-  padding: 12,
-};
-const traceResultButton: React.CSSProperties = {
-  width: "100%",
-  display: "flex",
-  flexDirection: "column",
-  gap: 4,
-  textAlign: "left",
-  background: "#111827",
-  color: "#e5e7eb",
-  border: "1px solid rgba(148, 163, 184, 0.16)",
-  borderRadius: 9,
-  padding: 12,
-  cursor: "pointer",
 };

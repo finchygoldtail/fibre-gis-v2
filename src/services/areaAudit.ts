@@ -309,6 +309,95 @@ function getCableUsedFibres(asset: any): number {
   );
 }
 
+type DistributionArchitecture = "CBT" | "AFN" | "MDU" | "MDU_SPLITTER";
+
+function normaliseArchitecture(value: unknown): DistributionArchitecture {
+  const raw = String(value || "CBT").trim().toUpperCase();
+  if (raw === "AFN") return "AFN";
+  if (raw === "MDU") return "MDU";
+  if (raw === "MDU_SPLITTER") return "MDU_SPLITTER";
+  return "CBT";
+}
+
+function isPassthroughArchitecture(value: unknown): boolean {
+  return normaliseArchitecture(value) !== "CBT";
+}
+
+function getDpDetails(asset: any): any {
+  return asset?.dpDetails || asset?.properties?.dpDetails || {};
+}
+
+function getDpClosureType(asset: any): DistributionArchitecture {
+  const details = getDpDetails(asset);
+  return normaliseArchitecture(
+    details?.closureType ||
+      details?.networkArchitecture ||
+      asset?.closureType ||
+      asset?.networkArchitecture ||
+      asset?.properties?.closureType,
+  );
+}
+
+function getDpThroughCableId(asset: any): string {
+  const details = getDpDetails(asset);
+  return String(
+    details?.afnDetails?.throughCableId ||
+      details?.mduDetails?.throughCableId ||
+      details?.autoFibrePlan?.throughCableId ||
+      asset?.throughCableId ||
+      asset?.parentCableId ||
+      asset?.properties?.throughCableId ||
+      "",
+  ).trim();
+}
+
+function getDpInputFibres(asset: any): number[] {
+  const details = getDpDetails(asset);
+  const closureType = getDpClosureType(asset);
+  const raw =
+    closureType === "AFN"
+      ? details?.afnDetails?.inputFibres
+      : details?.mduDetails?.inputFibres || details?.autoFibrePlan?.inputFibres;
+
+  return Array.from(
+    new Set(
+      (Array.isArray(raw) ? raw : [])
+        .map((fibre: unknown) => Number(fibre))
+        .filter((fibre: number) => Number.isFinite(fibre) && fibre > 0),
+    ),
+  ).sort((a, b) => a - b);
+}
+
+function getDpRequiredInputFibres(asset: any): number {
+  const details = getDpDetails(asset);
+  const closureType = getDpClosureType(asset);
+
+  const fromPlan = Number(details?.autoFibrePlan?.reservedFibres);
+  if (Number.isFinite(fromPlan) && fromPlan >= 0) return fromPlan;
+
+  if (closureType === "AFN") {
+    const fromAfn = Number(details?.afnDetails?.fibreCountUsed);
+    if (Number.isFinite(fromAfn) && fromAfn >= 0) return fromAfn;
+  }
+
+  if (closureType === "MDU" || closureType === "MDU_SPLITTER") {
+    const total = Number(details?.mduDetails?.totalReservedFibres);
+    if (Number.isFinite(total) && total >= 0) return total;
+
+    const mduFibres = Number(details?.mduDetails?.mduFibres || 0);
+    const splitterFibres = Number(details?.mduDetails?.splitterFibres || 0);
+    if (Number.isFinite(mduFibres + splitterFibres) && mduFibres + splitterFibres > 0) {
+      return mduFibres + splitterFibres;
+    }
+  }
+
+  return getDpInputFibres(asset).length;
+}
+
+function getCableDisplayName(asset: any): string {
+  return String(asset?.name || asset?.cableId || asset?.label || asset?.id || "Cable");
+}
+
 function getIssueSeverity(issue: string, asset?: any): AuditSeverity {
   const text = issue.toLowerCase();
 
@@ -321,7 +410,12 @@ function getIssueSeverity(issue: string, asset?: any): AuditSeverity {
     text.includes("over capacity") ||
     text.includes("endpoint not snapped") ||
     text.includes("duplicate asset id") ||
-    text.includes("fibres exceed")
+    text.includes("fibres exceed") ||
+    text.includes("duplicate reserved fibre") ||
+    text.includes("no fibres selected") ||
+    text.includes("reserved fibre demand exceeds") ||
+    text.includes("selected fibre exceeds cable size") ||
+    text.includes("selected fibres do not match required demand")
   ) {
     return "high";
   }
@@ -333,7 +427,9 @@ function getIssueSeverity(issue: string, asset?: any): AuditSeverity {
     text.includes("fibre count") ||
     text.includes("drop exceeds") ||
     text.includes("missing coordinates") ||
-    text.includes("joint has no fibre mapping")
+    text.includes("joint has no fibre mapping") ||
+    text.includes("no through cable selected") ||
+    text.includes("reserved more fibres than required")
   ) {
     return "medium";
   }
@@ -358,9 +454,11 @@ function getIssueCategory(issue: string): string {
   if (
     text.includes("fibre") ||
     text.includes("mapping") ||
-    text.includes("tray")
+    text.includes("tray") ||
+    text.includes("through cable") ||
+    text.includes("reservation")
   )
-    return "Fibre Mapping";
+    return "Fibre Allocation";
   if (text.includes("coordinate") || text.includes("location"))
     return "Field Data";
   if (text.includes("duplicate")) return "Data Quality";
@@ -556,6 +654,190 @@ function addCableEndpointSnappingIssues(
   }
 }
 
+function addFibreAllocationIssues(assets: any[], issues: AuditIssue[]): void {
+  const cables = assets.filter((asset) => isCableAsset(asset) && !isDropAsset(asset));
+  const dps = assets.filter(isDistributionPointAsset);
+  const cableById = new Map<string, any>();
+
+  for (const cable of cables) {
+    const id = getAssetId(cable);
+    if (id && id !== "unknown") cableById.set(id, cable);
+  }
+
+  const reservationsByCable = new Map<
+    string,
+    {
+      cable?: any;
+      rows: {
+        dp: any;
+        dpId: string;
+        dpName: string;
+        closureType: DistributionArchitecture;
+        requiredFibres: number;
+        inputFibres: number[];
+      }[];
+    }
+  >();
+
+  for (const dp of dps) {
+    const dpId = getAssetId(dp);
+    const dpName = getAssetName(dp);
+    const closureType = getDpClosureType(dp);
+    const throughCableId = getDpThroughCableId(dp);
+    const inputFibres = getDpInputFibres(dp);
+    const requiredFibres = getDpRequiredInputFibres(dp);
+
+    if (!isPassthroughArchitecture(closureType)) continue;
+
+    if (!throughCableId) {
+      issues.push(
+        makeIssue(dp, `${closureType} has no through cable selected`, {
+          assetId: dpId,
+          severity: "medium",
+          category: "Fibre Allocation",
+        }),
+      );
+      continue;
+    }
+
+    const cable = cableById.get(throughCableId);
+    const cableName = getCableDisplayName(cable || { id: throughCableId });
+    const cableCapacity = cable ? getCableCapacity(cable) : 0;
+
+    if (!cable) {
+      issues.push(
+        makeIssue(dp, `${closureType} through cable is missing from this area (${throughCableId})`, {
+          assetId: dpId,
+          severity: "high",
+          category: "Fibre Allocation",
+        }),
+      );
+    }
+
+    if (requiredFibres > 0 && inputFibres.length === 0) {
+      issues.push(
+        makeIssue(dp, `${closureType} has no fibres selected on ${cableName}`, {
+          assetId: dpId,
+          severity: "high",
+          category: "Fibre Allocation",
+        }),
+      );
+    }
+
+    if (requiredFibres > 0 && inputFibres.length < requiredFibres) {
+      issues.push(
+        makeIssue(
+          dp,
+          `${closureType} selected fibres do not match required demand (${inputFibres.length}/${requiredFibres})`,
+          {
+            assetId: dpId,
+            severity: "high",
+            category: "Fibre Allocation",
+          },
+        ),
+      );
+    }
+
+    if (requiredFibres > 0 && inputFibres.length > requiredFibres) {
+      issues.push(
+        makeIssue(
+          dp,
+          `${closureType} reserved more fibres than required (${inputFibres.length}/${requiredFibres})`,
+          {
+            assetId: dpId,
+            severity: "medium",
+            category: "Fibre Allocation",
+          },
+        ),
+      );
+    }
+
+    if (cableCapacity > 0) {
+      const overSizedFibres = inputFibres.filter((fibre) => fibre > cableCapacity);
+      if (overSizedFibres.length) {
+        issues.push(
+          makeIssue(
+            dp,
+            `${closureType} selected fibre exceeds cable size on ${cableName}: F${overSizedFibres.join(", F")} / ${cableCapacity}F`,
+            {
+              assetId: dpId,
+              severity: "high",
+              category: "Fibre Allocation",
+            },
+          ),
+        );
+      }
+    }
+
+    if (!reservationsByCable.has(throughCableId)) {
+      reservationsByCable.set(throughCableId, { cable, rows: [] });
+    }
+
+    reservationsByCable.get(throughCableId)?.rows.push({
+      dp,
+      dpId,
+      dpName,
+      closureType,
+      requiredFibres,
+      inputFibres,
+    });
+  }
+
+  for (const [throughCableId, group] of reservationsByCable.entries()) {
+    const cable = group.cable || cableById.get(throughCableId);
+    const cableName = getCableDisplayName(cable || { id: throughCableId });
+    const cableCapacity = cable ? getCableCapacity(cable) : 0;
+    const fibreOwners = new Map<number, typeof group.rows>();
+
+    for (const row of group.rows) {
+      for (const fibre of row.inputFibres) {
+        const owners = fibreOwners.get(fibre) || [];
+        owners.push(row);
+        fibreOwners.set(fibre, owners);
+      }
+    }
+
+    for (const [fibre, owners] of fibreOwners.entries()) {
+      if (owners.length <= 1) continue;
+
+      const ownerNames = owners.map((owner) => owner.dpName).join(", ");
+      for (const owner of owners) {
+        issues.push(
+          makeIssue(
+            owner.dp,
+            `Duplicate reserved fibre F${fibre} on ${cableName}: also used by ${ownerNames}`,
+            {
+              assetId: owner.dpId,
+              severity: "high",
+              category: "Fibre Allocation",
+            },
+          ),
+        );
+      }
+    }
+
+    const totalRequiredDemand = group.rows.reduce(
+      (sum, row) => sum + Math.max(0, row.requiredFibres),
+      0,
+    );
+
+    if (cable && cableCapacity > 0 && totalRequiredDemand > cableCapacity) {
+      issues.push(
+        makeIssue(
+          cable,
+          `Reserved fibre demand exceeds cable capacity on ${cableName} (${totalRequiredDemand}/${cableCapacity})`,
+          {
+            assetId: getAssetId(cable),
+            assetType: getAssetType(cable),
+            severity: "high",
+            category: "Fibre Allocation",
+          },
+        ),
+      );
+    }
+  }
+}
+
 export function auditAreaAssets(assets: any[] = []): AuditIssue[] {
   const issues: AuditIssue[] = [];
   const validAssets = assets.filter(Boolean);
@@ -621,6 +903,12 @@ export function auditAreaAssets(assets: any[] = []): AuditIssue[] {
   // --------------------------------------------------
 
   addCableEndpointSnappingIssues(validAssets, issues);
+
+  // --------------------------------------------------
+  // FIBRE ALLOCATION QA
+  // --------------------------------------------------
+
+  addFibreAllocationIssues(validAssets, issues);
 
   // --------------------------------------------------
   // DP / DROP / HOME CONNECTION QA CHECKS
