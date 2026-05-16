@@ -3,6 +3,8 @@
 // PURPOSE: Right-side engineering intelligence panel for
 //          the Project Workspace. This keeps map rendering
 //          separate from operational FTTP intelligence.
+// PHASE 7 UI: Cleaner operational styling and spacing only.
+//             No intelligence calculation logic changed.
 // =====================================================
 
 import React, { useMemo } from "react";
@@ -1284,7 +1286,7 @@ const recommendationRow: React.CSSProperties = {
 const panelRoot: React.CSSProperties = {
   minHeight: 260,
   height: "100%",
-  background: "#0f1b2d",
+  background: "linear-gradient(180deg, #0f1b2d 0%, #0b1626 100%)",
   color: "#f8fafc",
   display: "flex",
   flexDirection: "column",
@@ -1294,8 +1296,9 @@ const panelHeader: React.CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
   gap: 12,
-  padding: "16px 16px 12px",
+  padding: "18px 18px 14px",
   borderBottom: "1px solid rgba(148, 163, 184, 0.16)",
+  background: "rgba(2, 6, 23, 0.18)",
 };
 
 const eyebrow: React.CSSProperties = {
@@ -1308,9 +1311,10 @@ const eyebrow: React.CSSProperties = {
 
 const panelTitle: React.CSSProperties = {
   margin: "4px 0 0",
-  fontSize: 18,
-  lineHeight: 1.15,
-  fontWeight: 900,
+  fontSize: 20,
+  lineHeight: 1.12,
+  fontWeight: 950,
+  letterSpacing: "-0.02em",
 };
 
 const subTitle: React.CSSProperties = {
@@ -1356,7 +1360,7 @@ const typePill: React.CSSProperties = {
 };
 
 const sectionWrap: React.CSSProperties = {
-  padding: "14px 16px 0",
+  padding: "16px 18px 0",
 };
 
 const sectionTitle: React.CSSProperties = {
@@ -1370,8 +1374,8 @@ const infoRow: React.CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
   alignItems: "flex-start",
-  gap: 10,
-  padding: "6px 0",
+  gap: 12,
+  padding: "8px 0",
   borderBottom: "1px solid rgba(148, 163, 184, 0.08)",
   fontSize: 12,
 };
@@ -1530,8 +1534,8 @@ const operationButton: React.CSSProperties = {
   border: "1px solid rgba(148, 163, 184, 0.20)",
   background: "rgba(17, 24, 39, 0.92)",
   color: "#e5e7eb",
-  borderRadius: 8,
-  padding: "8px 9px",
+  borderRadius: 10,
+  padding: "10px 10px",
   cursor: "pointer",
   fontSize: 12,
   fontWeight: 900,

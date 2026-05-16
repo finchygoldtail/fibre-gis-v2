@@ -24,7 +24,11 @@ type Props = {
   onChange: (v: DistributionPointDetails) => void;
   onSave: (nextDetails?: DistributionPointDetails) => void;
   onCancel: () => void;
-  onMoveHomeToDp?: (homeId: string, fromDpId: string | undefined, toDpId: string) => void;
+  onMoveHomeToDp?: (
+    homeId: string,
+    fromDpId: string | undefined,
+    toDpId: string,
+  ) => void;
   onUpdateHomeStatus?: (homeId: string, status: string) => void;
   onToggleHomeDistance?: (homeId: string, showDistance: boolean) => void;
 };
@@ -36,7 +40,7 @@ function safeFileName(name: string) {
 async function uploadAssetFile(assetFolder: string, file: File) {
   const fileRef = ref(
     storage,
-    `asset-uploads/${assetFolder}/${Date.now()}_${crypto.randomUUID()}_${safeFileName(file.name)}`
+    `asset-uploads/${assetFolder}/${Date.now()}_${crypto.randomUUID()}_${safeFileName(file.name)}`,
   );
   await uploadBytes(fileRef, file, { contentType: file.type || undefined });
   return getDownloadURL(fileRef);
@@ -63,7 +67,9 @@ export default function DistributionPointDetailsModal({
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [connectedHomesOpen, setConnectedHomesOpen] = useState(false);
-  const [moveTargetsByHomeId, setMoveTargetsByHomeId] = useState<Record<string, string>>({});
+  const [moveTargetsByHomeId, setMoveTargetsByHomeId] = useState<
+    Record<string, string>
+  >({});
 
   const previewImage = useMemo(() => {
     if (!selectedImage) return details.image || "";
@@ -81,14 +87,16 @@ export default function DistributionPointDetailsModal({
       string,
       string,
       string,
-      string
+      string,
     ];
     readings[index] = value;
     onChange({ ...details, powerReadings: readings });
   };
 
   const selectedCableId = details.afnDetails?.throughCableId || "";
-  const selectedCable = availableThroughCables.find((cable) => cable.id === selectedCableId);
+  const selectedCable = availableThroughCables.find(
+    (cable) => cable.id === selectedCableId,
+  );
   const currentInputFibres = details.afnDetails?.inputFibres || [];
 
   const capacity =
@@ -98,7 +106,9 @@ export default function DistributionPointDetailsModal({
   const used = connectedHomes.length;
   const available = Math.max(0, capacity - used);
   const activeDpId = editingAssetId || currentDpId;
-  const availableMoveTargets = allDistributionPoints.filter((dp) => dp.id !== activeDpId);
+  const availableMoveTargets = allDistributionPoints.filter(
+    (dp) => dp.id !== activeDpId,
+  );
 
   function getCableFibreTotal(cable?: SavedMapAsset): number {
     const raw = String(cable?.fibreCount || "");
@@ -116,7 +126,9 @@ export default function DistributionPointDetailsModal({
     const afn = asset.dpDetails?.afnDetails;
     if (!afn?.throughCableId || afn.throughCableId !== selectedCableId) return;
 
-    (afn.inputFibres || []).forEach((fibre) => usedByOtherAfns.add(Number(fibre)));
+    (afn.inputFibres || []).forEach((fibre) =>
+      usedByOtherAfns.add(Number(fibre)),
+    );
   });
 
   // Branch / jump-off cables can also reserve fibres from the same spine cable.
@@ -131,7 +143,11 @@ export default function DistributionPointDetailsModal({
     });
   });
 
-  function updateAfnDetails(nextAfnDetails: Partial<NonNullable<DistributionPointDetails["afnDetails"]>>) {
+  function updateAfnDetails(
+    nextAfnDetails: Partial<
+      NonNullable<DistributionPointDetails["afnDetails"]>
+    >,
+  ) {
     const nextInputFibres = nextAfnDetails.inputFibres || currentInputFibres;
 
     onChange({
@@ -209,14 +225,20 @@ export default function DistributionPointDetailsModal({
           <option value="Live">Live</option>
           <option value="BWIP">BWIP</option>
           <option value="Unserviceable">Unserviceable</option>
-          <option value="Live not ready for service">Live not ready for service</option>
+          <option value="Live not ready for service">
+            Live not ready for service
+          </option>
         </select>
 
         <label>DP Type</label>
         <select
           value={details.closureType || "CBT"}
           onChange={(e) => {
-            const nextClosureType = e.target.value as "CBT" | "AFN";
+            const nextClosureType = e.target.value as
+              | "CBT"
+              | "AFN"
+              | "MDU"
+              | "MDU_SPLITTER";
 
             onChange({
               ...details,
@@ -241,14 +263,17 @@ export default function DistributionPointDetailsModal({
         >
           <option value="CBT">CBT</option>
           <option value="AFN">AFN Pole Splitter</option>
+          <option value="MDU">MDU Direct Feed</option>
+          <option value="MDU_SPLITTER">MDU + Splitter</option>
         </select>
 
         {details.closureType === "AFN" ? (
           <div className="afn-panel">
             <strong>AFN loop-through splitter</strong>
             <span>
-              Select a through cable, then allocate up to 4 fibres from that pole-to-pole spine.
-              Fibres already used by other AFNs on the same cable are disabled.
+              Select a through cable, then allocate up to 4 fibres from that
+              pole-to-pole spine. Fibres already used by other AFNs on the same
+              cable are disabled.
             </span>
 
             <label>Through Cable</label>
@@ -303,13 +328,15 @@ export default function DistributionPointDetailsModal({
                           "afn-fibre",
                           selectedHere ? "selected" : "",
                           disabled ? "disabled" : "",
-                        ].join(" ").trim()}
+                        ]
+                          .join(" ")
+                          .trim()}
                         title={
                           disabled
                             ? "Already used by another AFN on this through cable"
                             : selectedHere
-                            ? "Click to unallocate this fibre"
-                            : "Click to allocate this fibre"
+                              ? "Click to unallocate this fibre"
+                              : "Click to allocate this fibre"
                         }
                         onClick={() => toggleFibre(fibre)}
                       >
@@ -320,7 +347,9 @@ export default function DistributionPointDetailsModal({
                 </div>
               </>
             ) : (
-              <div className="afn-summary">Select a through cable to allocate fibres.</div>
+              <div className="afn-summary">
+                Select a through cable to allocate fibres.
+              </div>
             )}
 
             <div className="afn-summary">
@@ -330,14 +359,115 @@ export default function DistributionPointDetailsModal({
             </div>
           </div>
         ) : null}
+        {details.closureType === "MDU" ||
+        details.closureType === "MDU_SPLITTER" ? (
+          <div className="afn-panel">
+            <strong>MDU fibre allocation</strong>
+
+            <span>
+              Reserve fibres for apartment riser feeds and optional splitter
+              outputs.
+            </span>
+
+            <label>Through Cable</label>
+
+            <select
+              value={details.mduDetails?.throughCableId || ""}
+              onChange={(e) => {
+                onChange({
+                  ...details,
+                  mduDetails: {
+                    enabled: true,
+                    throughCableId: e.target.value,
+                    mduFibres: 6,
+                    splitterFibres:
+                      details.closureType === "MDU_SPLITTER" ? 2 : 0,
+                    totalReservedFibres:
+                      details.closureType === "MDU_SPLITTER" ? 8 : 6,
+                    inputFibres: [],
+                  },
+                });
+              }}
+            >
+              <option value="">Select through cable</option>
+
+              {availableThroughCables.map((cable) => (
+                <option key={cable.id} value={cable.id}>
+                  {cable.name || cable.id} — {cable.fibreCount || "48F"}
+                </option>
+              ))}
+            </select>
+
+            <label>MDU Fibres</label>
+
+            <input
+              type="number"
+              min={1}
+              max={24}
+              value={details.mduDetails?.mduFibres || 6}
+              onChange={(e) => {
+                const mduFibres = Number(e.target.value);
+
+                const splitterFibres = details.mduDetails?.splitterFibres || 0;
+
+                onChange({
+                  ...details,
+                  mduDetails: {
+                    ...(details.mduDetails || {}),
+                    enabled: true,
+                    mduFibres,
+                    splitterFibres,
+                    totalReservedFibres: mduFibres + splitterFibres,
+                  },
+                });
+              }}
+            />
+
+            {details.closureType === "MDU_SPLITTER" ? (
+              <>
+                <label>Splitter Fibres</label>
+
+                <input
+                  type="number"
+                  min={0}
+                  max={12}
+                  value={details.mduDetails?.splitterFibres || 2}
+                  onChange={(e) => {
+                    const splitterFibres = Number(e.target.value);
+
+                    const mduFibres = details.mduDetails?.mduFibres || 6;
+
+                    onChange({
+                      ...details,
+                      mduDetails: {
+                        ...(details.mduDetails || {}),
+                        enabled: true,
+                        splitterFibres,
+                        mduFibres,
+                        totalReservedFibres: splitterFibres + mduFibres,
+                      },
+                    });
+                  }}
+                />
+              </>
+            ) : null}
+
+            <div className="afn-summary">
+              Reserved fibres:{" "}
+              <strong>{details.mduDetails?.totalReservedFibres || 0}</strong>
+            </div>
+          </div>
+        ) : null}
 
         <label>Connections to Homes</label>
         <select
-          value={details.closureType === "AFN" ? capacity : details.connectionsToHomes || 8}
-          disabled={details.closureType === "AFN"}
-          onChange={(e) =>
-            update("connectionsToHomes", Number(e.target.value))
+          value={
+            details.closureType === "AFN"
+              ? capacity
+              : details.connectionsToHomes || 8
           }
+          disabled={details.closureType === "AFN"}
+          onChange={(e) => update("connectionsToHomes", Number(e.target.value))}
         >
           {details.closureType === "AFN" ? <option value={0}>0</option> : null}
           <option value={8}>8</option>
@@ -347,9 +477,18 @@ export default function DistributionPointDetailsModal({
         </select>
 
         <div className="dp-capacity-grid">
-          <div><strong>{capacity || 0}</strong><span>Capacity</span></div>
-          <div><strong>{used}</strong><span>Used</span></div>
-          <div><strong>{available}</strong><span>Available</span></div>
+          <div>
+            <strong>{capacity || 0}</strong>
+            <span>Capacity</span>
+          </div>
+          <div>
+            <strong>{used}</strong>
+            <span>Used</span>
+          </div>
+          <div>
+            <strong>{available}</strong>
+            <span>Available</span>
+          </div>
         </div>
 
         <label>Connected Homes</label>
@@ -359,7 +498,9 @@ export default function DistributionPointDetailsModal({
             className="connected-homes-summary"
             onClick={() => setConnectedHomesOpen((open) => !open)}
           >
-            <span>{used} connected / {capacity || 0} capacity</span>
+            <span>
+              {used} connected / {capacity || 0} capacity
+            </span>
             <strong>{connectedHomesOpen ? "▲" : "▼"}</strong>
           </button>
 
@@ -373,13 +514,22 @@ export default function DistributionPointDetailsModal({
                   const statusValue = home.status || "Connected";
 
                   return (
-                    <div key={`${home.homeId}-${home.port}`} className="connected-home-card">
+                    <div
+                      key={`${home.homeId}-${home.port}`}
+                      className="connected-home-card"
+                    >
                       <div className="connected-home-card-header">
                         <div>
                           <strong>Port {home.port}</strong>
                           <span>{home.homeName || home.homeId}</span>
                         </div>
-                        <em className={String(statusValue).toLowerCase().includes("live") ? "live" : "planned"}>
+                        <em
+                          className={
+                            String(statusValue).toLowerCase().includes("live")
+                              ? "live"
+                              : "planned"
+                          }
+                        >
                           {statusValue}
                         </em>
                       </div>
@@ -389,13 +539,17 @@ export default function DistributionPointDetailsModal({
                           <label>Status</label>
                           <select
                             value={statusValue}
-                            onChange={(e) => onUpdateHomeStatus(home.homeId, e.target.value)}
+                            onChange={(e) =>
+                              onUpdateHomeStatus(home.homeId, e.target.value)
+                            }
                           >
                             <option value="Connected">Connected</option>
                             <option value="Live">Live</option>
                             <option value="BWIP">BWIP</option>
                             <option value="Unserviceable">Unserviceable</option>
-                            <option value="Live not ready for service">Live not ready for service</option>
+                            <option value="Live not ready for service">
+                              Live not ready for service
+                            </option>
                           </select>
                         </div>
                       ) : null}
@@ -405,7 +559,12 @@ export default function DistributionPointDetailsModal({
                           <input
                             type="checkbox"
                             checked={home.showDistance ?? false}
-                            onChange={(e) => onToggleHomeDistance(home.homeId, e.target.checked)}
+                            onChange={(e) =>
+                              onToggleHomeDistance(
+                                home.homeId,
+                                e.target.checked,
+                              )
+                            }
                           />
                           Show drop distance
                         </label>
@@ -433,8 +592,15 @@ export default function DistributionPointDetailsModal({
                             type="button"
                             disabled={!selectedTarget}
                             onClick={() => {
-                              onMoveHomeToDp(home.homeId, currentDpId || home.dpId, selectedTarget);
-                              setMoveTargetsByHomeId((prev) => ({ ...prev, [home.homeId]: "" }));
+                              onMoveHomeToDp(
+                                home.homeId,
+                                currentDpId || home.dpId,
+                                selectedTarget,
+                              );
+                              setMoveTargetsByHomeId((prev) => ({
+                                ...prev,
+                                [home.homeId]: "",
+                              }));
                             }}
                           >
                             Move
@@ -497,7 +663,9 @@ export default function DistributionPointDetailsModal({
           <button onClick={handleSave} disabled={saving}>
             {saving ? "Uploading..." : "Save"}
           </button>
-          <button onClick={onCancel} disabled={saving}>Cancel</button>
+          <button onClick={onCancel} disabled={saving}>
+            Cancel
+          </button>
         </div>
       </div>
 

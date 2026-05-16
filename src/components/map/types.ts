@@ -43,18 +43,50 @@ export type PoleDetails = {
 
 export type DistributionPointDetails = {
   powerReadings: string[];
-  closureType: "CBT" | "AFN";   // 👈 update this
+
+  closureType:
+    | "CBT"
+    | "AFN"
+    | "MDU"
+    | "MDU_SPLITTER";
+
   connectionsToHomes: number;
+
   buildStatus?: string;
 
-  // ✅ AFN FIELDS
+  // =====================================================
+  // AFN DETAILS
+  // =====================================================
+
   afnDetails?: {
     enabled: boolean;
     throughCableId?: string;
     fibreCountUsed?: number;
-    inputFibres: number[];      // e.g. [1,2,3,4]
+    inputFibres: number[];
     splitterRatio: "1:8";
-    splitterOutputs: number;    // always 8
+    splitterOutputs: number;
+  };
+
+  // =====================================================
+  // MDU DETAILS
+  // =====================================================
+
+  mduDetails?: {
+    enabled: boolean;
+
+    throughCableId?: string;
+
+    // Fibres feeding apartment riser directly
+    mduFibres: number;
+
+    // Fibres feeding local splitter outputs
+    splitterFibres: number;
+
+    // Total reserved on parent cable
+    totalReservedFibres: number;
+
+    // Reserved fibres from parent cable
+    inputFibres: number[];
   };
 };
 

@@ -411,13 +411,58 @@ export default function AssetDetailsSidebarSections({
         </select>
 
         <div style={labelStyle}>Closure Type</div>
-        <select value={dpDetails.closureType || "CBT"} onChange={(e) => {
-          const closureType = e.target.value as "CBT" | "AFN";
-          if (closureType === "AFN") updateAfnDetails({ inputFibres: [] });
-          else onChangeDpDetails({ ...dpDetails, closureType: "CBT", afnDetails: undefined, connectionsToHomes: dpDetails.connectionsToHomes || 8 });
-        }} style={inputStyle}>
-          <option value="CBT">CBT</option><option value="AFN">AFN</option>
-        </select>
+
+<select
+  value={dpDetails.closureType || "CBT"}
+  onChange={(e) => {
+    const closureType = e.target.value as
+      | "CBT"
+      | "AFN"
+      | "MDU"
+      | "MDU_SPLITTER";
+
+    if (closureType === "AFN") {
+      updateAfnDetails({ inputFibres: [] });
+      return;
+    }
+
+    onChangeDpDetails({
+      ...dpDetails,
+      closureType,
+
+      afnDetails:
+        closureType === "CBT"
+          ? undefined
+          : dpDetails.afnDetails,
+
+      mduDetails:
+        closureType === "MDU" ||
+        closureType === "MDU_SPLITTER"
+          ? dpDetails.mduDetails || {
+              enabled: true,
+              throughCableId: undefined,
+              mduFibres: 6,
+              splitterFibres:
+                closureType === "MDU_SPLITTER" ? 2 : 0,
+              totalReservedFibres:
+                closureType === "MDU_SPLITTER" ? 8 : 6,
+              inputFibres: [],
+            }
+          : undefined,
+
+      connectionsToHomes:
+        closureType === "MDU_SPLITTER"
+          ? 16
+          : dpDetails.connectionsToHomes || 8,
+    });
+  }}
+  style={inputStyle}
+>
+  <option value="CBT">CBT</option>
+  <option value="AFN">AFN</option>
+  <option value="MDU">MDU Direct Feed</option>
+  <option value="MDU_SPLITTER">MDU + Splitter</option>
+</select>
 
         {dpDetails.closureType === "AFN" ? <>
           <div style={helpText}>AFN uses selected input fibres from a through cable. Each selected fibre gives 8 outputs.</div>
@@ -436,6 +481,122 @@ export default function AssetDetailsSidebarSections({
           </div> : null}
           <div style={helpText}>Fibres selected: {currentInputFibres.join(", ") || "none"}<br />Splitter: 1:8 / {currentInputFibres.length * 8} outputs</div>
         </> : null}
+        {dpDetails.closureType === "MDU" ||
+dpDetails.closureType === "MDU_SPLITTER" ? (
+  <>
+    <div style={helpText}>
+      MDU fibre reservation from parent cable.
+    </div>
+
+    <div style={labelStyle}>Through Cable</div>
+
+    <select
+      value={dpDetails.mduDetails?.throughCableId || ""}
+      onChange={(e) => {
+        onChangeDpDetails({
+          ...dpDetails,
+          mduDetails: {
+            ...(dpDetails.mduDetails || {}),
+            enabled: true,
+            throughCableId: e.target.value,
+            mduFibres:
+              dpDetails.mduDetails?.mduFibres || 6,
+            splitterFibres:
+              dpDetails.mduDetails?.splitterFibres || 0,
+            totalReservedFibres:
+              (dpDetails.mduDetails?.mduFibres || 6) +
+              (dpDetails.mduDetails?.splitterFibres || 0),
+            inputFibres:
+              dpDetails.mduDetails?.inputFibres || [],
+          },
+        });
+      }}
+      style={inputStyle}
+    >
+      <option value="">Select through cable</option>
+
+      {afnThroughCableOptions.map((cable) => (
+        <option key={cable.id} value={cable.id}>
+          {(cable as any).name ||
+            (cable as any).cableId ||
+            cable.id}
+          {" — "}
+          {(cable as any).fibreCount || "48F"}
+        </option>
+      ))}
+    </select>
+
+    <div style={labelStyle}>MDU Fibres</div>
+
+    <input
+      type="number"
+      min={1}
+      max={24}
+      value={dpDetails.mduDetails?.mduFibres || 6}
+      onChange={(e) => {
+        const mduFibres = Number(e.target.value);
+
+        const splitterFibres =
+          dpDetails.mduDetails?.splitterFibres || 0;
+
+        onChangeDpDetails({
+          ...dpDetails,
+          mduDetails: {
+            ...(dpDetails.mduDetails || {}),
+            enabled: true,
+            mduFibres,
+            splitterFibres,
+            totalReservedFibres:
+              mduFibres + splitterFibres,
+          },
+        });
+      }}
+      style={inputStyle}
+    />
+
+    {dpDetails.closureType === "MDU_SPLITTER" ? (
+      <>
+        <div style={labelStyle}>Splitter Fibres</div>
+
+        <input
+          type="number"
+          min={0}
+          max={12}
+          value={
+            dpDetails.mduDetails?.splitterFibres || 2
+          }
+          onChange={(e) => {
+            const splitterFibres = Number(e.target.value);
+
+            const mduFibres =
+              dpDetails.mduDetails?.mduFibres || 6;
+
+            onChangeDpDetails({
+              ...dpDetails,
+              mduDetails: {
+                ...(dpDetails.mduDetails || {}),
+                enabled: true,
+                splitterFibres,
+                mduFibres,
+                totalReservedFibres:
+                  splitterFibres + mduFibres,
+              },
+            });
+          }}
+          style={inputStyle}
+        />
+      </>
+    ) : null}
+
+    <div style={helpText}>
+      Reserved fibres:
+      {" "}
+      <strong>
+        {dpDetails.mduDetails?.totalReservedFibres || 0}
+      </strong>
+    </div>
+  </>
+) : null}
 
         <div style={labelStyle}>Connections to Homes</div>
         <select value={dpDetails.closureType === "AFN" ? dpCapacity : dpDetails.connectionsToHomes || 8} disabled={dpDetails.closureType === "AFN"} onChange={(e) => updateDp("connectionsToHomes", Number(e.target.value))} style={inputStyle}>

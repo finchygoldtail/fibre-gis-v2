@@ -17,6 +17,9 @@ import {
 // PURPOSE: Dedicated project workspace shell for Alistra GIS.
 //          This is the first UI migration away from one overloaded
 //          map sidebar into a project-specific operations screen.
+// PHASE 7 UI: Cleaner operational workspace layout, wider map,
+//             compact header, cleaner KPI flow. No storage/topology
+//             or cable logic changed in this file.
 // =====================================================
 
 type WorkspaceOperationPanel =
@@ -55,6 +58,8 @@ type ProjectWorkspaceStats = {
   poles: number;
   chambers: number;
   cables: number;
+  dropCables?: number;
+  designCables?: number;
   routeLengthMeters: number;
   unmatchedCableIds?: number;
   fibreTrayRows?: number;
@@ -73,6 +78,9 @@ type ProjectWorkspaceProps = {
   onExport?: () => void;
   projectArea?: SavedMapAsset | null;
   projectAssets?: SavedMapAsset[];
+  projectAreas?: SavedMapAsset[];
+  activeProjectId?: string | null;
+  onSelectProject?: (projectId: string) => void;
 };
 
 const tabs: { id: WorkspaceTab; label: string }[] = [
@@ -181,6 +189,43 @@ function isDesignCableAsset(asset: SavedMapAsset | null | undefined): boolean {
   const hasLineGeometry = asset.geometry?.type === "LineString";
   const looksLikeCable = hasLineGeometry || type.includes("cable");
   return looksLikeCable && !isHomeDropCableAsset(asset);
+}
+
+function isWorkspaceDistributionPointAsset(
+  asset: SavedMapAsset | null | undefined,
+): boolean {
+  if (!asset || isHomeDropCableAsset(asset)) return false;
+  const item = asset as any;
+  const typeText = [
+    item.assetType,
+    item.type,
+    item.jointType,
+    item.dpType,
+    item.distributionPointType,
+    item.closureType,
+    item.name,
+  ]
+    .map((value) => String(value ?? "").toLowerCase())
+    .join(" ");
+
+  const hasPointGeometry =
+    asset.geometry?.type === "Point" ||
+    (typeof item.lat === "number" && typeof item.lng === "number");
+
+  if (!hasPointGeometry) return false;
+
+  return (
+    typeText.includes("distribution-point") ||
+    typeText.includes("distribution point") ||
+    typeText.includes("dp") ||
+    typeText.includes("cbt") ||
+    typeText.includes("afn")
+  );
+}
+
+function getProjectAreaLabel(area: SavedMapAsset | null | undefined): string {
+  const item = area as any;
+  return String(item?.name || item?.label || item?.projectName || item?.id || "Selected project");
 }
 
 function assetMatchKey(value: unknown): string {
@@ -477,6 +522,9 @@ export default function ProjectWorkspace({
   onExport,
   projectArea = null,
   projectAssets = [],
+  projectAreas = [],
+  activeProjectId = null,
+  onSelectProject,
 }: ProjectWorkspaceProps) {
   const [openreachLayers, setOpenreachLayers] =
     React.useState<OpenreachLayerVisibility>(defaultOpenreachLayers);
@@ -629,12 +677,25 @@ export default function ProjectWorkspace({
     [workspaceAssets],
   );
 
+  const dropCableCount = useMemo(
+    () => workspaceAssets.filter(isHomeDropCableAsset).length,
+    [workspaceAssets],
+  );
+
+  const dpClosureCount = useMemo(
+    () => workspaceAssets.filter(isWorkspaceDistributionPointAsset).length,
+    [workspaceAssets],
+  );
+
   const displayStats = useMemo(
     () => ({
       ...stats,
+      dps: dpClosureCount,
       cables: designCableCount,
+      designCables: designCableCount,
+      dropCables: dropCableCount,
     }),
-    [stats, designCableCount],
+    [stats, dpClosureCount, designCableCount, dropCableCount],
   );
 
   const issueBuckets = useMemo(
@@ -684,7 +745,8 @@ export default function ProjectWorkspace({
       `Street cabs: ${displayStats.streetCabs}`,
       `Poles: ${displayStats.poles}`,
       `Chambers: ${displayStats.chambers}`,
-      `Cables: ${displayStats.cables}`,
+      `Design cables: ${displayStats.designCables ?? displayStats.cables}`,
+      `Drop cables: ${displayStats.dropCables ?? 0}`,
       ``,
       `Topology`,
       `Graph nodes: ${networkGraph.nodes.size}`,
@@ -724,11 +786,12 @@ export default function ProjectWorkspace({
   const assetTiles = useMemo(
     () => [
       ["Joint Boxes", displayStats.joints],
-      ["DPs", displayStats.dps],
+      ["DPs / CBTs / AFNs", displayStats.dps],
+      ["Drop Cables", displayStats.dropCables ?? 0],
+      ["Design Cables", displayStats.designCables ?? displayStats.cables],
       ["Street Cabs", displayStats.streetCabs],
       ["Poles", displayStats.poles],
       ["Chambers", displayStats.chambers],
-      ["Cables", displayStats.cables],
     ],
     [displayStats],
   );
@@ -816,6 +879,26 @@ export default function ProjectWorkspace({
             <span style={statusPill}>{status}</span>
           </div>
           <div style={projectSubtitle}>Project Workspace</div>
+          {projectAreas.length > 1 ? (
+            <select
+              value={activeProjectId || projectArea?.id || ""}
+              onChange={(event) => {
+                const nextProjectId = event.target.value;
+                if (!nextProjectId) return;
+                setSelectedWorkspaceAsset(null);
+                setActiveOperationPanel("none");
+                onSelectProject?.(nextProjectId);
+              }}
+              style={projectSwitcherSelect}
+              title="Switch project area"
+            >
+              {projectAreas.map((area) => (
+                <option key={area.id} value={area.id}>
+                  {getProjectAreaLabel(area)}
+                </option>
+              ))}
+            </select>
+          ) : null}
         </div>
 
         <div style={topMetrics}>
@@ -840,6 +923,10 @@ export default function ProjectWorkspace({
           <StatCard
             label="Topology Links"
             value={formatNumber(displayStats.topologyLinks)}
+          />
+          <StatCard
+            label="Drop Cables"
+            value={formatNumber(displayStats.dropCables ?? 0)}
           />
           <StatCard
             label="Splice Points"
@@ -1526,7 +1613,8 @@ const workspaceRoot: React.CSSProperties = {
   position: "absolute",
   inset: 0,
   zIndex: 5000,
-  background: "#07111f",
+  background:
+    "radial-gradient(circle at top left, rgba(37, 99, 235, 0.16), transparent 32%), #07111f",
   color: "#f8fafc",
   display: "flex",
   flexDirection: "column",
@@ -1535,11 +1623,12 @@ const workspaceRoot: React.CSSProperties = {
 };
 
 const topHeader: React.CSSProperties = {
-  height: 86,
-  display: "flex",
+  minHeight: 112,
+  display: "grid",
+  gridTemplateColumns: "minmax(270px, 0.75fr) minmax(620px, 2.2fr) auto",
   alignItems: "center",
   gap: 16,
-  padding: "0 18px 0 24px",
+  padding: "14px 18px 14px 24px",
   borderBottom: "1px solid rgba(148, 163, 184, 0.18)",
   background: "linear-gradient(180deg, #0f1b2d 0%, #0a1424 100%)",
 };
@@ -1547,13 +1636,28 @@ const topHeader: React.CSSProperties = {
 const projectTitle: React.CSSProperties = {
   margin: 0,
   fontSize: 28,
-  lineHeight: 1.1,
-  fontWeight: 900,
+  lineHeight: 1.05,
+  fontWeight: 950,
+  letterSpacing: "-0.03em",
 };
 const projectSubtitle: React.CSSProperties = {
   marginTop: 6,
   color: "#94a3b8",
   fontSize: 14,
+};
+
+const projectSwitcherSelect: React.CSSProperties = {
+  marginTop: 10,
+  width: "100%",
+  maxWidth: 260,
+  background: "#020617",
+  color: "#e5e7eb",
+  border: "1px solid #334155",
+  borderRadius: 10,
+  padding: "9px 11px",
+  fontWeight: 850,
+  outline: "none",
+  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
 };
 const statusPill: React.CSSProperties = {
   background: "rgba(34,197,94,0.18)",
@@ -1565,23 +1669,29 @@ const statusPill: React.CSSProperties = {
   fontWeight: 800,
 };
 const topMetrics: React.CSSProperties = {
-  flex: 1,
   display: "grid",
-  gridTemplateColumns: "repeat(6, minmax(105px, 1fr))",
+  gridTemplateColumns: "repeat(7, minmax(112px, 1fr))",
   gap: 10,
+  alignItems: "stretch",
 };
 const metricCard: React.CSSProperties = {
-  background: "rgba(15, 23, 42, 0.75)",
-  border: "1px solid rgba(148, 163, 184, 0.14)",
-  borderRadius: 8,
-  padding: "10px 12px",
+  background: "linear-gradient(180deg, rgba(15, 23, 42, 0.90), rgba(15, 23, 42, 0.68))",
+  border: "1px solid rgba(148, 163, 184, 0.16)",
+  borderRadius: 12,
+  padding: "11px 13px",
+  minHeight: 66,
+  boxShadow: "0 10px 24px rgba(0,0,0,0.18)",
 };
 const metricLabel: React.CSSProperties = {
   color: "#cbd5e1",
   fontSize: 11,
   marginBottom: 5,
 };
-const metricValue: React.CSSProperties = { fontSize: 22, fontWeight: 900 };
+const metricValue: React.CSSProperties = {
+  fontSize: 23,
+  fontWeight: 950,
+  lineHeight: 1.05,
+};
 const smallButton: React.CSSProperties = {
   background: "#132640",
   color: "#e5e7eb",
@@ -1592,13 +1702,13 @@ const smallButton: React.CSSProperties = {
   fontWeight: 700,
 };
 const tabBar: React.CSSProperties = {
-  height: 48,
+  minHeight: 50,
   display: "flex",
   alignItems: "center",
   gap: 8,
-  padding: "0 180px",
+  padding: "0 18px 0 176px",
   borderBottom: "1px solid rgba(148, 163, 184, 0.13)",
-  background: "#0b1626",
+  background: "rgba(11, 22, 38, 0.96)",
 };
 const tabButton: React.CSSProperties = {
   background: "transparent",
@@ -1618,13 +1728,13 @@ const activeTabButton: React.CSSProperties = {
 const workspaceBody: React.CSSProperties = {
   flex: 1,
   display: "grid",
-  gridTemplateColumns: "190px 1fr",
+  gridTemplateColumns: "176px 1fr",
   minHeight: 0,
 };
 const leftRail: React.CSSProperties = {
-  background: "#07111f",
+  background: "linear-gradient(180deg, #07111f 0%, #050b14 100%)",
   borderRight: "1px solid rgba(148, 163, 184, 0.16)",
-  padding: 16,
+  padding: "16px 12px",
   display: "flex",
   flexDirection: "column",
   gap: 18,
@@ -1668,20 +1778,22 @@ const railButton: React.CSSProperties = {
   fontWeight: 650,
 };
 const contentGrid: React.CSSProperties = {
-  padding: 14,
+  padding: 16,
   overflow: "auto",
   display: "grid",
   gridTemplateColumns:
-    "minmax(520px, 1.6fr) minmax(250px, 0.55fr) minmax(250px, 0.55fr)",
+    "minmax(760px, 2.15fr) minmax(310px, 0.75fr) minmax(310px, 0.75fr)",
   gridAutoRows: "min-content",
-  gap: 14,
+  gap: 16,
+  alignItems: "start",
 };
 const mapPanel: React.CSSProperties = {
   gridRow: "span 2",
-  background: "#0f1b2d",
+  background: "linear-gradient(180deg, #0f1b2d 0%, #0b1626 100%)",
   border: "1px solid rgba(148, 163, 184, 0.18)",
-  borderRadius: 10,
-  padding: 12,
+  borderRadius: 14,
+  padding: 14,
+  boxShadow: "0 18px 44px rgba(0,0,0,0.18)",
 };
 const mapToolbar: React.CSSProperties = {
   display: "flex",
@@ -1779,11 +1891,12 @@ const fullWidthMiniLayerButton: React.CSSProperties = {
 };
 const mapLiveWrap: React.CSSProperties = {
   position: "relative",
-  height: 455,
-  borderRadius: 8,
+  height: 548,
+  borderRadius: 12,
   overflow: "hidden",
-  border: "1px solid rgba(148, 163, 184, 0.2)",
+  border: "1px solid rgba(148, 163, 184, 0.22)",
   background: "#020617",
+  boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.02)",
 };
 const mapAssetInspector: React.CSSProperties = {
   position: "absolute",
@@ -1869,18 +1982,20 @@ const threeDButton: React.CSSProperties = {
 const intelligenceDock: React.CSSProperties = {
   gridColumn: "span 2",
   gridRow: "span 4",
-  background: "#0f1b2d",
+  background: "linear-gradient(180deg, #0f1b2d 0%, #0b1626 100%)",
   border: "1px solid rgba(148, 163, 184, 0.18)",
-  borderRadius: 10,
+  borderRadius: 14,
   overflow: "hidden",
   minHeight: 620,
+  boxShadow: "0 18px 44px rgba(0,0,0,0.18)",
 };
 const summaryPanel: React.CSSProperties = {
-  background: "#0f1b2d",
+  background: "linear-gradient(180deg, #0f1b2d 0%, #0b1626 100%)",
   border: "1px solid rgba(148, 163, 184, 0.18)",
-  borderRadius: 10,
+  borderRadius: 14,
   padding: 16,
-  minHeight: 190,
+  minHeight: 170,
+  boxShadow: "0 12px 30px rgba(0,0,0,0.14)",
 };
 const widePanel: React.CSSProperties = {
   ...summaryPanel,
@@ -1930,14 +2045,15 @@ const issueCard: React.CSSProperties = {
 };
 const assetGrid: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(3, 1fr)",
+  gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
   gap: 10,
 };
 const assetTile: React.CSSProperties = {
-  background: "#111827",
+  background: "rgba(17, 24, 39, 0.92)",
   border: "1px solid rgba(148, 163, 184, 0.16)",
-  borderRadius: 9,
-  padding: 12,
+  borderRadius: 12,
+  padding: 13,
+  minHeight: 74,
 };
 const quickActions: React.CSSProperties = {
   display: "grid",

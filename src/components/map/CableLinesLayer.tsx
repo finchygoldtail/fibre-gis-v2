@@ -283,8 +283,6 @@ function getMidpoint(a: [number, number], b: [number, number]): [number, number]
   return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
 }
 
-const ROUTE_EDIT_HANDLE_MIN_SPACING_METERS = 60;
-const ROUTE_EDIT_MAX_HANDLES = 28;
 const ROUTE_EDIT_MIN_INSERT_SPAN_METERS = 20;
 const ROUTE_COORDINATE_DEDUPE_METERS = 0.35;
 
@@ -320,46 +318,74 @@ function sanitizeCableCoordinates(coordinates: [number, number][]): [number, num
 }
 
 function getRouteEditHandleIndexes(points: [number, number][]): number[] {
-  if (points.length <= 2) return points.map((_, index) => index);
+  // Keep route editing simple and readable:
+  // only show Start, Middle, End handles.
+  // Extra vertices stay in the saved geometry but do not create marker clutter.
+  if (points.length <= 3) return points.map((_, index) => index);
 
-  const indexes = new Set<number>([0, points.length - 1]);
-  let distanceSinceLastHandle = 0;
+  const totalLength = getCableLengthMeters(points);
+  const targetMiddleDistance = totalLength / 2;
 
-  for (let i = 1; i < points.length - 1; i++) {
-    distanceSinceLastHandle += getDistanceMeters(points[i - 1], points[i]);
+  let walked = 0;
+  let middleIndex = 1;
 
-    if (distanceSinceLastHandle >= ROUTE_EDIT_HANDLE_MIN_SPACING_METERS) {
-      indexes.add(i);
-      distanceSinceLastHandle = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    const spanLength = getDistanceMeters(points[i - 1], points[i]);
+    walked += spanLength;
+
+    if (walked >= targetMiddleDistance) {
+      middleIndex = i;
+      break;
     }
   }
 
-  const sorted = Array.from(indexes).sort((a, b) => a - b);
+  middleIndex = Math.max(1, Math.min(points.length - 2, middleIndex));
 
-  if (sorted.length <= ROUTE_EDIT_MAX_HANDLES) return sorted;
-
-  const sampled = new Set<number>([0, points.length - 1]);
-  const step = Math.ceil((sorted.length - 2) / Math.max(1, ROUTE_EDIT_MAX_HANDLES - 2));
-
-  sorted.slice(1, -1).forEach((index, sampleIndex) => {
-    if (sampleIndex % step === 0) sampled.add(index);
-  });
-
-  return Array.from(sampled).sort((a, b) => a - b);
+  return Array.from(new Set([0, middleIndex, points.length - 1])).sort(
+    (a, b) => a - b,
+  );
 }
 
-function shouldShowMidpointInsertHandle(
+function getRouteEditInsertSegmentIndexes(
   points: [number, number][],
-  segmentIndex: number,
-  visibleHandleIndexes: Set<number>
-): boolean {
-  const start = points[segmentIndex];
-  const end = points[segmentIndex + 1];
+  visibleHandleIndexes: number[]
+): number[] {
+  // Show one add-point control between Start -> Middle and one between
+  // Middle -> End. This keeps the edit UI clean while still letting the
+  // engineer add extra shaping points when needed.
+  if (points.length < 2 || visibleHandleIndexes.length < 2) return [];
 
-  if (!start || !end) return false;
-  if (getDistanceMeters(start, end) < ROUTE_EDIT_MIN_INSERT_SPAN_METERS) return false;
+  const insertSegments = new Set<number>();
+  const sortedHandles = [...visibleHandleIndexes].sort((a, b) => a - b);
 
-  return visibleHandleIndexes.has(segmentIndex) || visibleHandleIndexes.has(segmentIndex + 1);
+  for (let pairIndex = 0; pairIndex < sortedHandles.length - 1; pairIndex += 1) {
+    const startIndex = sortedHandles[pairIndex];
+    const endIndex = sortedHandles[pairIndex + 1];
+
+    if (endIndex <= startIndex) continue;
+
+    let sectionLength = 0;
+    for (let i = startIndex; i < endIndex; i += 1) {
+      sectionLength += getDistanceMeters(points[i], points[i + 1]);
+    }
+
+    if (sectionLength < ROUTE_EDIT_MIN_INSERT_SPAN_METERS) continue;
+
+    const targetDistance = sectionLength / 2;
+    let walked = 0;
+
+    for (let i = startIndex; i < endIndex; i += 1) {
+      const spanLength = getDistanceMeters(points[i], points[i + 1]);
+      walked += spanLength;
+
+      if (walked >= targetDistance) {
+        insertSegments.add(i);
+        break;
+      }
+    }
+  }
+
+  return Array.from(insertSegments).sort((a, b) => a - b);
 }
 
 function getCableSpanAngleDegrees(a: [number, number], b: [number, number]): number {
@@ -453,6 +479,158 @@ function findConnectedAssetAtCableEnd(
     });
 
   return candidates[0] || null;
+}
+
+function getAssetDisplayName(asset?: SavedMapAsset | null): string {
+  if (!asset) return "Not connected";
+  const item = asset as any;
+  return String(item.name || item.jointName || item.label || item.assetId || item.id || "Connected asset");
+}
+
+function normaliseAssetLookupKey(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[–—]/g, "-")
+    .replace(/\s+/g, "")
+    .replace(/[^a-z0-9-]/g, "");
+}
+
+function getAssetLookupKeysForConnection(asset: SavedMapAsset): string[] {
+  const item = asset as any;
+  const raw = [
+    item.id,
+    item.assetId,
+    item.name,
+    item.jointName,
+    item.label,
+    item.nodeId,
+    item.cableId,
+    item.cableName,
+  ];
+
+  const keys = new Set<string>();
+
+  raw.forEach((value) => {
+    const normalised = normaliseAssetLookupKey(value);
+    if (!normalised) return;
+
+    keys.add(normalised);
+
+    const withoutJointSuffix = normalised.replace(/-(cmj|mmj|lmj)\d{1,4}$/i, "");
+    if (withoutJointSuffix) keys.add(withoutJointSuffix);
+
+    const nodeMatches = normalised.match(/(?:ag|lmj|mmj|cmj|lc|sb|midj|sc)\d{1,4}/gi);
+    nodeMatches?.forEach((match) => keys.add(normaliseAssetLookupKey(match)));
+  });
+
+  return Array.from(keys).filter((key) => key.length >= 2);
+}
+
+function findAssetByStoredReference(
+  assets: SavedMapAsset[],
+  reference: unknown
+): SavedMapAsset | null {
+  const lookup = normaliseAssetLookupKey(reference);
+  if (!lookup) return null;
+
+  return (
+    assets.find((candidate) =>
+      getAssetLookupKeysForConnection(candidate).some(
+        (key) => key === lookup || key.includes(lookup) || lookup.includes(key),
+      ),
+    ) || null
+  );
+}
+
+function getCableEndpointReferences(
+  cable: SavedMapAsset,
+  side: "from" | "to"
+): unknown[] {
+  const item = cable as any;
+
+  if (side === "from") {
+    return [
+      item.fromAssetId,
+      item.fromId,
+      item.fromJointId,
+      item.fromJoint,
+      item.fromName,
+      item.fromAssetName,
+      item.sourceAssetId,
+      item.sourceJointId,
+      item.sourceJoint,
+      item.sourceName,
+      item.upstreamAssetId,
+      item.upstreamJoint,
+      item.aEnd,
+      item.aEndAssetId,
+      item.startAssetId,
+      item.startJoint,
+    ];
+  }
+
+  return [
+    item.toAssetId,
+    item.toId,
+    item.toJointId,
+    item.toJoint,
+    item.toName,
+    item.toAssetName,
+    item.targetAssetId,
+    item.targetJointId,
+    item.targetJoint,
+    item.targetName,
+    item.downstreamAssetId,
+    item.downstreamJoint,
+    item.zEnd,
+    item.zEndAssetId,
+    item.endAssetId,
+    item.endJoint,
+  ];
+}
+
+function findNearestConnectedAssetAtCableEnd(
+  assets: SavedMapAsset[],
+  point: [number, number],
+  maxDistanceMeters = 35
+): SavedMapAsset | null {
+  const candidates = assets
+    .filter((asset) => {
+      if (asset.assetType === "area") return false;
+      if (asset.assetType === "cable") return false;
+      if (asset.assetType === "home") return false;
+      return Boolean(getAssetPoint(asset));
+    })
+    .map((asset) => {
+      const assetPoint = getAssetPoint(asset)!;
+      return { asset, distance: getDistanceMeters(assetPoint, point) };
+    })
+    .filter(({ distance }) => distance <= maxDistanceMeters)
+    .sort((a, b) => a.distance - b.distance);
+
+  return candidates[0]?.asset || null;
+}
+
+function resolveCableEndpointAsset(
+  cable: SavedMapAsset,
+  assets: SavedMapAsset[],
+  side: "from" | "to",
+  point?: [number, number]
+): SavedMapAsset | null {
+  for (const reference of getCableEndpointReferences(cable, side)) {
+    const matched = findAssetByStoredReference(assets, reference);
+    if (matched) return matched;
+  }
+
+  if (point) {
+    return (
+      findConnectedAssetAtCableEnd(assets, point) ||
+      findNearestConnectedAssetAtCableEnd(assets, point)
+    );
+  }
+
+  return null;
 }
 
 function normaliseCableRef(value: unknown): string {
@@ -569,6 +747,69 @@ function clampToCableCapacity(cable: SavedMapAsset, value: number): number {
   const capacity = getNumberFromFibreCount(cable.fibreCount);
   if (!capacity) return value;
   return Math.min(value, capacity);
+}
+
+function getFibreNumberFromMappingRow(row: any[]): number | null {
+  const preferred = Number(row?.[1]);
+  if (Number.isFinite(preferred) && preferred > 0) return preferred;
+
+  for (const cell of row || []) {
+    const match = String(cell ?? "").match(/\b(\d{1,3})\b/);
+    if (!match) continue;
+    const fibreNumber = Number(match[1]);
+    if (Number.isFinite(fibreNumber) && fibreNumber > 0 && fibreNumber <= 288) {
+      return fibreNumber;
+    }
+  }
+
+  return null;
+}
+
+function collectUsedFibreNumbersForCable(
+  allAssets: SavedMapAsset[],
+  mappingRowsByAssetId: MappingRowsByAssetId,
+  cable: SavedMapAsset
+): number[] {
+  const fibreNumbers = new Set<number>();
+
+  allAssets.forEach((asset) => {
+    const localRows = Array.isArray(asset.mappingRows) ? asset.mappingRows : [];
+    const sharedRows = mappingRowsByAssetId[asset.id] || [];
+    const rows = sharedRows.length ? sharedRows : localRows;
+
+    rows.forEach((row: any[]) => {
+      if (!Array.isArray(row)) return;
+      if (!rowMentionsCable(row, cable)) return;
+
+      const fibreNumber = getFibreNumberFromMappingRow(row);
+      if (fibreNumber !== null) fibreNumbers.add(fibreNumber);
+    });
+  });
+
+  return Array.from(fibreNumbers).sort((a, b) => a - b);
+}
+
+function formatFibreRanges(fibres: number[]): string {
+  if (!fibres.length) return "None found";
+
+  const ranges: string[] = [];
+  let start = fibres[0];
+  let previous = fibres[0];
+
+  for (let i = 1; i <= fibres.length; i += 1) {
+    const current = fibres[i];
+
+    if (current === previous + 1) {
+      previous = current;
+      continue;
+    }
+
+    ranges.push(start === previous ? String(start) : `${start}-${previous}`);
+    start = current;
+    previous = current;
+  }
+
+  return ranges.join(", ");
 }
 
 
@@ -741,24 +982,42 @@ export default function CableLinesLayer({
         const baseColor = getCableColor(asset, length);
         const cableColor = isSelected ? "#f59e0b" : baseColor;
         const routeEditHandleIndexes = isEditing ? getRouteEditHandleIndexes(points) : [];
-        const routeEditHandleIndexSet = new Set(routeEditHandleIndexes);
+        const routeEditInsertSegmentIndexes = isEditing
+          ? new Set(getRouteEditInsertSegmentIndexes(points, routeEditHandleIndexes))
+          : new Set<number>();
 
         const startAsset =
           points.length >= 2
-            ? findConnectedAssetAtCableEnd(assets, points[0])
-            : null;
+            ? resolveCableEndpointAsset(asset, assets, "from", points[0])
+            : resolveCableEndpointAsset(asset, assets, "from");
 
         const endAsset =
           points.length >= 2
-            ? findConnectedAssetAtCableEnd(assets, points[points.length - 1])
-            : null;
+            ? resolveCableEndpointAsset(asset, assets, "to", points[points.length - 1])
+            : resolveCableEndpointAsset(asset, assets, "to");
 
         
 
+        const usedFibreNumbersFromMappings = collectUsedFibreNumbersForCable(
+          assets,
+          mappingRowsByAssetId,
+          asset,
+        );
+
+        const usedFibresFromSharedMappings = usedFibreNumbersFromMappings.length
+          ? usedFibreNumbersFromMappings.length
+          : countRowsMatching(
+              assets,
+              mappingRowsByAssetId,
+              (row) => rowMentionsCable(row, asset),
+            );
+
         const usedFibres = clampToCableCapacity(
-  asset,
-  getCableUsedFibres(asset, assets)
-);
+          asset,
+          Math.max(getCableUsedFibres(asset, assets), usedFibresFromSharedMappings),
+        );
+
+        const usedFibreRangeLabel = formatFibreRanges(usedFibreNumbersFromMappings);
 
         return (
           <React.Fragment key={asset.id}>
@@ -809,11 +1068,15 @@ export default function CableLinesLayer({
                   </div>
 
                   <div>
-                    <b>From:</b> {startAsset?.name || "Not connected"}
+                    <b>Fibre numbers:</b> {usedFibreRangeLabel}
                   </div>
 
                   <div>
-                    <b>To:</b> {endAsset?.name || "Not connected"}
+                    <b>From:</b> {getAssetDisplayName(startAsset)}
+                  </div>
+
+                  <div>
+                    <b>To:</b> {getAssetDisplayName(endAsset)}
                   </div>
 
                   {asset.notes ? (
@@ -900,7 +1163,7 @@ export default function CableLinesLayer({
 
             {isEditing &&
               points.slice(0, -1).map((coord, i) => {
-                if (!shouldShowMidpointInsertHandle(points, i, routeEditHandleIndexSet)) return null;
+                if (!routeEditInsertSegmentIndexes.has(i)) return null;
 
                 const next = points[i + 1];
                 if (!next) return null;

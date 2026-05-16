@@ -5,6 +5,8 @@
 //          operational workspace shell. It deliberately does NOT
 //          own Firestore storage, autosave, asset editing, home-drop
 //          generation, or Fibre Tray parsing.
+// PHASE 7 UI: Larger operational map canvas and clearer visual
+//             scaling only. No storage/editing logic changed.
 // =====================================================
 
 import React, { useEffect, useMemo } from "react";
@@ -454,8 +456,8 @@ export default function WorkspaceMap({
                 positions={points.map((point) => [point.lat, point.lng] as [number, number])}
                 pathOptions={{
                   color: getCableColour(asset),
-                  weight: selectedAssetId === asset.id ? 7 : 5,
-                  opacity: selectedAssetId === asset.id ? 1 : 0.88,
+                  weight: selectedAssetId === asset.id ? 8 : 5,
+                  opacity: selectedAssetId === asset.id ? 1 : 0.9,
                   dashArray: isOverhead(asset) ? "10, 8" : undefined,
                 }}
                 eventHandlers={{ click: (event) => selectWorkspaceAsset(asset, onAssetSelect, event) }}
@@ -520,10 +522,10 @@ export default function WorkspaceMap({
 const mapShell: React.CSSProperties = {
   position: "relative",
   height: "100%",
-  minHeight: 455,
+  minHeight: 548,
   width: "100%",
   overflow: "hidden",
-  borderRadius: 8,
+  borderRadius: 12,
   background: "#020617",
 };
 
