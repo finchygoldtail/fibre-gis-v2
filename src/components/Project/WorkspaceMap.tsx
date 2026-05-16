@@ -376,11 +376,11 @@ function getTraceColour(kind: string | null): string | null {
 // =====================================================
 
 const DEFAULT_OPENREACH_LAYERS: OpenreachLayerVisibility = {
-  ducts: true,
-  trenches: true,
-  spans: true,
-  chambers: true,
-  poles: true,
+  ducts: false,
+  trenches: false,
+  spans: false,
+  chambers: false,
+  poles: false,
   labels: false,
 };
 
@@ -392,16 +392,21 @@ export default function WorkspaceMap({
   showCableDistances = false,
   visibleLayers = {
     projectBoundary: true,
-    areas: true,
-    cables: true,
-    dropCables: true,
-    joints: true,
-    dps: true,
-    poles: true,
-    chambers: true,
-    streetCabs: true,
-    homes: true,
-    other: true,
+  areas: true,
+
+  cables: false,
+  dropCables: false,
+
+  joints: true,
+  dps: true,
+
+  poles: false,
+  chambers: false,
+  streetCabs: false,
+  homes: false,
+
+  other: false,
+
   },
   openreachLayers = DEFAULT_OPENREACH_LAYERS,
   traceHighlightedAssetIds = [],

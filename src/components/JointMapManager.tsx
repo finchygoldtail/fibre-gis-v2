@@ -278,6 +278,7 @@ type LayerVisibility = {
   distributionPoints: boolean;
   chambers: boolean;
   cables: boolean;
+  dropCables: boolean;
   areas: boolean;
   measurements: boolean;
   cableDistances: boolean;
@@ -306,6 +307,95 @@ type LayerVisibility = {
   unserviceable: boolean;
   liveNotReady: boolean;
 };
+
+// =====================================================
+// LAYER VISIBILITY DEFAULTS + USER PREFERENCES
+// Default operational view keeps only polygons and DPs on.
+// Preferences are global, so switching fibrehood/project keeps
+// the same layer setup.
+// =====================================================
+const LAYER_PREFERENCE_STORAGE_KEY = "alistra-gis-layer-preferences-v2";
+const OPENREACH_LAYER_PREFERENCE_STORAGE_KEY =
+  "alistra-gis-openreach-layer-preferences-v2";
+
+const DEFAULT_VISIBLE_LAYERS: LayerVisibility = {
+  agJoints: true,
+  streetCabs: false,
+  poles: false,
+  distributionPoints: true,
+  chambers: false,
+  cables: false,
+  dropCables: false,
+  areas: true,
+  measurements: true,
+  cableDistances: false,
+  homes: false,
+  l0: true,
+  l1: true,
+  l2: true,
+  l3: true,
+  newPoles: false,
+  orPoles: false,
+  fw2: false,
+  fw4: false,
+  fw6: false,
+  fw10: false,
+  homesSdu: false,
+  homesMdu: false,
+  homesFlats: false,
+  feeders: false,
+  links: false,
+  ulw48: false,
+  ulw36: false,
+  ulw24: false,
+  ulw12: false,
+  live: true,
+  bwip: true,
+  unserviceable: true,
+  liveNotReady: true,
+};
+
+const DEFAULT_OPENREACH_LAYERS = {
+  ducts: false,
+  trenches: false,
+  spans: false,
+  chambers: false,
+  poles: false,
+  labels: false,
+};
+
+function loadStoredLayerPreferences<T extends Record<string, boolean>>(
+  key: string,
+  defaults: T,
+): T {
+  if (typeof window === "undefined") return defaults;
+
+  try {
+    const saved = window.localStorage.getItem(key);
+    if (!saved) return defaults;
+
+    return {
+      ...defaults,
+      ...(JSON.parse(saved) as Partial<T>),
+    };
+  } catch (err) {
+    console.warn("Failed to load saved layer preferences", err);
+    return defaults;
+  }
+}
+
+function saveStoredLayerPreferences(
+  key: string,
+  value: Record<string, boolean>,
+) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch (err) {
+    console.warn("Failed to save layer preferences", err);
+  }
+}
 
 function MapClickHandler({
   mode,
@@ -1128,51 +1218,30 @@ export default function JointMapManager({
     return () => window.removeEventListener("resize", updateMobile);
   }, []);
 
-  const [visibleLayers, setVisibleLayers] = useState<LayerVisibility>({
-    agJoints: true,
-    streetCabs: true,
-    poles: true,
-    distributionPoints: true,
-    chambers: true,
-    cables: true,
-    dropCables: true,
-    areas: true,
-    measurements: true,
-    cableDistances: false,
-    homes: false,
-    l0: true,
-    l1: true,
-    l2: true,
-    l3: true,
-    newPoles: true,
-    orPoles: true,
-    fw2: true,
-    fw4: true,
-    fw6: true,
-    fw10: true,
-    homesSdu: false,
-    homesMdu: false,
-    homesFlats: false,
-    feeders: true,
-    links: true,
-    ulw48: true,
-    ulw36: true,
-    ulw24: true,
-    ulw12: true,
-    live: true,
-    bwip: true,
-    unserviceable: true,
-    liveNotReady: true,
-  });
+  const [visibleLayers, setVisibleLayers] = useState<LayerVisibility>(() =>
+    loadStoredLayerPreferences(
+      LAYER_PREFERENCE_STORAGE_KEY,
+      DEFAULT_VISIBLE_LAYERS,
+    ),
+  );
 
-  const [openreachLayers, setOpenreachLayers] = useState({
-    ducts: true,
-    trenches: true,
-    spans: true,
-    chambers: true,
-    poles: true,
-    labels: false,
-  });
+  useEffect(() => {
+    saveStoredLayerPreferences(LAYER_PREFERENCE_STORAGE_KEY, visibleLayers);
+  }, [visibleLayers]);
+
+  const [openreachLayers, setOpenreachLayers] = useState(() =>
+    loadStoredLayerPreferences(
+      OPENREACH_LAYER_PREFERENCE_STORAGE_KEY,
+      DEFAULT_OPENREACH_LAYERS,
+    ),
+  );
+
+  useEffect(() => {
+    saveStoredLayerPreferences(
+      OPENREACH_LAYER_PREFERENCE_STORAGE_KEY,
+      openreachLayers,
+    );
+  }, [openreachLayers]);
 
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [isRoutingCable, setIsRoutingCable] = useState(false);
