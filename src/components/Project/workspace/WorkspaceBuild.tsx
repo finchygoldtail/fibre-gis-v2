@@ -40,6 +40,8 @@ const title: React.CSSProperties = { margin: "0 0 12px", fontSize: 15, fontWeigh
 const row: React.CSSProperties = { display: "flex", justifyContent: "space-between", gap: 12, padding: "9px 0", borderBottom: "1px solid rgba(148,163,184,0.12)", color: "#cbd5e1" };
 const tile: React.CSSProperties = { background: "#0b1424", border: "1px solid rgba(148,163,184,0.14)", borderRadius: 10, padding: 12 };
 const button: React.CSSProperties = { border: "1px solid rgba(148,163,184,0.22)", background: "#111827", color: "#f8fafc", borderRadius: 8, padding: "10px 12px", fontWeight: 800, cursor: "pointer" };
+const readinessBox: React.CSSProperties = { background: "#0b1424", border: "1px solid rgba(96,165,250,0.28)", borderRadius: 10, padding: 12, color: "#cbd5e1" };
+const readinessBadge: React.CSSProperties = { display: "inline-flex", alignItems: "center", borderRadius: 999, padding: "5px 9px", fontSize: 12, fontWeight: 900, border: "1px solid rgba(148,163,184,0.35)", color: "#93c5fd", background: "rgba(37,99,235,0.12)" };
 
 function n(value: any): string {
   const num = Number(value ?? 0);
@@ -70,12 +72,30 @@ export default function WorkspaceBuild({
   onBackToMap,
 }: Props) {
   const remaining = Math.max(0, Number(stats?.homesPassed || 0) - Number(stats?.homesConnected || 0));
+  const readiness = stats?.operationalReadiness;
+  const blockers = Array.isArray(readiness?.blockers) ? readiness.blockers : [];
+  const nextActions = Array.isArray(readiness?.nextActions) ? readiness.nextActions : [];
 
   return <>
     <section style={panel}>
       <h3 style={title}>Build Progress</h3>
       <Tile label="RFS" value={`${n(stats?.rfsPercent)}%`} />
       <Row label="Status" value={status || "Build"} />
+      <Row label="Build completion" value={`${n(stats?.rolloutKpis?.buildCompletionPercent)}%`} />
+    </section>
+
+    <section style={panel}>
+      <h3 style={title}>Area Readiness</h3>
+      <div style={readinessBox}>
+        <span style={readinessBadge}>{readiness?.state || "Build"}</span>
+        <div style={{ marginTop: 10, fontSize: 28, fontWeight: 900, color: "#f8fafc" }}>
+          {n(readiness?.score)}%
+        </div>
+        <div style={{ marginTop: 6 }}>{readiness?.summary || "Readiness will be calculated from DP status, QA and topology."}</div>
+      </div>
+      <Row label="Hard blockers" value={blockers.length ? blockers.length : "None"} />
+      <Row label="QA high" value={n(readiness?.qaHigh)} />
+      <Row label="Disconnected" value={n(readiness?.disconnectedAssets)} />
     </section>
 
     <section style={panel}>
@@ -111,6 +131,20 @@ export default function WorkspaceBuild({
         Asset creation still lives on the main map so the existing right-click creation,
         snapping, cable drawing and save logic stays protected.
       </p>
+      {blockers.length > 0 ? (
+        <div style={readinessBox}>
+          <strong style={{ color: "#fb7185" }}>Readiness blockers</strong>
+          <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
+            {blockers.map((blocker: string) => <li key={blocker}>{blocker}</li>)}
+          </ul>
+        </div>
+      ) : null}
+      <div style={readinessBox}>
+        <strong style={{ color: "#93c5fd" }}>Next actions</strong>
+        <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
+          {nextActions.map((action: string) => <li key={action}>{action}</li>)}
+        </ul>
+      </div>
       <button type="button" style={button} onClick={onBackToMap}>Back To Map To Build</button>
     </section>
   </>;

@@ -105,6 +105,15 @@ export default function DistributionPointDetailsModal({
       : Number(details.connectionsToHomes || 0);
   const used = connectedHomes.length;
   const available = Math.max(0, capacity - used);
+  const operationalCapacityPercent = capacity > 0 ? Math.round((used / capacity) * 100) : 0;
+  const operationalCapacityWarning =
+    capacity > 0 && used > capacity
+      ? "Over capacity"
+      : capacity > 0 && used === capacity
+        ? "Full"
+        : operationalCapacityPercent >= 80
+          ? "Near capacity"
+          : "Capacity OK";
   const activeDpId = editingAssetId || currentDpId;
   const availableMoveTargets = allDistributionPoints.filter(
     (dp) => dp.id !== activeDpId,
@@ -117,6 +126,8 @@ export default function DistributionPointDetailsModal({
   }
 
   const fibreTotal = getCableFibreTotal(selectedCable);
+  const selectedInputFibreCount = currentInputFibres.length;
+  const passthroughFibreCount = selectedCable ? Math.max(fibreTotal - selectedInputFibreCount, 0) : 0;
 
   const usedByOtherAfns = new Set<number>();
 
@@ -475,6 +486,18 @@ export default function DistributionPointDetailsModal({
           <option value={24}>24</option>
           <option value={32}>32</option>
         </select>
+
+        <div className="afn-summary">
+          <strong>Operational fibre view</strong>
+          <br />
+          Through cable: {selectedCable?.name || selectedCable?.id || details.mduDetails?.throughCableId || "not selected"}
+          <br />
+          Input fibres consumed: {selectedInputFibreCount || details.mduDetails?.totalReservedFibres || 0}
+          <br />
+          Passthrough fibres: {selectedCable ? passthroughFibreCount : "—"}
+          <br />
+          Capacity state: {operationalCapacityWarning} ({operationalCapacityPercent}%)
+        </div>
 
         <div className="dp-capacity-grid">
           <div>

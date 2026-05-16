@@ -14,6 +14,8 @@ export type LiveHomesDpRow = {
   capacity: number;
   capacityUsed: number;
   capacityPercent: number;
+  capacityWarning: string;
+  operationalRisk: "OK" | "WARN" | "FULL" | "OVER";
 };
 
 type Props = {
@@ -107,6 +109,16 @@ function dpCapacity(asset: SavedMapAsset, servedHomes: number): number {
   return Math.max(servedHomes, 0);
 }
 
+
+function getCapacityWarning(capacity: number, capacityUsed: number): { warning: string; risk: "OK" | "WARN" | "FULL" | "OVER" } {
+  if (capacity <= 0) return { warning: "No capacity set", risk: "WARN" };
+  if (capacityUsed > capacity) return { warning: "Over capacity", risk: "OVER" };
+  if (capacityUsed === capacity) return { warning: "Full", risk: "FULL" };
+  const percent = (capacityUsed / capacity) * 100;
+  if (percent >= 80) return { warning: "Near capacity", risk: "WARN" };
+  return { warning: "Capacity OK", risk: "OK" };
+}
+
 function valueMatchesAny(value: unknown, lookup: Set<string>): boolean {
   const key = text(value).toLowerCase();
   return Boolean(key && lookup.has(key));
@@ -161,6 +173,8 @@ function buildRows(projectAssets: SavedMapAsset[]): LiveHomesDpRow[] {
     const isLive = status === "Live";
     const capacity = dpCapacity(dp, servedHomes.length);
     const capacityUsed = Math.max(servedHomes.length, dpDrops.length);
+    const capacityPercent = capacity > 0 ? (capacityUsed / capacity) * 100 : 0;
+    const capacityState = getCapacityWarning(capacity, capacityUsed);
 
     return {
       dp,
@@ -173,7 +187,9 @@ function buildRows(projectAssets: SavedMapAsset[]): LiveHomesDpRow[] {
       dropCableCount: dpDrops.length,
       capacity,
       capacityUsed,
-      capacityPercent: capacity > 0 ? (capacityUsed / capacity) * 100 : 0,
+      capacityPercent,
+      capacityWarning: capacityState.warning,
+      operationalRisk: capacityState.risk,
     };
   }).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 }
@@ -209,12 +225,16 @@ export default function LiveHomesControl({ projectAssets, onSelectAsset, onOpenA
     const totalHomes = filteredRows.reduce((sum, row) => sum + row.homesServed, 0);
     const liveHomes = filteredRows.reduce((sum, row) => sum + row.liveHomes, 0);
     const drops = filteredRows.reduce((sum, row) => sum + row.dropCableCount, 0);
+    const nearCapacity = filteredRows.filter((row) => row.operationalRisk === "WARN" || row.operationalRisk === "FULL").length;
+    const overCapacity = filteredRows.filter((row) => row.operationalRisk === "OVER").length;
     return {
       dps: filteredRows.length,
       totalHomes,
       liveHomes,
       notLiveHomes: Math.max(totalHomes - liveHomes, 0),
       drops,
+      nearCapacity,
+      overCapacity,
       livePercent: totalHomes ? Math.round((liveHomes / totalHomes) * 100) : 0,
     };
   }, [filteredRows]);
@@ -246,6 +266,8 @@ export default function LiveHomesControl({ projectAssets, onSelectAsset, onOpenA
         <Metric label="Live Homes" value={summary.liveHomes} good />
         <Metric label="Not Live" value={summary.notLiveHomes} warn={summary.notLiveHomes > 0} />
         <Metric label="Drops" value={summary.drops} />
+        <Metric label="Near Cap" value={summary.nearCapacity} warn={summary.nearCapacity > 0} />
+        <Metric label="Over Cap" value={summary.overCapacity} warn={summary.overCapacity > 0} />
         <Metric label="Live %" value={`${summary.livePercent}%`} good={summary.livePercent === 100} />
       </div>
 
@@ -279,6 +301,7 @@ export default function LiveHomesControl({ projectAssets, onSelectAsset, onOpenA
             <span>{selectedRow.liveHomes}/{selectedRow.homesServed} homes live</span>
             <span>{selectedRow.dropCableCount} drops</span>
             <span>{selectedRow.capacityUsed}/{selectedRow.capacity || "—"} capacity</span>
+            <span style={{ color: selectedRow.operationalRisk === "OK" ? "#4ade80" : selectedRow.operationalRisk === "OVER" ? "#fb7185" : "#fbbf24" }}>{selectedRow.capacityWarning}</span>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button type="button" style={button} onClick={() => onSelectAsset?.(selectedRow.dp)}>Focus DP</button>
@@ -311,7 +334,7 @@ const headerRow: React.CSSProperties = { display: "flex", justifyContent: "space
 const kicker: React.CSSProperties = { color: "#93c5fd", fontSize: 11, fontWeight: 900, letterSpacing: 0.5 };
 const title: React.CSSProperties = { margin: "4px 0 2px", fontSize: 18, color: "#e5e7eb" };
 const muted: React.CSSProperties = { margin: 0, color: "#94a3b8", fontSize: 12 };
-const metricGrid: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(6, minmax(95px, 1fr))", gap: 9 };
+const metricGrid: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(8, minmax(95px, 1fr))", gap: 9 };
 const metricCard: React.CSSProperties = { background: "#0b1424", border: "1px solid rgba(148,163,184,0.14)", borderRadius: 10, padding: 11, display: "grid", gap: 5, color: "#94a3b8", fontSize: 11 };
 const filterGrid: React.CSSProperties = { display: "grid", gridTemplateColumns: "minmax(220px, 1fr) 180px 180px", gap: 9 };
 const input: React.CSSProperties = { background: "#081225", color: "#e5e7eb", border: "1px solid #334155", borderRadius: 9, padding: "10px 11px", outline: "none" };

@@ -258,13 +258,45 @@ function isOverhead(asset: SavedMapAsset): boolean {
   return method.includes("oh") || method.includes("overhead");
 }
 
+
+function getDpCapacityState(asset: SavedMapAsset): { colour: string; label: string; percent: number } | null {
+  const item = asset as any;
+  const type = getAssetType(asset);
+  const isDp = type.includes("distribution") || type === "dp" || type.includes("afn") || type.includes("cbt") || type.includes("mdu");
+  if (!isDp) return null;
+
+  const details = item.dpDetails || item.properties?.dpDetails || {};
+  const closureText = String(details.closureType || item.closureType || item.dpType || item.jointType || "").toLowerCase();
+  const connectedHomes = Number(details.connectedHomes ?? details.connectionsToHomes ?? item.connectedHomes ?? item.homesConnected ?? item.homeCount ?? 0);
+  const dropCount = Number(item.dropCableCount ?? item.drops ?? 0);
+  const used = Math.max(Number.isFinite(connectedHomes) ? connectedHomes : 0, Number.isFinite(dropCount) ? dropCount : 0);
+  const rawCapacity = Number(item.capacity ?? item.dpCapacity ?? item.ports ?? details.capacity ?? details.connectionsToHomes ?? 0);
+  const capacity = Number.isFinite(rawCapacity) && rawCapacity > 0
+    ? rawCapacity
+    : closureText.includes("cbt")
+      ? 12
+      : closureText.includes("afn") || closureText.includes("mdu_splitter")
+        ? Math.max(16, used)
+        : Math.max(used, 0);
+
+  if (capacity <= 0) return { colour: "#94a3b8", label: "No capacity", percent: 0 };
+  const percent = (used / capacity) * 100;
+  if (used > capacity) return { colour: "#a855f7", label: "Over capacity", percent };
+  if (used === capacity) return { colour: "#ef4444", label: "Full", percent };
+  if (percent >= 80) return { colour: "#f59e0b", label: "Near capacity", percent };
+  return { colour: "#22c55e", label: "Capacity OK", percent };
+}
+
 function getAssetMarkerIcon(asset: SavedMapAsset, selected: boolean, traceKind: string | null = null) {
   const type = getAssetType(asset);
   const traceColour = getTraceColour(traceKind);
+  const dpCapacityState = getDpCapacityState(asset);
   const colour = selected
     ? "#facc15"
     : traceColour
       ? traceColour
+    : dpCapacityState
+      ? dpCapacityState.colour
     : type.includes("distribution") || type.includes("dp")
       ? "#22c55e"
       : type.includes("pole")
@@ -615,6 +647,12 @@ export default function WorkspaceMap({
                 <strong>{getAssetName(asset)}</strong>
                 <br />
                 {getAssetType(asset)}
+                {getDpCapacityState(asset) ? (
+                  <>
+                    <br />
+                    Capacity: {getDpCapacityState(asset)?.label} ({Math.round(getDpCapacityState(asset)?.percent || 0)}%)
+                  </>
+                ) : null}
               </Popup>
             </Marker>
           );

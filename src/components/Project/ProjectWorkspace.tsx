@@ -312,6 +312,229 @@ function isLiveHomeAsset(asset: SavedMapAsset | null | undefined): boolean {
   );
 }
 
+
+function getWorkspaceDpCapacityRisk(asset: SavedMapAsset): { risk: "OK" | "WARN" | "FULL" | "OVER"; warning: string; percent: number } {
+  const item = asset as any;
+  const details = item.dpDetails || item.properties?.dpDetails || {};
+  const closure = String(details.closureType || details.networkArchitecture || item.closureType || item.dpType || item.jointType || "").toLowerCase();
+  const connectedHomes = Number(details.connectedHomes ?? details.connectionsToHomes ?? item.connectedHomes ?? item.homesConnected ?? item.homeCount ?? 0);
+  const used = Number.isFinite(connectedHomes) ? connectedHomes : 0;
+  const rawCapacity = Number(item.capacity ?? item.dpCapacity ?? item.ports ?? details.capacity ?? details.connectionsToHomes ?? 0);
+  const capacity = Number.isFinite(rawCapacity) && rawCapacity > 0
+    ? rawCapacity
+    : closure.includes("cbt")
+      ? 12
+      : closure.includes("afn") || closure.includes("mdu_splitter")
+        ? Math.max(16, used)
+        : Math.max(used, 0);
+
+  if (capacity <= 0) return { risk: "WARN", warning: "No capacity set", percent: 0 };
+  const percent = Math.round((used / capacity) * 100);
+  if (used > capacity) return { risk: "OVER", warning: "Over capacity", percent };
+  if (used === capacity) return { risk: "FULL", warning: "Full", percent };
+  if (percent >= 80) return { risk: "WARN", warning: "Near capacity", percent };
+  return { risk: "OK", warning: "Capacity OK", percent };
+}
+
+type AreaReadinessState =
+  | "Survey"
+  | "Build"
+  | "Testing"
+  | "Ready For Service"
+  | "Live"
+  | "Blocked"
+  | "Maintenance Hold";
+
+type AreaReadiness = {
+  state: AreaReadinessState;
+  score: number;
+  summary: string;
+  blockers: string[];
+  nextActions: string[];
+  qaHigh: number;
+  qaMedium: number;
+  dpCompletionPercent: number;
+  rfsPercent: number;
+  disconnectedAssets: number;
+};
+
+function readinessTone(state: AreaReadinessState): "default" | "good" | "warn" | "bad" {
+  if (state === "Live" || state === "Ready For Service") return "good";
+  if (state === "Testing" || state === "Build") return "warn";
+  if (state === "Blocked" || state === "Maintenance Hold") return "bad";
+  return "default";
+}
+
+function readinessColour(state: AreaReadinessState): string {
+  if (state === "Live") return "#22c55e";
+  if (state === "Ready For Service") return "#4ade80";
+  if (state === "Testing") return "#38bdf8";
+  if (state === "Build") return "#fbbf24";
+  if (state === "Blocked") return "#fb7185";
+  if (state === "Maintenance Hold") return "#f97316";
+  return "#94a3b8";
+}
+
+function buildAreaReadiness(args: {
+  rolloutKpis: {
+    homesPassed: number;
+    homesLive: number;
+    rfsPercent: number;
+    dpTotal: number;
+    dpLive: number;
+    dpBwip: number;
+    dpLnrfs: number;
+    dpUnserviceable: number;
+    dpPlanned: number;
+    buildCompletionPercent: number;
+    qaIssues: number;
+    disconnectedAssets: number;
+    dpNearCapacity?: number;
+    dpOverCapacity?: number;
+  };
+  auditIssues: AuditIssue[];
+  status?: string;
+}): AreaReadiness {
+  const { rolloutKpis, auditIssues, status } = args;
+  const statusText = String(status || "").toLowerCase();
+  const qaHigh = auditIssues.filter((issue) => issue.severity === "high").length;
+  const qaMedium = auditIssues.filter((issue) => issue.severity === "medium").length;
+  const blockers: string[] = [];
+  const nextActions: string[] = [];
+
+  if (statusText.includes("maintenance")) {
+    blockers.push("Area is currently marked as maintenance / hold.");
+  }
+
+  if ((rolloutKpis.dpOverCapacity || 0) > 0) {
+    blockers.push(`${rolloutKpis.dpOverCapacity} DP(s) are over capacity.`);
+    nextActions.push("Resolve oversubscribed DPs before Phase 8 DP operations handover.");
+  }
+
+  if ((rolloutKpis.dpNearCapacity || 0) > 0) {
+    nextActions.push(`${rolloutKpis.dpNearCapacity} DP(s) are at or near capacity; review splitter/port reserve.`);
+  }
+
+  if (rolloutKpis.dpUnserviceable > 0) {
+    blockers.push(`${rolloutKpis.dpUnserviceable} DP(s) are unserviceable.`);
+    nextActions.push("Clear or reclassify unserviceable DPs before RFS sign-off.");
+  }
+
+  if (qaHigh > 0) {
+    blockers.push(`${qaHigh} high QA issue(s) need resolving.`);
+    nextActions.push("Resolve high severity QA issues.");
+  }
+
+  if (rolloutKpis.disconnectedAssets > 0) {
+    blockers.push(`${rolloutKpis.disconnectedAssets} disconnected asset(s) in topology.`);
+    nextActions.push("Fix disconnected assets or confirm they are intentionally isolated.");
+  }
+
+  if (rolloutKpis.dpLnrfs > 0) {
+    blockers.push(`${rolloutKpis.dpLnrfs} DP(s) are live but not ready for service.`);
+    nextActions.push("Complete LNRFS checks and move ready DPs to Live.");
+  }
+
+  if (rolloutKpis.dpBwip > 0) {
+    nextActions.push("Finish BWIP DPs and update live status when build is complete.");
+  }
+
+  if (rolloutKpis.dpPlanned > 0) {
+    nextActions.push("Progress planned DPs through build and test workflow.");
+  }
+
+  if (qaMedium > 0) {
+    nextActions.push("Review medium QA issues before handover.");
+  }
+
+  const hardBlocked =
+    statusText.includes("block") ||
+    statusText.includes("hold") ||
+    statusText.includes("maintenance") ||
+    (rolloutKpis.dpOverCapacity || 0) > 0 ||
+    rolloutKpis.dpUnserviceable > 0 ||
+    qaHigh > 0 ||
+    rolloutKpis.disconnectedAssets > 0;
+
+  let state: AreaReadinessState = "Survey";
+
+  if (statusText.includes("maintenance")) {
+    state = "Maintenance Hold";
+  } else if (hardBlocked) {
+    state = "Blocked";
+  } else if (
+    rolloutKpis.dpTotal > 0 &&
+    rolloutKpis.dpLive === rolloutKpis.dpTotal &&
+    rolloutKpis.rfsPercent >= 95
+  ) {
+    state = "Live";
+  } else if (
+    rolloutKpis.buildCompletionPercent >= 95 &&
+    rolloutKpis.rfsPercent >= 90 &&
+    rolloutKpis.dpLnrfs === 0
+  ) {
+    state = "Ready For Service";
+  } else if (
+    rolloutKpis.buildCompletionPercent >= 70 ||
+    rolloutKpis.rfsPercent >= 70 ||
+    rolloutKpis.dpLnrfs > 0
+  ) {
+    state = "Testing";
+  } else if (
+    rolloutKpis.dpTotal > 0 ||
+    rolloutKpis.dpBwip > 0 ||
+    rolloutKpis.buildCompletionPercent > 0
+  ) {
+    state = "Build";
+  }
+
+  const blockerPenalty = Math.min(blockers.length * 12, 45);
+  const score = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(
+        rolloutKpis.buildCompletionPercent * 0.45 +
+          rolloutKpis.rfsPercent * 0.45 +
+          (rolloutKpis.dpTotal > 0 ? 10 : 0) -
+          blockerPenalty,
+      ),
+    ),
+  );
+
+  if (!nextActions.length) {
+    nextActions.push("Area is operationally ready for final review / handover.");
+  }
+
+  const summary =
+    state === "Live"
+      ? "All key rollout indicators show this area as live."
+      : state === "Ready For Service"
+        ? "Area is ready for RFS review with no hard blockers detected."
+        : state === "Testing"
+          ? "Build is mostly complete; testing and final QA remain."
+          : state === "Build"
+            ? "Area is in build with rollout work still in progress."
+            : state === "Blocked"
+              ? "Area has operational blockers that prevent RFS / live sign-off."
+              : state === "Maintenance Hold"
+                ? "Area is on maintenance hold."
+                : "Area is still in survey / early planning.";
+
+  return {
+    state,
+    score,
+    summary,
+    blockers,
+    nextActions,
+    qaHigh,
+    qaMedium,
+    dpCompletionPercent: rolloutKpis.buildCompletionPercent,
+    rfsPercent: rolloutKpis.rfsPercent,
+    disconnectedAssets: rolloutKpis.disconnectedAssets,
+  };
+}
+
 function getProjectAreaLabel(area: SavedMapAsset | null | undefined): string {
   const item = area as any;
   return String(item?.name || item?.label || item?.projectName || item?.id || "Selected project");
@@ -741,10 +964,46 @@ export default function ProjectWorkspace({
   const [activeIssueSeverity, setActiveIssueSeverity] =
     useState<"high" | "medium" | "low" | null>(null);
 
-  const auditIssues = useMemo(
-    () => auditAreaAssets(workspaceAssets),
-    [workspaceAssets],
-  );
+  const auditIssues = useMemo(() => {
+  const rawIssues = auditAreaAssets(workspaceAssets);
+
+  return rawIssues.filter((issue) => {
+    const issueText = String(
+      (issue as any).message ||
+      (issue as any).title ||
+      (issue as any).reason ||
+      (issue as any).description ||
+      issue.issue ||
+      "",
+    ).toLowerCase();
+
+    const assetText = String(
+      issue.assetType ||
+      issue.assetName ||
+      "",
+    ).toLowerCase();
+
+    const isHomeNameIssue =
+      (
+        issueText.includes("no name") ||
+        issueText.includes("missing name") ||
+        issueText.includes("unnamed")
+      ) &&
+      (
+        assetText.includes("home") ||
+        assetText.includes("premise") ||
+        assetText.includes("flat") ||
+        assetText.includes("mdu")
+      );
+
+    // Ignore temporary unnamed-home QA issues
+    if (isHomeNameIssue) {
+      return false;
+    }
+
+    return true;
+  });
+}, [workspaceAssets]);
   const networkGraph = useMemo(
     () => buildNetworkGraph(workspaceAssets),
     [workspaceAssets],
@@ -859,6 +1118,10 @@ const homesLive = Math.max(
       { live: 0, bwip: 0, lnrfs: 0, unserviceable: 0, planned: 0 },
     );
 
+    const dpCapacityStates = dpAssets.map(getWorkspaceDpCapacityRisk);
+    const dpNearCapacity = dpCapacityStates.filter((state) => state.risk === "WARN" || state.risk === "FULL").length;
+    const dpOverCapacity = dpCapacityStates.filter((state) => state.risk === "OVER").length;
+
     const dpTotal = dpAssets.length || Number(displayStats?.dps || 0);
     const buildCompletionPercent = dpTotal
       ? Math.round((dpStatusCounts.live / dpTotal) * 100)
@@ -877,12 +1140,37 @@ const homesLive = Math.max(
       dpLnrfs: dpStatusCounts.lnrfs,
       dpUnserviceable: dpStatusCounts.unserviceable,
       dpPlanned: dpStatusCounts.planned,
+      dpNearCapacity,
+      dpOverCapacity,
       buildCompletionPercent,
       qaIssues: auditIssues.length || Number(displayStats?.issueCount || 0),
       disconnectedAssets: disconnectedAssets.length,
       routeLengthMeters: Number(displayStats?.routeLengthMeters || 0),
     };
   }, [workspaceAssets, displayStats, auditIssues.length, disconnectedAssets.length]);
+
+  const operationalReadiness = useMemo(
+    () =>
+      buildAreaReadiness({
+        rolloutKpis,
+        auditIssues,
+        status,
+      }),
+    [rolloutKpis, auditIssues, status],
+  );
+
+  const workspaceDisplayStats = useMemo(
+    () => ({
+      ...displayStats,
+      rolloutKpis,
+      operationalReadiness,
+      readinessState: operationalReadiness.state,
+      readinessScore: operationalReadiness.score,
+      readinessBlockers: operationalReadiness.blockers,
+      readinessNextActions: operationalReadiness.nextActions,
+    }),
+    [displayStats, rolloutKpis, operationalReadiness],
+  );
 
   const issueBuckets = useMemo(
     () => ({
@@ -1026,10 +1314,18 @@ const homesLive = Math.max(
     rows.push(["Generated", new Date().toLocaleString("en-GB")]);
     rows.push(["Project", projectName]);
     rows.push(["Status", status]);
+    rows.push(["Readiness state", operationalReadiness.state]);
+    rows.push(["Readiness score", `${operationalReadiness.score}%`]);
+    rows.push(["Readiness summary", operationalReadiness.summary]);
     rows.push([]);
 
     rows.push(["SECTION", "Operational KPI Summary"]);
     rows.push(["Metric", "Value"]);
+    rows.push(["Readiness state", operationalReadiness.state]);
+    rows.push(["Readiness score %", operationalReadiness.score]);
+    rows.push(["Readiness summary", operationalReadiness.summary]);
+    rows.push(["Readiness blockers", operationalReadiness.blockers.join(" | ") || "None"]);
+    rows.push(["Next actions", operationalReadiness.nextActions.join(" | ")]);
     rows.push(["Homes passed", rolloutKpis.homesPassed]);
     rows.push(["Homes live", rolloutKpis.homesLive]);
     rows.push(["Homes not live", rolloutKpis.homesNotLive]);
@@ -1041,12 +1337,28 @@ const homesLive = Math.max(
     rows.push(["DP LNRFS", rolloutKpis.dpLnrfs]);
     rows.push(["DP unserviceable", rolloutKpis.dpUnserviceable]);
     rows.push(["DP planned", rolloutKpis.dpPlanned]);
+    rows.push(["DP near capacity", rolloutKpis.dpNearCapacity]);
+    rows.push(["DP over capacity", rolloutKpis.dpOverCapacity]);
     rows.push(["QA total issues", rolloutKpis.qaIssues]);
     rows.push(["QA high issues", issueBuckets.high.length]);
     rows.push(["QA medium issues", issueBuckets.medium.length]);
     rows.push(["QA low issues", issueBuckets.low.length]);
     rows.push(["Disconnected assets", rolloutKpis.disconnectedAssets]);
     rows.push(["Route length", formatDistance(rolloutKpis.routeLengthMeters)]);
+    rows.push([]);
+
+    rows.push(["SECTION", "Area Readiness Engine"]);
+    rows.push(["Field", "Value"]);
+    rows.push(["Readiness state", operationalReadiness.state]);
+    rows.push(["Readiness score", `${operationalReadiness.score}%`]);
+    rows.push(["Summary", operationalReadiness.summary]);
+    rows.push(["QA high", operationalReadiness.qaHigh]);
+    rows.push(["QA medium", operationalReadiness.qaMedium]);
+    rows.push(["DP completion %", operationalReadiness.dpCompletionPercent]);
+    rows.push(["RFS %", operationalReadiness.rfsPercent]);
+    rows.push(["Disconnected assets", operationalReadiness.disconnectedAssets]);
+    rows.push(["Blockers", operationalReadiness.blockers.join(" | ") || "None"]);
+    rows.push(["Next actions", operationalReadiness.nextActions.join(" | ")]);
     rows.push([]);
 
     rows.push(["SECTION", "Asset Totals"]);
@@ -1065,7 +1377,7 @@ const homesLive = Math.max(
     rows.push([]);
 
     rows.push(["SECTION", "DP Live Status Register"]);
-    rows.push(["DP name", "Status", "Closure / type", "Connected homes", "Capacity", "Free ports", "Asset ID", "Map point"]);
+    rows.push(["DP name", "Status", "Closure / type", "Connected homes", "Capacity", "Free ports", "Capacity %", "Capacity warning", "Asset ID", "Map point"]);
     dpAssets.forEach((asset) => {
       const item = asset as any;
       const details = item.dpDetails || item.properties?.dpDetails || {};
@@ -1082,6 +1394,7 @@ const homesLive = Math.max(
           ? Math.max(Number(capacity) - Number(connectedHomes), 0)
           : item.freePorts ?? details.freePorts ?? "";
 
+      const capacityState = getWorkspaceDpCapacityRisk(asset);
       rows.push([
         getWorkspaceAssetTitle(asset),
         getOperationalDpStatus(asset),
@@ -1089,6 +1402,8 @@ const homesLive = Math.max(
         connectedHomes,
         capacity,
         freePorts,
+        capacityState.percent,
+        capacityState.warning,
         item.id || item.assetId || "",
         pointText(asset),
       ]);
@@ -1259,6 +1574,9 @@ const homesLive = Math.max(
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <h1 style={projectTitle}>{projectName}</h1>
             <span style={statusPill}>{status}</span>
+            <span style={{ ...readinessPill, borderColor: readinessColour(operationalReadiness.state), color: readinessColour(operationalReadiness.state) }}>
+              {operationalReadiness.state}
+            </span>
           </div>
           <div style={projectSubtitle}>Project Workspace</div>
           {projectAreas.length > 1 ? (
@@ -1303,6 +1621,11 @@ const homesLive = Math.max(
             }
           />
           <StatCard
+            label="Readiness"
+            value={`${operationalReadiness.score}%`}
+            tone={readinessTone(operationalReadiness.state)}
+          />
+          <StatCard
             label="Homes Passed"
             value={formatNumber(rolloutKpis.homesPassed)}
           />
@@ -1335,6 +1658,16 @@ const homesLive = Math.max(
             label="Unserviceable"
             value={formatNumber(rolloutKpis.dpUnserviceable)}
             tone={rolloutKpis.dpUnserviceable > 0 ? "bad" : "good"}
+          />
+          <StatCard
+            label="Near Capacity"
+            value={formatNumber(rolloutKpis.dpNearCapacity)}
+            tone={rolloutKpis.dpNearCapacity > 0 ? "warn" : "good"}
+          />
+          <StatCard
+            label="Over Capacity"
+            value={formatNumber(rolloutKpis.dpOverCapacity)}
+            tone={rolloutKpis.dpOverCapacity > 0 ? "bad" : "good"}
           />
           <StatCard
             label="QA Issues"
@@ -1644,7 +1977,7 @@ const homesLive = Math.max(
               activeTab={activeTab}
               projectName={projectName}
               status={status}
-              stats={displayStats}
+              stats={workspaceDisplayStats}
               projectAssets={workspaceAssets}
               projectArea={projectArea}
               auditIssues={auditIssues}
@@ -1763,6 +2096,9 @@ const homesLive = Math.max(
                       ),
                     )}
                   />
+                  <InfoRow label="Readiness State" value={operationalReadiness.state} highlight={operationalReadiness.state === "Ready For Service" || operationalReadiness.state === "Live"} />
+                  <InfoRow label="Readiness Score" value={`${operationalReadiness.score}%`} highlight={operationalReadiness.score >= 85} />
+                  <InfoRow label="Readiness Blockers" value={operationalReadiness.blockers.length ? operationalReadiness.blockers.length : "None"} highlight={operationalReadiness.blockers.length === 0} />
                   <InfoRow label="Build Status" value={status} />
                 </div>
               )}
@@ -2147,6 +2483,15 @@ const statusPill: React.CSSProperties = {
   padding: "5px 9px",
   fontSize: 12,
   fontWeight: 800,
+};
+
+const readinessPill: React.CSSProperties = {
+  background: "rgba(15,23,42,0.68)",
+  border: "1px solid rgba(148,163,184,0.35)",
+  borderRadius: 7,
+  padding: "5px 9px",
+  fontSize: 12,
+  fontWeight: 900,
 };
 const topMetrics: React.CSSProperties = {
   display: "grid",

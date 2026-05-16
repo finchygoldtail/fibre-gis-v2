@@ -374,6 +374,11 @@ type DpIntelligence = {
   status: RowValue;
   throughCable: RowValue;
   fibres: RowValue;
+  capacityPercent: RowValue;
+  capacityWarning: RowValue;
+  splitterRatio: RowValue;
+  inputFibres: RowValue;
+  passthroughFibres: RowValue;
 };
 
 function isDropCable(asset: SavedMapAsset | null): boolean {
@@ -446,6 +451,20 @@ function buildDpIntelligence(
 
   const capacityNumber = toNumber(inferredCapacity);
   const usedNumber = toNumber(inferredUsedPorts);
+  const afnDetails = item?.dpDetails?.afnDetails || item?.properties?.dpDetails?.afnDetails || item?.afnDetails || {};
+  const selectedInputFibres = Array.isArray(afnDetails.inputFibres) ? afnDetails.inputFibres.length : toNumber(afnDetails.fibreCountUsed);
+  const cableFibreTotal = throughCableAsset ? toNumber(read(throughCableAsset as any, ["fibreCount", "fiberCount", "coreCount", "size"], null)) : null;
+  const capacityPercent = capacityNumber !== null && usedNumber !== null && capacityNumber > 0 ? Math.round((usedNumber / capacityNumber) * 100) : null;
+  const capacityWarning =
+    capacityNumber !== null && usedNumber !== null
+      ? usedNumber > capacityNumber
+        ? "Over capacity"
+        : usedNumber === capacityNumber
+          ? "Full"
+          : capacityPercent !== null && capacityPercent >= 80
+            ? "Near capacity"
+            : "Capacity OK"
+      : "Capacity unknown";
 
   return {
     dpType,
@@ -461,6 +480,14 @@ function buildDpIntelligence(
     fibres: throughCableAsset
       ? `${read(throughCableAsset as any, ["usedFibres", "usedFibers", "fibresUsed"], "—")} / ${read(throughCableAsset as any, ["fibreCount", "fiberCount", "coreCount", "size"], "—")}`
       : read(item, ["fibres", "fibreRange", "allocatedInputFibres"], "-"),
+    capacityPercent: capacityPercent !== null ? `${capacityPercent}%` : "—",
+    capacityWarning,
+    splitterRatio: read(afnDetails, ["splitterRatio"], String(dpType).toLowerCase().includes("afn") ? "1:8" : "—"),
+    inputFibres: selectedInputFibres ?? "—",
+    passthroughFibres:
+      cableFibreTotal !== null && selectedInputFibres !== null
+        ? Math.max(cableFibreTotal - Number(selectedInputFibres), 0)
+        : "—",
   };
 }
 
@@ -1183,6 +1210,11 @@ export default function AssetIntelligencePanel({
           <InfoRow label="Capacity" value={dpInfo.capacity} />
           <InfoRow label="Used Ports" value={dpInfo.usedPorts} />
           <InfoRow label="Free Ports" value={dpInfo.freePorts} />
+          <InfoRow label="Capacity %" value={dpInfo.capacityPercent} />
+          <InfoRow label="Capacity Warning" value={dpInfo.capacityWarning} />
+          <InfoRow label="Splitter Ratio" value={dpInfo.splitterRatio} />
+          <InfoRow label="Input Fibres" value={dpInfo.inputFibres} />
+          <InfoRow label="Passthrough Fibres" value={dpInfo.passthroughFibres} />
           <InfoRow label="Service Status" value={dpInfo.status} />
           <InfoRow label="Through Cable" value={dpInfo.throughCable} />
           <InfoRow label="Fibres" value={dpInfo.fibres} />

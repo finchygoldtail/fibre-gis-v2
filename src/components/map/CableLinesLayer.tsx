@@ -155,6 +155,16 @@ function getCableFibreCount(asset: SavedMapAsset): number | null {
   return null;
 }
 
+
+function getCableCapacityWarning(asset: SavedMapAsset, usedFibres: number | null): string {
+  const fibreCount = getCableFibreCount(asset);
+  if (!fibreCount || usedFibres === null) return "";
+  if (usedFibres > fibreCount) return `Over capacity: ${usedFibres}/${fibreCount}F`;
+  if (usedFibres === fibreCount) return `Full: ${usedFibres}/${fibreCount}F`;
+  if ((usedFibres / fibreCount) >= 0.8) return `Near capacity: ${usedFibres}/${fibreCount}F`;
+  return `Fibres: ${usedFibres}/${fibreCount}F`;
+}
+
 function getDropCableDistanceColour(lengthMeters: number): string {
   // Blue = shortest tails, red = top end of acceptable drop length.
   // 68m is the existing design target used elsewhere in the app.
