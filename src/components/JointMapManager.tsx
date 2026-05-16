@@ -498,6 +498,39 @@ function getDistancePointToLineMeters(
   return best;
 }
 
+
+
+// =====================================================
+// CABLE ROUTE SAVE GUARD
+// Editing a cable must replace the current route, not append or
+// multiply geometry points on every save/edit cycle.
+// =====================================================
+const CABLE_SAVE_COORDINATE_DEDUPE_METERS = 0.35;
+
+function sanitiseCableRouteCoordinates(points: LatLngLiteral[] | [number, number][]): [number, number][] {
+  if (!Array.isArray(points)) return [];
+
+  const cleaned: [number, number][] = [];
+
+  points.forEach((point: any) => {
+    const lat = Number(Array.isArray(point) ? point[0] : point?.lat);
+    const lng = Number(Array.isArray(point) ? point[1] : point?.lng);
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    const next: [number, number] = [lat, lng];
+    const previous = cleaned[cleaned.length - 1];
+
+    if (previous && getPathDistanceMeters([previous, next]) <= CABLE_SAVE_COORDINATE_DEDUPE_METERS) {
+      return;
+    }
+
+    cleaned.push(next);
+  });
+
+  return cleaned;
+}
+
 function findDpsAlongCable(
   assets: SavedMapAsset[],
   route: LatLngLiteral[],
@@ -1891,16 +1924,10 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
     if (!reason) return;
 
     let savedAfterAsset: SavedMapAsset | null = null;
-    let routedCableCoordinates: [number, number][] | null = null;
-
-    if (assetType === "cable" && draftCablePoints.length >= 2) {
-      setIsRoutingCable(true);
-      try {
-        routedCableCoordinates = await routePointsToRoads(draftCablePoints);
-      } finally {
-        setIsRoutingCable(false);
-      }
-    }
+    const editedCableCoordinates =
+      assetType === "cable" && draftCablePoints.length >= 2
+        ? sanitiseCableRouteCoordinates(draftCablePoints)
+        : null;
 
     const nextPoleDetails = detailOverrides?.poleDetails ?? poleDetails;
     const nextDpDetails = detailOverrides?.dpDetails ?? dpDetails;
@@ -1974,12 +2001,15 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
           installMethod,
           parentCableId,
           allocatedInputFibres,
-          routeMode: routedCableCoordinates ? "road" : undefined,
+          routeMode: (asset as any).routeMode,
           geometry: {
             type: "LineString",
             coordinates:
-              routedCableCoordinates ||
-              draftCablePoints.map((p) => [p.lat, p.lng]),
+              editedCableCoordinates?.length
+                ? editedCableCoordinates
+                : sanitiseCableRouteCoordinates(
+                    (asset.geometry?.type === "LineString" ? asset.geometry.coordinates : []) as [number, number][],
+                  ),
           },
         }), "updated", reason);
         return savedAfterAsset;
@@ -2152,7 +2182,9 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
     setIsRoutingCable(true);
 
     try {
-      const routedCoordinates = await routePointsToRoads(draftCablePoints);
+      const routedCoordinates = sanitiseCableRouteCoordinates(
+        await routePointsToRoads(draftCablePoints),
+      );
 
       const cableRecord = {
         id: crypto.randomUUID(),

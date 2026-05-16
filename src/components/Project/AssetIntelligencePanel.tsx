@@ -1046,7 +1046,7 @@ export default function AssetIntelligencePanel({
           <InfoRow label="Cable ID" value={read(item, ["cableId", "cableName", "name", "id"])} />
           <InfoRow label="Cable Type" value={read(item, ["cableType", "type", "assetType"])} />
           <InfoRow label="Fibre Count" value={read(item, ["fibreCount", "fiberCount", "coreCount", "size"])} />
-          <InfoRow label="Used Fibres" value={read(item, ["usedFibres", "usedFibers", "usedCoreCount", "fibresUsed"])} />
+          <InfoRow label="Used Fibres" value={cablePath.usedFibres ?? read(item, ["usedFibres", "usedFibers", "usedCoreCount", "fibresUsed"])} />
           <InfoRow label="Route Length" value={formatDistanceMeters(routeLength(asset))} />
           <InfoRow label="PIA / NOI" value={read(item, ["piaNoiNumber", "piaNOINumber", "noiNumber", "piaNoi", "pia", "noi", "piaStatus"])} />
         </PanelSection>

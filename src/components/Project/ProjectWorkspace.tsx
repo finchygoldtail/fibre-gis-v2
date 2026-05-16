@@ -1,11 +1,16 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import WorkspaceMap, { type WorkspaceLayerVisibility } from "./WorkspaceMap";
 import type { OpenreachLayerVisibility } from "../map/OpenreachOverlayLayer";
 import AssetIntelligencePanel from "./AssetIntelligencePanel";
 import WorkspaceTabContent from "./workspace/WorkspaceTabContent";
 import type { SavedMapAsset } from "../map/types";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "../../firebase";
 import { auditAreaAssets, type AuditIssue } from "../../services/areaAudit";
-import { buildNetworkGraph, findDisconnectedAssets } from "../../services/networkGraph";
+import {
+  buildNetworkGraph,
+  findDisconnectedAssets,
+} from "../../services/networkGraph";
 
 // =====================================================
 // FILE: ProjectWorkspace.tsx
@@ -95,7 +100,10 @@ const defaultWorkspaceLayers: WorkspaceLayerVisibility = {
   other: true,
 };
 
-const workspaceLayerOptions: { key: keyof WorkspaceLayerVisibility; label: string }[] = [
+const workspaceLayerOptions: {
+  key: keyof WorkspaceLayerVisibility;
+  label: string;
+}[] = [
   { key: "projectBoundary", label: "Project Boundary" },
   { key: "areas", label: "Areas" },
   { key: "cables", label: "Cables" },
@@ -118,7 +126,10 @@ const defaultOpenreachLayers: OpenreachLayerVisibility = {
   labels: false,
 };
 
-const openreachLayerOptions: { key: keyof OpenreachLayerVisibility; label: string }[] = [
+const openreachLayerOptions: {
+  key: keyof OpenreachLayerVisibility;
+  label: string;
+}[] = [
   { key: "ducts", label: "OR Ducts / Routes" },
   { key: "trenches", label: "OR Trenches" },
   { key: "spans", label: "OR Overhead Spans" },
@@ -127,7 +138,9 @@ const openreachLayerOptions: { key: keyof OpenreachLayerVisibility; label: strin
   { key: "labels", label: "OR Route Labels" },
 ];
 
-function isHomeDropCableAsset(asset: SavedMapAsset | null | undefined): boolean {
+function isHomeDropCableAsset(
+  asset: SavedMapAsset | null | undefined,
+): boolean {
   if (!asset) return false;
   const item = asset as any;
 
@@ -171,10 +184,14 @@ function isDesignCableAsset(asset: SavedMapAsset | null | undefined): boolean {
 }
 
 function assetMatchKey(value: unknown): string {
-  return String(value ?? "").trim().toLowerCase();
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
 }
 
-function getAssetIdentityKeys(asset: SavedMapAsset | null | undefined): string[] {
+function getAssetIdentityKeys(
+  asset: SavedMapAsset | null | undefined,
+): string[] {
   if (!asset) return [];
   const item = asset as any;
   return [
@@ -211,6 +228,208 @@ function resolveFullProjectAsset(
   } as SavedMapAsset;
 }
 
+function getWorkspaceAssetTitle(
+  asset: SavedMapAsset | null | undefined,
+): string {
+  const item = (asset || {}) as any;
+  return String(
+    item.name ||
+      item.jointName ||
+      item.label ||
+      item.cableId ||
+      item.assetId ||
+      item.id ||
+      "Unnamed asset",
+  );
+}
+
+function getWorkspaceAssetType(
+  asset: SavedMapAsset | null | undefined,
+): string {
+  const item = (asset || {}) as any;
+  return String(
+    item.assetType || item.type || item.jointType || item.cableType || "Asset",
+  );
+}
+
+function assetSearchText(asset: SavedMapAsset): string {
+  const item = asset as any;
+  return [
+    item.id,
+    item.assetId,
+    item.name,
+    item.jointName,
+    item.label,
+    item.cableId,
+    item.cableName,
+    item.assetType,
+    item.type,
+    item.jointType,
+    item.cableType,
+    item.address,
+    item.uprn,
+    item.status,
+  ]
+    .map((value) => String(value ?? "").toLowerCase())
+    .join(" ");
+}
+
+
+type MappingRowsByAssetId = Record<string, any[][]>;
+
+type MappingChunkDoc = {
+  rowsJson?: string;
+  rows?: any[];
+  chunkIndex?: number;
+};
+
+function safeParseRowsJson(value: unknown): any[] {
+  if (typeof value !== "string") return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function loadWorkspaceJointMappingRows(jointId: string): Promise<any[][]> {
+  const chunksRef = collection(
+    db,
+    "businesses",
+    "fibre-gis-v2",
+    "jointMappings",
+    jointId,
+    "chunks",
+  );
+
+  const snapshot = await getDocs(chunksRef);
+
+  return snapshot.docs
+    .map((chunkDoc) => {
+      const data = chunkDoc.data() as MappingChunkDoc;
+      let rows: any[] = [];
+
+      if (typeof data.rowsJson === "string") {
+        rows = safeParseRowsJson(data.rowsJson);
+      }
+
+      if (!rows.length && Array.isArray(data.rows)) {
+        rows = data.rows.map((row: any) =>
+          Array.isArray(row) ? row : Array.isArray(row?.values) ? row.values : row,
+        );
+      }
+
+      return {
+        id: chunkDoc.id,
+        index:
+          typeof data.chunkIndex === "number"
+            ? data.chunkIndex
+            : Number(String(chunkDoc.id).replace("chunk_", "")),
+        rows: Array.isArray(rows) ? rows : [],
+      };
+    })
+    .sort((a, b) => a.index - b.index || a.id.localeCompare(b.id))
+    .flatMap((chunk) => chunk.rows)
+    .filter((row) => Array.isArray(row));
+}
+
+function normaliseCableReference(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_/-]+/g, "");
+}
+
+function rowText(row: any[]): string {
+  return row.map((value) => String(value ?? "")).join(" ");
+}
+
+function fibreNumberFromRow(row: any[], fallbackIndex: number): string {
+  const direct = row?.[1];
+  const parsed = Number(direct);
+  if (Number.isFinite(parsed) && parsed > 0) return String(parsed);
+  return `row-${fallbackIndex}`;
+}
+
+function cableAliases(asset: SavedMapAsset): string[] {
+  const item = asset as any;
+  const rawValues = [item.name, item.cableId, item.cableName, item.id]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+
+  const aliases = new Set<string>();
+
+  rawValues.forEach((raw) => {
+    const normalised = normaliseCableReference(raw);
+    if (normalised.length >= 3) aliases.add(normalised);
+
+    const shortCableMatches = raw.match(/(?:\d+f)?(?:ulw|lc|fc|link|feeder|spine|drop)\d{1,4}/gi);
+    shortCableMatches?.forEach((match) => {
+      const next = normaliseCableReference(match);
+      if (next.length >= 3) aliases.add(next);
+    });
+  });
+
+  return Array.from(aliases);
+}
+
+function calculateUsedFibresFromMappings(cable: SavedMapAsset, rowsByAssetId: MappingRowsByAssetId): number | null {
+  const aliases = cableAliases(cable);
+  if (!aliases.length) return null;
+
+  const matchedFibres = new Set<string>();
+
+  Object.entries(rowsByAssetId).forEach(([jointId, rows]) => {
+    rows.forEach((row, rowIndex) => {
+      const normalisedText = normaliseCableReference(rowText(row));
+      if (!aliases.some((alias) => normalisedText.includes(alias))) return;
+      matchedFibres.add(`${jointId}:${fibreNumberFromRow(row, rowIndex)}`);
+    });
+  });
+
+  return matchedFibres.size || null;
+}
+
+function enrichProjectAssetsWithMappings(
+  assets: SavedMapAsset[],
+  rowsByAssetId: MappingRowsByAssetId,
+): SavedMapAsset[] {
+  if (!Object.keys(rowsByAssetId).length) return assets;
+
+  const withJointRows = assets.map((asset) => {
+    const rows = rowsByAssetId[asset.id];
+    if (!rows?.length) return asset;
+
+    return {
+      ...(asset as any),
+      mappingRows: rows,
+      mappingRowsCount: rows.length,
+      mappingRowsSummary: {
+        ...((asset as any).mappingRowsSummary || {}),
+        rowCount: rows.length,
+      },
+    } as SavedMapAsset;
+  });
+
+  return withJointRows.map((asset) => {
+    const item = asset as any;
+    const assetType = String(item.assetType || item.type || "").toLowerCase();
+    const isCable = assetType.includes("cable") || asset.geometry?.type === "LineString";
+    if (!isCable) return asset;
+
+    const usedFibres = calculateUsedFibresFromMappings(asset, rowsByAssetId);
+    if (usedFibres === null) return asset;
+
+    return {
+      ...item,
+      usedFibres,
+      fibresUsed: usedFibres,
+      usedCoreCount: usedFibres,
+    } as SavedMapAsset;
+  });
+}
+
 function formatNumber(value: number | undefined) {
   return (value ?? 0).toLocaleString("en-GB");
 }
@@ -221,158 +440,28 @@ function formatDistance(meters: number | undefined) {
   return `${Math.round(value)} m`;
 }
 
-function StatCard({ label, value, tone = "default" }: { label: string; value: React.ReactNode; tone?: "default" | "good" | "warn" | "bad" }) {
-  const toneColour = tone === "good" ? "#4ade80" : tone === "warn" ? "#fbbf24" : tone === "bad" ? "#fb7185" : "#e5e7eb";
+function StatCard({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: React.ReactNode;
+  tone?: "default" | "good" | "warn" | "bad";
+}) {
+  const toneColour =
+    tone === "good"
+      ? "#4ade80"
+      : tone === "warn"
+        ? "#fbbf24"
+        : tone === "bad"
+          ? "#fb7185"
+          : "#e5e7eb";
   return (
     <div style={metricCard}>
       <div style={metricLabel}>{label}</div>
       <div style={{ ...metricValue, color: toneColour }}>{value}</div>
     </div>
-  );
-}
-
-
-type WorkspaceInsight = {
-  label: string;
-  value: React.ReactNode;
-  detail: string;
-  tone: "good" | "warn" | "bad" | "default";
-};
-
-function percent(part: number, total: number): number {
-  if (!total) return 0;
-  return Math.round((part / total) * 100);
-}
-
-function countAssetsByType(projectAssets: SavedMapAsset[]) {
-  return projectAssets.reduce(
-    (counts, asset) => {
-      const item = asset as any;
-      const type = String(item.assetType || item.type || item.jointType || "other").toLowerCase();
-      if (isDesignCableAsset(asset)) counts.designCables += 1;
-      else if (isHomeDropCableAsset(asset)) counts.dropCables += 1;
-      else if (type.includes("home") || type.includes("premise")) counts.homes += 1;
-      else if (type.includes("joint") || type.includes("lmj") || type.includes("cmj") || type.includes("ag")) counts.joints += 1;
-      else if (type.includes("distribution") || type === "dp" || type.includes("cbt") || type.includes("afn")) counts.dps += 1;
-      else if (type.includes("pole")) counts.poles += 1;
-      else if (type.includes("chamber")) counts.chambers += 1;
-      else if (type.includes("street") || type.includes("cab")) counts.streetCabs += 1;
-      else if (type.includes("polygon") || type.includes("area")) counts.areas += 1;
-      else counts.other += 1;
-      return counts;
-    },
-    {
-      homes: 0,
-      joints: 0,
-      dps: 0,
-      poles: 0,
-      chambers: 0,
-      streetCabs: 0,
-      designCables: 0,
-      dropCables: 0,
-      areas: 0,
-      other: 0,
-    },
-  );
-}
-
-function getOperationalAssetName(asset: SavedMapAsset): string {
-  const item = asset as any;
-  return String(item.name || item.jointName || item.label || item.cableId || item.id || "Asset");
-}
-
-function buildWorkspaceInsights(args: {
-  stats: ProjectWorkspaceStats;
-  auditIssues: AuditIssue[];
-  disconnectedAssets: any[];
-  graphWarnings: number;
-  assetCounts: ReturnType<typeof countAssetsByType>;
-}): WorkspaceInsight[] {
-  const { stats, auditIssues, disconnectedAssets, graphWarnings, assetCounts } = args;
-  const connectedPercent = percent(stats.homesConnected, stats.homesPassed);
-  const highIssues = auditIssues.filter((issue) => issue.severity === "high").length;
-  const missingDrops = Math.max(0, assetCounts.homes - assetCounts.dropCables);
-
-  return [
-    {
-      label: "RFS Readiness",
-      value: `${connectedPercent}%`,
-      detail: `${formatNumber(stats.homesConnected)} connected from ${formatNumber(stats.homesPassed)} homes passed`,
-      tone: connectedPercent >= 80 ? "good" : connectedPercent >= 50 ? "warn" : "bad",
-    },
-    {
-      label: "QA Pressure",
-      value: auditIssues.length,
-      detail: highIssues ? `${highIssues} high priority issue${highIssues === 1 ? "" : "s"}` : "No high priority blockers",
-      tone: highIssues ? "bad" : auditIssues.length ? "warn" : "good",
-    },
-    {
-      label: "Topology Health",
-      value: disconnectedAssets.length,
-      detail: graphWarnings ? `${graphWarnings} graph warning${graphWarnings === 1 ? "" : "s"}` : "Cable graph links are clean",
-      tone: disconnectedAssets.length || graphWarnings ? "warn" : "good",
-    },
-    {
-      label: "Drop Coverage",
-      value: assetCounts.dropCables,
-      detail: missingDrops ? `${formatNumber(missingDrops)} homes do not show a drop asset yet` : "Every visible home has drop coverage",
-      tone: missingDrops > 0 ? "warn" : "good",
-    },
-  ];
-}
-
-function WorkspaceCommandCentre({
-  insights,
-  assetCounts,
-  onOpenQA,
-  onOpenTopology,
-  onShowOpenreach,
-  onShowAll,
-  onBoundaryOnly,
-}: {
-  insights: WorkspaceInsight[];
-  assetCounts: ReturnType<typeof countAssetsByType>;
-  onOpenQA: () => void;
-  onOpenTopology: () => void;
-  onShowOpenreach: () => void;
-  onShowAll: () => void;
-  onBoundaryOnly: () => void;
-}) {
-  return (
-    <section style={commandCentre}>
-      <div style={commandHeader}>
-        <div>
-          <div style={operationKicker}>PROJECT COMMAND CENTRE</div>
-          <div style={commandTitle}>Workspace Intelligence</div>
-        </div>
-        <div style={commandActions}>
-          <button type="button" style={smallButton} onClick={onOpenTopology}>Topology</button>
-          <button type="button" style={smallButton} onClick={onOpenQA}>QA</button>
-          <button type="button" style={smallButton} onClick={onShowOpenreach}>OR / PIA Only</button>
-          <button type="button" style={smallButton} onClick={onShowAll}>All Layers</button>
-          <button type="button" style={smallButton} onClick={onBoundaryOnly}>Boundary</button>
-        </div>
-      </div>
-
-      <div style={insightGrid}>
-        {insights.map((insight) => (
-          <div key={insight.label} style={{ ...insightCard, borderColor: insight.tone === "bad" ? "rgba(248,113,113,0.45)" : insight.tone === "warn" ? "rgba(251,191,36,0.42)" : "rgba(74,222,128,0.32)" }}>
-            <div style={insightLabel}>{insight.label}</div>
-            <div style={insightValue}>{insight.value}</div>
-            <div style={insightDetail}>{insight.detail}</div>
-          </div>
-        ))}
-      </div>
-
-      <div style={assetStrip}>
-        <span>Homes {formatNumber(assetCounts.homes)}</span>
-        <span>Design Cables {formatNumber(assetCounts.designCables)}</span>
-        <span>Drop Cables {formatNumber(assetCounts.dropCables)}</span>
-        <span>Joints {formatNumber(assetCounts.joints)}</span>
-        <span>DPs {formatNumber(assetCounts.dps)}</span>
-        <span>Civils {formatNumber(assetCounts.poles + assetCounts.chambers)}</span>
-      </div>
-    </section>
   );
 }
 
@@ -389,27 +478,155 @@ export default function ProjectWorkspace({
   projectArea = null,
   projectAssets = [],
 }: ProjectWorkspaceProps) {
-  const [openreachLayers, setOpenreachLayers] = React.useState<OpenreachLayerVisibility>(defaultOpenreachLayers);
+  const [openreachLayers, setOpenreachLayers] =
+    React.useState<OpenreachLayerVisibility>(defaultOpenreachLayers);
 
-  const [selectedWorkspaceAsset, setSelectedWorkspaceAsset] = useState<SavedMapAsset | null>(null);
+  const [selectedWorkspaceAsset, setSelectedWorkspaceAsset] =
+    useState<SavedMapAsset | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
+  const [mappingRowsByAssetId, setMappingRowsByAssetId] =
+    useState<MappingRowsByAssetId>({});
+
+  const mappingAssetKey = useMemo(
+    () =>
+      projectAssets
+        .filter((asset) => Boolean((asset as any).mappingRowsRef || (asset as any).mappingRowsCount))
+        .map((asset) => `${asset.id}:${(asset as any).mappingRowsCount || 0}:${(asset as any).updatedAt || ""}`)
+        .sort()
+        .join("|"),
+    [projectAssets],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const assetsWithSharedMappings = projectAssets.filter((asset) =>
+      Boolean((asset as any).mappingRowsRef || (asset as any).mappingRowsCount),
+    );
+
+    if (!assetsWithSharedMappings.length) {
+      setMappingRowsByAssetId({});
+      return;
+    }
+
+    Promise.all(
+      assetsWithSharedMappings.map(async (asset) => {
+        try {
+          const rows = await loadWorkspaceJointMappingRows(asset.id);
+          return [asset.id, rows] as const;
+        } catch (err) {
+          console.error(`Failed to load workspace mapping rows for ${asset.name || asset.id}`, err);
+          return [asset.id, []] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      setMappingRowsByAssetId(Object.fromEntries(entries));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mappingAssetKey, projectAssets]);
+
+  const workspaceAssets = useMemo(
+    () => enrichProjectAssetsWithMappings(projectAssets, mappingRowsByAssetId),
+    [projectAssets, mappingRowsByAssetId],
+  );
 
   const fullSelectedWorkspaceAsset = useMemo(
-    () => resolveFullProjectAsset(selectedWorkspaceAsset, projectAssets),
-    [selectedWorkspaceAsset, projectAssets],
+    () => resolveFullProjectAsset(selectedWorkspaceAsset, workspaceAssets),
+    [selectedWorkspaceAsset, workspaceAssets],
   );
   const [layerMenuOpen, setLayerMenuOpen] = useState(false);
-  const [visibleLayers, setVisibleLayers] = useState<WorkspaceLayerVisibility>(defaultWorkspaceLayers);
-  const [activeOperationPanel, setActiveOperationPanel] = useState<WorkspaceOperationPanel>("none");
+  const [visibleLayers, setVisibleLayers] = useState<WorkspaceLayerVisibility>(
+    defaultWorkspaceLayers,
+  );
+  const [activeOperationPanel, setActiveOperationPanel] =
+    useState<WorkspaceOperationPanel>("none");
 
-  const auditIssues = useMemo(() => auditAreaAssets(projectAssets), [projectAssets]);
-  const networkGraph = useMemo(() => buildNetworkGraph(projectAssets), [projectAssets]);
-  const disconnectedAssets = useMemo(() => findDisconnectedAssets(networkGraph), [networkGraph]);
+  const auditIssues = useMemo(
+    () => auditAreaAssets(workspaceAssets),
+    [workspaceAssets],
+  );
+  const networkGraph = useMemo(
+    () => buildNetworkGraph(workspaceAssets),
+    [workspaceAssets],
+  );
+  const disconnectedAssets = useMemo(
+    () => findDisconnectedAssets(networkGraph),
+    [networkGraph],
+  );
 
+  const searchResults = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    if (query.length < 2) return [];
+
+    return workspaceAssets
+      .filter((asset) => assetSearchText(asset).includes(query))
+      .slice(0, 12);
+  }, [workspaceAssets, searchTerm]);
+
+  const selectedTraceRows = useMemo(() => {
+    if (!fullSelectedWorkspaceAsset)
+      return [] as {
+        id: string;
+        title: string;
+        type: string;
+        asset: SavedMapAsset | any;
+      }[];
+
+    const selectedKeys = new Set(
+      getAssetIdentityKeys(fullSelectedWorkspaceAsset),
+    );
+    const selectedNode = Array.from(networkGraph.nodes.values()).find((node) =>
+      getAssetIdentityKeys(node.asset).some((key) => selectedKeys.has(key)),
+    );
+    const selectedEdge = Array.from(networkGraph.edges.values()).find((edge) =>
+      getAssetIdentityKeys(edge.asset).some((key) => selectedKeys.has(key)),
+    );
+
+    const rows: {
+      id: string;
+      title: string;
+      type: string;
+      asset: SavedMapAsset | any;
+    }[] = [];
+
+    if (selectedNode) {
+      selectedNode.connectedTo.forEach((edgeId) => {
+        const edge = networkGraph.edges.get(edgeId);
+        if (!edge) return;
+        rows.push({
+          id: edge.id,
+          title: getWorkspaceAssetTitle(edge.asset),
+          type: `Connected cable / route`,
+          asset: edge.asset,
+        });
+      });
+    }
+
+    if (selectedEdge) {
+      Array.from(networkGraph.nodes.values())
+        .filter((node) => node.connectedTo.includes(selectedEdge.id))
+        .forEach((node) => {
+          rows.push({
+            id: node.id,
+            title: getWorkspaceAssetTitle(node.asset),
+            type: `Connected ${getWorkspaceAssetType(node.asset)}`,
+            asset: node.asset,
+          });
+        });
+    }
+
+    return rows;
+  }, [fullSelectedWorkspaceAsset, networkGraph]);
 
   const designCableCount = useMemo(
-    () => projectAssets.filter(isDesignCableAsset).length,
-    [projectAssets],
+    () => workspaceAssets.filter(isDesignCableAsset).length,
+    [workspaceAssets],
   );
 
   const displayStats = useMemo(
@@ -418,18 +635,6 @@ export default function ProjectWorkspace({
       cables: designCableCount,
     }),
     [stats, designCableCount],
-  );
-
-  const assetCounts = useMemo(() => countAssetsByType(projectAssets), [projectAssets]);
-  const workspaceInsights = useMemo(
-    () => buildWorkspaceInsights({
-      stats: displayStats,
-      auditIssues,
-      disconnectedAssets,
-      graphWarnings: networkGraph.stats?.warningCount ?? 0,
-      assetCounts,
-    }),
-    [displayStats, auditIssues, disconnectedAssets, networkGraph.stats?.warningCount, assetCounts],
   );
 
   const issueBuckets = useMemo(
@@ -441,9 +646,25 @@ export default function ProjectWorkspace({
     [auditIssues],
   );
 
-  const openOperationPanel = (panel: WorkspaceOperationPanel, tab?: WorkspaceTab) => {
+  const openOperationPanel = (
+    panel: WorkspaceOperationPanel,
+    tab?: WorkspaceTab,
+  ) => {
     if (tab) setActiveTab(tab);
     setActiveOperationPanel(panel);
+  };
+
+  const handleSearchSelect = (asset: SavedMapAsset) => {
+    setSelectedWorkspaceAsset(asset);
+    setSearchTerm(getWorkspaceAssetTitle(asset));
+    setSearchFocused(false);
+    setActiveOperationPanel("trace");
+    setActiveTab("topology");
+  };
+
+  const openInternalTraceTool = () => {
+    setActiveTab("topology");
+    setActiveOperationPanel("trace");
   };
 
   const handleGenerateReport = () => {
@@ -478,7 +699,9 @@ export default function ProjectWorkspace({
       `Total issues: ${auditIssues.length}`,
     ];
 
-    const blob = new Blob([reportLines.join("\n")], { type: "text/plain;charset=utf-8" });
+    const blob = new Blob([reportLines.join("\n")], {
+      type: "text/plain;charset=utf-8",
+    });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -490,9 +713,13 @@ export default function ProjectWorkspace({
     openOperationPanel("report", "reports");
   };
 
-
   const issueTone = displayStats.issueCount > 0 ? "bad" : "good";
-  const rfsTone = displayStats.rfsPercent >= 80 ? "good" : displayStats.rfsPercent >= 50 ? "warn" : "bad";
+  const rfsTone =
+    displayStats.rfsPercent >= 80
+      ? "good"
+      : displayStats.rfsPercent >= 50
+        ? "warn"
+        : "bad";
 
   const assetTiles = useMemo(
     () => [
@@ -506,9 +733,14 @@ export default function ProjectWorkspace({
     [displayStats],
   );
 
-  const enabledWorkspaceLayerCount = workspaceLayerOptions.filter((item) => visibleLayers[item.key]).length;
-  const enabledOpenreachLayerCount = openreachLayerOptions.filter((item) => openreachLayers[item.key]).length;
-  const enabledLayerCount = enabledWorkspaceLayerCount + enabledOpenreachLayerCount;
+  const enabledWorkspaceLayerCount = workspaceLayerOptions.filter(
+    (item) => visibleLayers[item.key],
+  ).length;
+  const enabledOpenreachLayerCount = openreachLayerOptions.filter(
+    (item) => openreachLayers[item.key],
+  ).length;
+  const enabledLayerCount =
+    enabledWorkspaceLayerCount + enabledOpenreachLayerCount;
 
   const toggleLayer = (key: keyof WorkspaceLayerVisibility) => {
     setVisibleLayers((prev) => ({
@@ -587,17 +819,41 @@ export default function ProjectWorkspace({
         </div>
 
         <div style={topMetrics}>
-          <StatCard label="RFS Progress" value={`${displayStats.rfsPercent}%`} tone={rfsTone} />
-          <StatCard label="Homes Passed" value={formatNumber(displayStats.homesPassed)} />
-          <StatCard label="Connected" value={formatNumber(displayStats.homesConnected)} />
-          <StatCard label="Issues" value={formatNumber(displayStats.issueCount)} tone={issueTone} />
-          <StatCard label="Topology Links" value={formatNumber(displayStats.topologyLinks)} />
-          <StatCard label="Splice Points" value={formatNumber(displayStats.splicePoints)} />
+          <StatCard
+            label="RFS Progress"
+            value={`${displayStats.rfsPercent}%`}
+            tone={rfsTone}
+          />
+          <StatCard
+            label="Homes Passed"
+            value={formatNumber(displayStats.homesPassed)}
+          />
+          <StatCard
+            label="Connected"
+            value={formatNumber(displayStats.homesConnected)}
+          />
+          <StatCard
+            label="Issues"
+            value={formatNumber(displayStats.issueCount)}
+            tone={issueTone}
+          />
+          <StatCard
+            label="Topology Links"
+            value={formatNumber(displayStats.topologyLinks)}
+          />
+          <StatCard
+            label="Splice Points"
+            value={formatNumber(displayStats.splicePoints)}
+          />
         </div>
 
         <div style={{ display: "flex", gap: 8 }}>
-          <button type="button" style={smallButton} onClick={onExport}>Export</button>
-          <button type="button" style={smallButton} onClick={onBackToMap}>Back To Map</button>
+          <button type="button" style={smallButton} onClick={onExport}>
+            Export
+          </button>
+          <button type="button" style={smallButton} onClick={onBackToMap}>
+            Back To Map
+          </button>
         </div>
       </header>
 
@@ -617,16 +873,6 @@ export default function ProjectWorkspace({
         ))}
       </nav>
 
-      <WorkspaceCommandCentre
-        insights={workspaceInsights}
-        assetCounts={assetCounts}
-        onOpenQA={() => openOperationPanel("qa", "qa")}
-        onOpenTopology={() => openOperationPanel("topology", "topology")}
-        onShowOpenreach={showOnlyOpenreachLayers}
-        onShowAll={showAllLayers}
-        onBoundaryOnly={hideAllLayers}
-      />
-
       <div style={workspaceBody}>
         {/* =====================================================
             LEFT WORKFLOW NAV
@@ -640,23 +886,43 @@ export default function ProjectWorkspace({
             </div>
           </div>
 
-          <SideGroup title="NETWORK OPERATIONS" items={[
-            ["Topology", () => openOperationPanel("topology", "topology")],
-            ["QA Status", () => openOperationPanel("qa", "qa")],
-            ["Fibre Tray Topology", () => { setActiveTab("fibre"); onOpenFibreTopology?.(); }],
-            ["Disconnected Assets", () => openOperationPanel("qa", "qa")],
-            ["Over Capacity", () => openOperationPanel("issues", "qa")],
-          ]} />
+          <SideGroup
+            title="NETWORK OPERATIONS"
+            items={[
+              ["Topology", () => openOperationPanel("topology", "topology")],
+              ["QA Status", () => openOperationPanel("qa", "qa")],
+              [
+                "Fibre Tray Topology",
+                () => {
+                  setActiveTab("fibre");
+                  onOpenFibreTopology?.();
+                },
+              ],
+              ["Disconnected Assets", () => openOperationPanel("qa", "qa")],
+              ["Over Capacity", () => openOperationPanel("issues", "qa")],
+            ]}
+          />
 
-          <SideGroup title="PROJECT MANAGEMENT" items={[
-            ["Build Progress", () => openOperationPanel("rfsBreakdown", "build")],
-            ["Maintenance", () => openOperationPanel("issues", "maintenance")],
-            ["Assets", () => openOperationPanel("projectDetails", "assets")],
-            ["Reports", () => openOperationPanel("report", "reports")],
-          ]} />
+          <SideGroup
+            title="PROJECT MANAGEMENT"
+            items={[
+              [
+                "Build Progress",
+                () => openOperationPanel("rfsBreakdown", "build"),
+              ],
+              [
+                "Maintenance",
+                () => openOperationPanel("issues", "maintenance"),
+              ],
+              ["Assets", () => openOperationPanel("projectDetails", "assets")],
+              ["Reports", () => openOperationPanel("report", "reports")],
+            ]}
+          />
 
           <div style={{ marginTop: "auto" }}>
-            <button type="button" style={railButton} onClick={onBackToMap}>← Back to global map</button>
+            <button type="button" style={railButton} onClick={onBackToMap}>
+              ← Back to global map
+            </button>
           </div>
         </aside>
 
@@ -666,7 +932,46 @@ export default function ProjectWorkspace({
         <main style={contentGrid}>
           <section style={mapPanel}>
             <div style={mapToolbar}>
-              <div style={searchBox}>Search address, asset, cable...</div>
+              <div style={searchWrap}>
+                <input
+                  type="search"
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  onFocus={() => setSearchFocused(true)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && searchResults[0]) {
+                      handleSearchSelect(searchResults[0]);
+                    }
+                    if (event.key === "Escape") {
+                      setSearchFocused(false);
+                    }
+                  }}
+                  placeholder="Search address, asset, cable..."
+                  style={searchInput}
+                />
+                {searchFocused && searchResults.length > 0 && (
+                  <div style={searchResultsPanel}>
+                    {searchResults.map((asset) => (
+                      <button
+                        key={String(
+                          (asset as any).id ||
+                            (asset as any).assetId ||
+                            getWorkspaceAssetTitle(asset),
+                        )}
+                        type="button"
+                        style={searchResultButton}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          handleSearchSelect(asset);
+                        }}
+                      >
+                        <strong>{getWorkspaceAssetTitle(asset)}</strong>
+                        <span>{getWorkspaceAssetType(asset)}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div style={layerMenuWrap}>
                 <button
                   type="button"
@@ -704,14 +1009,26 @@ export default function ProjectWorkspace({
                     ))}
 
                     <div style={layerMenuActions}>
-                      <button type="button" style={miniLayerButton} onClick={showAllLayers}>
+                      <button
+                        type="button"
+                        style={miniLayerButton}
+                        onClick={showAllLayers}
+                      >
                         Show all
                       </button>
-                      <button type="button" style={miniLayerButton} onClick={hideAllLayers}>
+                      <button
+                        type="button"
+                        style={miniLayerButton}
+                        onClick={hideAllLayers}
+                      >
                         Boundary only
                       </button>
                     </div>
-                    <button type="button" style={fullWidthMiniLayerButton} onClick={showOnlyOpenreachLayers}>
+                    <button
+                      type="button"
+                      style={fullWidthMiniLayerButton}
+                      onClick={showOnlyOpenreachLayers}
+                    >
                       Openreach / PIA only
                     </button>
                   </div>
@@ -723,21 +1040,44 @@ export default function ProjectWorkspace({
                 openreachLayers={openreachLayers}
                 projectName={projectName}
                 projectArea={projectArea}
-                assets={projectAssets}
-                selectedAssetId={fullSelectedWorkspaceAsset?.id ?? selectedWorkspaceAsset?.id ?? null}
+                assets={workspaceAssets}
+                selectedAssetId={
+                  fullSelectedWorkspaceAsset?.id ??
+                  selectedWorkspaceAsset?.id ??
+                  null
+                }
                 showCableDistances
                 visibleLayers={visibleLayers}
                 onAssetSelect={setSelectedWorkspaceAsset}
               />
 
               <div style={mapAssetInspector}>
-                <div style={{ color: "#93c5fd", fontSize: 11, fontWeight: 900, letterSpacing: 0.4 }}>SELECTED ASSET</div>
+                <div
+                  style={{
+                    color: "#93c5fd",
+                    fontSize: 11,
+                    fontWeight: 900,
+                    letterSpacing: 0.4,
+                  }}
+                >
+                  SELECTED ASSET
+                </div>
                 <div style={{ marginTop: 5, fontWeight: 900 }}>
-                  {fullSelectedWorkspaceAsset ? String((fullSelectedWorkspaceAsset as any).name || (fullSelectedWorkspaceAsset as any).jointName || fullSelectedWorkspaceAsset.id) : "Click an asset"}
+                  {fullSelectedWorkspaceAsset
+                    ? String(
+                        (fullSelectedWorkspaceAsset as any).name ||
+                          (fullSelectedWorkspaceAsset as any).jointName ||
+                          fullSelectedWorkspaceAsset.id,
+                      )
+                    : "Click an asset"}
                 </div>
                 <div style={{ marginTop: 3, color: "#cbd5e1", fontSize: 12 }}>
                   {fullSelectedWorkspaceAsset
-                    ? String((fullSelectedWorkspaceAsset as any).assetType || (fullSelectedWorkspaceAsset as any).jointType || "Asset")
+                    ? String(
+                        (fullSelectedWorkspaceAsset as any).assetType ||
+                          (fullSelectedWorkspaceAsset as any).jointType ||
+                          "Asset",
+                      )
                     : "Cable, DP, joint, pole, chamber or area"}
                 </div>
               </div>
@@ -749,7 +1089,7 @@ export default function ProjectWorkspace({
               <AssetIntelligencePanel
                 asset={fullSelectedWorkspaceAsset}
                 projectName={projectName}
-                projectAssets={projectAssets}
+                projectAssets={workspaceAssets}
                 onClose={() => setSelectedWorkspaceAsset(null)}
                 onOpenTopology={onOpenFibreTopology}
                 onOpenQA={onOpenQA}
@@ -764,13 +1104,18 @@ export default function ProjectWorkspace({
               projectName={projectName}
               status={status}
               stats={displayStats}
-              projectAssets={projectAssets}
+              projectAssets={workspaceAssets}
               projectArea={projectArea}
               auditIssues={auditIssues}
               disconnectedAssets={disconnectedAssets}
               networkGraph={networkGraph}
-              onOpenPanel={(panel, tab) => openOperationPanel(panel as WorkspaceOperationPanel, (tab || activeTab) as WorkspaceTab)}
-              onOpenTrace={onOpenTrace}
+              onOpenPanel={(panel, tab) =>
+                openOperationPanel(
+                  panel as WorkspaceOperationPanel,
+                  (tab || activeTab) as WorkspaceTab,
+                )
+              }
+              onOpenTrace={openInternalTraceTool}
               onOpenQA={onOpenQA}
               onOpenFibreTopology={onOpenFibreTopology}
               onExport={onExport}
@@ -784,7 +1129,8 @@ export default function ProjectWorkspace({
                 <div>
                   <div style={operationKicker}>OPERATION PANEL</div>
                   <h3 style={operationTitle}>
-                    {activeOperationPanel === "projectDetails" && "Project Details"}
+                    {activeOperationPanel === "projectDetails" &&
+                      "Project Details"}
                     {activeOperationPanel === "rfsBreakdown" && "RFS Breakdown"}
                     {activeOperationPanel === "issues" && "Area Issues"}
                     {activeOperationPanel === "topology" && "Topology"}
@@ -794,48 +1140,118 @@ export default function ProjectWorkspace({
                     {activeOperationPanel === "report" && "Project Report"}
                   </h3>
                 </div>
-                <button type="button" style={closePanelButton} onClick={() => setActiveOperationPanel("none")}>×</button>
+                <button
+                  type="button"
+                  style={closePanelButton}
+                  onClick={() => setActiveOperationPanel("none")}
+                >
+                  ×
+                </button>
               </div>
 
               {activeOperationPanel === "projectDetails" && (
                 <div style={operationGrid}>
                   <InfoRow label="Project" value={projectName} />
                   <InfoRow label="Status" value={status} highlight />
-                  <InfoRow label="Homes" value={`${formatNumber(displayStats.homesConnected)} / ${formatNumber(displayStats.homesPassed)}`} />
-                  <InfoRow label="Route Length" value={formatDistance(displayStats.routeLengthMeters)} />
-                  <InfoRow label="Total Assets" value={formatNumber(projectAssets.length)} />
-                  <InfoRow label="Project Area" value={projectArea ? String((projectArea as any).name || (projectArea as any).label || projectArea.id) : "Not selected"} />
+                  <InfoRow
+                    label="Homes"
+                    value={`${formatNumber(displayStats.homesConnected)} / ${formatNumber(displayStats.homesPassed)}`}
+                  />
+                  <InfoRow
+                    label="Route Length"
+                    value={formatDistance(displayStats.routeLengthMeters)}
+                  />
+                  <InfoRow
+                    label="Total Assets"
+                    value={formatNumber(workspaceAssets.length)}
+                  />
+                  <InfoRow
+                    label="Project Area"
+                    value={
+                      projectArea
+                        ? String(
+                            (projectArea as any).name ||
+                              (projectArea as any).label ||
+                              projectArea.id,
+                          )
+                        : "Not selected"
+                    }
+                  />
                 </div>
               )}
 
               {activeOperationPanel === "rfsBreakdown" && (
                 <div style={operationGrid}>
-                  <InfoRow label="RFS Progress" value={`${displayStats.rfsPercent}%`} highlight={displayStats.rfsPercent >= 80} />
-                  <InfoRow label="Homes Passed" value={formatNumber(displayStats.homesPassed)} />
-                  <InfoRow label="Homes Connected" value={formatNumber(displayStats.homesConnected)} />
-                  <InfoRow label="Homes Remaining" value={formatNumber(Math.max(0, displayStats.homesPassed - displayStats.homesConnected))} />
+                  <InfoRow
+                    label="RFS Progress"
+                    value={`${displayStats.rfsPercent}%`}
+                    highlight={displayStats.rfsPercent >= 80}
+                  />
+                  <InfoRow
+                    label="Homes Passed"
+                    value={formatNumber(displayStats.homesPassed)}
+                  />
+                  <InfoRow
+                    label="Homes Connected"
+                    value={formatNumber(displayStats.homesConnected)}
+                  />
+                  <InfoRow
+                    label="Homes Remaining"
+                    value={formatNumber(
+                      Math.max(
+                        0,
+                        displayStats.homesPassed - displayStats.homesConnected,
+                      ),
+                    )}
+                  />
                   <InfoRow label="Build Status" value={status} />
                 </div>
               )}
 
-              {(activeOperationPanel === "issues" || activeOperationPanel === "qa") && (
+              {(activeOperationPanel === "issues" ||
+                activeOperationPanel === "qa") && (
                 <div style={operationStack}>
                   <div style={issueGrid}>
-                    <IssueCard label="High" value={issueBuckets.high.length} tone="#7f1d1d" />
-                    <IssueCard label="Medium" value={issueBuckets.medium.length} tone="#78350f" />
-                    <IssueCard label="Low" value={issueBuckets.low.length} tone="#1e3a8a" />
+                    <IssueCard
+                      label="High"
+                      value={issueBuckets.high.length}
+                      tone="#7f1d1d"
+                    />
+                    <IssueCard
+                      label="Medium"
+                      value={issueBuckets.medium.length}
+                      tone="#78350f"
+                    />
+                    <IssueCard
+                      label="Low"
+                      value={issueBuckets.low.length}
+                      tone="#1e3a8a"
+                    />
                   </div>
                   <div style={operationList}>
                     {auditIssues.length === 0 ? (
-                      <div style={emptyPanel}>No QA issues found for this project area.</div>
+                      <div style={emptyPanel}>
+                        No QA issues found for this project area.
+                      </div>
                     ) : (
-                      auditIssues.slice(0, 12).map((issue: AuditIssue, index: number) => (
-                        <div key={`${issue.assetId}-${issue.issue}-${index}`} style={operationListItem}>
-                          <strong>{issue.severity.toUpperCase()} — {issue.category}</strong>
-                          <span>{issue.assetName || issue.assetId || "Unknown asset"}</span>
-                          <small>{issue.issue}</small>
-                        </div>
-                      ))
+                      auditIssues
+                        .slice(0, 12)
+                        .map((issue: AuditIssue, index: number) => (
+                          <div
+                            key={`${issue.assetId}-${issue.issue}-${index}`}
+                            style={operationListItem}
+                          >
+                            <strong>
+                              {issue.severity.toUpperCase()} — {issue.category}
+                            </strong>
+                            <span>
+                              {issue.assetName ||
+                                issue.assetId ||
+                                "Unknown asset"}
+                            </span>
+                            <small>{issue.issue}</small>
+                          </div>
+                        ))
                     )}
                   </div>
                 </div>
@@ -843,67 +1259,183 @@ export default function ProjectWorkspace({
 
               {activeOperationPanel === "topology" && (
                 <div style={operationGrid}>
-                  <InfoRow label="Graph Nodes" value={formatNumber(networkGraph.nodes.size)} />
-                  <InfoRow label="Graph Links" value={formatNumber(networkGraph.edges.size)} />
-                  <InfoRow label="Mapped Joints" value={formatNumber(stats.mappedJoints ?? displayStats.joints)} />
-                  <InfoRow label="Route Links" value={formatNumber(displayStats.topologyLinks)} />
-                  <InfoRow label="Disconnected Assets" value={formatNumber(disconnectedAssets.length)} />
-                  <InfoRow label="Unmatched Cable IDs" value={formatNumber(displayStats.unmatchedCableIds ?? 0)} />
-                  <button type="button" style={wideButton} onClick={onOpenFibreTopology}>Open Fibre Tray Topology</button>
+                  <InfoRow
+                    label="Graph Nodes"
+                    value={formatNumber(networkGraph.nodes.size)}
+                  />
+                  <InfoRow
+                    label="Graph Links"
+                    value={formatNumber(networkGraph.edges.size)}
+                  />
+                  <InfoRow
+                    label="Mapped Joints"
+                    value={formatNumber(
+                      stats.mappedJoints ?? displayStats.joints,
+                    )}
+                  />
+                  <InfoRow
+                    label="Route Links"
+                    value={formatNumber(displayStats.topologyLinks)}
+                  />
+                  <InfoRow
+                    label="Disconnected Assets"
+                    value={formatNumber(disconnectedAssets.length)}
+                  />
+                  <InfoRow
+                    label="Unmatched Cable IDs"
+                    value={formatNumber(displayStats.unmatchedCableIds ?? 0)}
+                  />
+                  <button
+                    type="button"
+                    style={wideButton}
+                    onClick={onOpenFibreTopology}
+                  >
+                    Open Fibre Tray Topology
+                  </button>
                 </div>
               )}
 
               {activeOperationPanel === "trace" && (
                 <div style={operationStack}>
-                  <div style={emptyPanel}>Select a cable, joint, DP, pole, chamber or street cabinet on the workspace map to inspect its local network links.</div>
-                  <button type="button" style={wideButton} onClick={onOpenTrace}>Open Trace Tool</button>
+                  {fullSelectedWorkspaceAsset ? (
+                    <>
+                      <div style={traceSelectedCard}>
+                        <div style={operationKicker}>TRACE SELECTED</div>
+                        <strong>
+                          {getWorkspaceAssetTitle(fullSelectedWorkspaceAsset)}
+                        </strong>
+                        <span>
+                          {getWorkspaceAssetType(fullSelectedWorkspaceAsset)}
+                        </span>
+                      </div>
+
+                      <div style={operationList}>
+                        {selectedTraceRows.length === 0 ? (
+                          <div style={emptyPanel}>
+                            No connected graph links found for this asset yet.
+                            Check the cable endpoint snapping or select a cable
+                            that touches this asset.
+                          </div>
+                        ) : (
+                          selectedTraceRows.map((row) => (
+                            <button
+                              key={row.id}
+                              type="button"
+                              style={traceResultButton}
+                              onClick={() =>
+                                setSelectedWorkspaceAsset(
+                                  row.asset as SavedMapAsset,
+                                )
+                              }
+                            >
+                              <strong>{row.title}</strong>
+                              <span>{row.type}</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={emptyPanel}>
+                      Select a cable, joint, DP, pole, chamber or street cabinet
+                      on the workspace map. The trace links will show here
+                      without leaving this workspace.
+                    </div>
+                  )}
                 </div>
               )}
 
               {activeOperationPanel === "addAsset" && (
                 <div style={operationStack}>
-                  <div style={emptyPanel}>Asset creation still lives on the main map so the existing right-click creation, snapping, cable drawing and save logic stays protected.</div>
-                  <button type="button" style={wideButton} onClick={onBackToMap}>Back To Map To Add Asset</button>
+                  <div style={emptyPanel}>
+                    Asset creation still lives on the main map so the existing
+                    right-click creation, snapping, cable drawing and save logic
+                    stays protected.
+                  </div>
+                  <button
+                    type="button"
+                    style={wideButton}
+                    onClick={onBackToMap}
+                  >
+                    Back To Map To Add Asset
+                  </button>
                 </div>
               )}
 
               {activeOperationPanel === "report" && (
                 <div style={operationStack}>
-                  <div style={emptyPanel}>Project report is ready. Use Generate Report to download a current text report, or Export Project Data for the existing export workflow.</div>
-                  <button type="button" style={wideButton} onClick={handleGenerateReport}>Download Report</button>
-                  <button type="button" style={wideButton} onClick={onExport}>Export Project Data</button>
+                  <div style={emptyPanel}>
+                    Project report is ready. Use Generate Report to download a
+                    current text report, or Export Project Data for the existing
+                    export workflow.
+                  </div>
+                  <button
+                    type="button"
+                    style={wideButton}
+                    onClick={handleGenerateReport}
+                  >
+                    Download Report
+                  </button>
+                  <button type="button" style={wideButton} onClick={onExport}>
+                    Export Project Data
+                  </button>
                 </div>
               )}
             </section>
           )}
-
         </main>
       </div>
     </div>
   );
 }
 
-function SideGroup({ title, items }: { title: string; items: [string, () => void][] }) {
+function SideGroup({
+  title,
+  items,
+}: {
+  title: string;
+  items: [string, () => void][];
+}) {
   return (
     <div style={sideGroup}>
       <div style={sideGroupTitle}>{title}</div>
       {items.map(([label, onClick]) => (
-        <button key={label} type="button" style={railButton} onClick={onClick}>{label}</button>
+        <button key={label} type="button" style={railButton} onClick={onClick}>
+          {label}
+        </button>
       ))}
     </div>
   );
 }
 
-function InfoRow({ label, value, highlight = false }: { label: string; value: React.ReactNode; highlight?: boolean }) {
+function InfoRow({
+  label,
+  value,
+  highlight = false,
+}: {
+  label: string;
+  value: React.ReactNode;
+  highlight?: boolean;
+}) {
   return (
     <div style={infoRow}>
       <span style={{ color: "#cbd5e1" }}>{label}</span>
-      <strong style={{ color: highlight ? "#4ade80" : "#f8fafc" }}>{value}</strong>
+      <strong style={{ color: highlight ? "#4ade80" : "#f8fafc" }}>
+        {value}
+      </strong>
     </div>
   );
 }
 
-function IssueCard({ label, value, tone }: { label: string; value: number; tone: string }) {
+function IssueCard({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: string;
+}) {
   return (
     <div style={{ ...issueCard, background: tone }}>
       <div style={{ fontSize: 12, opacity: 0.9 }}>{label}</div>
@@ -911,7 +1443,6 @@ function IssueCard({ label, value, tone }: { label: string; value: number; tone:
     </div>
   );
 }
-
 
 const operationDrawer: React.CSSProperties = {
   gridColumn: "1 / -1",
@@ -991,80 +1522,6 @@ const emptyPanel: React.CSSProperties = {
   color: "#cbd5e1",
 };
 
-
-
-const commandCentre: React.CSSProperties = {
-  display: "grid",
-  gap: 12,
-  padding: "12px 18px",
-  borderBottom: "1px solid rgba(148, 163, 184, 0.14)",
-  background: "linear-gradient(180deg, #0b1626 0%, #081120 100%)",
-};
-
-const commandHeader: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 14,
-};
-
-const commandTitle: React.CSSProperties = {
-  marginTop: 3,
-  fontSize: 18,
-  fontWeight: 900,
-};
-
-const commandActions: React.CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  justifyContent: "flex-end",
-  gap: 8,
-};
-
-const insightGrid: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(4, minmax(180px, 1fr))",
-  gap: 10,
-};
-
-const insightCard: React.CSSProperties = {
-  background: "rgba(15, 23, 42, 0.72)",
-  border: "1px solid rgba(148, 163, 184, 0.18)",
-  borderRadius: 12,
-  padding: "11px 13px",
-  minHeight: 86,
-};
-
-const insightLabel: React.CSSProperties = {
-  color: "#93c5fd",
-  fontSize: 11,
-  fontWeight: 900,
-  letterSpacing: 0.4,
-  textTransform: "uppercase",
-};
-
-const insightValue: React.CSSProperties = {
-  marginTop: 5,
-  fontSize: 26,
-  fontWeight: 950,
-};
-
-const insightDetail: React.CSSProperties = {
-  marginTop: 4,
-  color: "#cbd5e1",
-  fontSize: 12,
-  lineHeight: 1.35,
-};
-
-const assetStrip: React.CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: 8,
-  color: "#cbd5e1",
-  fontSize: 12,
-  fontWeight: 800,
-};
-
 const workspaceRoot: React.CSSProperties = {
   position: "absolute",
   inset: 0,
@@ -1073,7 +1530,8 @@ const workspaceRoot: React.CSSProperties = {
   color: "#f8fafc",
   display: "flex",
   flexDirection: "column",
-  fontFamily: "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  fontFamily:
+    "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
 };
 
 const topHeader: React.CSSProperties = {
@@ -1086,28 +1544,185 @@ const topHeader: React.CSSProperties = {
   background: "linear-gradient(180deg, #0f1b2d 0%, #0a1424 100%)",
 };
 
-const projectTitle: React.CSSProperties = { margin: 0, fontSize: 28, lineHeight: 1.1, fontWeight: 900 };
-const projectSubtitle: React.CSSProperties = { marginTop: 6, color: "#94a3b8", fontSize: 14 };
-const statusPill: React.CSSProperties = { background: "rgba(34,197,94,0.18)", color: "#86efac", border: "1px solid rgba(34,197,94,0.25)", borderRadius: 7, padding: "5px 9px", fontSize: 12, fontWeight: 800 };
-const topMetrics: React.CSSProperties = { flex: 1, display: "grid", gridTemplateColumns: "repeat(6, minmax(105px, 1fr))", gap: 10 };
-const metricCard: React.CSSProperties = { background: "rgba(15, 23, 42, 0.75)", border: "1px solid rgba(148, 163, 184, 0.14)", borderRadius: 8, padding: "10px 12px" };
-const metricLabel: React.CSSProperties = { color: "#cbd5e1", fontSize: 11, marginBottom: 5 };
+const projectTitle: React.CSSProperties = {
+  margin: 0,
+  fontSize: 28,
+  lineHeight: 1.1,
+  fontWeight: 900,
+};
+const projectSubtitle: React.CSSProperties = {
+  marginTop: 6,
+  color: "#94a3b8",
+  fontSize: 14,
+};
+const statusPill: React.CSSProperties = {
+  background: "rgba(34,197,94,0.18)",
+  color: "#86efac",
+  border: "1px solid rgba(34,197,94,0.25)",
+  borderRadius: 7,
+  padding: "5px 9px",
+  fontSize: 12,
+  fontWeight: 800,
+};
+const topMetrics: React.CSSProperties = {
+  flex: 1,
+  display: "grid",
+  gridTemplateColumns: "repeat(6, minmax(105px, 1fr))",
+  gap: 10,
+};
+const metricCard: React.CSSProperties = {
+  background: "rgba(15, 23, 42, 0.75)",
+  border: "1px solid rgba(148, 163, 184, 0.14)",
+  borderRadius: 8,
+  padding: "10px 12px",
+};
+const metricLabel: React.CSSProperties = {
+  color: "#cbd5e1",
+  fontSize: 11,
+  marginBottom: 5,
+};
 const metricValue: React.CSSProperties = { fontSize: 22, fontWeight: 900 };
-const smallButton: React.CSSProperties = { background: "#132640", color: "#e5e7eb", border: "1px solid rgba(148, 163, 184, 0.25)", borderRadius: 8, padding: "9px 12px", cursor: "pointer", fontWeight: 700 };
-const tabBar: React.CSSProperties = { height: 48, display: "flex", alignItems: "center", gap: 8, padding: "0 180px", borderBottom: "1px solid rgba(148, 163, 184, 0.13)", background: "#0b1626" };
-const tabButton: React.CSSProperties = { background: "transparent", color: "#cbd5e1", border: "none", borderRadius: 8, padding: "10px 16px", cursor: "pointer", fontWeight: 700 };
-const activeTabButton: React.CSSProperties = { ...tabButton, background: "rgba(37, 99, 235, 0.22)", color: "#93c5fd", boxShadow: "inset 0 -2px 0 #3b82f6" };
-const workspaceBody: React.CSSProperties = { flex: 1, display: "grid", gridTemplateColumns: "190px 1fr", minHeight: 0 };
-const leftRail: React.CSSProperties = { background: "#07111f", borderRight: "1px solid rgba(148, 163, 184, 0.16)", padding: 16, display: "flex", flexDirection: "column", gap: 18 };
-const brandBlock: React.CSSProperties = { display: "flex", alignItems: "center", gap: 10, marginBottom: 20 };
-const brandIcon: React.CSSProperties = { width: 34, height: 34, borderRadius: 10, background: "#2563eb", display: "grid", placeItems: "center", fontSize: 22, fontWeight: 900 };
-const sideGroup: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 6 };
-const sideGroupTitle: React.CSSProperties = { color: "#94a3b8", fontSize: 11, fontWeight: 900, letterSpacing: 0.5, margin: "8px 0" };
-const railButton: React.CSSProperties = { textAlign: "left", background: "transparent", color: "#cbd5e1", border: "none", borderRadius: 8, padding: "9px 10px", cursor: "pointer", fontWeight: 650 };
-const contentGrid: React.CSSProperties = { padding: 14, overflow: "auto", display: "grid", gridTemplateColumns: "minmax(520px, 1.6fr) minmax(250px, 0.55fr) minmax(250px, 0.55fr)", gridAutoRows: "min-content", gap: 14 };
-const mapPanel: React.CSSProperties = { gridRow: "span 2", background: "#0f1b2d", border: "1px solid rgba(148, 163, 184, 0.18)", borderRadius: 10, padding: 12 };
-const mapToolbar: React.CSSProperties = { display: "flex", gap: 10, marginBottom: 10 };
-const searchBox: React.CSSProperties = { flex: 1, background: "#111827", border: "1px solid rgba(148, 163, 184, 0.2)", borderRadius: 8, color: "#94a3b8", padding: "10px 12px" };
+const smallButton: React.CSSProperties = {
+  background: "#132640",
+  color: "#e5e7eb",
+  border: "1px solid rgba(148, 163, 184, 0.25)",
+  borderRadius: 8,
+  padding: "9px 12px",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+const tabBar: React.CSSProperties = {
+  height: 48,
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  padding: "0 180px",
+  borderBottom: "1px solid rgba(148, 163, 184, 0.13)",
+  background: "#0b1626",
+};
+const tabButton: React.CSSProperties = {
+  background: "transparent",
+  color: "#cbd5e1",
+  border: "none",
+  borderRadius: 8,
+  padding: "10px 16px",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+const activeTabButton: React.CSSProperties = {
+  ...tabButton,
+  background: "rgba(37, 99, 235, 0.22)",
+  color: "#93c5fd",
+  boxShadow: "inset 0 -2px 0 #3b82f6",
+};
+const workspaceBody: React.CSSProperties = {
+  flex: 1,
+  display: "grid",
+  gridTemplateColumns: "190px 1fr",
+  minHeight: 0,
+};
+const leftRail: React.CSSProperties = {
+  background: "#07111f",
+  borderRight: "1px solid rgba(148, 163, 184, 0.16)",
+  padding: 16,
+  display: "flex",
+  flexDirection: "column",
+  gap: 18,
+};
+const brandBlock: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  marginBottom: 20,
+};
+const brandIcon: React.CSSProperties = {
+  width: 34,
+  height: 34,
+  borderRadius: 10,
+  background: "#2563eb",
+  display: "grid",
+  placeItems: "center",
+  fontSize: 22,
+  fontWeight: 900,
+};
+const sideGroup: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 6,
+};
+const sideGroupTitle: React.CSSProperties = {
+  color: "#94a3b8",
+  fontSize: 11,
+  fontWeight: 900,
+  letterSpacing: 0.5,
+  margin: "8px 0",
+};
+const railButton: React.CSSProperties = {
+  textAlign: "left",
+  background: "transparent",
+  color: "#cbd5e1",
+  border: "none",
+  borderRadius: 8,
+  padding: "9px 10px",
+  cursor: "pointer",
+  fontWeight: 650,
+};
+const contentGrid: React.CSSProperties = {
+  padding: 14,
+  overflow: "auto",
+  display: "grid",
+  gridTemplateColumns:
+    "minmax(520px, 1.6fr) minmax(250px, 0.55fr) minmax(250px, 0.55fr)",
+  gridAutoRows: "min-content",
+  gap: 14,
+};
+const mapPanel: React.CSSProperties = {
+  gridRow: "span 2",
+  background: "#0f1b2d",
+  border: "1px solid rgba(148, 163, 184, 0.18)",
+  borderRadius: 10,
+  padding: 12,
+};
+const mapToolbar: React.CSSProperties = {
+  display: "flex",
+  gap: 10,
+  marginBottom: 10,
+};
+const searchWrap: React.CSSProperties = { flex: 1, position: "relative" };
+const searchInput: React.CSSProperties = {
+  width: "100%",
+  background: "#111827",
+  border: "1px solid rgba(148, 163, 184, 0.2)",
+  borderRadius: 8,
+  color: "#e5e7eb",
+  padding: "10px 12px",
+  outline: "none",
+};
+const searchResultsPanel: React.CSSProperties = {
+  position: "absolute",
+  left: 0,
+  right: 0,
+  top: 44,
+  zIndex: 1400,
+  background: "rgba(2, 6, 23, 0.97)",
+  border: "1px solid rgba(96, 165, 250, 0.35)",
+  borderRadius: 10,
+  padding: 8,
+  boxShadow: "0 18px 45px rgba(0,0,0,0.45)",
+};
+const searchResultButton: React.CSSProperties = {
+  width: "100%",
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  textAlign: "left",
+  background: "transparent",
+  color: "#e5e7eb",
+  border: "none",
+  borderRadius: 8,
+  padding: "9px 10px",
+  cursor: "pointer",
+};
 const layerButton: React.CSSProperties = { ...smallButton, minWidth: 130 };
 const layerMenuWrap: React.CSSProperties = { position: "relative" };
 const layerMenu: React.CSSProperties = {
@@ -1162,16 +1777,95 @@ const fullWidthMiniLayerButton: React.CSSProperties = {
   width: "100%",
   marginTop: 8,
 };
-const mapLiveWrap: React.CSSProperties = { position: "relative", height: 455, borderRadius: 8, overflow: "hidden", border: "1px solid rgba(148, 163, 184, 0.2)", background: "#020617" };
-const mapAssetInspector: React.CSSProperties = { position: "absolute", right: 14, top: 14, zIndex: 800, minWidth: 190, maxWidth: 260, background: "rgba(2, 6, 23, 0.86)", border: "1px solid rgba(148, 163, 184, 0.28)", borderRadius: 10, padding: 12, color: "#f8fafc", boxShadow: "0 12px 35px rgba(0,0,0,0.35)" };
-const areaBoundary: React.CSSProperties = { position: "absolute", left: "7%", right: "7%", top: "16%", bottom: "18%", border: "4px solid #22c55e", transform: "skew(-8deg)", background: "rgba(34,197,94,0.08)" };
-const mockNetworkLineOne: React.CSSProperties = { position: "absolute", left: "15%", right: "13%", top: "48%", height: 4, background: "#60a5fa", transform: "rotate(-4deg)", boxShadow: "0 0 0 2px rgba(96,165,250,0.2)" };
-const mockNetworkLineTwo: React.CSSProperties = { position: "absolute", left: "22%", width: "55%", top: "62%", height: 4, background: "#facc15", transform: "rotate(15deg)" };
-const mockNetworkLineThree: React.CSSProperties = { position: "absolute", left: "45%", width: "35%", top: "35%", height: 4, background: "#a78bfa", transform: "rotate(64deg)" };
-const mapLabel: React.CSSProperties = { position: "absolute", left: "46%", top: "46%", fontWeight: 900, textShadow: "0 2px 4px #000" };
-const mapControls: React.CSSProperties = { position: "absolute", left: 12, top: 12, background: "rgba(15,23,42,0.9)", borderRadius: 8, padding: "8px 13px", lineHeight: 1.8, fontWeight: 900 };
-const legendButton: React.CSSProperties = { position: "absolute", left: 16, bottom: 16, ...smallButton };
-const threeDButton: React.CSSProperties = { position: "absolute", right: 16, bottom: 16, ...smallButton };
+const mapLiveWrap: React.CSSProperties = {
+  position: "relative",
+  height: 455,
+  borderRadius: 8,
+  overflow: "hidden",
+  border: "1px solid rgba(148, 163, 184, 0.2)",
+  background: "#020617",
+};
+const mapAssetInspector: React.CSSProperties = {
+  position: "absolute",
+  right: 14,
+  top: 14,
+  zIndex: 800,
+  minWidth: 190,
+  maxWidth: 260,
+  background: "rgba(2, 6, 23, 0.86)",
+  border: "1px solid rgba(148, 163, 184, 0.28)",
+  borderRadius: 10,
+  padding: 12,
+  color: "#f8fafc",
+  boxShadow: "0 12px 35px rgba(0,0,0,0.35)",
+};
+const areaBoundary: React.CSSProperties = {
+  position: "absolute",
+  left: "7%",
+  right: "7%",
+  top: "16%",
+  bottom: "18%",
+  border: "4px solid #22c55e",
+  transform: "skew(-8deg)",
+  background: "rgba(34,197,94,0.08)",
+};
+const mockNetworkLineOne: React.CSSProperties = {
+  position: "absolute",
+  left: "15%",
+  right: "13%",
+  top: "48%",
+  height: 4,
+  background: "#60a5fa",
+  transform: "rotate(-4deg)",
+  boxShadow: "0 0 0 2px rgba(96,165,250,0.2)",
+};
+const mockNetworkLineTwo: React.CSSProperties = {
+  position: "absolute",
+  left: "22%",
+  width: "55%",
+  top: "62%",
+  height: 4,
+  background: "#facc15",
+  transform: "rotate(15deg)",
+};
+const mockNetworkLineThree: React.CSSProperties = {
+  position: "absolute",
+  left: "45%",
+  width: "35%",
+  top: "35%",
+  height: 4,
+  background: "#a78bfa",
+  transform: "rotate(64deg)",
+};
+const mapLabel: React.CSSProperties = {
+  position: "absolute",
+  left: "46%",
+  top: "46%",
+  fontWeight: 900,
+  textShadow: "0 2px 4px #000",
+};
+const mapControls: React.CSSProperties = {
+  position: "absolute",
+  left: 12,
+  top: 12,
+  background: "rgba(15,23,42,0.9)",
+  borderRadius: 8,
+  padding: "8px 13px",
+  lineHeight: 1.8,
+  fontWeight: 900,
+};
+const legendButton: React.CSSProperties = {
+  position: "absolute",
+  left: 16,
+  bottom: 16,
+  ...smallButton,
+};
+const threeDButton: React.CSSProperties = {
+  position: "absolute",
+  right: 16,
+  bottom: 16,
+  ...smallButton,
+};
 const intelligenceDock: React.CSSProperties = {
   gridColumn: "span 2",
   gridRow: "span 4",
@@ -1181,16 +1875,100 @@ const intelligenceDock: React.CSSProperties = {
   overflow: "hidden",
   minHeight: 620,
 };
-const summaryPanel: React.CSSProperties = { background: "#0f1b2d", border: "1px solid rgba(148, 163, 184, 0.18)", borderRadius: 10, padding: 16, minHeight: 190 };
-const widePanel: React.CSSProperties = { ...summaryPanel, gridColumn: "span 1" };
+const summaryPanel: React.CSSProperties = {
+  background: "#0f1b2d",
+  border: "1px solid rgba(148, 163, 184, 0.18)",
+  borderRadius: 10,
+  padding: 16,
+  minHeight: 190,
+};
+const widePanel: React.CSSProperties = {
+  ...summaryPanel,
+  gridColumn: "span 1",
+};
 const panelTitle: React.CSSProperties = { margin: "0 0 14px", fontSize: 18 };
-const infoRow: React.CSSProperties = { display: "flex", justifyContent: "space-between", gap: 12, padding: "7px 0", fontSize: 13 };
-const wideButton: React.CSSProperties = { ...smallButton, width: "100%", marginTop: 14, background: "#1e3a5f" };
-const donutWrap: React.CSSProperties = { height: 120, display: "grid", placeItems: "center" };
-const donut: React.CSSProperties = { width: 94, height: 94, borderRadius: "50%", border: "16px solid #34d399", display: "grid", placeItems: "center", fontWeight: 900, fontSize: 25 };
-const issueGrid: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 };
-const issueCard: React.CSSProperties = { borderRadius: 8, padding: 12, minHeight: 68, display: "flex", flexDirection: "column", justifyContent: "space-between" };
-const assetGrid: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 };
-const assetTile: React.CSSProperties = { background: "#111827", border: "1px solid rgba(148, 163, 184, 0.16)", borderRadius: 9, padding: 12 };
-const quickActions: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 };
-const quickAction: React.CSSProperties = { ...smallButton, minHeight: 54, background: "#111827" };
+const infoRow: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  padding: "7px 0",
+  fontSize: 13,
+};
+const wideButton: React.CSSProperties = {
+  ...smallButton,
+  width: "100%",
+  marginTop: 14,
+  background: "#1e3a5f",
+};
+const donutWrap: React.CSSProperties = {
+  height: 120,
+  display: "grid",
+  placeItems: "center",
+};
+const donut: React.CSSProperties = {
+  width: 94,
+  height: 94,
+  borderRadius: "50%",
+  border: "16px solid #34d399",
+  display: "grid",
+  placeItems: "center",
+  fontWeight: 900,
+  fontSize: 25,
+};
+const issueGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, 1fr)",
+  gap: 8,
+};
+const issueCard: React.CSSProperties = {
+  borderRadius: 8,
+  padding: 12,
+  minHeight: 68,
+  display: "flex",
+  flexDirection: "column",
+  justifyContent: "space-between",
+};
+const assetGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, 1fr)",
+  gap: 10,
+};
+const assetTile: React.CSSProperties = {
+  background: "#111827",
+  border: "1px solid rgba(148, 163, 184, 0.16)",
+  borderRadius: 9,
+  padding: 12,
+};
+const quickActions: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(5, 1fr)",
+  gap: 10,
+};
+const quickAction: React.CSSProperties = {
+  ...smallButton,
+  minHeight: 54,
+  background: "#111827",
+};
+
+const traceSelectedCard: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 5,
+  background: "rgba(15, 23, 42, 0.85)",
+  border: "1px solid rgba(96, 165, 250, 0.35)",
+  borderRadius: 10,
+  padding: 12,
+};
+const traceResultButton: React.CSSProperties = {
+  width: "100%",
+  display: "flex",
+  flexDirection: "column",
+  gap: 4,
+  textAlign: "left",
+  background: "#111827",
+  color: "#e5e7eb",
+  border: "1px solid rgba(148, 163, 184, 0.16)",
+  borderRadius: 9,
+  padding: 12,
+  cursor: "pointer",
+};

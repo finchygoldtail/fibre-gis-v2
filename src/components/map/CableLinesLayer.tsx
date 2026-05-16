@@ -133,21 +133,149 @@ function isDropCableAsset(asset: SavedMapAsset): boolean {
   );
 }
 
-function getCableColor(asset: SavedMapAsset): string {
+function getCableFibreCount(asset: SavedMapAsset): number | null {
+  const item = asset as any;
+
+  const candidates = [
+    item.fibreCount,
+    item.fiberCount,
+    item.size,
+    item.cableSize,
+    item.name,
+    item.cableId,
+    item.label,
+  ];
+
+  for (const candidate of candidates) {
+    const text = String(candidate ?? "").toUpperCase();
+    const match = text.match(/(288|144|96|48|36|24|12)\s*F?/);
+    if (match) return Number(match[1]);
+  }
+
+  return null;
+}
+
+function getDropCableDistanceColour(lengthMeters: number): string {
+  // Blue = shortest tails, red = top end of acceptable drop length.
+  // 68m is the existing design target used elsewhere in the app.
+  const maxDropMeters = 68;
+  const ratio = Math.max(0, Math.min(1, lengthMeters / maxDropMeters));
+
+  if (ratio < 0.5) {
+    const local = ratio / 0.5;
+    const r = Math.round(37 + (34 - 37) * local);
+    const g = Math.round(99 + (197 - 99) * local);
+    const b = Math.round(235 + (94 - 235) * local);
+    return `rgb(${r}, ${g}, ${b})`;
+  }
+
+  const local = (ratio - 0.5) / 0.5;
+  const r = Math.round(34 + (239 - 34) * local);
+  const g = Math.round(197 + (68 - 197) * local);
+  const b = Math.round(94 + (68 - 94) * local);
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+function getCableColor(asset: SavedMapAsset, lengthMeters = 0): string {
+  if (isDropCableAsset(asset)) return getDropCableDistanceColour(lengthMeters);
+
+  const fibreCount = getCableFibreCount(asset);
+  if (fibreCount === 96) return "#2563eb"; // blue
+  if (fibreCount === 48) return "#01fff2"; // red
+  if (fibreCount === 12) return "#ff9500"; // green
+
   if (asset.cableType === "ULW Cable") return "#22c55e";
   if (asset.cableType === "Link Cable") return "#3b82f6";
-  if (isDropCableAsset(asset)) return "#a855f7";
   return "#f59e0b";
 }
 
 /* =========================================================
    CABLE STYLE HELPERS
-   Keeps install method visuals consistent across normal map render.
-   OH / Overhead cables are dashed. UG cables stay solid.
+   Visual rule requested:
+   - Drop cables = dashed, like OH tails
+   - OH / Overhead spans to DPs = dashed
+   - UG / Underground cables = solid
 ========================================================= */
-function getDashArray(asset: SavedMapAsset): string | undefined {
-  const method = String(asset.installMethod || "").toLowerCase();
-  return method === "oh" || method === "overhead" ? "10, 8" : undefined;
+function normaliseCableText(value: unknown): string {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_/-]+/g, " ");
+}
+
+function isUndergroundInstall(asset: SavedMapAsset): boolean {
+  const install = normaliseCableText((asset as any).installMethod);
+  const cableType = normaliseCableText((asset as any).cableType);
+  const name = normaliseCableText((asset as any).name);
+
+  return (
+    install === "ug" ||
+    install.includes("underground") ||
+    install.includes("duct") ||
+    cableType.includes("duct") ||
+    name.includes(" ug ") ||
+    name.startsWith("ug ") ||
+    name.endsWith(" ug")
+  );
+}
+
+function isOverheadInstall(asset: SavedMapAsset): boolean {
+  const install = normaliseCableText((asset as any).installMethod);
+  const cableType = normaliseCableText((asset as any).cableType);
+  const name = normaliseCableText((asset as any).name);
+
+  return (
+    install === "oh" ||
+    install.includes("overhead") ||
+    install.includes("aerial") ||
+    install.includes("span") ||
+    cableType.includes("overhead") ||
+    cableType.includes("span") ||
+    name.includes(" oh ") ||
+    name.startsWith("oh ") ||
+    name.endsWith(" oh") ||
+    name.includes("span")
+  );
+}
+
+function isDistributionPointAsset(asset?: SavedMapAsset | null): boolean {
+  if (!asset) return false;
+
+  const assetType = normaliseCableText((asset as any).assetType);
+  const type = normaliseCableText((asset as any).type);
+  const name = normaliseCableText((asset as any).name);
+
+  return (
+    assetType === "distribution point" ||
+    assetType === "distribution point afn" ||
+    assetType === "dp" ||
+    assetType.includes("distribution") ||
+    assetType.includes("afn") ||
+    assetType.includes("cbt") ||
+    type.includes("distribution") ||
+    type.includes("afn") ||
+    type.includes("cbt") ||
+    name.includes("dp") ||
+    name.includes("afn") ||
+    name.includes("cbt")
+  );
+}
+
+function getDashArray(
+  asset: SavedMapAsset,
+  startAsset?: SavedMapAsset | null,
+  endAsset?: SavedMapAsset | null
+): string | undefined {
+  // UG always stays solid, even if another field has confusing wording.
+  if (isUndergroundInstall(asset)) return undefined;
+
+  // All drops are dashed because they are house tails / OH-style tails on the map.
+  if (isDropCableAsset(asset)) return "6, 7";
+
+  // OH spans are dashed. If the span touches a DP/CBT/AFN, make sure it follows the DP visual rule.
+  if (isOverheadInstall(asset)) return isDistributionPointAsset(startAsset) || isDistributionPointAsset(endAsset) ? "10, 8" : "10, 8";
+
+  return undefined;
 }
 /* ======================= END CABLE STYLE HELPERS ======================= */
 
@@ -610,7 +738,7 @@ export default function CableLinesLayer({
         const isHovered = hoveredCableId === asset.id;
         const isSelected = selectedCableId === asset.id;
         const isEditing = editingCableId === asset.id;
-        const baseColor = getCableColor(asset);
+        const baseColor = getCableColor(asset, length);
         const cableColor = isSelected ? "#f59e0b" : baseColor;
         const routeEditHandleIndexes = isEditing ? getRouteEditHandleIndexes(points) : [];
         const routeEditHandleIndexSet = new Set(routeEditHandleIndexes);
@@ -640,7 +768,7 @@ export default function CableLinesLayer({
                 color: cableColor,
                 weight: isSelected ? 9 : isHovered || isEditing ? 7 : 4,
                 opacity: isSelected || isHovered || isEditing ? 1 : 0.85,
-                dashArray: getDashArray(asset),
+                dashArray: getDashArray(asset, startAsset, endAsset),
                 className: isSelected ? "selected-cable-glow" : "",
               }}
               eventHandlers={{

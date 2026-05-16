@@ -86,12 +86,12 @@ const layerGroups: LayerGroup[] = [
   },
   {
     id: "cables",
-    title: "Cables",
+    title: "Cables / UG Routes",
     options: [
-      { label: "All Cables", key: "cables" },
+      { label: "All Cables / UG Routes", key: "cables" },
       { label: "Feeders", key: "feeders" },
       { label: "Links", key: "links" },
-      { label: "Drop Cables", key: "dropCables" },
+      { label: "Drop Cables / UG Routes", key: "dropCables / UG Routes" },
       { label: "48 ULW", key: "ulw48" },
       { label: "36 ULW", key: "ulw36" },
       { label: "24 ULW", key: "ulw24" },
