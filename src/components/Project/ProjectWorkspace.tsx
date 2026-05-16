@@ -19,9 +19,9 @@ import {
 // PURPOSE: Dedicated project workspace shell for Alistra GIS.
 //          This is the first UI migration away from one overloaded
 //          map sidebar into a project-specific operations screen.
-// PHASE 7 UI: Cleaner operational workspace layout, wider map,
-//             compact header, cleaner KPI flow. No storage/topology
-//             or cable logic changed in this file.
+// PHASE 7D.1: Operational rollout KPI header, lighter workspace
+//              layer defaults, and manager-first project visibility.
+//              No storage/topology or cable logic changed in this file.
 // =====================================================
 
 type WorkspaceOperationPanel =
@@ -107,17 +107,19 @@ const tabs: { id: WorkspaceTab; label: string }[] = [
 ];
 
 const defaultWorkspaceLayers: WorkspaceLayerVisibility = {
+  // PHASE 7D.1: keep the workspace fast on fibrehood open.
+  // Heavy render layers stay available, but operators turn them on when needed.
   projectBoundary: true,
   areas: true,
-  cables: true,
-  dropCables: true,
+  cables: false,
+  dropCables: false,
   joints: true,
   dps: true,
-  poles: true,
-  chambers: true,
-  streetCabs: true,
-  homes: true,
-  other: true,
+  poles: false,
+  chambers: false,
+  streetCabs: false,
+  homes: false,
+  other: false,
 };
 
 const workspaceLayerOptions: {
@@ -138,11 +140,12 @@ const workspaceLayerOptions: {
 ];
 
 const defaultOpenreachLayers: OpenreachLayerVisibility = {
-  ducts: true,
-  trenches: true,
-  spans: true,
-  chambers: true,
-  poles: true,
+  // Openreach / PIA overlays can be very heavy, so default them off.
+  ducts: false,
+  trenches: false,
+  spans: false,
+  chambers: false,
+  poles: false,
   labels: false,
 };
 
@@ -258,6 +261,54 @@ function isWorkspaceDistributionPointAsset(
     typeText.includes("dp") ||
     typeText.includes("cbt") ||
     typeText.includes("afn")
+  );
+}
+
+function normaliseOperationalDpStatus(value: unknown): string {
+  const raw = String(value ?? "").trim().toLowerCase();
+
+  if (!raw) return "Planned";
+  if (raw === "live") return "Live";
+  if (raw === "bwip") return "BWIP";
+  if (raw === "unserviceable") return "Unserviceable";
+  if (raw === "lnrfs" || raw === "live not ready" || raw === "live not ready for service") {
+    return "Live not ready for service";
+  }
+  if (raw === "planned") return "Planned";
+
+  return String(value ?? "Planned").trim();
+}
+
+function getOperationalDpStatus(asset: SavedMapAsset | null | undefined): string {
+  const item = asset as any;
+
+  return normaliseOperationalDpStatus(
+    item?.dpDetails?.buildStatus ||
+      item?.properties?.dpDetails?.buildStatus ||
+      item?.buildStatus ||
+      item?.status ||
+      item?.dpStatus ||
+      item?.serviceStatus ||
+      "Planned",
+  );
+}
+
+function isLiveHomeAsset(asset: SavedMapAsset | null | undefined): boolean {
+  const item = asset as any;
+  const statusText = [
+    item?.status,
+    item?.buildStatus,
+    item?.serviceStatus,
+    item?.connectionStatus,
+    item?.properties?.status,
+  ]
+    .map((value) => String(value ?? "").toLowerCase())
+    .join(" ");
+
+  return (
+    statusText.includes("live") ||
+    statusText.includes("connected") ||
+    Boolean(item?.connectedDpId || item?.connectedDP || item?.dpId)
   );
 }
 
@@ -738,6 +789,101 @@ export default function ProjectWorkspace({
     [stats, dpClosureCount, designCableCount, dropCableCount],
   );
 
+  // =====================================================
+  // PHASE 7D.1 — OPERATIONAL ROLLOUT KPI ENGINE
+  // Derived only from already-scoped workspace assets so this
+  // does not create a second persistence path or Firestore write flow.
+  // =====================================================
+  const rolloutKpis = useMemo(() => {
+    const dpAssets = workspaceAssets.filter(isWorkspaceDistributionPointAsset);
+    const homesPassed = Number(displayStats?.homesPassed || 0);
+    const fallbackHomesLive = Number(displayStats?.homesConnected || 0);
+    const uniqueHomeAssets = new Map<string, SavedMapAsset>();
+
+workspaceAssets.forEach((asset) => {
+  const item = asset as any;
+
+  const assetType = String(
+    item.assetType ||
+    item.type ||
+    "",
+  ).toLowerCase();
+
+  // Ignore cables and infrastructure
+  if (
+    assetType.includes("cable") ||
+    assetType.includes("joint") ||
+    assetType.includes("pole") ||
+    assetType.includes("chamber") ||
+    assetType.includes("cab")
+  ) {
+    return;
+  }
+
+  // Use best unique identifier possible
+  const key =
+    item.uprn ||
+    item.UPRN ||
+    item.address ||
+    `${item.lat}-${item.lng}`;
+
+  if (!key) return;
+
+  if (!uniqueHomeAssets.has(String(key))) {
+    uniqueHomeAssets.set(String(key), asset);
+  }
+});
+
+const homesLiveFromAssets =
+  Array.from(uniqueHomeAssets.values()).filter(
+    isLiveHomeAsset,
+  ).length;
+
+const homesLive = Math.max(
+  fallbackHomesLive,
+  homesLiveFromAssets,
+);
+
+    const dpStatusCounts = dpAssets.reduce(
+      (counts, asset) => {
+        const statusValue = getOperationalDpStatus(asset);
+
+        if (statusValue === "Live") counts.live += 1;
+        else if (statusValue === "BWIP") counts.bwip += 1;
+        else if (statusValue === "Unserviceable") counts.unserviceable += 1;
+        else if (statusValue === "Live not ready for service") counts.lnrfs += 1;
+        else counts.planned += 1;
+
+        return counts;
+      },
+      { live: 0, bwip: 0, lnrfs: 0, unserviceable: 0, planned: 0 },
+    );
+
+    const dpTotal = dpAssets.length || Number(displayStats?.dps || 0);
+    const buildCompletionPercent = dpTotal
+      ? Math.round((dpStatusCounts.live / dpTotal) * 100)
+      : 0;
+
+    const homesNotLive = Math.max(homesPassed - homesLive, 0);
+
+    return {
+      homesPassed,
+      homesLive,
+      homesNotLive,
+      rfsPercent: Number(displayStats?.rfsPercent || 0),
+      dpTotal,
+      dpLive: dpStatusCounts.live,
+      dpBwip: dpStatusCounts.bwip,
+      dpLnrfs: dpStatusCounts.lnrfs,
+      dpUnserviceable: dpStatusCounts.unserviceable,
+      dpPlanned: dpStatusCounts.planned,
+      buildCompletionPercent,
+      qaIssues: auditIssues.length || Number(displayStats?.issueCount || 0),
+      disconnectedAssets: disconnectedAssets.length,
+      routeLengthMeters: Number(displayStats?.routeLengthMeters || 0),
+    };
+  }, [workspaceAssets, displayStats, auditIssues.length, disconnectedAssets.length]);
+
   const issueBuckets = useMemo(
     () => ({
       high: auditIssues.filter((issue) => issue.severity === "high"),
@@ -821,45 +967,189 @@ export default function ProjectWorkspace({
   };
 
   const handleGenerateReport = () => {
-    const reportLines = [
-      `Alistra GIS Project Report`,
-      `Project: ${projectName}`,
-      `Status: ${status}`,
-      ``,
-      `Homes passed: ${displayStats.homesPassed}`,
-      `Homes connected: ${displayStats.homesConnected}`,
-      `RFS progress: ${displayStats.rfsPercent}%`,
-      `Route length: ${formatDistance(displayStats.routeLengthMeters)}`,
-      ``,
-      `Assets`,
-      `Joints: ${displayStats.joints}`,
-      `DPs: ${displayStats.dps}`,
-      `Street cabs: ${displayStats.streetCabs}`,
-      `Poles: ${displayStats.poles}`,
-      `Chambers: ${displayStats.chambers}`,
-      `Design cables: ${displayStats.designCables ?? displayStats.cables}`,
-      `Drop cables: ${displayStats.dropCables ?? 0}`,
-      ``,
-      `Topology`,
-      `Graph nodes: ${networkGraph.nodes.size}`,
-      `Graph links: ${networkGraph.edges.size}`,
-      `Disconnected assets: ${disconnectedAssets.length}`,
-      `Unmatched cable IDs: ${displayStats.unmatchedCableIds ?? 0}`,
-      ``,
-      `QA`,
-      `High issues: ${issueBuckets.high.length}`,
-      `Medium issues: ${issueBuckets.medium.length}`,
-      `Low issues: ${issueBuckets.low.length}`,
-      `Total issues: ${auditIssues.length}`,
-    ];
+    const normaliseCsvValue = (value: unknown): string => {
+      if (value === undefined || value === null) return "";
+      return String(value).replace(/\r?\n|\r/g, " ").trim();
+    };
 
-    const blob = new Blob([reportLines.join("\n")], {
-      type: "text/plain;charset=utf-8",
+    const csvCell = (value: unknown): string => {
+      const text = normaliseCsvValue(value);
+      if (/[",\n]/.test(text)) {
+        return `"${text.replace(/"/g, '""')}"`;
+      }
+      return text;
+    };
+
+    const csvRow = (values: unknown[]): string => values.map(csvCell).join(",");
+
+    const assetTypeBucket = (asset: SavedMapAsset): string => {
+      if (isWorkspaceDistributionPointAsset(asset)) return "Distribution Point";
+      if (isHomeDropCableAsset(asset)) return "Drop Cable";
+      if (isDesignCableAsset(asset)) return "Design Cable";
+
+      const rawType = String(getWorkspaceAssetType(asset)).toLowerCase();
+      if (rawType.includes("joint") || rawType.includes("cmj") || rawType.includes("lmj")) return "Joint";
+      if (rawType.includes("pole")) return "Pole";
+      if (rawType.includes("chamber")) return "Chamber";
+      if (rawType.includes("cab")) return "Street Cabinet";
+      if (rawType.includes("home") || rawType.includes("premise")) return "Home";
+      if (rawType.includes("area") || rawType.includes("polygon")) return "Area";
+      return getWorkspaceAssetType(asset);
+    };
+
+    const assetStatus = (asset: SavedMapAsset): string => {
+      const item = asset as any;
+      if (isWorkspaceDistributionPointAsset(asset)) return getOperationalDpStatus(asset);
+      if (assetTypeBucket(asset) === "Home") return isLiveHomeAsset(asset) ? "Live / Connected" : String(item.status || item.buildStatus || item.serviceStatus || "Not live");
+      return String(item.status || item.buildStatus || item.serviceStatus || item.dpStatus || "");
+    };
+
+    const pointText = (asset: SavedMapAsset): string => {
+      const item = asset as any;
+      if (typeof item.lat === "number" && typeof item.lng === "number") {
+        return `${item.lat},${item.lng}`;
+      }
+      if (asset.geometry?.type === "Point" && Array.isArray(asset.geometry.coordinates)) {
+        return `${asset.geometry.coordinates[0]},${asset.geometry.coordinates[1]}`;
+      }
+      return "";
+    };
+
+    const dpAssets = workspaceAssets.filter(isWorkspaceDistributionPointAsset);
+    const homeAssets = workspaceAssets.filter((asset) => assetTypeBucket(asset) === "Home");
+    const designCableAssets = workspaceAssets.filter(isDesignCableAsset);
+    const dropCableAssets = workspaceAssets.filter(isHomeDropCableAsset);
+
+    const rows: unknown[][] = [];
+
+    rows.push(["Alistra GIS Operational Rollout Report"]);
+    rows.push(["Generated", new Date().toLocaleString("en-GB")]);
+    rows.push(["Project", projectName]);
+    rows.push(["Status", status]);
+    rows.push([]);
+
+    rows.push(["SECTION", "Operational KPI Summary"]);
+    rows.push(["Metric", "Value"]);
+    rows.push(["Homes passed", rolloutKpis.homesPassed]);
+    rows.push(["Homes live", rolloutKpis.homesLive]);
+    rows.push(["Homes not live", rolloutKpis.homesNotLive]);
+    rows.push(["RFS progress %", rolloutKpis.rfsPercent]);
+    rows.push(["Build completion %", rolloutKpis.buildCompletionPercent]);
+    rows.push(["DP total", rolloutKpis.dpTotal]);
+    rows.push(["DP live", rolloutKpis.dpLive]);
+    rows.push(["DP BWIP", rolloutKpis.dpBwip]);
+    rows.push(["DP LNRFS", rolloutKpis.dpLnrfs]);
+    rows.push(["DP unserviceable", rolloutKpis.dpUnserviceable]);
+    rows.push(["DP planned", rolloutKpis.dpPlanned]);
+    rows.push(["QA total issues", rolloutKpis.qaIssues]);
+    rows.push(["QA high issues", issueBuckets.high.length]);
+    rows.push(["QA medium issues", issueBuckets.medium.length]);
+    rows.push(["QA low issues", issueBuckets.low.length]);
+    rows.push(["Disconnected assets", rolloutKpis.disconnectedAssets]);
+    rows.push(["Route length", formatDistance(rolloutKpis.routeLengthMeters)]);
+    rows.push([]);
+
+    rows.push(["SECTION", "Asset Totals"]);
+    rows.push(["Metric", "Value"]);
+    rows.push(["Total assets", workspaceAssets.length]);
+    rows.push(["Joints", displayStats.joints]);
+    rows.push(["DPs", displayStats.dps]);
+    rows.push(["Street cabs", displayStats.streetCabs]);
+    rows.push(["Poles", displayStats.poles]);
+    rows.push(["Chambers", displayStats.chambers]);
+    rows.push(["Design cables", displayStats.designCables ?? displayStats.cables]);
+    rows.push(["Drop cables", displayStats.dropCables ?? 0]);
+    rows.push(["Graph nodes", networkGraph.nodes.size]);
+    rows.push(["Graph links", networkGraph.edges.size]);
+    rows.push(["Unmatched cable IDs", displayStats.unmatchedCableIds ?? 0]);
+    rows.push([]);
+
+    rows.push(["SECTION", "DP Live Status Register"]);
+    rows.push(["DP name", "Status", "Closure / type", "Connected homes", "Capacity", "Free ports", "Asset ID", "Map point"]);
+    dpAssets.forEach((asset) => {
+      const item = asset as any;
+      const details = item.dpDetails || item.properties?.dpDetails || {};
+      const connectedHomes =
+        details.connectedHomes ??
+        details.connectionsToHomes ??
+        item.connectedHomes ??
+        item.homesConnected ??
+        item.homeCount ??
+        "";
+      const capacity = details.capacity ?? item.capacity ?? item.portCapacity ?? item.ports ?? "";
+      const freePorts =
+        typeof Number(capacity) === "number" && Number.isFinite(Number(capacity)) && Number.isFinite(Number(connectedHomes))
+          ? Math.max(Number(capacity) - Number(connectedHomes), 0)
+          : item.freePorts ?? details.freePorts ?? "";
+
+      rows.push([
+        getWorkspaceAssetTitle(asset),
+        getOperationalDpStatus(asset),
+        details.closureType || details.networkArchitecture || item.closureType || item.dpType || item.jointType || "",
+        connectedHomes,
+        capacity,
+        freePorts,
+        item.id || item.assetId || "",
+        pointText(asset),
+      ]);
+    });
+    rows.push([]);
+
+    rows.push(["SECTION", "Homes Live Register"]);
+    rows.push(["Home / UPRN", "Status", "Connected DP", "Address", "Asset ID", "Map point"]);
+    homeAssets.forEach((asset) => {
+      const item = asset as any;
+      rows.push([
+        item.uprn || item.UPRN || item.properties?.UPRN || getWorkspaceAssetTitle(asset),
+        isLiveHomeAsset(asset) ? "Live / Connected" : assetStatus(asset),
+        item.connectedDpId || item.connectedDP || item.dpId || item.properties?.connectedDpId || "",
+        item.address || item.properties?.address || "",
+        item.id || item.assetId || "",
+        pointText(asset),
+      ]);
+    });
+    rows.push([]);
+
+    rows.push(["SECTION", "Cable Register"]);
+    rows.push(["Cable name", "Cable type", "Fibre count", "Used fibres", "Install method", "Length", "From", "To", "Asset ID"]);
+    [...designCableAssets, ...dropCableAssets].forEach((asset) => {
+      const item = asset as any;
+      rows.push([
+        getWorkspaceAssetTitle(asset),
+        item.cableType || assetTypeBucket(asset),
+        item.fibreCount || item.fiberCount || item.coreCount || item.size || "",
+        item.usedFibres ?? item.usedFibers ?? item.fibresUsed ?? item.usedCoreCount ?? "",
+        item.installMethod || item.method || item.routeType || "",
+        item.routeLengthMeters || item.lengthMeters || item.distanceMeters || item.distanceM || "",
+        item.fromAssetId || item.fromId || item.aEnd || "",
+        item.toAssetId || item.toId || item.bEnd || "",
+        item.id || item.assetId || "",
+      ]);
+    });
+    rows.push([]);
+
+    rows.push(["SECTION", "QA Issues"]);
+    rows.push(["Severity", "Asset", "Asset type", "Issue", "Asset ID"]);
+    auditIssues.forEach((issue) => {
+      const issueItem = issue as any;
+      const matchedAsset = findWorkspaceAssetForIssue(issue, workspaceAssets);
+      rows.push([
+        issue.severity,
+        matchedAsset ? getWorkspaceAssetTitle(matchedAsset) : issueItem.assetName || "",
+        matchedAsset ? assetTypeBucket(matchedAsset) : "",
+        issueItem.message || issueItem.title || issueItem.reason || issueItem.description || "",
+        issue.assetId || (matchedAsset as any)?.id || "",
+      ]);
+    });
+
+    const csvText = rows.map(csvRow).join("\n");
+    const blob = new Blob([csvText], {
+      type: "text/csv;charset=utf-8",
     });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${projectName.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-project-report.txt`;
+    link.download = `${projectName.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-operational-rollout-report.csv`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -997,34 +1287,68 @@ export default function ProjectWorkspace({
 
         <div style={topMetrics}>
           <StatCard
-            label="RFS Progress"
-            value={`${displayStats.rfsPercent}%`}
+            label="RFS"
+            value={`${rolloutKpis.rfsPercent}%`}
             tone={rfsTone}
           />
           <StatCard
+            label="Build Complete"
+            value={`${rolloutKpis.buildCompletionPercent}%`}
+            tone={
+              rolloutKpis.buildCompletionPercent >= 80
+                ? "good"
+                : rolloutKpis.buildCompletionPercent >= 50
+                  ? "warn"
+                  : "bad"
+            }
+          />
+          <StatCard
             label="Homes Passed"
-            value={formatNumber(displayStats.homesPassed)}
+            value={formatNumber(rolloutKpis.homesPassed)}
           />
           <StatCard
-            label="Connected"
-            value={formatNumber(displayStats.homesConnected)}
+            label="Homes Live"
+            value={formatNumber(rolloutKpis.homesLive)}
+            tone="good"
           />
           <StatCard
-            label="Issues"
-            value={formatNumber(displayStats.issueCount)}
-            tone={issueTone}
+            label="Homes Not Live"
+            value={formatNumber(rolloutKpis.homesNotLive)}
+            tone={rolloutKpis.homesNotLive > 0 ? "warn" : "good"}
           />
           <StatCard
-            label="Topology Links"
-            value={formatNumber(displayStats.topologyLinks)}
+            label="DPs Live"
+            value={`${formatNumber(rolloutKpis.dpLive)} / ${formatNumber(rolloutKpis.dpTotal)}`}
+            tone={rolloutKpis.dpTotal > 0 && rolloutKpis.dpLive === rolloutKpis.dpTotal ? "good" : "warn"}
           />
           <StatCard
-            label="Drop Cables"
-            value={formatNumber(displayStats.dropCables ?? 0)}
+            label="DPs BWIP"
+            value={formatNumber(rolloutKpis.dpBwip)}
+            tone={rolloutKpis.dpBwip > 0 ? "warn" : "default"}
           />
           <StatCard
-            label="Splice Points"
-            value={formatNumber(displayStats.splicePoints)}
+            label="DPs LNRFS"
+            value={formatNumber(rolloutKpis.dpLnrfs)}
+            tone={rolloutKpis.dpLnrfs > 0 ? "warn" : "default"}
+          />
+          <StatCard
+            label="Unserviceable"
+            value={formatNumber(rolloutKpis.dpUnserviceable)}
+            tone={rolloutKpis.dpUnserviceable > 0 ? "bad" : "good"}
+          />
+          <StatCard
+            label="QA Issues"
+            value={formatNumber(rolloutKpis.qaIssues)}
+            tone={rolloutKpis.qaIssues > 0 ? "bad" : "good"}
+          />
+          <StatCard
+            label="Disconnected"
+            value={formatNumber(rolloutKpis.disconnectedAssets)}
+            tone={rolloutKpis.disconnectedAssets > 0 ? "warn" : "good"}
+          />
+          <StatCard
+            label="Route Length"
+            value={formatDistance(rolloutKpis.routeLengthMeters)}
           />
         </div>
 
@@ -1779,9 +2103,9 @@ const workspaceRoot: React.CSSProperties = {
 };
 
 const topHeader: React.CSSProperties = {
-  minHeight: 112,
+  minHeight: 126,
   display: "grid",
-  gridTemplateColumns: "minmax(270px, 0.75fr) minmax(620px, 2.2fr) auto",
+  gridTemplateColumns: "minmax(260px, 0.58fr) minmax(720px, 2.7fr) auto",
   alignItems: "center",
   gap: 16,
   padding: "14px 18px 14px 24px",
@@ -1826,7 +2150,7 @@ const statusPill: React.CSSProperties = {
 };
 const topMetrics: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(7, minmax(112px, 1fr))",
+  gridTemplateColumns: "repeat(6, minmax(118px, 1fr))",
   gap: 10,
   alignItems: "stretch",
 };
@@ -1835,7 +2159,7 @@ const metricCard: React.CSSProperties = {
   border: "1px solid rgba(148, 163, 184, 0.16)",
   borderRadius: 12,
   padding: "11px 13px",
-  minHeight: 66,
+  minHeight: 62,
   boxShadow: "0 10px 24px rgba(0,0,0,0.18)",
 };
 const metricLabel: React.CSSProperties = {
@@ -1844,7 +2168,7 @@ const metricLabel: React.CSSProperties = {
   marginBottom: 5,
 };
 const metricValue: React.CSSProperties = {
-  fontSize: 23,
+  fontSize: 21,
   fontWeight: 950,
   lineHeight: 1.05,
 };
