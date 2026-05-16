@@ -12,7 +12,10 @@
 //   serving chain because they all reserve fibres from a through cable.
 // =====================================================
 
-import type { DistributionPointDetails, SavedMapAsset } from "../components/map/types";
+import type {
+  DistributionPointDetails,
+  SavedMapAsset,
+} from "../components/map/types";
 
 export type DistributionArchitecture = "CBT" | "AFN" | "MDU" | "MDU_SPLITTER";
 
@@ -44,11 +47,27 @@ type BuildDpFibrePlanInput = {
 
 export type DpFibrePlanAllocation = {
   throughCableId?: string;
+  throughCableName?: string;
   inputFibres?: number[];
   localReservedFibres?: number;
   branchReservedFibres?: number;
   downstreamReservedFibres?: number;
   totalReservedFibres?: number;
+  freeFibresAfterAllocation?: number;
+  utilisationPercent?: number;
+  duplicateFibres?: number[];
+  warnings?: string[];
+  explanationRows?: { label: string; value: string | number; help: string }[];
+  traceRows?: {
+    assetId?: string;
+    assetName: string;
+    cableId?: string;
+    cableName: string;
+    localFibres: number;
+    branchFibres: number;
+    totalFibres: number;
+    note: string;
+  }[];
 };
 
 function normaliseArchitecture(value: unknown): DistributionArchitecture {
@@ -70,7 +89,9 @@ function clampCount(value: number): number {
   return Math.max(0, Math.floor(Number.isFinite(value) ? value : 0));
 }
 
-function architectureFamily(value: DistributionArchitecture): "CBT_TERMINAL" | "PASSTHROUGH_SPLITTER" {
+function architectureFamily(
+  value: DistributionArchitecture,
+): "CBT_TERMINAL" | "PASSTHROUGH_SPLITTER" {
   return value === "CBT" ? "CBT_TERMINAL" : "PASSTHROUGH_SPLITTER";
 }
 
@@ -119,20 +140,21 @@ export function buildDpFibrePlan(input: BuildDpFibrePlanInput): DpFibrePlan {
   }
 
   if (architecture === "AFN") {
-    const requiredInputFibres = connectedHomes > 0 ? Math.ceil(connectedHomes / 8) : 0;
+    const requiredInputFibres =
+      connectedHomes > 0 ? Math.ceil(connectedHomes / 8) : 0;
     const selectedFibres = currentInputFibres.length;
     const capacity = Math.max(requiredInputFibres, selectedFibres) * 8;
     const warnings: string[] = [];
 
     if (requiredInputFibres > 4) {
       warnings.push(
-        `${connectedHomes} homes needs ${requiredInputFibres} AFN input fibres. Current UI limits an AFN to 4 selected fibres, so split the chain or add another AFN.`
+        `${connectedHomes} homes needs ${requiredInputFibres} AFN input fibres. Current UI limits an AFN to 4 selected fibres, so split the chain or add another AFN.`,
       );
     }
 
     if (selectedFibres > 0 && selectedFibres < requiredInputFibres) {
       warnings.push(
-        `Selected fibres only provide ${selectedFibres * 8} outputs. Add ${requiredInputFibres - selectedFibres} more input fibre(s) for the connected homes.`
+        `Selected fibres only provide ${selectedFibres * 8} outputs. Add ${requiredInputFibres - selectedFibres} more input fibre(s) for the connected homes.`,
       );
     }
 
@@ -157,16 +179,24 @@ export function buildDpFibrePlan(input: BuildDpFibrePlanInput): DpFibrePlan {
   }
 
   if (architecture === "MDU" || architecture === "MDU_SPLITTER") {
-    const directFibres = clampCount(input.mduFibres ?? Math.max(connectedHomes, 6));
-    const splitterFibres = architecture === "MDU_SPLITTER" ? clampCount(input.mduSplitterFibres ?? 2) : 0;
+    const directFibres = clampCount(
+      input.mduFibres ?? Math.max(connectedHomes, 6),
+    );
+    const splitterFibres =
+      architecture === "MDU_SPLITTER"
+        ? clampCount(input.mduSplitterFibres ?? 2)
+        : 0;
     const splitterCapacity = splitterFibres * 8;
-    const capacity = architecture === "MDU_SPLITTER" ? directFibres + splitterCapacity : directFibres;
+    const capacity =
+      architecture === "MDU_SPLITTER"
+        ? directFibres + splitterCapacity
+        : directFibres;
     const reservedFibres = directFibres + splitterFibres;
     const warnings: string[] = [];
 
     if (connectedHomes > capacity) {
       warnings.push(
-        `${connectedHomes} homes exceeds the current MDU capacity of ${capacity}. Increase direct/splitter fibres or split the building feed.`
+        `${connectedHomes} homes exceeds the current MDU capacity of ${capacity}. Increase direct/splitter fibres or split the building feed.`,
       );
     }
 
@@ -181,7 +211,10 @@ export function buildDpFibrePlan(input: BuildDpFibrePlanInput): DpFibrePlan {
       recommendedPortCount: capacity,
       splitterRatio: architecture === "MDU_SPLITTER" ? "1:8" : undefined,
       status: warnings.length ? "warning" : "ok",
-      title: architecture === "MDU_SPLITTER" ? "MDU + splitter plan" : "MDU direct-feed plan",
+      title:
+        architecture === "MDU_SPLITTER"
+          ? "MDU + splitter plan"
+          : "MDU direct-feed plan",
       notes: [
         "MDU architecture locked for building-fed distribution.",
         architecture === "MDU_SPLITTER"
@@ -207,11 +240,21 @@ export function applyDpFibrePlanToDetails(
     networkArchitecture: plan.architecture,
     autoFibrePlan: {
       connectedHomes: plan.connectedHomes,
-      requiredInputFibres: allocation?.localReservedFibres ?? plan.requiredInputFibres,
+      requiredInputFibres:
+        allocation?.localReservedFibres ?? plan.requiredInputFibres,
       branchReservedFibres: allocation?.branchReservedFibres ?? 0,
       downstreamReservedFibres: allocation?.downstreamReservedFibres ?? 0,
       reservedFibres: allocation?.totalReservedFibres ?? plan.reservedFibres,
       capacity: plan.capacity,
+      throughCableId: allocation?.throughCableId,
+      throughCableName: allocation?.throughCableName,
+      inputFibres: allocation?.inputFibres,
+      freeFibresAfterAllocation: allocation?.freeFibresAfterAllocation,
+      utilisationPercent: allocation?.utilisationPercent,
+      duplicateFibres: allocation?.duplicateFibres,
+      allocationWarnings: allocation?.warnings,
+      allocationExplanation: allocation?.explanationRows,
+      allocationTrace: allocation?.traceRows,
       updatedAt: new Date().toISOString(),
     },
   } as DistributionPointDetails;
@@ -225,14 +268,17 @@ export function applyDpFibrePlanToDetails(
   }
 
   if (plan.architecture === "AFN") {
-    const existingFibres = allocation?.inputFibres || details.afnDetails?.inputFibres || [];
+    const existingFibres =
+      allocation?.inputFibres || details.afnDetails?.inputFibres || [];
     return {
       ...next,
       afnDetails: {
         enabled: true,
-        throughCableId: allocation?.throughCableId || details.afnDetails?.throughCableId,
+        throughCableId:
+          allocation?.throughCableId || details.afnDetails?.throughCableId,
         inputFibres: existingFibres,
-        fibreCountUsed: allocation?.totalReservedFibres ?? plan.requiredInputFibres,
+        fibreCountUsed:
+          allocation?.totalReservedFibres ?? plan.requiredInputFibres,
         splitterRatio: "1:8",
         splitterOutputs: Math.max(8, plan.capacity),
       },
@@ -243,7 +289,8 @@ export function applyDpFibrePlanToDetails(
   if (plan.architecture === "MDU" || plan.architecture === "MDU_SPLITTER") {
     const existing = details.mduDetails;
     const mduFibres = existing?.mduFibres || Math.max(plan.connectedHomes, 6);
-    const splitterFibres = plan.architecture === "MDU_SPLITTER" ? existing?.splitterFibres || 2 : 0;
+    const splitterFibres =
+      plan.architecture === "MDU_SPLITTER" ? existing?.splitterFibres || 2 : 0;
     return {
       ...next,
       afnDetails: undefined,
@@ -252,7 +299,8 @@ export function applyDpFibrePlanToDetails(
         throughCableId: allocation?.throughCableId || existing?.throughCableId,
         mduFibres,
         splitterFibres,
-        totalReservedFibres: allocation?.totalReservedFibres ?? (mduFibres + splitterFibres),
+        totalReservedFibres:
+          allocation?.totalReservedFibres ?? mduFibres + splitterFibres,
         inputFibres: allocation?.inputFibres || existing?.inputFibres || [],
       },
     };
@@ -261,7 +309,9 @@ export function applyDpFibrePlanToDetails(
   return next;
 }
 
-function assetClosureType(asset: SavedMapAsset | null | undefined): DistributionArchitecture | null {
+function assetClosureType(
+  asset: SavedMapAsset | null | undefined,
+): DistributionArchitecture | null {
   const raw = (asset as any)?.dpDetails?.closureType;
   if (!raw) return null;
   return normaliseArchitecture(raw);
@@ -273,7 +323,7 @@ function assetThroughCableId(asset: SavedMapAsset | null | undefined): string {
     details?.afnDetails?.throughCableId ||
       details?.mduDetails?.throughCableId ||
       (asset as any)?.parentCableId ||
-      ""
+      "",
   );
 }
 
@@ -295,7 +345,12 @@ export function getArchitectureConsistencyWarnings(input: {
       const otherArchitecture = assetClosureType(asset);
       if (!otherArchitecture) return null;
 
-      if (architecturesCanShareThroughCable(currentArchitecture, otherArchitecture)) {
+      if (
+        architecturesCanShareThroughCable(
+          currentArchitecture,
+          otherArchitecture,
+        )
+      ) {
         return null;
       }
 
@@ -304,13 +359,19 @@ export function getArchitectureConsistencyWarnings(input: {
         architecture: otherArchitecture,
       };
     })
-    .filter(Boolean) as { asset: SavedMapAsset; architecture: DistributionArchitecture }[];
+    .filter(Boolean) as {
+    asset: SavedMapAsset;
+    architecture: DistributionArchitecture;
+  }[];
 
   if (!conflicts.length) return [];
 
   const names = conflicts
     .slice(0, 4)
-    .map(({ asset, architecture }) => `${String((asset as any).name || asset.id)} is ${architecture}`)
+    .map(
+      ({ asset, architecture }) =>
+        `${String((asset as any).name || asset.id)} is ${architecture}`,
+    )
     .join(", ");
 
   const currentFamily = architectureFamily(currentArchitecture);

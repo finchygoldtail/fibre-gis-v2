@@ -2,13 +2,22 @@ import React, { useMemo, useState } from "react";
 import { useAppMode } from "../../context/AppModeContext";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { storage } from "../../firebase";
-import type { ChamberDetails, DistributionPointDetails, PoleDetails, SavedMapAsset } from "./types";
+import type {
+  ChamberDetails,
+  DistributionPointDetails,
+  PoleDetails,
+  SavedMapAsset,
+} from "./types";
 import {
   applyDpFibrePlanToDetails,
   buildDpFibrePlan,
   getArchitectureConsistencyWarnings,
 } from "../../services/dpArchitecturePlanner";
-import { allocateDpFibresForPlan } from "../../services/dpFibreAutoAllocator";
+import {
+  allocateDpFibresForPlan,
+  rebuildThroughCableReservations,
+  type RebuildThroughCableReservationResult,
+} from "../../services/dpFibreAutoAllocator";
 
 type ConnectedHome = {
   port: number;
@@ -25,6 +34,9 @@ type Props = {
   onChangePoleDetails: (details: PoleDetails) => void;
   onChangeChamberDetails: (details: ChamberDetails) => void;
   onChangeDpDetails: (details: DistributionPointDetails) => void;
+  onRebuildThroughCableReservations?: (
+    result: RebuildThroughCableReservationResult,
+  ) => void;
   connectedHomes?: ConnectedHome[];
   availableThroughCables?: SavedMapAsset[];
   allDistributionPoints?: SavedMapAsset[];
@@ -49,7 +61,10 @@ async function uploadAssetFile(assetFolder: string, file: File) {
 }
 
 function keepSavedUrls(values: string[] = []) {
-  return values.filter((value) => value && !value.startsWith("blob:") && !value.startsWith("data:"));
+  return values.filter(
+    (value) =>
+      value && !value.startsWith("blob:") && !value.startsWith("data:"),
+  );
 }
 
 function niceDocName(doc: string) {
@@ -132,7 +147,6 @@ const docRow: React.CSSProperties = {
   fontSize: "0.85rem",
 };
 
-
 const modeBannerStyle = (
   activeMode: "survey" | "build" | "maintenance",
 ): React.CSSProperties => ({
@@ -140,8 +154,8 @@ const modeBannerStyle = (
     activeMode === "maintenance"
       ? "#7f1d1d"
       : activeMode === "build"
-      ? "#1e3a8a"
-      : "#14532d",
+        ? "#1e3a8a"
+        : "#14532d",
   border: "1px solid rgba(255,255,255,0.12)",
   borderRadius: 12,
   padding: 12,
@@ -183,6 +197,7 @@ export default function AssetDetailsSidebarSections({
   onChangePoleDetails,
   onChangeChamberDetails,
   onChangeDpDetails,
+  onRebuildThroughCableReservations,
   connectedHomes = [],
   availableThroughCables = [],
   allDistributionPoints = [],
@@ -204,31 +219,57 @@ export default function AssetDetailsSidebarSections({
     onChangeChamberDetails({ ...chamberDetails, [key]: value });
   };
 
-  const updateDp = (key: keyof DistributionPointDetails | string, value: any) => {
-    onChangeDpDetails({ ...(dpDetails as any), [key]: value } as DistributionPointDetails);
+  const updateDp = (
+    key: keyof DistributionPointDetails | string,
+    value: any,
+  ) => {
+    onChangeDpDetails({
+      ...(dpDetails as any),
+      [key]: value,
+    } as DistributionPointDetails);
   };
 
-  async function uploadPhotos(kind: "poles" | "chambers", files: FileList | null, max: number) {
-    const current = keepSavedUrls(kind === "poles" ? poleDetails.photos || [] : chamberDetails.photos || []);
-    const nextFiles = Array.from(files || []).slice(0, Math.max(0, max - current.length));
+  async function uploadPhotos(
+    kind: "poles" | "chambers",
+    files: FileList | null,
+    max: number,
+  ) {
+    const current = keepSavedUrls(
+      kind === "poles" ? poleDetails.photos || [] : chamberDetails.photos || [],
+    );
+    const nextFiles = Array.from(files || []).slice(
+      0,
+      Math.max(0, max - current.length),
+    );
     if (nextFiles.length === 0) return;
     setUploading(true);
     try {
-      const uploaded = await Promise.all(nextFiles.map((file) => uploadAssetFile(`${kind}/photos`, file)));
-      if (kind === "poles") updatePole("photos", [...current, ...uploaded].slice(0, max));
+      const uploaded = await Promise.all(
+        nextFiles.map((file) => uploadAssetFile(`${kind}/photos`, file)),
+      );
+      if (kind === "poles")
+        updatePole("photos", [...current, ...uploaded].slice(0, max));
       else updateChamber("photos", [...current, ...uploaded].slice(0, max));
     } finally {
       setUploading(false);
     }
   }
 
-  async function uploadDocuments(kind: "poles" | "chambers", files: FileList | null) {
-    const current = kind === "poles" ? poleDetails.documents || [] : chamberDetails.documents || [];
+  async function uploadDocuments(
+    kind: "poles" | "chambers",
+    files: FileList | null,
+  ) {
+    const current =
+      kind === "poles"
+        ? poleDetails.documents || []
+        : chamberDetails.documents || [];
     const nextFiles = Array.from(files || []);
     if (nextFiles.length === 0) return;
     setUploading(true);
     try {
-      const uploaded = await Promise.all(nextFiles.map((file) => uploadAssetFile(`${kind}/documents`, file)));
+      const uploaded = await Promise.all(
+        nextFiles.map((file) => uploadAssetFile(`${kind}/documents`, file)),
+      );
       if (kind === "poles") updatePole("documents", [...current, ...uploaded]);
       else updateChamber("documents", [...current, ...uploaded]);
     } finally {
@@ -247,25 +288,43 @@ export default function AssetDetailsSidebarSections({
     }
   }
 
-  const selectedCableId = dpDetails.afnDetails?.throughCableId || dpDetails.mduDetails?.throughCableId || "";
+  const selectedCableId =
+    dpDetails.afnDetails?.throughCableId ||
+    dpDetails.mduDetails?.throughCableId ||
+    "";
 
   const afnThroughCableOptions = useMemo(() => {
     const byId = new Map<string, SavedMapAsset>();
 
-    [...availableThroughCables, ...allAssets.filter(isThroughCableOption)].forEach((cable) => {
+    [
+      ...availableThroughCables,
+      ...allAssets.filter(isThroughCableOption),
+    ].forEach((cable) => {
       if (!cable?.id || cable.id === currentDpId) return;
       byId.set(cable.id, cable);
     });
 
     return Array.from(byId.values()).sort((a, b) => {
-      const aName = normaliseCableLabel((a as any).name || (a as any).cableId || a.id);
-      const bName = normaliseCableLabel((b as any).name || (b as any).cableId || b.id);
-      return aName.localeCompare(bName, undefined, { numeric: true, sensitivity: "base" });
+      const aName = normaliseCableLabel(
+        (a as any).name || (a as any).cableId || a.id,
+      );
+      const bName = normaliseCableLabel(
+        (b as any).name || (b as any).cableId || b.id,
+      );
+      return aName.localeCompare(bName, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      });
     });
   }, [availableThroughCables, allAssets, currentDpId]);
 
-  const selectedCable = afnThroughCableOptions.find((cable) => cable.id === selectedCableId);
-  const currentInputFibres = dpDetails.afnDetails?.inputFibres || dpDetails.mduDetails?.inputFibres || [];
+  const selectedCable = afnThroughCableOptions.find(
+    (cable) => cable.id === selectedCableId,
+  );
+  const currentInputFibres =
+    dpDetails.afnDetails?.inputFibres ||
+    dpDetails.mduDetails?.inputFibres ||
+    [];
 
   const usedByOtherReservations = useMemo(() => {
     const used = new Set<number>();
@@ -275,7 +334,9 @@ export default function AssetDetailsSidebarSections({
       const mdu = asset.dpDetails?.mduDetails;
       const throughCableId = afn?.throughCableId || mdu?.throughCableId || "";
       if (!throughCableId || throughCableId !== selectedCableId) return;
-      [...(afn?.inputFibres || []), ...(mdu?.inputFibres || [])].forEach((fibre) => used.add(Number(fibre)));
+      [...(afn?.inputFibres || []), ...(mdu?.inputFibres || [])].forEach(
+        (fibre) => used.add(Number(fibre)),
+      );
     });
     allAssets.forEach((asset) => {
       if (asset.assetType !== "cable") return;
@@ -288,37 +349,56 @@ export default function AssetDetailsSidebarSections({
     return used;
   }, [allDistributionPoints, allAssets, currentDpId, selectedCableId]);
 
-  const fibreTotal = Number(String(selectedCable?.fibreCount || "48F").replace(/\D/g, "")) || 48;
-  const dpCapacity = dpDetails.closureType === "AFN" ? Number(dpDetails.autoFibrePlan?.capacity || currentInputFibres.length * 8) : Number(dpDetails.connectionsToHomes || dpDetails.autoFibrePlan?.capacity || 0);
+  const fibreTotal =
+    Number(String(selectedCable?.fibreCount || "48F").replace(/\D/g, "")) || 48;
+  const dpCapacity =
+    dpDetails.closureType === "AFN"
+      ? Number(
+          dpDetails.autoFibrePlan?.capacity || currentInputFibres.length * 8,
+        )
+      : Number(
+          dpDetails.connectionsToHomes ||
+            dpDetails.autoFibrePlan?.capacity ||
+            0,
+        );
   const dpUsed = connectedHomes.length;
   const dpAvailable = Math.max(0, dpCapacity - dpUsed);
 
-  const dpAutoFibrePlan = useMemo(() => buildDpFibrePlan({
-    closureType: dpDetails.closureType || "CBT",
-    connectedHomes: dpUsed,
-    currentInputFibres,
-    mduFibres: dpDetails.mduDetails?.mduFibres,
-    mduSplitterFibres: dpDetails.mduDetails?.splitterFibres,
-  }), [
-    dpDetails.closureType,
-    dpDetails.mduDetails?.mduFibres,
-    dpDetails.mduDetails?.splitterFibres,
-    dpUsed,
-    currentInputFibres,
-  ]);
+  const dpAutoFibrePlan = useMemo(
+    () =>
+      buildDpFibrePlan({
+        closureType: dpDetails.closureType || "CBT",
+        connectedHomes: dpUsed,
+        currentInputFibres,
+        mduFibres: dpDetails.mduDetails?.mduFibres,
+        mduSplitterFibres: dpDetails.mduDetails?.splitterFibres,
+      }),
+    [
+      dpDetails.closureType,
+      dpDetails.mduDetails?.mduFibres,
+      dpDetails.mduDetails?.splitterFibres,
+      dpUsed,
+      currentInputFibres,
+    ],
+  );
 
-  const architectureWarnings = useMemo(() => getArchitectureConsistencyWarnings({
-    currentDpId,
-    currentClosureType: dpDetails.closureType || "CBT",
-    currentThroughCableId: selectedCableId || dpDetails.mduDetails?.throughCableId || null,
-    allDistributionPoints,
-  }), [
-    currentDpId,
-    dpDetails.closureType,
-    dpDetails.mduDetails?.throughCableId,
-    selectedCableId,
-    allDistributionPoints,
-  ]);
+  const architectureWarnings = useMemo(
+    () =>
+      getArchitectureConsistencyWarnings({
+        currentDpId,
+        currentClosureType: dpDetails.closureType || "CBT",
+        currentThroughCableId:
+          selectedCableId || dpDetails.mduDetails?.throughCableId || null,
+        allDistributionPoints,
+      }),
+    [
+      currentDpId,
+      dpDetails.closureType,
+      dpDetails.mduDetails?.throughCableId,
+      selectedCableId,
+      allDistributionPoints,
+    ],
+  );
 
   const suggestedFibreAllocation = useMemo(() => {
     if (dpAutoFibrePlan.architecture === "CBT") return null;
@@ -329,7 +409,8 @@ export default function AssetDetailsSidebarSections({
       currentDpDetails: dpDetails,
       connectedHomes: dpUsed,
       plan: dpAutoFibrePlan,
-      selectedThroughCableId: selectedCableId || dpDetails.mduDetails?.throughCableId || null,
+      selectedThroughCableId:
+        selectedCableId || dpDetails.mduDetails?.throughCableId || null,
       availableThroughCables,
       allDistributionPoints,
       allAssets,
@@ -347,10 +428,53 @@ export default function AssetDetailsSidebarSections({
 
   function applyAutoFibrePlan() {
     const allocation = suggestedFibreAllocation || undefined;
-    onChangeDpDetails(applyDpFibrePlanToDetails(dpDetails, dpAutoFibrePlan, allocation || undefined));
+    onChangeDpDetails(
+      applyDpFibrePlanToDetails(
+        dpDetails,
+        dpAutoFibrePlan,
+        allocation || undefined,
+      ),
+    );
   }
 
-  function updateAfnDetails(next: Partial<NonNullable<DistributionPointDetails["afnDetails"]>>) {
+  function rebuildSelectedThroughCableChain() {
+    const throughCableId =
+      selectedCableId ||
+      dpDetails.mduDetails?.throughCableId ||
+      suggestedFibreAllocation?.throughCableId ||
+      "";
+
+    const result = rebuildThroughCableReservations({
+      throughCableId,
+      currentDpId,
+      currentDpDetails: dpDetails,
+      currentPlan: dpAutoFibrePlan,
+      connectedHomes: dpUsed,
+      availableThroughCables,
+      allDistributionPoints,
+      allAssets,
+    });
+
+    if (result.warnings.length) {
+      alert(result.warnings.join("\n"));
+    }
+
+    if (!result.updates.length) return;
+
+    const currentUpdate = result.updates.find(
+      (update) => String(update.assetId) === String(currentDpId || ""),
+    );
+
+    if (currentUpdate?.dpDetails) {
+      onChangeDpDetails(currentUpdate.dpDetails as DistributionPointDetails);
+    }
+
+    onRebuildThroughCableReservations?.(result);
+  }
+
+  function updateAfnDetails(
+    next: Partial<NonNullable<DistributionPointDetails["afnDetails"]>>,
+  ) {
     const nextFibres = next.inputFibres || currentInputFibres;
     onChangeDpDetails({
       ...dpDetails,
@@ -372,51 +496,140 @@ export default function AssetDetailsSidebarSections({
   function toggleFibre(fibre: number) {
     const selectedHere = currentInputFibres.includes(fibre);
     if (selectedHere) {
-      updateAfnDetails({ inputFibres: currentInputFibres.filter((item) => item !== fibre) });
+      updateAfnDetails({
+        inputFibres: currentInputFibres.filter((item) => item !== fibre),
+      });
       return;
     }
-    if (currentInputFibres.length >= 24 || usedByOtherReservations.has(fibre)) return;
-    updateAfnDetails({ inputFibres: [...currentInputFibres, fibre].sort((a, b) => a - b) });
+    if (currentInputFibres.length >= 24 || usedByOtherReservations.has(fibre))
+      return;
+    updateAfnDetails({
+      inputFibres: [...currentInputFibres, fibre].sort((a, b) => a - b),
+    });
   }
 
   if (assetType === "pole") {
     const photos = keepSavedUrls(poleDetails.photos || []);
     const documents = poleDetails.documents || [];
     return (
-      <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #334155" }}>
+      <div
+        style={{
+          marginTop: 12,
+          paddingTop: 12,
+          borderTop: "1px solid #334155",
+        }}
+      >
         <div style={{ fontWeight: 800, marginBottom: 8 }}>Pole Details</div>
 
         <div style={labelStyle}>Pole Type</div>
-        <select value={poleDetails.poleType || "new"} onChange={(e) => updatePole("poleType", e.target.value)} style={inputStyle}>
+        <select
+          value={poleDetails.poleType || "new"}
+          onChange={(e) => updatePole("poleType", e.target.value)}
+          style={inputStyle}
+        >
           <option value="new">New Pole</option>
           <option value="or">OR Pole</option>
         </select>
 
         <div style={labelStyle}>Size</div>
-        <input value={poleDetails.size || ""} onChange={(e) => updatePole("size", e.target.value)} style={inputStyle} />
+        <input
+          value={poleDetails.size || ""}
+          onChange={(e) => updatePole("size", e.target.value)}
+          style={inputStyle}
+        />
 
         <div style={labelStyle}>Year</div>
-        <input value={poleDetails.year || ""} onChange={(e) => updatePole("year", e.target.value)} style={inputStyle} />
+        <input
+          value={poleDetails.year || ""}
+          onChange={(e) => updatePole("year", e.target.value)}
+          style={inputStyle}
+        />
 
         <div style={labelStyle}>Special Markings</div>
-        <input value={poleDetails.specialMarkings || ""} onChange={(e) => updatePole("specialMarkings", e.target.value)} style={inputStyle} />
+        <input
+          value={poleDetails.specialMarkings || ""}
+          onChange={(e) => updatePole("specialMarkings", e.target.value)}
+          style={inputStyle}
+        />
 
         <div style={labelStyle}>Test Date</div>
-        <input type="date" value={poleDetails.testDate || ""} onChange={(e) => updatePole("testDate", e.target.value)} style={inputStyle} />
+        <input
+          type="date"
+          value={poleDetails.testDate || ""}
+          onChange={(e) => updatePole("testDate", e.target.value)}
+          style={inputStyle}
+        />
 
         <div style={labelStyle}>Location</div>
-        <select value={poleDetails.locationType || "Kerbside"} onChange={(e) => updatePole("locationType", e.target.value)} style={inputStyle}>
+        <select
+          value={poleDetails.locationType || "Kerbside"}
+          onChange={(e) => updatePole("locationType", e.target.value)}
+          style={inputStyle}
+        >
           <option>Kerbside</option>
           <option>House Boundary</option>
         </select>
 
         <div style={labelStyle}>Photos (max 4)</div>
-        <input type="file" accept="image/*" multiple disabled={uploading} onChange={(e) => uploadPhotos("poles", e.target.files, 4)} style={inputStyle} />
-        {photos.length > 0 ? <div style={miniGrid}>{photos.map((photo, index) => <div key={photo} style={photoCard}><img src={photo} style={photoImg} /><button type="button" onClick={() => updatePole("photos", photos.filter((_, i) => i !== index))} style={{ ...secondaryButtonStyle, width: "100%", marginTop: 6 }}>Remove</button></div>)}</div> : null}
+        <input
+          type="file"
+          accept="image/*"
+          multiple
+          disabled={uploading}
+          onChange={(e) => uploadPhotos("poles", e.target.files, 4)}
+          style={inputStyle}
+        />
+        {photos.length > 0 ? (
+          <div style={miniGrid}>
+            {photos.map((photo, index) => (
+              <div key={photo} style={photoCard}>
+                <img src={photo} style={photoImg} />
+                <button
+                  type="button"
+                  onClick={() =>
+                    updatePole(
+                      "photos",
+                      photos.filter((_, i) => i !== index),
+                    )
+                  }
+                  style={{
+                    ...secondaryButtonStyle,
+                    width: "100%",
+                    marginTop: 6,
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
 
         <div style={labelStyle}>Documents</div>
-        <input type="file" multiple disabled={uploading} onChange={(e) => uploadDocuments("poles", e.target.files)} style={inputStyle} />
-        {documents.map((doc, index) => <div key={`${doc}-${index}`} style={docRow}><span>{niceDocName(doc)}</span><button type="button" onClick={() => updatePole("documents", documents.filter((_, i) => i !== index))} style={secondaryButtonStyle}>Remove</button></div>)}
+        <input
+          type="file"
+          multiple
+          disabled={uploading}
+          onChange={(e) => uploadDocuments("poles", e.target.files)}
+          style={inputStyle}
+        />
+        {documents.map((doc, index) => (
+          <div key={`${doc}-${index}`} style={docRow}>
+            <span>{niceDocName(doc)}</span>
+            <button
+              type="button"
+              onClick={() =>
+                updatePole(
+                  "documents",
+                  documents.filter((_, i) => i !== index),
+                )
+              }
+              style={secondaryButtonStyle}
+            >
+              Remove
+            </button>
+          </div>
+        ))}
         {uploading ? <div style={helpText}>Uploading...</div> : null}
       </div>
     );
@@ -426,36 +639,127 @@ export default function AssetDetailsSidebarSections({
     const photos = keepSavedUrls(chamberDetails.photos || []);
     const documents = chamberDetails.documents || [];
     return (
-      <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #334155" }}>
+      <div
+        style={{
+          marginTop: 12,
+          paddingTop: 12,
+          borderTop: "1px solid #334155",
+        }}
+      >
         <div style={{ fontWeight: 800, marginBottom: 8 }}>Chamber Details</div>
 
         <div style={labelStyle}>Chamber Type</div>
-        <select value={chamberDetails.chamberType || "fw2"} onChange={(e) => updateChamber("chamberType", e.target.value)} style={inputStyle}>
-          <option value="fw2">FW2</option><option value="fw4">FW4</option><option value="fw6">FW6</option><option value="fw10">FW10</option>
+        <select
+          value={chamberDetails.chamberType || "fw2"}
+          onChange={(e) => updateChamber("chamberType", e.target.value)}
+          style={inputStyle}
+        >
+          <option value="fw2">FW2</option>
+          <option value="fw4">FW4</option>
+          <option value="fw6">FW6</option>
+          <option value="fw10">FW10</option>
         </select>
 
         <div style={labelStyle}>Size</div>
-        <input value={chamberDetails.size || ""} onChange={(e) => updateChamber("size", e.target.value)} placeholder="600x450" style={inputStyle} />
+        <input
+          value={chamberDetails.size || ""}
+          onChange={(e) => updateChamber("size", e.target.value)}
+          placeholder="600x450"
+          style={inputStyle}
+        />
 
         <div style={labelStyle}>Depth</div>
-        <input value={chamberDetails.depth || ""} onChange={(e) => updateChamber("depth", e.target.value)} placeholder="750mm" style={inputStyle} />
+        <input
+          value={chamberDetails.depth || ""}
+          onChange={(e) => updateChamber("depth", e.target.value)}
+          placeholder="750mm"
+          style={inputStyle}
+        />
 
         <div style={labelStyle}>Lid Type</div>
-        <input value={chamberDetails.lidType || ""} onChange={(e) => updateChamber("lidType", e.target.value)} placeholder="Single / Double / Composite" style={inputStyle} />
+        <input
+          value={chamberDetails.lidType || ""}
+          onChange={(e) => updateChamber("lidType", e.target.value)}
+          placeholder="Single / Double / Composite"
+          style={inputStyle}
+        />
 
         <div style={labelStyle}>Condition</div>
-        <input value={chamberDetails.condition || ""} onChange={(e) => updateChamber("condition", e.target.value)} placeholder="Good / Damaged / Flooded" style={inputStyle} />
+        <input
+          value={chamberDetails.condition || ""}
+          onChange={(e) => updateChamber("condition", e.target.value)}
+          placeholder="Good / Damaged / Flooded"
+          style={inputStyle}
+        />
 
         <div style={labelStyle}>Connected Ducts</div>
-        <input value={chamberDetails.connectedDucts || ""} onChange={(e) => updateChamber("connectedDucts", e.target.value)} placeholder="2 in / 2 out" style={inputStyle} />
+        <input
+          value={chamberDetails.connectedDucts || ""}
+          onChange={(e) => updateChamber("connectedDucts", e.target.value)}
+          placeholder="2 in / 2 out"
+          style={inputStyle}
+        />
 
         <div style={labelStyle}>Photos (max 6)</div>
-        <input type="file" accept="image/*" multiple disabled={uploading} onChange={(e) => uploadPhotos("chambers", e.target.files, 6)} style={inputStyle} />
-        {photos.length > 0 ? <div style={miniGrid}>{photos.map((photo, index) => <div key={photo} style={photoCard}><img src={photo} style={photoImg} /><button type="button" onClick={() => updateChamber("photos", photos.filter((_, i) => i !== index))} style={{ ...secondaryButtonStyle, width: "100%", marginTop: 6 }}>Remove</button></div>)}</div> : null}
+        <input
+          type="file"
+          accept="image/*"
+          multiple
+          disabled={uploading}
+          onChange={(e) => uploadPhotos("chambers", e.target.files, 6)}
+          style={inputStyle}
+        />
+        {photos.length > 0 ? (
+          <div style={miniGrid}>
+            {photos.map((photo, index) => (
+              <div key={photo} style={photoCard}>
+                <img src={photo} style={photoImg} />
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateChamber(
+                      "photos",
+                      photos.filter((_, i) => i !== index),
+                    )
+                  }
+                  style={{
+                    ...secondaryButtonStyle,
+                    width: "100%",
+                    marginTop: 6,
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
 
         <div style={labelStyle}>Documents</div>
-        <input type="file" multiple disabled={uploading} onChange={(e) => uploadDocuments("chambers", e.target.files)} style={inputStyle} />
-        {documents.map((doc, index) => <div key={`${doc}-${index}`} style={docRow}><span>{niceDocName(doc)}</span><button type="button" onClick={() => updateChamber("documents", documents.filter((_, i) => i !== index))} style={secondaryButtonStyle}>Remove</button></div>)}
+        <input
+          type="file"
+          multiple
+          disabled={uploading}
+          onChange={(e) => uploadDocuments("chambers", e.target.files)}
+          style={inputStyle}
+        />
+        {documents.map((doc, index) => (
+          <div key={`${doc}-${index}`} style={docRow}>
+            <span>{niceDocName(doc)}</span>
+            <button
+              type="button"
+              onClick={() =>
+                updateChamber(
+                  "documents",
+                  documents.filter((_, i) => i !== index),
+                )
+              }
+              style={secondaryButtonStyle}
+            >
+              Remove
+            </button>
+          </div>
+        ))}
         {uploading ? <div style={helpText}>Uploading...</div> : null}
       </div>
     );
@@ -464,67 +768,79 @@ export default function AssetDetailsSidebarSections({
   if (assetType === "distribution-point") {
     const previewImage = String((dpDetails as any).image || "");
     return (
-      <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #334155" }}>
-        <div style={{ fontWeight: 800, marginBottom: 8 }}>Distribution Point Details</div>
+      <div
+        style={{
+          marginTop: 12,
+          paddingTop: 12,
+          borderTop: "1px solid #334155",
+        }}
+      >
+        <div style={{ fontWeight: 800, marginBottom: 8 }}>
+          Distribution Point Details
+        </div>
 
         <div style={labelStyle}>Build Status</div>
-        <select value={dpDetails.buildStatus || "planned"} onChange={(e) => updateDp("buildStatus", e.target.value)} style={inputStyle}>
-          <option value="planned">Planned</option><option value="built">Built</option><option value="tested">Tested</option><option value="live">Live</option><option value="blocked">Blocked</option>
+        <select
+          value={dpDetails.buildStatus || "planned"}
+          onChange={(e) => updateDp("buildStatus", e.target.value)}
+          style={inputStyle}
+        >
+          <option value="planned">Planned</option>
+          <option value="built">Built</option>
+          <option value="tested">Tested</option>
+          <option value="live">Live</option>
+          <option value="blocked">Blocked</option>
         </select>
 
         <div style={labelStyle}>Closure Type</div>
 
-<select
-  value={dpDetails.closureType || "CBT"}
-  onChange={(e) => {
-    const closureType = e.target.value as
-      | "CBT"
-      | "AFN"
-      | "MDU"
-      | "MDU_SPLITTER";
+        <select
+          value={dpDetails.closureType || "CBT"}
+          onChange={(e) => {
+            const closureType = e.target.value as
+              | "CBT"
+              | "AFN"
+              | "MDU"
+              | "MDU_SPLITTER";
 
-    if (closureType === "AFN") {
-      updateAfnDetails({ inputFibres: [] });
-      return;
-    }
-
-    onChangeDpDetails({
-      ...dpDetails,
-      closureType,
-
-      afnDetails:
-        closureType === "CBT"
-          ? undefined
-          : dpDetails.afnDetails,
-
-      mduDetails:
-        closureType === "MDU" ||
-        closureType === "MDU_SPLITTER"
-          ? dpDetails.mduDetails || {
-              enabled: true,
-              throughCableId: undefined,
-              mduFibres: 6,
-              splitterFibres:
-                closureType === "MDU_SPLITTER" ? 2 : 0,
-              totalReservedFibres:
-                closureType === "MDU_SPLITTER" ? 8 : 6,
-              inputFibres: [],
+            if (closureType === "AFN") {
+              updateAfnDetails({ inputFibres: [] });
+              return;
             }
-          : undefined,
 
-      connectionsToHomes:
-        closureType === "MDU_SPLITTER"
-          ? 16
-          : dpDetails.connectionsToHomes || 8,
-    });
-  }}
-  style={inputStyle}
->
-  <option value="CBT">CBT</option>
-  <option value="AFN">AFN</option>
-  <option value="MDU">MDU Direct Feed</option>
-  <option value="MDU_SPLITTER">MDU + Splitter</option>
-</select>
+            onChangeDpDetails({
+              ...dpDetails,
+              closureType,
+
+              afnDetails:
+                closureType === "CBT" ? undefined : dpDetails.afnDetails,
+
+              mduDetails:
+                closureType === "MDU" || closureType === "MDU_SPLITTER"
+                  ? dpDetails.mduDetails || {
+                      enabled: true,
+                      throughCableId: undefined,
+                      mduFibres: 6,
+                      splitterFibres: closureType === "MDU_SPLITTER" ? 2 : 0,
+                      totalReservedFibres:
+                        closureType === "MDU_SPLITTER" ? 8 : 6,
+                      inputFibres: [],
+                    }
+                  : undefined,
+
+              connectionsToHomes:
+                closureType === "MDU_SPLITTER"
+                  ? 16
+                  : dpDetails.connectionsToHomes || 8,
+            });
+          }}
+          style={inputStyle}
+        >
+          <option value="CBT">CBT</option>
+          <option value="AFN">AFN</option>
+          <option value="MDU">MDU Direct Feed</option>
+          <option value="MDU_SPLITTER">MDU + Splitter</option>
+        </select>
 
         <div
           style={{
@@ -535,25 +851,69 @@ export default function AssetDetailsSidebarSections({
             background: "#020617",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 8,
+              alignItems: "center",
+            }}
+          >
             <div>
               <div style={{ fontWeight: 900, color: "#e5e7eb" }}>
                 Auto Fibre Plan — {dpAutoFibrePlan.architecture}
               </div>
               <div style={helpText}>
-                Closure architecture stays locked. This planner will not mix CBTs and AFNs on the same network leg.
+                Closure architecture stays locked. This planner will not mix
+                CBTs and AFNs on the same network leg.
               </div>
             </div>
-            <button
-              type="button"
-              onClick={applyAutoFibrePlan}
-              style={{ ...secondaryButtonStyle, whiteSpace: "nowrap", background: "#2563eb", color: "white" }}
+            <div
+              style={{
+                display: "flex",
+                gap: 6,
+                flexWrap: "wrap",
+                justifyContent: "flex-end",
+              }}
             >
-              Apply Plan
-            </button>
+              <button
+                type="button"
+                onClick={applyAutoFibrePlan}
+                style={{
+                  ...secondaryButtonStyle,
+                  whiteSpace: "nowrap",
+                  background: "#2563eb",
+                  color: "white",
+                }}
+              >
+                Apply Plan
+              </button>
+              {dpAutoFibrePlan.architecture !== "CBT" ? (
+                <button
+                  type="button"
+                  onClick={rebuildSelectedThroughCableChain}
+                  title="Recalculate every AFN / MDU reservation on this selected through cable from the end of the run backwards."
+                  style={{
+                    ...secondaryButtonStyle,
+                    whiteSpace: "nowrap",
+                    background: "#16a34a",
+                    color: "white",
+                  }}
+                >
+                  Rebuild Chain
+                </button>
+              ) : null}
+            </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginTop: 10 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, 1fr)",
+              gap: 6,
+              marginTop: 10,
+            }}
+          >
             {[
               ["Homes", dpAutoFibrePlan.connectedHomes],
               ["Capacity", dpAutoFibrePlan.capacity],
@@ -572,7 +932,9 @@ export default function AssetDetailsSidebarSections({
               >
                 <strong>{value}</strong>
                 <br />
-                <span style={{ color: "#9ca3af", fontSize: "0.72rem" }}>{title}</span>
+                <span style={{ color: "#9ca3af", fontSize: "0.72rem" }}>
+                  {title}
+                </span>
               </div>
             ))}
           </div>
@@ -582,20 +944,103 @@ export default function AssetDetailsSidebarSections({
           </div>
 
           {suggestedFibreAllocation ? (
-            <div style={{ ...helpText, marginTop: 8 }}>
-              Auto through cable: <strong>{suggestedFibreAllocation.throughCableName || "not found"}</strong>
-              <br />
-              Local fibres: <strong>{suggestedFibreAllocation.localReservedFibres}</strong>
-              {" · "}
-              Branch demand: <strong>{suggestedFibreAllocation.branchReservedFibres}</strong>
-              {" · "}
-              Downstream already ahead: <strong>{suggestedFibreAllocation.downstreamReservedFibres}</strong>
-              <br />
-              Reserved on parent: <strong>{suggestedFibreAllocation.inputFibres.join(", ") || "none"}</strong>
+            <div style={{ marginTop: 10 }}>
+              <div style={{ ...helpText, marginBottom: 6, color: "#bfdbfe" }}>
+                Allocation explanation — fibre 1 starts at the end of the run.
+                Branches reserve only downstream AFN/MDU demand, not the full
+                branch cable size.
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                  gap: 6,
+                }}
+              >
+                {(suggestedFibreAllocation.explanationRows || []).map((row) => (
+                  <div
+                    key={row.label}
+                    title={row.help}
+                    style={{
+                      background: "#111827",
+                      border: "1px solid #334155",
+                      borderRadius: 8,
+                      padding: 8,
+                    }}
+                  >
+                    <div
+                      style={{
+                        color: "#9ca3af",
+                        fontSize: "0.72rem",
+                        marginBottom: 3,
+                      }}
+                    >
+                      {row.label}
+                    </div>
+                    <strong style={{ color: "#e5e7eb" }}>{row.value}</strong>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ ...helpText, marginTop: 8 }}>
+                Parent utilisation after this allocation:{" "}
+                <strong>{suggestedFibreAllocation.utilisationPercent}%</strong>
+                {" · "}
+                Duplicate fibres:{" "}
+                <strong>
+                  {suggestedFibreAllocation.duplicateFibres?.join(", ") ||
+                    "none"}
+                </strong>
+              </div>
+
+              {(suggestedFibreAllocation.traceRows || []).length ? (
+                <div style={{ marginTop: 10 }}>
+                  <div
+                    style={{
+                      fontSize: "0.78rem",
+                      fontWeight: 900,
+                      color: "#e5e7eb",
+                      marginBottom: 6,
+                    }}
+                  >
+                    Allocation trace
+                  </div>
+                  {(suggestedFibreAllocation.traceRows || [])
+                    .slice(0, 8)
+                    .map((row, index) => (
+                      <div
+                        key={`${row.assetId || row.assetName}-${row.cableId || row.cableName}-${index}`}
+                        style={{
+                          background: "#0f172a",
+                          border: "1px solid #334155",
+                          borderRadius: 8,
+                          padding: 8,
+                          marginTop: 5,
+                          fontSize: "0.76rem",
+                          color: "#cbd5e1",
+                          lineHeight: 1.35,
+                        }}
+                      >
+                        <strong>{row.assetName}</strong> on {row.cableName}
+                        <br />
+                        Local {row.localFibres} + branch {row.branchFibres} ={" "}
+                        <strong>{row.totalFibres}</strong> fibre(s)
+                        <br />
+                        <span style={{ color: "#9ca3af" }}>{row.note}</span>
+                      </div>
+                    ))}
+                </div>
+              ) : null}
             </div>
           ) : null}
 
-          {[...dpAutoFibrePlan.warnings, ...architectureWarnings, ...(suggestedFibreAllocation?.warnings || [])].map((warning) => (
+          {[
+            ...dpAutoFibrePlan.warnings,
+            ...architectureWarnings,
+            ...(suggestedFibreAllocation?.warnings || []),
+            ...(suggestedFibreAllocation?.conflictingReservations || []),
+          ].map((warning) => (
             <div
               key={warning}
               style={{
@@ -613,175 +1058,324 @@ export default function AssetDetailsSidebarSections({
             </div>
           ))}
 
-          {(suggestedFibreAllocation?.branchNotes || []).slice(0, 4).map((note) => (
-            <div key={note} style={{ ...helpText, marginTop: 6 }}>
-              • {note}
+          {(suggestedFibreAllocation?.branchNotes || [])
+            .slice(0, 4)
+            .map((note) => (
+              <div key={note} style={{ ...helpText, marginTop: 6 }}>
+                • {note}
+              </div>
+            ))}
+        </div>
+
+        {dpDetails.closureType === "AFN" ? (
+          <>
+            <div style={helpText}>
+              AFN uses selected input fibres from a through cable. Each selected
+              fibre gives 8 outputs.
+            </div>
+            <div style={labelStyle}>Through Cable</div>
+            <select
+              value={selectedCableId}
+              onChange={(e) =>
+                updateAfnDetails({
+                  throughCableId: e.target.value || undefined,
+                  inputFibres: [],
+                  fibreCountUsed: 0,
+                })
+              }
+              style={inputStyle}
+            >
+              <option value="">Select through cable</option>
+              {afnThroughCableOptions.map((cable) => (
+                <option key={cable.id} value={cable.id}>
+                  {(cable as any).name || (cable as any).cableId || cable.id} —{" "}
+                  {(cable as any).fibreCount || "48F"}
+                </option>
+              ))}
+            </select>
+            {selectedCableId ? (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                  gap: 5,
+                  marginTop: 8,
+                  maxHeight: 185,
+                  overflowY: "auto",
+                }}
+              >
+                {Array.from({ length: fibreTotal }, (_, index) => {
+                  const fibre = index + 1;
+                  const selectedHere = currentInputFibres.includes(fibre);
+                  const usedElsewhere = usedByOtherReservations.has(fibre);
+                  return (
+                    <button
+                      key={fibre}
+                      type="button"
+                      disabled={usedElsewhere && !selectedHere}
+                      onClick={() => toggleFibre(fibre)}
+                      style={{
+                        ...secondaryButtonStyle,
+                        padding: "5px 4px",
+                        background: selectedHere
+                          ? "#2563eb"
+                          : usedElsewhere
+                            ? "#374151"
+                            : "#111827",
+                        opacity: usedElsewhere && !selectedHere ? 0.45 : 1,
+                      }}
+                    >
+                      F{fibre}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+            <div style={helpText}>
+              Fibres selected: {currentInputFibres.join(", ") || "none"}
+              <br />
+              Splitter: 1:8 / {currentInputFibres.length * 8} outputs
+            </div>
+          </>
+        ) : null}
+        {dpDetails.closureType === "MDU" ||
+        dpDetails.closureType === "MDU_SPLITTER" ? (
+          <>
+            <div style={helpText}>MDU fibre reservation from parent cable.</div>
+
+            <div style={labelStyle}>Through Cable</div>
+
+            <select
+              value={dpDetails.mduDetails?.throughCableId || ""}
+              onChange={(e) => {
+                onChangeDpDetails({
+                  ...dpDetails,
+                  mduDetails: {
+                    ...(dpDetails.mduDetails || {}),
+                    enabled: true,
+                    throughCableId: e.target.value,
+                    mduFibres: dpDetails.mduDetails?.mduFibres || 6,
+                    splitterFibres: dpDetails.mduDetails?.splitterFibres || 0,
+                    totalReservedFibres:
+                      (dpDetails.mduDetails?.mduFibres || 6) +
+                      (dpDetails.mduDetails?.splitterFibres || 0),
+                    inputFibres: [],
+                  },
+                });
+              }}
+              style={inputStyle}
+            >
+              <option value="">Select through cable</option>
+
+              {afnThroughCableOptions.map((cable) => (
+                <option key={cable.id} value={cable.id}>
+                  {(cable as any).name || (cable as any).cableId || cable.id}
+                  {" — "}
+                  {(cable as any).fibreCount || "48F"}
+                </option>
+              ))}
+            </select>
+
+            <div style={labelStyle}>MDU Fibres</div>
+
+            <input
+              type="number"
+              min={1}
+              max={24}
+              value={dpDetails.mduDetails?.mduFibres || 6}
+              onChange={(e) => {
+                const mduFibres = Number(e.target.value);
+
+                const splitterFibres =
+                  dpDetails.mduDetails?.splitterFibres || 0;
+
+                onChangeDpDetails({
+                  ...dpDetails,
+                  mduDetails: {
+                    ...(dpDetails.mduDetails || {}),
+                    enabled: true,
+                    mduFibres,
+                    splitterFibres,
+                    totalReservedFibres: mduFibres + splitterFibres,
+                    inputFibres: dpDetails.mduDetails?.inputFibres || [],
+                  },
+                });
+              }}
+              style={inputStyle}
+            />
+
+            {dpDetails.closureType === "MDU_SPLITTER" ? (
+              <>
+                <div style={labelStyle}>Splitter Fibres</div>
+
+                <input
+                  type="number"
+                  min={0}
+                  max={12}
+                  value={dpDetails.mduDetails?.splitterFibres || 2}
+                  onChange={(e) => {
+                    const splitterFibres = Number(e.target.value);
+
+                    const mduFibres = dpDetails.mduDetails?.mduFibres || 6;
+
+                    onChangeDpDetails({
+                      ...dpDetails,
+                      mduDetails: {
+                        ...(dpDetails.mduDetails || {}),
+                        enabled: true,
+                        splitterFibres,
+                        mduFibres,
+                        totalReservedFibres: splitterFibres + mduFibres,
+                        inputFibres: dpDetails.mduDetails?.inputFibres || [],
+                      },
+                    });
+                  }}
+                  style={inputStyle}
+                />
+              </>
+            ) : null}
+
+            <div style={helpText}>
+              Reserved fibres:{" "}
+              <strong>
+                {dpDetails.autoFibrePlan?.reservedFibres ||
+                  dpDetails.mduDetails?.totalReservedFibres ||
+                  0}
+              </strong>
+            </div>
+          </>
+        ) : null}
+
+        <div style={labelStyle}>Connections to Homes</div>
+        <select
+          value={
+            dpDetails.closureType === "AFN"
+              ? dpCapacity
+              : dpDetails.connectionsToHomes || 8
+          }
+          disabled={dpDetails.closureType === "AFN"}
+          onChange={(e) =>
+            updateDp("connectionsToHomes", Number(e.target.value))
+          }
+          style={inputStyle}
+        >
+          <option value={8}>8</option>
+          <option value={16}>16</option>
+          <option value={24}>24</option>
+          <option value={32}>32</option>
+        </select>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(3, 1fr)",
+            gap: 8,
+            marginTop: 10,
+          }}
+        >
+          {[
+            ["Capacity", dpCapacity],
+            ["Used", dpUsed],
+            ["Available", dpAvailable],
+          ].map(([title, value]) => (
+            <div
+              key={String(title)}
+              style={{
+                background: "#111827",
+                border: "1px solid #334155",
+                borderRadius: 8,
+                padding: 8,
+                textAlign: "center",
+              }}
+            >
+              <strong>{value}</strong>
+              <br />
+              <span style={{ color: "#9ca3af", fontSize: "0.78rem" }}>
+                {title}
+              </span>
             </div>
           ))}
         </div>
 
-        {dpDetails.closureType === "AFN" ? <>
-          <div style={helpText}>AFN uses selected input fibres from a through cable. Each selected fibre gives 8 outputs.</div>
-          <div style={labelStyle}>Through Cable</div>
-          <select value={selectedCableId} onChange={(e) => updateAfnDetails({ throughCableId: e.target.value || undefined, inputFibres: [], fibreCountUsed: 0 })} style={inputStyle}>
-            <option value="">Select through cable</option>
-            {afnThroughCableOptions.map((cable) => <option key={cable.id} value={cable.id}>{(cable as any).name || (cable as any).cableId || cable.id} — {(cable as any).fibreCount || "48F"}</option>)}
-          </select>
-          {selectedCableId ? <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 5, marginTop: 8, maxHeight: 185, overflowY: "auto" }}>
-            {Array.from({ length: fibreTotal }, (_, index) => {
-              const fibre = index + 1;
-              const selectedHere = currentInputFibres.includes(fibre);
-              const usedElsewhere = usedByOtherReservations.has(fibre);
-              return <button key={fibre} type="button" disabled={usedElsewhere && !selectedHere} onClick={() => toggleFibre(fibre)} style={{ ...secondaryButtonStyle, padding: "5px 4px", background: selectedHere ? "#2563eb" : usedElsewhere ? "#374151" : "#111827", opacity: usedElsewhere && !selectedHere ? 0.45 : 1 }}>F{fibre}</button>;
-            })}
-          </div> : null}
-          <div style={helpText}>Fibres selected: {currentInputFibres.join(", ") || "none"}<br />Splitter: 1:8 / {currentInputFibres.length * 8} outputs</div>
-        </> : null}
-        {dpDetails.closureType === "MDU" ||
-dpDetails.closureType === "MDU_SPLITTER" ? (
-  <>
-    <div style={helpText}>
-      MDU fibre reservation from parent cable.
-    </div>
-
-    <div style={labelStyle}>Through Cable</div>
-
-    <select
-      value={dpDetails.mduDetails?.throughCableId || ""}
-      onChange={(e) => {
-        onChangeDpDetails({
-          ...dpDetails,
-          mduDetails: {
-            ...(dpDetails.mduDetails || {}),
-            enabled: true,
-            throughCableId: e.target.value,
-            mduFibres:
-              dpDetails.mduDetails?.mduFibres || 6,
-            splitterFibres:
-              dpDetails.mduDetails?.splitterFibres || 0,
-            totalReservedFibres:
-              (dpDetails.mduDetails?.mduFibres || 6) +
-              (dpDetails.mduDetails?.splitterFibres || 0),
-            inputFibres: [],
-          },
-        });
-      }}
-      style={inputStyle}
-    >
-      <option value="">Select through cable</option>
-
-      {afnThroughCableOptions.map((cable) => (
-        <option key={cable.id} value={cable.id}>
-          {(cable as any).name ||
-            (cable as any).cableId ||
-            cable.id}
-          {" — "}
-          {(cable as any).fibreCount || "48F"}
-        </option>
-      ))}
-    </select>
-
-    <div style={labelStyle}>MDU Fibres</div>
-
-    <input
-      type="number"
-      min={1}
-      max={24}
-      value={dpDetails.mduDetails?.mduFibres || 6}
-      onChange={(e) => {
-        const mduFibres = Number(e.target.value);
-
-        const splitterFibres =
-          dpDetails.mduDetails?.splitterFibres || 0;
-
-        onChangeDpDetails({
-          ...dpDetails,
-          mduDetails: {
-            ...(dpDetails.mduDetails || {}),
-            enabled: true,
-            mduFibres,
-            splitterFibres,
-            totalReservedFibres:
-              mduFibres + splitterFibres,
-            inputFibres: dpDetails.mduDetails?.inputFibres || [],
-          },
-        });
-      }}
-      style={inputStyle}
-    />
-
-    {dpDetails.closureType === "MDU_SPLITTER" ? (
-      <>
-        <div style={labelStyle}>Splitter Fibres</div>
-
-        <input
-          type="number"
-          min={0}
-          max={12}
-          value={
-            dpDetails.mduDetails?.splitterFibres || 2
-          }
-          onChange={(e) => {
-            const splitterFibres = Number(e.target.value);
-
-            const mduFibres =
-              dpDetails.mduDetails?.mduFibres || 6;
-
-            onChangeDpDetails({
-              ...dpDetails,
-              mduDetails: {
-                ...(dpDetails.mduDetails || {}),
-                enabled: true,
-                splitterFibres,
-                mduFibres,
-                totalReservedFibres:
-                  splitterFibres + mduFibres,
-                inputFibres: dpDetails.mduDetails?.inputFibres || [],
-              },
-            });
-          }}
-          style={inputStyle}
-        />
-      </>
-    ) : null}
-
-    <div style={helpText}>
-      Reserved fibres:
-      {" "}
-      <strong>
-        {dpDetails.autoFibrePlan?.reservedFibres || dpDetails.mduDetails?.totalReservedFibres || 0}
-      </strong>
-    </div>
-  </>
-) : null}
-
-        <div style={labelStyle}>Connections to Homes</div>
-        <select value={dpDetails.closureType === "AFN" ? dpCapacity : dpDetails.connectionsToHomes || 8} disabled={dpDetails.closureType === "AFN"} onChange={(e) => updateDp("connectionsToHomes", Number(e.target.value))} style={inputStyle}>
-          <option value={8}>8</option><option value={16}>16</option><option value={24}>24</option><option value={32}>32</option>
-        </select>
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 10 }}>
-          {[ ["Capacity", dpCapacity], ["Used", dpUsed], ["Available", dpAvailable] ].map(([title, value]) => <div key={String(title)} style={{ background: "#111827", border: "1px solid #334155", borderRadius: 8, padding: 8, textAlign: "center" }}><strong>{value}</strong><br /><span style={{ color: "#9ca3af", fontSize: "0.78rem" }}>{title}</span></div>)}
-        </div>
-
         <div style={labelStyle}>Connected Homes</div>
-        <button type="button" onClick={() => setConnectedHomesOpen((open) => !open)} style={{ ...secondaryButtonStyle, width: "100%" }}>{dpUsed} connected / {dpCapacity || 0} capacity {connectedHomesOpen ? "▲" : "▼"}</button>
-        {connectedHomesOpen ? <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
-          {connectedHomes.length === 0 ? <div style={helpText}>No homes connected yet</div> : connectedHomes.map((home) => <div key={`${home.homeId}-${home.port}`} style={docRow}><span><strong>Port {home.port}</strong><br />{home.homeName}</span><em>{home.status}</em></div>)}
-        </div> : null}
+        <button
+          type="button"
+          onClick={() => setConnectedHomesOpen((open) => !open)}
+          style={{ ...secondaryButtonStyle, width: "100%" }}
+        >
+          {dpUsed} connected / {dpCapacity || 0} capacity{" "}
+          {connectedHomesOpen ? "▲" : "▼"}
+        </button>
+        {connectedHomesOpen ? (
+          <div
+            style={{
+              marginTop: 8,
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+            }}
+          >
+            {connectedHomes.length === 0 ? (
+              <div style={helpText}>No homes connected yet</div>
+            ) : (
+              connectedHomes.map((home) => (
+                <div key={`${home.homeId}-${home.port}`} style={docRow}>
+                  <span>
+                    <strong>Port {home.port}</strong>
+                    <br />
+                    {home.homeName}
+                  </span>
+                  <em>{home.status}</em>
+                </div>
+              ))
+            )}
+          </div>
+        ) : null}
 
         <div style={labelStyle}>Power Readings</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
-          {[0, 1, 2, 3].map((i) => <input key={i} value={dpDetails.powerReadings?.[i] || ""} onChange={(e) => {
-            const readings = [...(dpDetails.powerReadings || ["", "", "", ""])] as string[];
-            readings[i] = e.target.value;
-            updateDp("powerReadings", readings);
-          }} style={inputStyle} />)}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, 1fr)",
+            gap: 6,
+          }}
+        >
+          {[0, 1, 2, 3].map((i) => (
+            <input
+              key={i}
+              value={dpDetails.powerReadings?.[i] || ""}
+              onChange={(e) => {
+                const readings = [
+                  ...(dpDetails.powerReadings || ["", "", "", ""]),
+                ] as string[];
+                readings[i] = e.target.value;
+                updateDp("powerReadings", readings);
+              }}
+              style={inputStyle}
+            />
+          ))}
         </div>
 
         <div style={labelStyle}>Image</div>
-        <input type="file" accept="image/*" disabled={uploading} onChange={(e) => uploadDpImage(e.target.files?.[0] || null)} style={inputStyle} />
-        {previewImage ? <div style={{ ...photoCard, marginTop: 8 }}><img src={previewImage} style={photoImg} /><button type="button" onClick={() => updateDp("image", "")} style={{ ...secondaryButtonStyle, width: "100%", marginTop: 6 }}>Remove Image</button></div> : null}
+        <input
+          type="file"
+          accept="image/*"
+          disabled={uploading}
+          onChange={(e) => uploadDpImage(e.target.files?.[0] || null)}
+          style={inputStyle}
+        />
+        {previewImage ? (
+          <div style={{ ...photoCard, marginTop: 8 }}>
+            <img src={previewImage} style={photoImg} />
+            <button
+              type="button"
+              onClick={() => updateDp("image", "")}
+              style={{ ...secondaryButtonStyle, width: "100%", marginTop: 6 }}
+            >
+              Remove Image
+            </button>
+          </div>
+        ) : null}
         {uploading ? <div style={helpText}>Uploading...</div> : null}
       </div>
     );

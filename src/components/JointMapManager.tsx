@@ -67,7 +67,10 @@ import {
   loadOsmBuildingsAsHomes,
   type OsmBounds,
 } from "./map/utils/loadOsmBuildings";
-import { createDropCableRecordsFromDPs, getAssetLatLng } from "./map/utils/generateDrops";
+import {
+  createDropCableRecordsFromDPs,
+  getAssetLatLng,
+} from "./map/utils/generateDrops";
 import StreetCabDesigner from "./streetcab/StreetCabDesigner";
 import ProjectAreaSelector from "./map/projects/ProjectAreaSelector";
 import { filterAssetsForProjectArea } from "./map/projects/projectAssetFilter";
@@ -142,7 +145,10 @@ function markAssetForLiveSync(
   const user = auth.currentUser;
   const now = new Date().toISOString();
 
-  const currentMetadata = ((asset as any).metadata || {}) as Record<string, unknown>;
+  const currentMetadata = ((asset as any).metadata || {}) as Record<
+    string,
+    unknown
+  >;
   const userEmail = user?.email || "unknown";
   const userUid = user?.uid || "unknown";
 
@@ -178,8 +184,10 @@ function markAssetForLiveSync(
   } as SavedMapAsset;
 }
 
-
-function requestChangeReason(action: AssetChangeAction, assetName?: string): string | null {
+function requestChangeReason(
+  action: AssetChangeAction,
+  assetName?: string,
+): string | null {
   const label = assetName ? ` for ${assetName}` : "";
   const reason = window.prompt(
     `Reason required: why was this asset ${action}${label}?`,
@@ -242,14 +250,22 @@ function AssetActivityMiniSummary({ asset }: { asset: SavedMapAsset | null }) {
       {activity.lastChangeReason ? (
         <div style={{ ...rowStyle, alignItems: "flex-start" }}>
           <span style={labelStyle}>Last reason</span>
-          <span style={{ textAlign: "right", maxWidth: 150 }}>{activity.lastChangeReason}</span>
+          <span style={{ textAlign: "right", maxWidth: 150 }}>
+            {activity.lastChangeReason}
+          </span>
         </div>
       ) : null}
     </div>
   );
 }
 
-type MapMode = "pick" | "measure" | "draw-cable" | "draw-area" | "move-homes" | "survey-delete-homes";
+type MapMode =
+  | "pick"
+  | "measure"
+  | "draw-cable"
+  | "draw-area"
+  | "move-homes"
+  | "survey-delete-homes";
 
 type BasemapType = "street" | "satellite" | "hybrid" | "dark";
 
@@ -498,8 +514,6 @@ function getDistancePointToLineMeters(
   return best;
 }
 
-
-
 // =====================================================
 // CABLE ROUTE SAVE GUARD
 // Editing a cable must replace the current route, not append or
@@ -507,7 +521,9 @@ function getDistancePointToLineMeters(
 // =====================================================
 const CABLE_SAVE_COORDINATE_DEDUPE_METERS = 0.35;
 
-function sanitiseCableRouteCoordinates(points: LatLngLiteral[] | [number, number][]): [number, number][] {
+function sanitiseCableRouteCoordinates(
+  points: LatLngLiteral[] | [number, number][],
+): [number, number][] {
   if (!Array.isArray(points)) return [];
 
   const cleaned: [number, number][] = [];
@@ -521,7 +537,11 @@ function sanitiseCableRouteCoordinates(points: LatLngLiteral[] | [number, number
     const next: [number, number] = [lat, lng];
     const previous = cleaned[cleaned.length - 1];
 
-    if (previous && getPathDistanceMeters([previous, next]) <= CABLE_SAVE_COORDINATE_DEDUPE_METERS) {
+    if (
+      previous &&
+      getPathDistanceMeters([previous, next]) <=
+        CABLE_SAVE_COORDINATE_DEDUPE_METERS
+    ) {
       return;
     }
 
@@ -562,7 +582,6 @@ function findDpsAlongCable(
     });
 }
 
-
 function getHomeConnectionKey(asset: any): string {
   return String(
     asset?.id ??
@@ -579,7 +598,9 @@ function getHomeConnectionKey(asset: any): string {
 function getHomeDropKeys(asset: any): string[] {
   const raw = getHomeConnectionKey(asset);
   if (!raw) return [];
-  return raw.startsWith("uprn-") ? [raw, raw.replace(/^uprn-/, "")] : [raw, `uprn-${raw}`];
+  return raw.startsWith("uprn-")
+    ? [raw, raw.replace(/^uprn-/, "")]
+    : [raw, `uprn-${raw}`];
 }
 
 function getDropHomeKeys(drop: any): string[] {
@@ -593,10 +614,15 @@ function getDropHomeKeys(drop: any): string[] {
   ).trim();
 
   if (!raw) return [];
-  return raw.startsWith("uprn-") ? [raw, raw.replace(/^uprn-/, "")] : [raw, `uprn-${raw}`];
+  return raw.startsWith("uprn-")
+    ? [raw, raw.replace(/^uprn-/, "")]
+    : [raw, `uprn-${raw}`];
 }
 
-function getDistanceMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+function getDistanceMeters(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): number {
   const R = 6371000;
   const toRad = (deg: number) => (deg * Math.PI) / 180;
   const dLat = toRad(b.lat - a.lat);
@@ -609,7 +635,10 @@ function getDistanceMeters(a: { lat: number; lng: number }, b: { lat: number; ln
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-function createManualDropCable(dp: SavedMapAsset, home: SavedMapAsset): SavedMapAsset | null {
+function createManualDropCable(
+  dp: SavedMapAsset,
+  home: SavedMapAsset,
+): SavedMapAsset | null {
   const dpCoord = getAssetLatLng(dp as any);
   const homeCoord = getAssetLatLng(home as any);
   if (!dpCoord || !homeCoord) return null;
@@ -637,7 +666,10 @@ function createManualDropCable(dp: SavedMapAsset, home: SavedMapAsset): SavedMap
     toType: "home",
     dpId,
     homeId,
-    uprn: (home as any).properties?.UPRN ?? (home as any).UPRN ?? (home as any).uprn,
+    uprn:
+      (home as any).properties?.UPRN ??
+      (home as any).UPRN ??
+      (home as any).uprn,
     distanceM: Math.round(getDistanceMeters(dpCoord, homeCoord) * 10) / 10,
     coordinates: lineCoords,
     route: lineCoords,
@@ -700,7 +732,8 @@ function FreeLeafletBaseLayer({
   basemap: BasemapType;
   roadOverlayVisible: boolean;
 }) {
-  const selected = FREE_LEAFLET_TILE_URLS[basemap] || FREE_LEAFLET_TILE_URLS.street;
+  const selected =
+    FREE_LEAFLET_TILE_URLS[basemap] || FREE_LEAFLET_TILE_URLS.street;
 
   return (
     <>
@@ -867,7 +900,8 @@ export default function JointMapManager({
   // dedicated project operations screen.
   // =====================================================
   const [isProjectWorkspaceOpen, setIsProjectWorkspaceOpen] = useState(false);
-  const [isProjectWorkspaceLoading, setIsProjectWorkspaceLoading] = useState(false);
+  const [isProjectWorkspaceLoading, setIsProjectWorkspaceLoading] =
+    useState(false);
   const [assetType, setAssetType] = useState<AssetType>(
     inferAssetTypeFromName(currentJointName),
   );
@@ -911,14 +945,13 @@ export default function JointMapManager({
     hdSplitterPanels: [],
   });
 
-  
   // =====================================================
   // MODE AWARE AUDIT SYSTEM
   // =====================================================
 
   const shouldAskForChangeReason = requiresAuditReason;
 
-const handleOpenExchange = async (exchange: ExchangeAsset) => {
+  const handleOpenExchange = async (exchange: ExchangeAsset) => {
     try {
       const fullExchange = await loadExchange(exchange.id);
       setOpenExchangeAsset(fullExchange ?? exchange);
@@ -1014,7 +1047,8 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
   // =====================================================
   const [mapMode, setMapMode] = useState<MapMode>("pick");
   const [selectedMoveHomeIds, setSelectedMoveHomeIds] = useState<string[]>([]);
-  const [selectedSurveyDeleteHomeIds, setSelectedSurveyDeleteHomeIds] = useState<string[]>([]);
+  const [selectedSurveyDeleteHomeIds, setSelectedSurveyDeleteHomeIds] =
+    useState<string[]>([]);
   const [basemap, setBasemap] = useState<BasemapType>("street");
   const [roadOverlayVisible, setRoadOverlayVisible] = useState(false);
   const [measurePoints, setMeasurePoints] = useState<LatLngLiteral[]>([]);
@@ -1149,7 +1183,10 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
     if (normalizedSavedJoints.length === 0) return;
 
     const saveSignature = normalizedSavedJoints
-      .map((asset: any) => `${asset.id}:${asset.updatedAt || asset.syncRevision || ""}`)
+      .map(
+        (asset: any) =>
+          `${asset.id}:${asset.updatedAt || asset.syncRevision || ""}`,
+      )
       .sort()
       .join("|");
 
@@ -1224,8 +1261,6 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
 
     return syncedAsset;
   };
-
-
 
   const writeAssetAuditLog = (args: {
     asset: SavedMapAsset;
@@ -1375,16 +1410,16 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
     const item = asset as any;
     const assetType = String(item.assetType ?? "").toLowerCase();
     const jointType = String(item.jointType ?? "").toLowerCase();
-    const geometryType = String(item.geometryType ?? item.geometry?.type ?? "").toLowerCase();
+    const geometryType = String(
+      item.geometryType ?? item.geometry?.type ?? "",
+    ).toLowerCase();
 
     return (
       geometryType === "polygon" &&
-      (
-        assetType === "area" ||
+      (assetType === "area" ||
         assetType === "polygon" ||
         assetType === "project-area" ||
-        jointType.includes("polygon area")
-      )
+        jointType.includes("polygon area"))
     );
   };
 
@@ -1411,10 +1446,7 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
     [activeProjectArea, allMapAssets],
   );
 
-  const visibleProjectAreas = useMemo(
-    () => projectAreas,
-    [projectAreas],
-  );
+  const visibleProjectAreas = useMemo(() => projectAreas, [projectAreas]);
 
   // =====================================================
   // PROJECT WORKSPACE SUMMARY STATS
@@ -1431,7 +1463,9 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
     };
 
     const isLineCable = (asset: SavedMapAsset) =>
-      asset.assetType === "cable" || asset.geometry?.type === "LineString" || isType(asset, ["cable"]);
+      asset.assetType === "cable" ||
+      asset.geometry?.type === "LineString" ||
+      isType(asset, ["cable"]);
 
     const isDropCableAsset = (asset: SavedMapAsset) => {
       const item = asset as any;
@@ -1444,7 +1478,12 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
           item.generatedDrop === true ||
           item.autoGeneratedDrop === true ||
           item.dropCable === true ||
-          Boolean(item.homeId || item.connectedHomeId || item.toHomeId || item.fromHomeId))
+          Boolean(
+            item.homeId ||
+            item.connectedHomeId ||
+            item.toHomeId ||
+            item.fromHomeId,
+          ))
       );
     };
 
@@ -1468,34 +1507,62 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
     const cables = visibleProjectAssets.filter(isLineCable);
     const dropCables = cables.filter(isDropCableAsset);
     const designCables = cables.filter((asset) => !isDropCableAsset(asset));
-    const homes = visibleProjectAssets.filter((asset) => isType(asset, ["home", "uprn", "sdu", "mdu", "flat"]));
+    const homes = visibleProjectAssets.filter((asset) =>
+      isType(asset, ["home", "uprn", "sdu", "mdu", "flat"]),
+    );
     const connectedHomes = homes.filter((asset: any) =>
-      Boolean(asset.connectedDpId || asset.connectedDP || asset.dpId || asset.connection === "connected" || asset.status === "connected"),
+      Boolean(
+        asset.connectedDpId ||
+        asset.connectedDP ||
+        asset.dpId ||
+        asset.connection === "connected" ||
+        asset.status === "connected",
+      ),
     );
 
     const routeLengthMeters = cables.reduce((total, asset) => {
       if (asset.geometry?.type !== "LineString") return total;
-      const points = asset.geometry.coordinates.map(([lat, lng]) => ({ lat, lng }));
+      const points = asset.geometry.coordinates.map(([lat, lng]) => ({
+        lat,
+        lng,
+      }));
       return total + getPathDistanceMeters(points);
     }, 0);
 
     const issueCount = visibleProjectAssets.filter((asset: any) => {
       const status = norm(asset.status);
-      return Boolean(asset.auditIssue || asset.auditFail || asset.missingPia || status.includes("fail") || status.includes("issue"));
+      return Boolean(
+        asset.auditIssue ||
+        asset.auditFail ||
+        asset.missingPia ||
+        status.includes("fail") ||
+        status.includes("issue"),
+      );
     }).length;
 
     return {
       homesPassed: homes.length,
       homesConnected: connectedHomes.length,
-      rfsPercent: homes.length ? Math.round((connectedHomes.length / homes.length) * 100) : 0,
+      rfsPercent: homes.length
+        ? Math.round((connectedHomes.length / homes.length) * 100)
+        : 0,
       issueCount,
       topologyLinks: networkGraph.edges.size,
-      splicePoints: visibleProjectAssets.filter((asset) => isType(asset, ["joint", "cmj", "lmj", "mmj"])).length,
-      joints: visibleProjectAssets.filter((asset) => isType(asset, ["joint", "cmj", "lmj", "mmj"])).length,
+      splicePoints: visibleProjectAssets.filter((asset) =>
+        isType(asset, ["joint", "cmj", "lmj", "mmj"]),
+      ).length,
+      joints: visibleProjectAssets.filter((asset) =>
+        isType(asset, ["joint", "cmj", "lmj", "mmj"]),
+      ).length,
       dps: visibleProjectAssets.filter(isDpClosureAsset).length,
-      streetCabs: visibleProjectAssets.filter((asset) => isType(asset, ["street cab", "streetcab", "cabinet"])).length,
-      poles: visibleProjectAssets.filter((asset) => isType(asset, ["pole"])).length,
-      chambers: visibleProjectAssets.filter((asset) => isType(asset, ["chamber", "manhole"])).length,
+      streetCabs: visibleProjectAssets.filter((asset) =>
+        isType(asset, ["street cab", "streetcab", "cabinet"]),
+      ).length,
+      poles: visibleProjectAssets.filter((asset) => isType(asset, ["pole"]))
+        .length,
+      chambers: visibleProjectAssets.filter((asset) =>
+        isType(asset, ["chamber", "manhole"]),
+      ).length,
       cables: designCables.length,
       designCables: designCables.length,
       dropCables: dropCables.length,
@@ -1640,7 +1707,9 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
   const handleEditAsset = (asset: SavedMapAsset) => {
     const viewedAsset = withAssetViewedMetadata(asset, "map-edit-panel");
     setSavedJoints((prev) =>
-      (prev ?? []).map((item) => (item.id === viewedAsset.id ? viewedAsset : item)),
+      (prev ?? []).map((item) =>
+        item.id === viewedAsset.id ? viewedAsset : item,
+      ),
     );
     void createAssetActivityLog({
       projectId: activeProjectIdRef.current,
@@ -1673,6 +1742,8 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
       },
     );
     setChamberDetails(viewedAsset.chamberDetails || {});
+    // Phase 7A.4: any Edit Details action should bring the left details panel back into view.
+    setIsPanelOpen(true);
 
     if (asset.geometry?.type === "Point") {
       const [lat, lng] = asset.geometry.coordinates;
@@ -1708,8 +1779,37 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
     }
   };
 
+  // =====================================================
+  // PHASE 7A.4 — REBUILD THROUGH-CABLE RESERVATIONS
+  // Applies service-calculated AFN / MDU reservation updates to every
+  // DP on the selected through-cable chain. Storage/save mechanics stay
+  // unchanged: this only updates the same savedJoints state path used by
+  // normal asset edits.
+  // =====================================================
+  const handleRebuildThroughCableReservations = (result: any) => {
+    const updates = Array.isArray(result?.updates) ? result.updates : [];
+    if (!updates.length) return;
 
+    const updatesById = new Map<string, any>(
+      updates
+        .filter((update: any) => update?.assetId && update?.dpDetails)
+        .map(
+          (update: any) => [String(update.assetId), update] as [string, any],
+        ),
+    );
 
+    setSavedJoints((prev) =>
+      (prev ?? []).map((asset) => {
+        const update = updatesById.get(String(asset.id || ""));
+        if (!update) return asset;
+
+        return markAssetForLiveSync({
+          ...(asset as any),
+          dpDetails: update.dpDetails,
+        } as SavedMapAsset);
+      }),
+    );
+  };
 
   // =====================================================
   // SURVEY DELETE HOMES WORKFLOW
@@ -1719,7 +1819,9 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
   // Feeder, link, PIA/Openreach and designed network assets are not touched.
   // =====================================================
   const handleToggleSurveyDeleteHomesMode = () => {
-    setMapMode((prev) => (prev === "survey-delete-homes" ? "pick" : "survey-delete-homes"));
+    setMapMode((prev) =>
+      prev === "survey-delete-homes" ? "pick" : "survey-delete-homes",
+    );
     setIsPanelOpen(true);
     setContextMenu((prev) => ({ ...prev, visible: false }));
   };
@@ -1782,7 +1884,8 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
         asset.assetType === "cable" &&
         (cableType.includes("drop") ||
           String((asset as any).isDropCable || "").toLowerCase() === "true" ||
-          String((asset as any).autoGeneratedDrop || "").toLowerCase() === "true" ||
+          String((asset as any).autoGeneratedDrop || "").toLowerCase() ===
+            "true" ||
           String((asset as any).autoGenerated || "").toLowerCase() === "true" ||
           String((asset as any).generated || "").toLowerCase() === "true") &&
         getDropHomeKeys(asset).some((key) => selectedHomeKeySet.has(key));
@@ -1790,7 +1893,9 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
       return isRelatedDropCable;
     };
 
-    setSavedJoints((prev) => (prev ?? []).filter((asset) => !shouldRemoveAsset(asset)));
+    setSavedJoints((prev) =>
+      (prev ?? []).filter((asset) => !shouldRemoveAsset(asset)),
+    );
 
     if (activeProjectId) {
       const updatedProjectHomes = (projectHomes ?? []).filter((home) => {
@@ -1803,8 +1908,13 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
       try {
         await saveProjectHomes(activeProjectId, updatedProjectHomes);
       } catch (err) {
-        console.error("Failed to save project homes after survey cleanup delete", err);
-        alert("Homes were removed from the map view, but saving project homes failed. Check the console before refreshing.");
+        console.error(
+          "Failed to save project homes after survey cleanup delete",
+          err,
+        );
+        alert(
+          "Homes were removed from the map view, but saving project homes failed. Check the console before refreshing.",
+        );
       }
     }
 
@@ -1844,7 +1954,8 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
     if (targetDp.assetType !== "distribution-point") return;
 
     const selectedHomes = allMapAssets.filter(
-      (asset) => asset.assetType === "home" && selectedMoveHomeIds.includes(asset.id),
+      (asset) =>
+        asset.assetType === "home" && selectedMoveHomeIds.includes(asset.id),
     );
 
     if (selectedHomes.length === 0) {
@@ -1868,7 +1979,9 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
       .filter(Boolean) as SavedMapAsset[];
 
     if (newDrops.length !== selectedHomes.length) {
-      alert("Some selected homes could not be moved because coordinates were missing.");
+      alert(
+        "Some selected homes could not be moved because coordinates were missing.",
+      );
       return;
     }
 
@@ -1908,7 +2021,9 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
         return stampHome(asset);
       });
 
-      const markedDrops = newDrops.map((drop) => markAssetForLiveSync(drop, true));
+      const markedDrops = newDrops.map((drop) =>
+        markAssetForLiveSync(drop, true),
+      );
 
       return [...updatedAssets, ...markedDrops];
     });
@@ -1934,9 +2049,10 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
 
     setSelectedMoveHomeIds([]);
     setMapMode("pick");
-    alert(`Moved ${selectedHomes.length} home${selectedHomes.length === 1 ? "" : "s"} to ${targetDp.name || "selected DP"}.`);
+    alert(
+      `Moved ${selectedHomes.length} home${selectedHomes.length === 1 ? "" : "s"} to ${targetDp.name || "selected DP"}.`,
+    );
   };
-
 
   // =====================================================
   // APP MODE / AUDIT BEHAVIOUR
@@ -1961,8 +2077,13 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
   }) => {
     if (!editingAssetId) return;
 
-    const beforeAsset = (savedJoints ?? []).find((asset) => asset.id === editingAssetId);
-    const reason = getChangeReasonForCurrentMode("updated", beforeAsset?.name || jointName);
+    const beforeAsset = (savedJoints ?? []).find(
+      (asset) => asset.id === editingAssetId,
+    );
+    const reason = getChangeReasonForCurrentMode(
+      "updated",
+      beforeAsset?.name || jointName,
+    );
     if (!reason) return;
 
     let savedAfterAsset: SavedMapAsset | null = null;
@@ -1983,77 +2104,90 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
         if (assetType === "area") {
           if (draftAreaPoints.length < 3) return asset;
 
-          savedAfterAsset = withAssetEditedMetadata(markAssetForLiveSync({
-            ...asset,
-            name: jointName.trim() || asset.name,
-            jointType: "Polygon Area",
-            notes: notes.trim(),
-            assetType: "area",
-            areaLevel,
-            geometry: {
-              type: "Polygon",
-              coordinates: [draftAreaPoints.map((p) => [p.lat, p.lng])],
-            },
-          }), "updated", reason);
+          savedAfterAsset = withAssetEditedMetadata(
+            markAssetForLiveSync({
+              ...asset,
+              name: jointName.trim() || asset.name,
+              jointType: "Polygon Area",
+              notes: notes.trim(),
+              assetType: "area",
+              areaLevel,
+              geometry: {
+                type: "Polygon",
+                coordinates: [draftAreaPoints.map((p) => [p.lat, p.lng])],
+              },
+            }),
+            "updated",
+            reason,
+          );
           return savedAfterAsset;
         }
 
         if (asset.geometry?.type === "Point") {
           if (!pickedLocation) return asset;
 
-          savedAfterAsset = withAssetEditedMetadata(markAssetForLiveSync({
-            ...asset,
-            name: jointName.trim() || asset.name,
-            jointType:
-              assetType === "street-cab"
-                ? "Street Cab"
-                : assetType === "pole"
-                  ? "Pole"
-                  : assetType === "distribution-point"
-                    ? "Distribution Point"
-                    : assetType === "chamber"
-                      ? "Chamber"
-                      : assetType === "home"
-                        ? "Home"
-                        : jointType,
-            notes: notes.trim(),
-            assetType,
-            poleDetails: assetType === "pole" ? nextPoleDetails : undefined,
-            dpDetails:
-              assetType === "distribution-point" ? nextDpDetails : undefined,
-            chamberDetails:
-              assetType === "chamber" ? nextChamberDetails : undefined,
-            geometry: {
-              type: "Point",
-              coordinates: [pickedLocation.lat, pickedLocation.lng],
-            },
-          }), "updated", reason);
+          savedAfterAsset = withAssetEditedMetadata(
+            markAssetForLiveSync({
+              ...asset,
+              name: jointName.trim() || asset.name,
+              jointType:
+                assetType === "street-cab"
+                  ? "Street Cab"
+                  : assetType === "pole"
+                    ? "Pole"
+                    : assetType === "distribution-point"
+                      ? "Distribution Point"
+                      : assetType === "chamber"
+                        ? "Chamber"
+                        : assetType === "home"
+                          ? "Home"
+                          : jointType,
+              notes: notes.trim(),
+              assetType,
+              poleDetails: assetType === "pole" ? nextPoleDetails : undefined,
+              dpDetails:
+                assetType === "distribution-point" ? nextDpDetails : undefined,
+              chamberDetails:
+                assetType === "chamber" ? nextChamberDetails : undefined,
+              geometry: {
+                type: "Point",
+                coordinates: [pickedLocation.lat, pickedLocation.lng],
+              },
+            }),
+            "updated",
+            reason,
+          );
           return savedAfterAsset;
         }
 
-        savedAfterAsset = withAssetEditedMetadata(markAssetForLiveSync({
-          ...asset,
-          name: jointName.trim() || asset.name,
-          jointType: "Cable",
-          notes: notes.trim(),
-          piaNoiNumber: cablePiaNoiNumber.trim(),
-          assetType: "cable",
-          cableType,
-          fibreCount,
-          installMethod,
-          parentCableId,
-          allocatedInputFibres,
-          routeMode: (asset as any).routeMode,
-          geometry: {
-            type: "LineString",
-            coordinates:
-              editedCableCoordinates?.length
+        savedAfterAsset = withAssetEditedMetadata(
+          markAssetForLiveSync({
+            ...asset,
+            name: jointName.trim() || asset.name,
+            jointType: "Cable",
+            notes: notes.trim(),
+            piaNoiNumber: cablePiaNoiNumber.trim(),
+            assetType: "cable",
+            cableType,
+            fibreCount,
+            installMethod,
+            parentCableId,
+            allocatedInputFibres,
+            routeMode: (asset as any).routeMode,
+            geometry: {
+              type: "LineString",
+              coordinates: editedCableCoordinates?.length
                 ? editedCableCoordinates
                 : sanitiseCableRouteCoordinates(
-                    (asset.geometry?.type === "LineString" ? asset.geometry.coordinates : []) as [number, number][],
+                    (asset.geometry?.type === "LineString"
+                      ? asset.geometry.coordinates
+                      : []) as [number, number][],
                   ),
-          },
-        }), "updated", reason);
+            },
+          }),
+          "updated",
+          reason,
+        );
         return savedAfterAsset;
       }),
     );
@@ -2466,8 +2600,13 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
   };
   const handleDeleteAsset = async (id: string) => {
     const deletedId = String(id);
-    const deletedAsset = (savedJoints ?? []).find((asset) => asset.id === deletedId);
-    const reason = getChangeReasonForCurrentMode("deleted", deletedAsset?.name || deletedId);
+    const deletedAsset = (savedJoints ?? []).find(
+      (asset) => asset.id === deletedId,
+    );
+    const reason = getChangeReasonForCurrentMode(
+      "deleted",
+      deletedAsset?.name || deletedId,
+    );
     if (!reason) return;
 
     const getHomeConnectionKey = (asset: any): string =>
@@ -2719,7 +2858,12 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
 
     setPickedLocation(clickedPoint);
     setAssetType(type as AssetType);
-    setJointName(getNextAssetName(savedJoints, type === "joint" ? "ag-joint" : (type as any)));
+    setJointName(
+      getNextAssetName(
+        savedJoints,
+        type === "joint" ? "ag-joint" : (type as any),
+      ),
+    );
     setMapMode("pick");
 
     if (type === "joint") {
@@ -2990,7 +3134,10 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
         if (loadedExistingHomes) return;
 
         const geojson = JSON.parse(String(e.target?.result || ""));
-        const importedHomes = createHomeAssetsFromGeoJson(geojson, map.getBounds());
+        const importedHomes = createHomeAssetsFromGeoJson(
+          geojson,
+          map.getBounds(),
+        );
         const homes = activeProjectArea
           ? filterAssetsForProjectArea(importedHomes, activeProjectArea)
           : importedHomes;
@@ -3123,9 +3270,9 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
     URL.revokeObjectURL(url);
   };
 
-
-
-  const normalisePiaGeoJsonCoordinate = (coord: any): [number, number] | null => {
+  const normalisePiaGeoJsonCoordinate = (
+    coord: any,
+  ): [number, number] | null => {
     if (!Array.isArray(coord) || coord.length < 2) return null;
 
     const x = Number(coord[0]);
@@ -3160,7 +3307,6 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
     return null;
   };
 
-
   const createPiaOverlayAssetsFromGeoJson = (geojson: any): SavedMapAsset[] => {
     if (!geojson?.features || !Array.isArray(geojson.features)) {
       throw new Error("Invalid GeoJSON FeatureCollection");
@@ -3168,8 +3314,12 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
 
     const existingPiaKeys = new Set(
       savedJoints
-        .filter((asset) => String((asset as any).source || "") === "pia-overlay")
-        .map((asset) => String((asset as any).piaRef || asset.name || asset.id || "").trim())
+        .filter(
+          (asset) => String((asset as any).source || "") === "pia-overlay",
+        )
+        .map((asset) =>
+          String((asset as any).piaRef || asset.name || asset.id || "").trim(),
+        )
         .filter(Boolean),
     );
 
@@ -3193,7 +3343,9 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
             `PIA Route ${index + 1}`,
         ).trim();
 
-        const description = String(props.description || props.Description || "").trim();
+        const description = String(
+          props.description || props.Description || "",
+        ).trim();
         const lowerName = rawName.toLowerCase();
         const lowerDescription = description.toLowerCase();
 
@@ -3248,10 +3400,14 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
         }
 
         setSavedJoints((prev) => [
-          ...prev.filter((asset) => String((asset as any).source || "") !== "pia-overlay"),
+          ...prev.filter(
+            (asset) => String((asset as any).source || "") !== "pia-overlay",
+          ),
           ...piaAssets,
         ]);
-        alert(`Imported ${piaAssets.length} PIA overlay routes. Existing PIA overlay routes were replaced.`);
+        alert(
+          `Imported ${piaAssets.length} PIA overlay routes. Existing PIA overlay routes were replaced.`,
+        );
       } catch (err: any) {
         console.error(err);
         alert(`PIA overlay import failed: ${err.message || String(err)}`);
@@ -3260,7 +3416,6 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
 
     reader.readAsText(file);
   };
-
 
   // =====================================================
   // ONE-BUTTON GEOJSON MAP ASSET IMPORTER
@@ -3271,10 +3426,18 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
   // to saved map assets and are mirrored by split storage.
   // =====================================================
 
-  const readGeoJsonProp = (props: any, keys: string[], fallback = ""): string => {
+  const readGeoJsonProp = (
+    props: any,
+    keys: string[],
+    fallback = "",
+  ): string => {
     for (const key of keys) {
       const value = props?.[key];
-      if (value !== undefined && value !== null && String(value).trim() !== "") {
+      if (
+        value !== undefined &&
+        value !== null &&
+        String(value).trim() !== ""
+      ) {
         return String(value).trim();
       }
     }
@@ -3304,7 +3467,9 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
       .toLowerCase();
   };
 
-  const classifyGeoJsonFeature = (feature: any): AssetType | "pia-route" | "home" | "area" | "cable" => {
+  const classifyGeoJsonFeature = (
+    feature: any,
+  ): AssetType | "pia-route" | "home" | "area" | "cable" => {
     const geometryType = String(feature?.geometry?.type || "");
     const text = buildGeoJsonAssetText(feature);
     const props = feature?.properties || {};
@@ -3317,16 +3482,14 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
     // searched values, so 300k Bradford UPRN points were being imported as DPs.
     if (
       geometryType === "Point" &&
-      (
-        propKeys.includes("uprn") ||
+      (propKeys.includes("uprn") ||
         propKeys.includes("udprn") ||
         propKeys.includes("toid") ||
         text.includes("uprn") ||
         text.includes("home") ||
         text.includes("premise") ||
         text.includes("building") ||
-        text.includes("residential")
-      )
+        text.includes("residential"))
     ) {
       return "home";
     }
@@ -3345,11 +3508,22 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
 
     if (geometryType.includes("LineString")) return "cable";
 
-    if (text.includes("street cab") || text.includes("streetcab") || text.includes("cabinet") || text.includes("cab")) {
+    if (
+      text.includes("street cab") ||
+      text.includes("streetcab") ||
+      text.includes("cabinet") ||
+      text.includes("cab")
+    ) {
       return "street-cab" as AssetType;
     }
 
-    if (text.includes("chamber") || text.includes("fw2") || text.includes("fw4") || text.includes("fw6") || text.includes("fw10")) {
+    if (
+      text.includes("chamber") ||
+      text.includes("fw2") ||
+      text.includes("fw4") ||
+      text.includes("fw6") ||
+      text.includes("fw10")
+    ) {
       return "chamber" as AssetType;
     }
 
@@ -3368,9 +3542,12 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
     }
 
     if (text.includes("exchange")) return "exchange" as AssetType;
-    if (text.includes("lmj") || text.includes("cmj") || text.includes("ag")) return "ag-joint" as AssetType;
+    if (text.includes("lmj") || text.includes("cmj") || text.includes("ag"))
+      return "ag-joint" as AssetType;
 
-    return geometryType === "Point" ? ("distribution-point" as AssetType) : "cable";
+    return geometryType === "Point"
+      ? ("distribution-point" as AssetType)
+      : "cable";
   };
 
   const convertGeoJsonPoint = (coordinates: any): [number, number] | null => {
@@ -3391,9 +3568,18 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
       .filter((ring: [number, number][]) => ring.length >= 3);
   };
 
-  const buildImportedAssetBase = (feature: any, index: number, importKind: string) => {
+  const buildImportedAssetBase = (
+    feature: any,
+    index: number,
+    importKind: string,
+  ) => {
     const props = feature?.properties || {};
-    const existingId = readGeoJsonProp(props, ["id", "ID", "assetId", "AssetId"]);
+    const existingId = readGeoJsonProp(props, [
+      "id",
+      "ID",
+      "assetId",
+      "AssetId",
+    ]);
     const name = readGeoJsonProp(
       props,
       ["name", "Name", "label", "Label", "ref", "Ref", "id", "ID"],
@@ -3401,9 +3587,16 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
     );
 
     return {
-      id: existingId ? `${importKind}-${existingId}` : `${importKind}-${crypto.randomUUID()}`,
+      id: existingId
+        ? `${importKind}-${existingId}`
+        : `${importKind}-${crypto.randomUUID()}`,
       name,
-      notes: readGeoJsonProp(props, ["notes", "Notes", "description", "Description"]),
+      notes: readGeoJsonProp(props, [
+        "notes",
+        "Notes",
+        "description",
+        "Description",
+      ]),
       status: readGeoJsonProp(props, ["status", "Status"], "Planned"),
       source: readGeoJsonProp(props, ["source", "Source"], "geojson-import"),
       importedProperties: props,
@@ -3431,19 +3624,32 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
         const point = convertGeoJsonPoint(feature.geometry.coordinates);
         if (!point) return;
 
-        const rawUprn = readGeoJsonProp(props, ["UPRN", "uprn", "Uprn", "id", "ID"]);
+        const rawUprn = readGeoJsonProp(props, [
+          "UPRN",
+          "uprn",
+          "Uprn",
+          "id",
+          "ID",
+        ]);
         const id = rawUprn ? `uprn-${rawUprn}` : `home-${crypto.randomUUID()}`;
         homeAssets.push(
           markAssetForLiveSync(
             {
               id,
-              name: rawUprn ? `UPRN ${rawUprn}` : readGeoJsonProp(props, ["name", "Name"], "Home"),
+              name: rawUprn
+                ? `UPRN ${rawUprn}`
+                : readGeoJsonProp(props, ["name", "Name"], "Home"),
               assetType: "home",
               jointType: "Home",
               uprn: rawUprn || undefined,
               projectId: activeProjectId || undefined,
               connectionMode: "auto",
-              notes: readGeoJsonProp(props, ["notes", "Notes", "description", "Description"]),
+              notes: readGeoJsonProp(props, [
+                "notes",
+                "Notes",
+                "description",
+                "Description",
+              ]),
               importedProperties: props,
               geometry: {
                 type: "Point",
@@ -3469,7 +3675,11 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
                 jointType: "PIA Route",
                 cableType: "PIA Overlay",
                 installMethod: "Underground",
-                piaKind: buildGeoJsonAssetText(feature).includes("trench") || buildGeoJsonAssetText(feature).includes("trnch") ? "trench" : "duct",
+                piaKind:
+                  buildGeoJsonAssetText(feature).includes("trench") ||
+                  buildGeoJsonAssetText(feature).includes("trnch")
+                    ? "trench"
+                    : "duct",
                 geometry: {
                   type: "LineString",
                   coordinates: coords,
@@ -3485,11 +3695,17 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
       if (geometryType === "Point") {
         const point = convertGeoJsonPoint(feature.geometry.coordinates);
         if (!point) return;
-        const base = buildImportedAssetBase(feature, index, String(classifiedType));
+        const base = buildImportedAssetBase(
+          feature,
+          index,
+          String(classifiedType),
+        );
         const jointType = readGeoJsonProp(
           props,
           ["jointType", "JointType", "type", "Type", "dpType", "DPType"],
-          classifiedType === "distribution-point" ? "DP" : String(classifiedType),
+          classifiedType === "distribution-point"
+            ? "DP"
+            : String(classifiedType),
         );
 
         networkAssets.push(
@@ -3522,10 +3738,26 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
             {
               ...base,
               assetType: "cable" as AssetType,
-              jointType: readGeoJsonProp(props, ["jointType", "JointType"], "Cable"),
-              cableType: readGeoJsonProp(props, ["cableType", "CableType"], "Feeder"),
-              fibreCount: readGeoJsonProp(props, ["fibreCount", "FibreCount", "fibres"], ""),
-              installMethod: readGeoJsonProp(props, ["installMethod", "InstallMethod"], "Underground"),
+              jointType: readGeoJsonProp(
+                props,
+                ["jointType", "JointType"],
+                "Cable",
+              ),
+              cableType: readGeoJsonProp(
+                props,
+                ["cableType", "CableType"],
+                "Feeder",
+              ),
+              fibreCount: readGeoJsonProp(
+                props,
+                ["fibreCount", "FibreCount", "fibres"],
+                "",
+              ),
+              installMethod: readGeoJsonProp(
+                props,
+                ["installMethod", "InstallMethod"],
+                "Underground",
+              ),
               geometry: {
                 type: "LineString",
                 coordinates: coords,
@@ -3551,8 +3783,16 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
                 name: `${base.name} ${lineIndex + 1}`,
                 assetType: "cable" as AssetType,
                 jointType: "Cable",
-                cableType: readGeoJsonProp(props, ["cableType", "CableType"], "Feeder"),
-                installMethod: readGeoJsonProp(props, ["installMethod", "InstallMethod"], "Underground"),
+                cableType: readGeoJsonProp(
+                  props,
+                  ["cableType", "CableType"],
+                  "Feeder",
+                ),
+                installMethod: readGeoJsonProp(
+                  props,
+                  ["installMethod", "InstallMethod"],
+                  "Underground",
+                ),
                 geometry: {
                   type: "LineString",
                   coordinates: coords,
@@ -3574,7 +3814,11 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
               ...buildImportedAssetBase(feature, index, "area"),
               assetType: "area" as AssetType,
               jointType: "Polygon Area",
-              areaLevel: readGeoJsonProp(props, ["areaLevel", "level", "Level"], "L0"),
+              areaLevel: readGeoJsonProp(
+                props,
+                ["areaLevel", "level", "Level"],
+                "L0",
+              ),
               geometry: {
                 type: "Polygon",
                 coordinates: rings,
@@ -3588,28 +3832,34 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
 
       if (geometryType === "MultiPolygon") {
         if (!Array.isArray(feature.geometry.coordinates)) return;
-        feature.geometry.coordinates.forEach((polygon: any, polygonIndex: number) => {
-          const rings = convertGeoJsonPolygon(polygon);
-          if (!rings.length) return;
-          const base = buildImportedAssetBase(feature, index, "area");
-          networkAssets.push(
-            markAssetForLiveSync(
-              {
-                ...base,
-                id: `${base.id}-${polygonIndex + 1}`,
-                name: `${base.name} ${polygonIndex + 1}`,
-                assetType: "area" as AssetType,
-                jointType: "Polygon Area",
-                areaLevel: readGeoJsonProp(props, ["areaLevel", "level", "Level"], "L0"),
-                geometry: {
-                  type: "Polygon",
-                  coordinates: rings,
-                },
-              } as SavedMapAsset,
-              true,
-            ),
-          );
-        });
+        feature.geometry.coordinates.forEach(
+          (polygon: any, polygonIndex: number) => {
+            const rings = convertGeoJsonPolygon(polygon);
+            if (!rings.length) return;
+            const base = buildImportedAssetBase(feature, index, "area");
+            networkAssets.push(
+              markAssetForLiveSync(
+                {
+                  ...base,
+                  id: `${base.id}-${polygonIndex + 1}`,
+                  name: `${base.name} ${polygonIndex + 1}`,
+                  assetType: "area" as AssetType,
+                  jointType: "Polygon Area",
+                  areaLevel: readGeoJsonProp(
+                    props,
+                    ["areaLevel", "level", "Level"],
+                    "L0",
+                  ),
+                  geometry: {
+                    type: "Polygon",
+                    coordinates: rings,
+                  },
+                } as SavedMapAsset,
+                true,
+              ),
+            );
+          },
+        );
       }
     });
 
@@ -3622,7 +3872,8 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
     reader.onload = async (e) => {
       try {
         const geojson = JSON.parse(String(e.target?.result || ""));
-        const { networkAssets: rawNetworkAssets, homeAssets: rawHomeAssets } = createMapAssetsFromAnyGeoJson(geojson);
+        const { networkAssets: rawNetworkAssets, homeAssets: rawHomeAssets } =
+          createMapAssetsFromAnyGeoJson(geojson);
 
         const networkAssets = activeProjectArea
           ? filterAssetsForProjectArea(rawNetworkAssets, activeProjectArea)
@@ -3632,20 +3883,31 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
           : rawHomeAssets;
 
         if (!networkAssets.length && !homeAssets.length) {
-          alert("No supported GeoJSON map assets found inside the selected project area. Check the area polygon is selected before importing.");
+          alert(
+            "No supported GeoJSON map assets found inside the selected project area. Check the area polygon is selected before importing.",
+          );
           return;
         }
 
         let savedHomeCount = 0;
         if (homeAssets.length) {
           if (!activeProjectId) {
-            alert("This file contains homes/UPRNs. Select a project area first so homes can be saved to project home chunks.");
+            alert(
+              "This file contains homes/UPRNs. Select a project area first so homes can be saved to project home chunks.",
+            );
             return;
           }
 
-          const existingHomes = loadedHomesProjectId === activeProjectId ? projectHomes : await loadProjectHomes(activeProjectId);
+          const existingHomes =
+            loadedHomesProjectId === activeProjectId
+              ? projectHomes
+              : await loadProjectHomes(activeProjectId);
           const existingHomeKeys = new Set(
-            existingHomes.map((home: any) => String(home.uprn || home.id || home.name || "").trim()).filter(Boolean),
+            existingHomes
+              .map((home: any) =>
+                String(home.uprn || home.id || home.name || "").trim(),
+              )
+              .filter(Boolean),
           );
           const newHomes = homeAssets.filter((home: any) => {
             const key = String(home.uprn || home.id || home.name || "").trim();
@@ -3655,7 +3917,13 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
           });
 
           if (newHomes.length) {
-            const mergedHomes = [...existingHomes, ...newHomes.map((home) => ({ ...home, projectId: activeProjectId }))];
+            const mergedHomes = [
+              ...existingHomes,
+              ...newHomes.map((home) => ({
+                ...home,
+                projectId: activeProjectId,
+              })),
+            ];
             await saveProjectHomes(activeProjectId, mergedHomes);
             setProjectHomes(mergedHomes);
             setLoadedHomesProjectId(activeProjectId);
@@ -3664,7 +3932,9 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
         }
 
         if (networkAssets.length) {
-          const existingIds = new Set(savedJoints.map((asset) => String(asset.id)));
+          const existingIds = new Set(
+            savedJoints.map((asset) => String(asset.id)),
+          );
           const dedupedNetworkAssets = networkAssets.filter((asset) => {
             const id = String(asset.id);
             if (existingIds.has(id)) return false;
@@ -3674,7 +3944,9 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
           setSavedJoints((prev) => [...prev, ...dedupedNetworkAssets]);
         }
 
-        alert(`Imported ${networkAssets.length} network asset(s) and ${savedHomeCount} home(s) from GeoJSON.`);
+        alert(
+          `Imported ${networkAssets.length} network asset(s) and ${savedHomeCount} home(s) from GeoJSON.`,
+        );
       } catch (err: any) {
         console.error(err);
         alert(`GeoJSON map asset import failed: ${err.message || String(err)}`);
@@ -3686,11 +3958,23 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
 
   const isPiaOverlayAsset = (asset: SavedMapAsset): boolean => {
     const item = asset as any;
-    const source = String(item.source || "").trim().toLowerCase();
-    const assetType = String(item.assetType || "").trim().toLowerCase();
-    const jointType = String(item.jointType || "").trim().toLowerCase();
-    const cableType = String(item.cableType || "").trim().toLowerCase();
-    const routeType = String(item.routeType || item.importedProperties?.routeType || "").trim().toLowerCase();
+    const source = String(item.source || "")
+      .trim()
+      .toLowerCase();
+    const assetType = String(item.assetType || "")
+      .trim()
+      .toLowerCase();
+    const jointType = String(item.jointType || "")
+      .trim()
+      .toLowerCase();
+    const cableType = String(item.cableType || "")
+      .trim()
+      .toLowerCase();
+    const routeType = String(
+      item.routeType || item.importedProperties?.routeType || "",
+    )
+      .trim()
+      .toLowerCase();
 
     return (
       source === "pia-overlay" ||
@@ -3716,11 +4000,16 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
 
     return coords
       .filter((point: any) => Array.isArray(point) && point.length >= 2)
-      .map((point: any) => [Number(point[0]), Number(point[1])] as [number, number])
+      .map(
+        (point: any) =>
+          [Number(point[0]), Number(point[1])] as [number, number],
+      )
       .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
   };
 
-  const getAssetPointPosition = (asset: SavedMapAsset): [number, number] | null => {
+  const getAssetPointPosition = (
+    asset: SavedMapAsset,
+  ): [number, number] | null => {
     const coords = (asset as any).geometry?.coordinates;
     if (!Array.isArray(coords) || coords.length < 2) return null;
 
@@ -3732,12 +4021,26 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
 
   const isImportedOrDuctAsset = (asset: SavedMapAsset): boolean => {
     const item = asset as any;
-    const source = String(item.source || "").trim().toLowerCase();
-    const assetType = String(item.assetType || "").trim().toLowerCase();
-    const jointType = String(item.jointType || "").trim().toLowerCase();
-    const cableType = String(item.cableType || "").trim().toLowerCase();
-    const routeType = String(item.routeType || item.importedProperties?.routeType || "").trim().toLowerCase();
-    const geometryType = String(item.geometry?.type || item.geometryType || "").trim().toLowerCase();
+    const source = String(item.source || "")
+      .trim()
+      .toLowerCase();
+    const assetType = String(item.assetType || "")
+      .trim()
+      .toLowerCase();
+    const jointType = String(item.jointType || "")
+      .trim()
+      .toLowerCase();
+    const cableType = String(item.cableType || "")
+      .trim()
+      .toLowerCase();
+    const routeType = String(
+      item.routeType || item.importedProperties?.routeType || "",
+    )
+      .trim()
+      .toLowerCase();
+    const geometryType = String(item.geometry?.type || item.geometryType || "")
+      .trim()
+      .toLowerCase();
 
     return (
       geometryType === "linestring" &&
@@ -3752,21 +4055,39 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
 
   const isImportedOrChamberAsset = (asset: SavedMapAsset): boolean => {
     const item = asset as any;
-    const assetType = String(item.assetType || "").trim().toLowerCase();
-    const jointType = String(item.jointType || "").trim().toLowerCase();
-    return assetType === "chamber" || assetType === "or-chamber" || jointType.includes("chamber");
+    const assetType = String(item.assetType || "")
+      .trim()
+      .toLowerCase();
+    const jointType = String(item.jointType || "")
+      .trim()
+      .toLowerCase();
+    return (
+      assetType === "chamber" ||
+      assetType === "or-chamber" ||
+      jointType.includes("chamber")
+    );
   };
 
   const isImportedOrPoleAsset = (asset: SavedMapAsset): boolean => {
     const item = asset as any;
-    const assetType = String(item.assetType || "").trim().toLowerCase();
-    const jointType = String(item.jointType || "").trim().toLowerCase();
-    return assetType === "pole" || assetType === "or-pole" || jointType.includes("pole");
+    const assetType = String(item.assetType || "")
+      .trim()
+      .toLowerCase();
+    const jointType = String(item.jointType || "")
+      .trim()
+      .toLowerCase();
+    return (
+      assetType === "pole" ||
+      assetType === "or-pole" ||
+      jointType.includes("pole")
+    );
   };
 
   const handleDeletePiaOverlayForActiveProject = () => {
     if (!activeProjectArea) {
-      alert("Select a project area first, then delete the PIA / Openreach overlay for that area.");
+      alert(
+        "Select a project area first, then delete the PIA / Openreach overlay for that area.",
+      );
       return;
     }
 
@@ -3776,7 +4097,9 @@ const handleOpenExchange = async (exchange: ExchangeAsset) => {
     );
 
     if (!scopedPiaAssets.length) {
-      alert("No PIA / Openreach overlay assets were found inside this selected project area.");
+      alert(
+        "No PIA / Openreach overlay assets were found inside this selected project area.",
+      );
       return;
     }
 
@@ -3791,10 +4114,13 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
 
     const deleteIds = new Set(scopedPiaAssets.map((asset) => String(asset.id)));
 
-    setSavedJoints((prev) => prev.filter((asset) => !deleteIds.has(String(asset.id))));
-    alert(`Deleted ${scopedPiaAssets.length} PIA / Openreach overlay route(s) from ${areaName}.`);
+    setSavedJoints((prev) =>
+      prev.filter((asset) => !deleteIds.has(String(asset.id))),
+    );
+    alert(
+      `Deleted ${scopedPiaAssets.length} PIA / Openreach overlay route(s) from ${areaName}.`,
+    );
   };
-
 
   const handleImportJson = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -3826,15 +4152,23 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
           const item = asset as any;
           const assetType = String(item.assetType || "").toLowerCase();
           const cableType = String(item.cableType || "").toLowerCase();
-          const name = String(item.name || item.cableId || item.id || "").toLowerCase();
-          const fibreNumber = Number(String(item.fibreCount || "").replace(/\D/g, "")) || 0;
+          const name = String(
+            item.name || item.cableId || item.id || "",
+          ).toLowerCase();
+          const fibreNumber =
+            Number(String(item.fibreCount || "").replace(/\D/g, "")) || 0;
 
           if (asset.id === editingAssetId) return false;
           if (asset.geometry?.type !== "LineString") return false;
           if (assetType && assetType !== "cable") return false;
 
           // Customer drops are not valid AFN through/parent cables.
-          if (isDropCable(asset) || cableType.includes("drop") || name.includes("drop")) return false;
+          if (
+            isDropCable(asset) ||
+            cableType.includes("drop") ||
+            name.includes("drop")
+          )
+            return false;
 
           // Keep broad so newly drawn Link/Distribution/Spine/ULW/OH cables
           // appear immediately, including older saved records with only size.
@@ -3941,7 +4275,9 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
     return (
       <div style={projectWorkspaceLoadingOverlay}>
         <div style={projectWorkspaceLoadingCard}>
-          <div style={{ fontSize: 13, color: "#93c5fd", fontWeight: 800 }}>Opening Project</div>
+          <div style={{ fontSize: 13, color: "#93c5fd", fontWeight: 800 }}>
+            Opening Project
+          </div>
           <div style={{ fontSize: 26, fontWeight: 900, marginTop: 8 }}>
             {activeProjectArea.name || "Selected Project"}
           </div>
@@ -4003,7 +4339,6 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         color: "white",
       }}
     >
-
       {/* =====================================================
           TOP LEFT: TOOLS DRAWER TOGGLE
           Keeps the first view clean and lets the full editor slide out.
@@ -4064,7 +4399,12 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
           <button
             type="button"
             onClick={() => setIsProjectWorkspaceOpen(true)}
-            style={{ ...btnPrimary, width: "100%", marginTop: 10, marginBottom: 6 }}
+            style={{
+              ...btnPrimary,
+              width: "100%",
+              marginTop: 10,
+              marginBottom: 6,
+            }}
           >
             Open Project Workspace
           </button>
@@ -4081,24 +4421,31 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         )}
 
         <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 10 }}>
-          Scope: {activeProjectArea ? activeProjectArea.name || "Selected area" : "Whole network"}
+          Scope:{" "}
+          {activeProjectArea
+            ? activeProjectArea.name || "Selected area"
+            : "Whole network"}
         </div>
-
-
 
         <details style={card}>
           <summary style={sectionSummary}>Survey Cleanup</summary>
           <div style={sectionBody}>
             <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.4 }}>
-              Select wrong imported homes on the map and delete them in one batch. This does not touch DPs, joints, feeder/link cables, project areas or PIA/Openreach overlay.
+              Select wrong imported homes on the map and delete them in one
+              batch. This does not touch DPs, joints, feeder/link cables,
+              project areas or PIA/Openreach overlay.
             </div>
 
             <button
               type="button"
               onClick={handleToggleSurveyDeleteHomesMode}
-              style={mapMode === "survey-delete-homes" ? btnDanger : btnSecondary}
+              style={
+                mapMode === "survey-delete-homes" ? btnDanger : btnSecondary
+              }
             >
-              {mapMode === "survey-delete-homes" ? "✓ Delete Homes Mode Active" : "Delete Wrong Homes"}
+              {mapMode === "survey-delete-homes"
+                ? "✓ Delete Homes Mode Active"
+                : "Delete Wrong Homes"}
             </button>
 
             {mapMode === "survey-delete-homes" ? (
@@ -4113,9 +4460,13 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
                 }}
               >
                 <div style={{ fontWeight: 800, marginBottom: 4 }}>
-                  {selectedSurveyDeleteHomeIds.length} home{selectedSurveyDeleteHomeIds.length === 1 ? "" : "s"} selected
+                  {selectedSurveyDeleteHomeIds.length} home
+                  {selectedSurveyDeleteHomeIds.length === 1 ? "" : "s"} selected
                 </div>
-                <div>Click incorrect homes to select/unselect them, then bulk delete.</div>
+                <div>
+                  Click incorrect homes to select/unselect them, then bulk
+                  delete.
+                </div>
               </div>
             ) : null}
 
@@ -4154,7 +4505,8 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
           <summary style={sectionSummary}>Home Reassignment</summary>
           <div style={sectionBody}>
             <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.4 }}>
-              Move UPRNs/homes from one DP to another without touching feeder or link cables.
+              Move UPRNs/homes from one DP to another without touching feeder or
+              link cables.
             </div>
 
             <button
@@ -4162,7 +4514,9 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
               onClick={handleToggleMoveHomesMode}
               style={mapMode === "move-homes" ? btnPrimary : btnSecondary}
             >
-              {mapMode === "move-homes" ? "✓ Move Homes Active" : "Move Homes to DP"}
+              {mapMode === "move-homes"
+                ? "✓ Move Homes Active"
+                : "Move Homes to DP"}
             </button>
 
             {mapMode === "move-homes" ? (
@@ -4177,9 +4531,12 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
                 }}
               >
                 <div style={{ fontWeight: 800, marginBottom: 4 }}>
-                  {selectedMoveHomeIds.length} home{selectedMoveHomeIds.length === 1 ? "" : "s"} selected
+                  {selectedMoveHomeIds.length} home
+                  {selectedMoveHomeIds.length === 1 ? "" : "s"} selected
                 </div>
-                <div>Click UPRNs/homes to select them, then click the target DP.</div>
+                <div>
+                  Click UPRNs/homes to select them, then click the target DP.
+                </div>
               </div>
             ) : null}
 
@@ -4282,9 +4639,15 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
                   max={Number(String(fibreCount).replace(/\D/g, "")) || 288}
                   value={allocatedInputFibres.length}
                   onChange={(e) => {
-                    const max = Number(String(fibreCount).replace(/\D/g, "")) || 288;
-                    const next = Math.max(0, Math.min(max, Number(e.target.value) || 0));
-                    setAllocatedInputFibres(Array.from({ length: next }, (_, index) => index + 1));
+                    const max =
+                      Number(String(fibreCount).replace(/\D/g, "")) || 288;
+                    const next = Math.max(
+                      0,
+                      Math.min(max, Number(e.target.value) || 0),
+                    );
+                    setAllocatedInputFibres(
+                      Array.from({ length: next }, (_, index) => index + 1),
+                    );
                   }}
                   style={input}
                 />
@@ -4292,7 +4655,9 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
                 <div style={{ ...label, marginTop: 10 }}>Install Method</div>
                 <select
                   value={installMethod}
-                  onChange={(e) => setInstallMethod(e.target.value as InstallMethod)}
+                  onChange={(e) =>
+                    setInstallMethod(e.target.value as InstallMethod)
+                  }
                   style={input}
                 >
                   <option>Underground</option>
@@ -4301,10 +4666,14 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
                   <option>New Duct</option>
                 </select>
 
-                <div style={{ ...label, marginTop: 10 }}>Parent / Through Cable</div>
+                <div style={{ ...label, marginTop: 10 }}>
+                  Parent / Through Cable
+                </div>
                 <select
                   value={parentCableId || ""}
-                  onChange={(e) => setParentCableId(e.target.value || undefined)}
+                  onChange={(e) =>
+                    setParentCableId(e.target.value || undefined)
+                  }
                   style={input}
                 >
                   <option value="">No parent cable</option>
@@ -4357,7 +4726,6 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
               </>
             ) : null}
 
-
             <AssetDetailsSidebarSections
               assetType={assetType}
               poleDetails={poleDetails}
@@ -4366,6 +4734,9 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
               onChangePoleDetails={setPoleDetails}
               onChangeChamberDetails={setChamberDetails}
               onChangeDpDetails={setDpDetails}
+              onRebuildThroughCableReservations={
+                handleRebuildThroughCableReservations
+              }
               connectedHomes={connectedHomesForSelectedDp}
               availableThroughCables={availableParentCablesForBranchAllocation}
               allDistributionPoints={allDistributionPointsForAfnAllocation}
@@ -4387,7 +4758,9 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
               <>
                 {currentEditingAsset?.assetType === "ag-joint" ? (
                   <button
-                    onClick={() => currentEditingAsset && onOpenJoint(currentEditingAsset)}
+                    onClick={() =>
+                      currentEditingAsset && onOpenJoint(currentEditingAsset)
+                    }
                     style={{ ...btnPrimary, marginTop: 10 }}
                   >
                     Open Joint Editor
@@ -4396,7 +4769,10 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
 
                 {currentEditingAsset?.assetType === "street-cab" ? (
                   <button
-                    onClick={() => currentEditingAsset && setOpenStreetCabAsset(currentEditingAsset)}
+                    onClick={() =>
+                      currentEditingAsset &&
+                      setOpenStreetCabAsset(currentEditingAsset)
+                    }
                     style={{ ...btnPrimary, marginTop: 10 }}
                   >
                     Open Street Cab Editor
@@ -4422,11 +4798,29 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
                     : "Right click the map to choose what you want to create here."}
                 </div>
 
-                <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-                  <button onClick={() => setMapMode("pick")} style={mapMode === "pick" ? btnPrimary : btnSecondary}>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    marginTop: 10,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <button
+                    onClick={() => setMapMode("pick")}
+                    style={mapMode === "pick" ? btnPrimary : btnSecondary}
+                  >
                     Pick Location
                   </button>
-                  <button onClick={handleSaveJoint} style={btnPrimary} disabled={!pickedLocation && assetType !== "cable" && assetType !== "area"}>
+                  <button
+                    onClick={handleSaveJoint}
+                    style={btnPrimary}
+                    disabled={
+                      !pickedLocation &&
+                      assetType !== "cable" &&
+                      assetType !== "area"
+                    }
+                  >
                     Save Asset
                   </button>
                   <button onClick={openCableModalForNew} style={btnSecondary}>
@@ -4452,7 +4846,14 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
             ) : null}
 
             {editingAssetId ? (
-              <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  marginTop: 10,
+                  flexWrap: "wrap",
+                }}
+              >
                 <button onClick={() => handleSaveEdits()} style={btnPrimary}>
                   Save Changes
                 </button>
@@ -4463,41 +4864,125 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
             ) : null}
 
             {mapMode === "draw-area" ? (
-              <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid #334155" }}>
-                <div style={label}>{editingAssetId ? "Edit Polygon Area" : "Polygon Area Drawing"}</div>
-                <div style={{ color: "#9ca3af" }}>
-                  Click around the boundary. Drag blue area point markers to adjust it.
+              <div
+                style={{
+                  marginTop: 14,
+                  paddingTop: 12,
+                  borderTop: "1px solid #334155",
+                }}
+              >
+                <div style={label}>
+                  {editingAssetId
+                    ? "Edit Polygon Area"
+                    : "Polygon Area Drawing"}
                 </div>
-                <div style={{ marginTop: 8, color: "#e5e7eb" }}>Points: {draftAreaPoints.length}</div>
-                <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-                  <button onClick={handleUndoAreaPoint} style={btnSecondary} disabled={draftAreaPoints.length === 0}>Undo</button>
-                  <button onClick={handleClearArea} style={btnSecondary} disabled={draftAreaPoints.length === 0}>Clear</button>
+                <div style={{ color: "#9ca3af" }}>
+                  Click around the boundary. Drag blue area point markers to
+                  adjust it.
+                </div>
+                <div style={{ marginTop: 8, color: "#e5e7eb" }}>
+                  Points: {draftAreaPoints.length}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    marginTop: 10,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <button
+                    onClick={handleUndoAreaPoint}
+                    style={btnSecondary}
+                    disabled={draftAreaPoints.length === 0}
+                  >
+                    Undo
+                  </button>
+                  <button
+                    onClick={handleClearArea}
+                    style={btnSecondary}
+                    disabled={draftAreaPoints.length === 0}
+                  >
+                    Clear
+                  </button>
                   {!editingAssetId ? (
-                    <button onClick={handleFinishArea} style={btnPrimary} disabled={draftAreaPoints.length < 3}>Finish Area</button>
+                    <button
+                      onClick={handleFinishArea}
+                      style={btnPrimary}
+                      disabled={draftAreaPoints.length < 3}
+                    >
+                      Finish Area
+                    </button>
                   ) : (
-                    <button onClick={() => handleSaveEdits()} style={btnPrimary} disabled={draftAreaPoints.length < 3}>Save Area</button>
+                    <button
+                      onClick={() => handleSaveEdits()}
+                      style={btnPrimary}
+                      disabled={draftAreaPoints.length < 3}
+                    >
+                      Save Area
+                    </button>
                   )}
                 </div>
               </div>
             ) : null}
 
             {mapMode === "draw-cable" ? (
-              <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid #334155" }}>
-                <div style={label}>{editingAssetId ? "Edit Cable Route" : "Cable Drawing"}</div>
-                <div style={{ color: "#9ca3af" }}>
-                  Click the map to add points. Drag points to move them. Click a segment to insert a point.
+              <div
+                style={{
+                  marginTop: 14,
+                  paddingTop: 12,
+                  borderTop: "1px solid #334155",
+                }}
+              >
+                <div style={label}>
+                  {editingAssetId ? "Edit Cable Route" : "Cable Drawing"}
                 </div>
-                <div style={{ marginTop: 8, color: "#e5e7eb" }}>Points: {draftCablePoints.length}</div>
-                <div style={{ fontWeight: 700, color: "#fbbf24" }}>Length: {formatDistance(draftCableDistance)}</div>
-                <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-                  <button onClick={handleUndoCablePoint} style={btnSecondary} disabled={draftCablePoints.length === 0}>Undo</button>
-                  <button onClick={handleClearCable} style={btnSecondary} disabled={draftCablePoints.length === 0}>Clear</button>
+                <div style={{ color: "#9ca3af" }}>
+                  Click the map to add points. Drag points to move them. Click a
+                  segment to insert a point.
+                </div>
+                <div style={{ marginTop: 8, color: "#e5e7eb" }}>
+                  Points: {draftCablePoints.length}
+                </div>
+                <div style={{ fontWeight: 700, color: "#fbbf24" }}>
+                  Length: {formatDistance(draftCableDistance)}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    marginTop: 10,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <button
+                    onClick={handleUndoCablePoint}
+                    style={btnSecondary}
+                    disabled={draftCablePoints.length === 0}
+                  >
+                    Undo
+                  </button>
+                  <button
+                    onClick={handleClearCable}
+                    style={btnSecondary}
+                    disabled={draftCablePoints.length === 0}
+                  >
+                    Clear
+                  </button>
                   {!editingAssetId ? (
-                    <button onClick={handleFinishCable} style={btnPrimary} disabled={draftCablePoints.length < 2 || isRoutingCable}>
+                    <button
+                      onClick={handleFinishCable}
+                      style={btnPrimary}
+                      disabled={draftCablePoints.length < 2 || isRoutingCable}
+                    >
                       {isRoutingCable ? "Routing Cable..." : "Finish Cable"}
                     </button>
                   ) : (
-                    <button onClick={() => handleSaveEdits()} style={btnPrimary} disabled={draftCablePoints.length < 2 || isRoutingCable}>
+                    <button
+                      onClick={() => handleSaveEdits()}
+                      style={btnPrimary}
+                      disabled={draftCablePoints.length < 2 || isRoutingCable}
+                    >
                       {isRoutingCable ? "Routing Cable..." : "Save Route"}
                     </button>
                   )}
@@ -4547,7 +5032,6 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
                 : "Load OSM Homes in View"}
             </button>
 
-
             <div style={{ marginTop: 10 }}>
               <div style={label}>Load GeoJSON Map Assets</div>
               <input
@@ -4559,8 +5043,11 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
                   e.target.value = "";
                 }}
               />
-              <div style={{ fontSize: "0.78rem", color: "#94a3b8", marginTop: 4 }}>
-                One importer for DPs / AFNs / CBTs, poles, chambers, street cabs, areas, cables, PIA routes and UPRN homes.
+              <div
+                style={{ fontSize: "0.78rem", color: "#94a3b8", marginTop: 4 }}
+              >
+                One importer for DPs / AFNs / CBTs, poles, chambers, street
+                cabs, areas, cables, PIA routes and UPRN homes.
               </div>
             </div>
 
@@ -4663,18 +5150,28 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
             assets={visibleProjectAssets}
             visibleLayers={visibleLayers}
             onOpenAsset={(asset) => {
-              const routedType = String((asset as any).assetType || (asset as any).type || "").toLowerCase();
+              const routedType = String(
+                (asset as any).assetType || (asset as any).type || "",
+              ).toLowerCase();
 
               // PHASE 7A WORKSPACE WIRING:
               // Open operational editors directly where possible.
               // This deliberately does not touch storage, cable drawing, drops, AFN/MDU logic,
               // or Firestore chunk persistence.
-              if (routedType === "ag-joint" || routedType === "joint" || routedType.includes("joint")) {
+              if (
+                routedType === "ag-joint" ||
+                routedType === "joint" ||
+                routedType.includes("joint")
+              ) {
                 onOpenJoint(asset);
                 return;
               }
 
-              if (routedType === "street-cab" || routedType.includes("street") || routedType.includes("cab")) {
+              if (
+                routedType === "street-cab" ||
+                routedType.includes("street") ||
+                routedType.includes("cab")
+              ) {
                 setOpenStreetCabAsset(asset);
                 return;
               }
@@ -4694,8 +5191,13 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
             selectedSurveyDeleteHomeIds={selectedSurveyDeleteHomeIds}
             onToggleSurveyDeleteHome={handleToggleSurveyDeleteHomeSelection}
             onMoveAsset={(id, lat, lng) => {
-              const beforeAsset = (savedJoints ?? []).find((asset) => asset.id === id);
-              const reason = getChangeReasonForCurrentMode("moved", beforeAsset?.name || id);
+              const beforeAsset = (savedJoints ?? []).find(
+                (asset) => asset.id === id,
+              );
+              const reason = getChangeReasonForCurrentMode(
+                "moved",
+                beforeAsset?.name || id,
+              );
               if (!reason) return;
 
               let movedAsset: SavedMapAsset | null = null;
@@ -4765,7 +5267,12 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
                   <Polyline
                     key={`or-duct-fallback-${asset.id}`}
                     positions={positions}
-                    pathOptions={{ color: "#06b6d4", weight: 3, dashArray: "7, 7", opacity: 0.9 }}
+                    pathOptions={{
+                      color: "#06b6d4",
+                      weight: 3,
+                      dashArray: "7, 7",
+                      opacity: 0.9,
+                    }}
                     eventHandlers={{
                       click: () => {
                         handleEditAsset(asset);
@@ -4778,7 +5285,11 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
                       <div style={{ minWidth: 190 }}>
                         <b>{asset.name || "OR duct"}</b>
                         <br />
-                        {String((asset as any).jointType || (asset as any).routeType || "Imported OR duct")}
+                        {String(
+                          (asset as any).jointType ||
+                            (asset as any).routeType ||
+                            "Imported OR duct",
+                        )}
                         <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
                           <button
                             type="button"
@@ -4967,7 +5478,9 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
                 measurePoints[measurePoints.length - 1].lat,
                 measurePoints[measurePoints.length - 1].lng,
               ]}
-              icon={makeMeasureLabelIcon(`Total: ${formatDistance(measuredDistance)}`)}
+              icon={makeMeasureLabelIcon(
+                `Total: ${formatDistance(measuredDistance)}`,
+              )}
               interactive={false}
             />
           )}
@@ -5249,7 +5762,6 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         />
       </div>
 
-
       {!showMaintenancePanel && (
         <div
           style={{
@@ -5360,7 +5872,8 @@ const projectWorkspaceLoadingOverlay: React.CSSProperties = {
   position: "fixed",
   inset: 0,
   zIndex: 10000,
-  background: "radial-gradient(circle at 60% 40%, rgba(37, 99, 235, 0.22), transparent 36%), #020617",
+  background:
+    "radial-gradient(circle at 60% 40%, rgba(37, 99, 235, 0.22), transparent 36%), #020617",
   color: "white",
   display: "flex",
   alignItems: "center",
@@ -5410,8 +5923,6 @@ const drawerToggleButton: React.CSSProperties = {
   fontWeight: 800,
   boxShadow: "0 8px 22px rgba(0,0,0,0.35)",
 };
-
-
 
 const topMapButton: React.CSSProperties = {
   position: "absolute",

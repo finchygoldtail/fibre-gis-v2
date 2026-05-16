@@ -1,7 +1,4 @@
-import {
-  buildNetworkGraph,
-  findDisconnectedAssets,
-} from "./networkGraph";
+import { buildNetworkGraph, findDisconnectedAssets } from "./networkGraph";
 
 export type AuditSeverity = "high" | "medium" | "low";
 
@@ -18,11 +15,7 @@ export type AuditIssue = {
 type Coordinate = [number, number];
 
 function getAssetId(asset: any): string {
-  return String(
-    asset?.id ||
-      asset?.assetId ||
-      "unknown"
-  );
+  return String(asset?.id || asset?.assetId || "unknown");
 }
 
 function getAssetName(asset: any): string {
@@ -34,26 +27,22 @@ function getAssetName(asset: any): string {
       asset?.jointId ||
       asset?.dpId ||
       asset?.properties?.name ||
-      getAssetId(asset)
+      getAssetId(asset),
   );
 }
 
 function getAssetType(asset: any): string {
-  return String(
-    asset?.assetType ||
-      asset?.type ||
-      "unknown"
-  ).toLowerCase();
+  return String(asset?.assetType || asset?.type || "unknown").toLowerCase();
 }
 
 function hasText(value: unknown): boolean {
-  return value !== undefined &&
-    value !== null &&
-    String(value).trim() !== "";
+  return value !== undefined && value !== null && String(value).trim() !== "";
 }
 
 function hasAnyText(asset: any, fields: string[]): boolean {
-  return fields.some((field) => hasText(asset?.[field] ?? asset?.properties?.[field]));
+  return fields.some((field) =>
+    hasText(asset?.[field] ?? asset?.properties?.[field]),
+  );
 }
 
 function getFirstText(asset: any, fields: string[]): string {
@@ -74,38 +63,30 @@ function parseNumber(value: unknown): number {
 function isHomeAsset(asset: any): boolean {
   const type = getAssetType(asset);
 
-  return [
-    "home",
-    "premise",
-    "premises",
-    "property",
-    "building",
-  ].includes(type);
+  return ["home", "premise", "premises", "property", "building"].includes(type);
 }
 
 function isCableAsset(asset: any): boolean {
   const type = getAssetType(asset);
 
-  return [
-    "cable",
-    "drop",
-    "duct",
-  ].includes(type);
+  return ["cable", "drop", "duct"].includes(type);
 }
 
 function isDropAsset(asset: any): boolean {
   return (
     getAssetType(asset) === "drop" ||
-    (
-      getAssetType(asset) === "cable" &&
-      String(asset?.cableType || asset?.properties?.cableType || "").toLowerCase() === "drop"
-    )
+    (getAssetType(asset) === "cable" &&
+      String(
+        asset?.cableType || asset?.properties?.cableType || "",
+      ).toLowerCase() === "drop")
   );
 }
 
 function isJointAsset(asset: any): boolean {
   const type = getAssetType(asset);
-  const jointType = String(asset?.jointType || asset?.properties?.jointType || "").toLowerCase();
+  const jointType = String(
+    asset?.jointType || asset?.properties?.jointType || "",
+  ).toLowerCase();
 
   return (
     type === "joint" ||
@@ -140,12 +121,7 @@ function isLocationAsset(asset: any): boolean {
 function isDistributionPointAsset(asset: any): boolean {
   const type = getAssetType(asset);
 
-  return [
-    "distribution-point",
-    "dp",
-    "afn",
-    "cbt",
-  ].includes(type);
+  return ["distribution-point", "dp", "afn", "cbt"].includes(type);
 }
 
 function isNetworkNodeAsset(asset: any): boolean {
@@ -163,24 +139,15 @@ function hasValidCoordinates(asset: any): boolean {
 
   if (!geometry) return false;
 
-  if (
-    geometry.type === "Point" &&
-    Array.isArray(geometry.coordinates)
-  ) {
+  if (geometry.type === "Point" && Array.isArray(geometry.coordinates)) {
     return geometry.coordinates.length >= 2;
   }
 
-  if (
-    geometry.type === "LineString" &&
-    Array.isArray(geometry.coordinates)
-  ) {
+  if (geometry.type === "LineString" && Array.isArray(geometry.coordinates)) {
     return geometry.coordinates.length >= 2;
   }
 
-  if (
-    geometry.type === "Polygon" &&
-    Array.isArray(geometry.coordinates)
-  ) {
+  if (geometry.type === "Polygon" && Array.isArray(geometry.coordinates)) {
     return geometry.coordinates.length > 0;
   }
 
@@ -239,8 +206,7 @@ function haversineMeters(a: Coordinate, b: Coordinate): number {
 
   const h =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1) * Math.cos(lat2) *
-      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
 
   return 2 * radius * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
@@ -254,15 +220,13 @@ function getHomeKey(asset: any): string {
       asset?.UPRN ??
       asset?.properties?.UPRN ??
       asset?.properties?.uprn ??
-      ""
+      "",
   ).trim();
 }
 
 function getConnectedDpId(asset: any): string {
   return String(
-    asset?.connectedDpId ??
-      asset?.properties?.connectedDpId ??
-      ""
+    asset?.connectedDpId ?? asset?.properties?.connectedDpId ?? "",
   ).trim();
 }
 
@@ -274,7 +238,7 @@ function getDropDpId(drop: any): string {
       drop?.properties?.dpId ??
       drop?.properties?.fromAssetId ??
       drop?.properties?.connectedDpId ??
-      ""
+      "",
   ).trim();
 }
 
@@ -290,7 +254,7 @@ function getDropHomeId(drop: any): string {
       drop?.properties?.connectedHomeId ??
       drop?.properties?.uprn ??
       drop?.properties?.UPRN ??
-      ""
+      "",
   ).trim();
 }
 
@@ -326,7 +290,7 @@ function getCableCapacity(asset: any): number {
       asset?.properties?.fibreCount ??
       asset?.properties?.fiberCount ??
       asset?.properties?.coreCount ??
-      asset?.properties?.size
+      asset?.properties?.size,
   );
 }
 
@@ -341,7 +305,7 @@ function getCableUsedFibres(asset: any): number {
       asset?.properties?.usedFibers ??
       asset?.properties?.usedCoreCount ??
       asset?.properties?.fibresUsed ??
-      asset?.properties?.allocatedFibres
+      asset?.properties?.allocatedFibres,
   );
 }
 
@@ -385,17 +349,30 @@ function getIssueCategory(issue: string): string {
   const text = issue.toLowerCase();
 
   if (text.includes("pia") || text.includes("noi")) return "PIA / NOI";
-  if (text.includes("drop") || text.includes("home") || text.includes("dp")) return "DP / Homes";
-  if (text.includes("disconnected") || text.includes("snapped")) return "Topology";
-  if (text.includes("capacity") || text.includes("fibres exceed")) return "Capacity";
-  if (text.includes("fibre") || text.includes("mapping") || text.includes("tray")) return "Fibre Mapping";
-  if (text.includes("coordinate") || text.includes("location")) return "Field Data";
+  if (text.includes("drop") || text.includes("home") || text.includes("dp"))
+    return "DP / Homes";
+  if (text.includes("disconnected") || text.includes("snapped"))
+    return "Topology";
+  if (text.includes("capacity") || text.includes("fibres exceed"))
+    return "Capacity";
+  if (
+    text.includes("fibre") ||
+    text.includes("mapping") ||
+    text.includes("tray")
+  )
+    return "Fibre Mapping";
+  if (text.includes("coordinate") || text.includes("location"))
+    return "Field Data";
   if (text.includes("duplicate")) return "Data Quality";
 
   return "General";
 }
 
-function makeIssue(asset: any, issue: string, overrides: Partial<AuditIssue> = {}): AuditIssue {
+function makeIssue(
+  asset: any,
+  issue: string,
+  overrides: Partial<AuditIssue> = {},
+): AuditIssue {
   const assetId = overrides.assetId ?? getAssetId(asset);
   const assetType = overrides.assetType ?? getAssetType(asset);
   const severity = overrides.severity ?? getIssueSeverity(issue, asset);
@@ -411,9 +388,7 @@ function makeIssue(asset: any, issue: string, overrides: Partial<AuditIssue> = {
   };
 }
 
-export function auditAsset(
-  asset: any
-): string[] {
+export function auditAsset(asset: any): string[] {
   const issues: string[] = [];
 
   // --------------------------------------------------
@@ -424,11 +399,7 @@ export function auditAsset(
 
   if (
     isHomeAsset(asset) &&
-    !hasAnyText(asset, [
-      "address",
-      "fullAddress",
-      "propertyAddress",
-    ])
+    !hasAnyText(asset, ["address", "fullAddress", "propertyAddress"])
   ) {
     issues.push("Missing address");
   }
@@ -460,11 +431,7 @@ export function auditAsset(
   if (
     isCableAsset(asset) &&
     !isDropAsset(asset) &&
-    !hasAnyText(asset, [
-      "installMethod",
-      "method",
-      "routeType",
-    ])
+    !hasAnyText(asset, ["installMethod", "method", "routeType"])
   ) {
     issues.push("Missing install method");
   }
@@ -484,7 +451,7 @@ export function auditAsset(
     getCableUsedFibres(asset) > getCableCapacity(asset)
   ) {
     issues.push(
-      `Used fibres exceed cable size (${getCableUsedFibres(asset)}/${getCableCapacity(asset)})`
+      `Used fibres exceed cable size (${getCableUsedFibres(asset)}/${getCableCapacity(asset)})`,
     );
   }
 
@@ -494,16 +461,19 @@ export function auditAsset(
   // These assets may not have postal addresses, but a human-readable
   // location note is useful for field QA.
 
-  if (
-    isLocationAsset(asset) &&
-    !hasAnyText(asset, [
-      "locationDescription",
-      "location",
-      "nearestAddress",
-      "roadName",
-      "notes",
-    ])
-  ) {
+  const hasLocationText = hasAnyText(asset, [
+    "locationDescription",
+    "location",
+    "nearestAddress",
+    "roadName",
+    "notes",
+  ]);
+
+  const hasMapLocation =
+    hasValidCoordinates(asset) ||
+    (typeof asset?.lat === "number" && typeof asset?.lng === "number");
+
+  if (isLocationAsset(asset) && !hasLocationText && !hasMapLocation) {
     issues.push("Missing location description");
   }
 
@@ -543,8 +513,13 @@ function findNearestNodeDistance(point: Coordinate, nodes: any[]): number {
   return best;
 }
 
-function addCableEndpointSnappingIssues(assets: any[], issues: AuditIssue[]): void {
-  const cables = assets.filter((asset) => isCableAsset(asset) && !isDropAsset(asset));
+function addCableEndpointSnappingIssues(
+  assets: any[],
+  issues: AuditIssue[],
+): void {
+  const cables = assets.filter(
+    (asset) => isCableAsset(asset) && !isDropAsset(asset),
+  );
   const nodes = assets.filter(isNetworkNodeAsset);
 
   if (!cables.length || !nodes.length) return;
@@ -564,8 +539,8 @@ function addCableEndpointSnappingIssues(assets: any[], issues: AuditIssue[]): vo
         makeIssue(
           cable,
           `Cable start endpoint not snapped to joint/pole/chamber (${Math.round(startDistance)}m)`,
-          { severity: "high", category: "Topology" }
-        )
+          { severity: "high", category: "Topology" },
+        ),
       );
     }
 
@@ -574,16 +549,14 @@ function addCableEndpointSnappingIssues(assets: any[], issues: AuditIssue[]): vo
         makeIssue(
           cable,
           `Cable end endpoint not snapped to joint/pole/chamber (${Math.round(endDistance)}m)`,
-          { severity: "high", category: "Topology" }
-        )
+          { severity: "high", category: "Topology" },
+        ),
       );
     }
   }
 }
 
-export function auditAreaAssets(
-  assets: any[] = []
-): AuditIssue[] {
+export function auditAreaAssets(assets: any[] = []): AuditIssue[] {
   const issues: AuditIssue[] = [];
   const validAssets = assets.filter(Boolean);
 
@@ -619,7 +592,7 @@ export function auditAreaAssets(
             assetType: getAssetType(asset),
             severity: "high",
             category: "Data Quality",
-          })
+          }),
         );
       }
     }
@@ -639,7 +612,7 @@ export function auditAreaAssets(
         assetType: getAssetType(node.asset),
         severity: "high",
         category: "Topology",
-      })
+      }),
     );
   }
 
@@ -653,20 +626,19 @@ export function auditAreaAssets(
   // DP / DROP / HOME CONNECTION QA CHECKS
   // --------------------------------------------------
 
-  const homes = validAssets.filter((asset: any) =>
-    isHomeAsset(asset) ||
-    Boolean(asset?.properties?.UPRN) ||
-    Boolean(asset?.properties?.uprn) ||
-    Boolean(asset?.UPRN) ||
-    Boolean(asset?.uprn)
+  const homes = validAssets.filter(
+    (asset: any) =>
+      isHomeAsset(asset) ||
+      Boolean(asset?.properties?.UPRN) ||
+      Boolean(asset?.properties?.uprn) ||
+      Boolean(asset?.UPRN) ||
+      Boolean(asset?.uprn),
   );
 
-  const drops = validAssets.filter((asset: any) =>
-    isDropAsset(asset)
-  );
+  const drops = validAssets.filter((asset: any) => isDropAsset(asset));
 
   const dps = validAssets.filter((asset: any) =>
-    isDistributionPointAsset(asset)
+    isDistributionPointAsset(asset),
   );
 
   const assetsById = new Map<string, any>();
@@ -701,7 +673,7 @@ export function auditAreaAssets(
           assetId: dropId,
           severity: "high",
           category: "DP / Homes",
-        })
+        }),
       );
     }
 
@@ -711,7 +683,7 @@ export function auditAreaAssets(
           assetId: dropId,
           severity: "high",
           category: "DP / Homes",
-        })
+        }),
       );
     }
 
@@ -723,7 +695,7 @@ export function auditAreaAssets(
           assetId: dropId,
           severity: "medium",
           category: "DP / Homes",
-        })
+        }),
       );
     }
   }
@@ -734,9 +706,10 @@ export function auditAreaAssets(
 
     const homeKey = getHomeKey(home);
 
-    const hasDrop = drops.some((drop: any) =>
-      keysMatch(getDropHomeId(drop), homeKey) &&
-      getDropDpId(drop) === connectedDpId
+    const hasDrop = drops.some(
+      (drop: any) =>
+        keysMatch(getDropHomeId(drop), homeKey) &&
+        getDropDpId(drop) === connectedDpId,
     );
 
     if (!hasDrop) {
@@ -744,7 +717,7 @@ export function auditAreaAssets(
         makeIssue(home, "Connected home has no drop cable", {
           severity: "high",
           category: "DP / Homes",
-        })
+        }),
       );
     }
 
@@ -753,7 +726,7 @@ export function auditAreaAssets(
         makeIssue(home, "Home connected to missing DP", {
           severity: "high",
           category: "DP / Homes",
-        })
+        }),
       );
     }
   }
@@ -762,8 +735,8 @@ export function auditAreaAssets(
     const dpId = getAssetId(dp);
     const capacity = getDpCapacity(dp);
 
-    const usedPorts = homes.filter((home: any) =>
-      getConnectedDpId(home) === dpId
+    const usedPorts = homes.filter(
+      (home: any) => getConnectedDpId(home) === dpId,
     ).length;
 
     if (usedPorts > capacity) {
@@ -772,7 +745,7 @@ export function auditAreaAssets(
           assetId: dpId,
           severity: "high",
           category: "Capacity",
-        })
+        }),
       );
     }
   }

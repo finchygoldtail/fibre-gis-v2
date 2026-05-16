@@ -9,7 +9,12 @@ export type AssetType =
   | "area"
   | "pia-route"
   | "cable";
-export type CableType = "Feeder Cable" | "ULW Cable" | "Link Cable" | "AFN Spine Cable" | "PIA Overlay";
+export type CableType =
+  | "Feeder Cable"
+  | "ULW Cable"
+  | "Link Cable"
+  | "AFN Spine Cable"
+  | "PIA Overlay";
 
 export type DistributionArchitecture = "CBT" | "AFN" | "MDU" | "MDU_SPLITTER";
 
@@ -67,6 +72,31 @@ export type DistributionPointDetails = {
     downstreamReservedFibres?: number;
     reservedFibres: number;
     capacity: number;
+
+    // PHASE 7A.3 — debug/QA visibility for auto fibre allocation.
+    throughCableId?: string;
+    throughCableName?: string;
+    inputFibres?: number[];
+    freeFibresAfterAllocation?: number;
+    utilisationPercent?: number;
+    duplicateFibres?: number[];
+    allocationWarnings?: string[];
+    allocationExplanation?: {
+      label: string;
+      value: string | number;
+      help: string;
+    }[];
+    allocationTrace?: {
+      assetId?: string;
+      assetName: string;
+      cableId?: string;
+      cableName: string;
+      localFibres: number;
+      branchFibres: number;
+      totalFibres: number;
+      note: string;
+    }[];
+
     updatedAt: string;
   };
 
