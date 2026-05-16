@@ -25,6 +25,11 @@ type AssetIntelligencePanelProps = {
   onZoomAsset?: (asset: SavedMapAsset) => void;
   onSelectAsset?: (asset: SavedMapAsset) => void;
   onOpenJointEditor?: (asset: SavedMapAsset) => void;
+  onUpdateDpStatus?: (args: {
+    asset: SavedMapAsset;
+    status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
+    note: string;
+  }) => void;
 };
 
 type RowValue = string | number | null | undefined;
@@ -79,7 +84,49 @@ function isJoint(asset: SavedMapAsset | null): boolean {
 
 function isDp(asset: SavedMapAsset | null): boolean {
   const type = getAssetType(asset);
-  return type.includes("distribution") || type === "dp" || type.includes("cbt") || type.includes("afn");
+  const item = asset as any;
+  const closureType = String(
+    item?.dpDetails?.closureType ||
+      item?.dpDetails?.networkArchitecture ||
+      item?.closureType ||
+      item?.networkArchitecture ||
+      "",
+  ).toLowerCase();
+
+  return (
+    type.includes("distribution") ||
+    type === "dp" ||
+    type.includes("cbt") ||
+    type.includes("afn") ||
+    type.includes("mdu") ||
+    closureType === "cbt" ||
+    closureType === "afn" ||
+    closureType === "mdu" ||
+    closureType === "mdu_splitter"
+  );
+}
+
+type OperationalDpStatus =
+  | "Live"
+  | "BWIP"
+  | "Unserviceable"
+  | "Live not ready for service";
+
+function requestDpStatusNote(status: OperationalDpStatus, asset: SavedMapAsset): string | null {
+  const note = window.prompt(
+    `Manager note required: set ${getAssetName(asset)} to ${status}?`,
+    `Set DP status to ${status}`,
+  );
+
+  if (note === null) return null;
+
+  const trimmed = note.trim();
+  if (!trimmed) {
+    alert("A manager note is required before changing DP status.");
+    return null;
+  }
+
+  return trimmed;
 }
 
 function isPole(asset: SavedMapAsset | null): boolean {
@@ -925,8 +972,23 @@ export default function AssetIntelligencePanel({
   onZoomAsset,
   onSelectAsset,
   onOpenJointEditor,
+  onUpdateDpStatus,
 }: AssetIntelligencePanelProps) {
   const item = asset as any;
+  const canChangeDpStatus = isDp(asset) && Boolean(onUpdateDpStatus);
+
+  const applyDpStatus = (nextStatus: OperationalDpStatus) => {
+    if (!asset || !onUpdateDpStatus) return;
+
+    const note = requestDpStatusNote(nextStatus, asset);
+    if (!note) return;
+
+    onUpdateDpStatus({
+      asset,
+      status: nextStatus,
+      note,
+    });
+  };
 
   const relatedAssets = useMemo(() => {
     if (!asset) return [];
@@ -1013,7 +1075,14 @@ export default function AssetIntelligencePanel({
       </div>
 
       <div style={pillRow}>
-        <span style={statusPill}>{String(read(item, ["status", "dpStatus", "serviceStatus"], "Live / Unknown"))}</span>
+        <span style={statusPill}>{String(
+          isDp(asset)
+            ? read(item, ["dpDetails.buildStatus"], null) ||
+              item?.dpDetails?.buildStatus ||
+              item?.properties?.dpDetails?.buildStatus ||
+              read(item, ["status", "buildStatus", "dpStatus", "serviceStatus"], "Live / Unknown")
+            : read(item, ["status", "dpStatus", "serviceStatus"], "Live / Unknown"),
+        )}</span>
         {isCable(asset) && <span style={typePill}>{String(read(item, ["installMethod", "method", "routeType"], "Route"))}</span>}
       </div>
 
@@ -1025,6 +1094,14 @@ export default function AssetIntelligencePanel({
           <button type="button" style={operationButton} onClick={onOpenQA}>QA</button>
           {isJoint(asset) ? (
             <button type="button" style={operationButton} onClick={() => onOpenJointEditor?.(asset)}>Open Joint</button>
+          ) : null}
+          {canChangeDpStatus ? (
+            <>
+              <button type="button" style={liveOperationButton} onClick={() => applyDpStatus("Live")}>Set Live</button>
+              <button type="button" style={operationButton} onClick={() => applyDpStatus("BWIP")}>Set BWIP</button>
+              <button type="button" style={warningOperationButton} onClick={() => applyDpStatus("Live not ready for service")}>Set LNRFS</button>
+              <button type="button" style={dangerOperationButton} onClick={() => applyDpStatus("Unserviceable")}>Set Unserviceable</button>
+            </>
           ) : null}
           <button type="button" style={operationButton} onClick={() => copyText(getAssetCopyText(asset))}>Copy Info</button>
           <button type="button" style={dangerOperationButton} onClick={onClose}>Clear</button>
@@ -1546,6 +1623,20 @@ const dangerOperationButton: React.CSSProperties = {
   border: "1px solid rgba(248, 113, 113, 0.25)",
   background: "rgba(127, 29, 29, 0.38)",
   color: "#fecaca",
+};
+
+const liveOperationButton: React.CSSProperties = {
+  ...operationButton,
+  border: "1px solid rgba(34, 197, 94, 0.3)",
+  background: "rgba(20, 83, 45, 0.38)",
+  color: "#bbf7d0",
+};
+
+const warningOperationButton: React.CSSProperties = {
+  ...operationButton,
+  border: "1px solid rgba(251, 191, 36, 0.3)",
+  background: "rgba(113, 63, 18, 0.38)",
+  color: "#fde68a",
 };
 
 const severityGrid: React.CSSProperties = {

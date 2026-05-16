@@ -18,6 +18,18 @@ type Props = {
   auditIssues?: any[];
   disconnectedAssets?: any[];
   networkGraph?: any;
+  managerAreaPoints?: { lat: number; lng: number }[];
+  isManagerAreaDrawing?: boolean;
+  onStartManagerAreaDrawing?: () => void;
+  onStopManagerAreaDrawing?: () => void;
+  onClearManagerAreaDrawing?: () => void;
+  onBulkUpdateDpStatus?: (args: {
+    assetIds: string[];
+    status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
+    note: string;
+  }) => void;
+  onSelectAsset?: (asset: any) => void;
+  onOpenJointEditor?: (asset: any) => void;
   onOpenPanel?: (panel: string, tab?: string) => void;
   onOpenTrace?: () => void;
   onOpenQA?: () => void;

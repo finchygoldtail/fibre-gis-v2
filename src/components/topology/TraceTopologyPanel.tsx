@@ -9,7 +9,10 @@ import type { SavedMapAsset } from "../map/types";
 import type { AuditIssue } from "../../services/areaAudit";
 import type { NetworkGraph } from "../../services/networkGraph";
 
-import { buildTopologyTrace } from "../../services/topologyTraceService";
+import {
+  buildTopologyTrace,
+  type TopologyTraceStep,
+} from "../../services/topologyTraceService";
 
 type TraceTopologyPanelProps = {
   selectedAsset: SavedMapAsset | null;

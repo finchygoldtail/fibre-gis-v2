@@ -824,6 +824,68 @@ function isAreaVisibleForLevel(
 //   geometryType + geometryCoordinatesJson
 // The map layers need a real geometry object. Normalise once before
 // filtering/rendering so cables, polygons, homes and markers all reappear.
+
+function normaliseDpOperationalStatus(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "Planned";
+
+  const lower = raw.toLowerCase();
+  if (lower === "live") return "Live";
+  if (lower === "bwip") return "BWIP";
+  if (lower === "unserviceable") return "Unserviceable";
+  if (lower === "live not ready for service" || lower === "lnrfs") {
+    return "Live not ready for service";
+  }
+  if (lower === "planned") return "Planned";
+  return raw;
+}
+
+function getDpOperationalStatus(asset: any, fallback: string = "Planned"): string {
+  return normaliseDpOperationalStatus(
+    asset?.dpDetails?.buildStatus ||
+      asset?.properties?.dpDetails?.buildStatus ||
+      asset?.buildStatus ||
+      asset?.status ||
+      fallback,
+  );
+}
+
+function syncDpOperationalStatusOnAsset<T extends Record<string, any>>(
+  asset: T,
+  statusValue?: unknown,
+): T {
+  const nextStatus = normaliseDpOperationalStatus(
+    statusValue ||
+      asset?.dpDetails?.buildStatus ||
+      asset?.properties?.dpDetails?.buildStatus ||
+      asset?.buildStatus ||
+      asset?.status ||
+      "Planned",
+  );
+
+  const nextDpDetails = {
+    ...(asset?.dpDetails || asset?.properties?.dpDetails || {}),
+    buildStatus: nextStatus,
+  };
+
+  return {
+    ...(asset as any),
+    status: nextStatus,
+    buildStatus: nextStatus,
+    dpDetails: nextDpDetails,
+    properties: {
+      ...((asset as any).properties || {}),
+      status: nextStatus,
+      buildStatus: nextStatus,
+      dpDetails: {
+        ...(((asset as any).properties || {}).dpDetails || {}),
+        ...nextDpDetails,
+        buildStatus: nextStatus,
+      },
+    },
+  } as T;
+}
+
 function normalizeMapAsset(asset: SavedMapAsset): SavedMapAsset {
   const copy: any = { ...(asset as any) };
 
@@ -1665,6 +1727,7 @@ export default function JointMapManager({
       powerReadings: ["", "", "", ""],
       closureType: "CBT",
       connectionsToHomes: 8,
+      buildStatus: "Planned",
     });
     setChamberDetails({});
     setShowCableModal(false);
@@ -1734,13 +1797,14 @@ export default function JointMapManager({
       ((viewedAsset as any).allocatedInputFibres || []) as number[],
     );
     setPoleDetails(viewedAsset.poleDetails || {});
-    setDpDetails(
-      viewedAsset.dpDetails || {
+    setDpDetails({
+      ...(viewedAsset.dpDetails || (viewedAsset as any).properties?.dpDetails || {
         powerReadings: ["", "", "", ""],
         closureType: "CBT",
         connectionsToHomes: 8,
-      },
-    );
+      }),
+      buildStatus: getDpOperationalStatus(viewedAsset),
+    } as DistributionPointDetails);
     setChamberDetails(viewedAsset.chamberDetails || {});
     // Phase 7A.4: any Edit Details action should bring the left details panel back into view.
     setIsPanelOpen(true);
@@ -2144,9 +2208,48 @@ export default function JointMapManager({
                           : jointType,
               notes: notes.trim(),
               assetType,
+              ...(assetType === "distribution-point"
+                ? {
+                    status: getDpOperationalStatus({
+                      ...(asset as any),
+                      dpDetails: nextDpDetails,
+                    }),
+                    buildStatus: getDpOperationalStatus({
+                      ...(asset as any),
+                      dpDetails: nextDpDetails,
+                    }),
+                    properties: {
+                      ...((asset as any).properties || {}),
+                      status: getDpOperationalStatus({
+                        ...(asset as any),
+                        dpDetails: nextDpDetails,
+                      }),
+                      buildStatus: getDpOperationalStatus({
+                        ...(asset as any),
+                        dpDetails: nextDpDetails,
+                      }),
+                      dpDetails: {
+                        ...(((asset as any).properties || {}).dpDetails || {}),
+                        ...nextDpDetails,
+                        buildStatus: getDpOperationalStatus({
+                          ...(asset as any),
+                          dpDetails: nextDpDetails,
+                        }),
+                      },
+                    },
+                  }
+                : {}),
               poleDetails: assetType === "pole" ? nextPoleDetails : undefined,
               dpDetails:
-                assetType === "distribution-point" ? nextDpDetails : undefined,
+                assetType === "distribution-point"
+                  ? ({
+                      ...nextDpDetails,
+                      buildStatus: getDpOperationalStatus({
+                        ...(asset as any),
+                        dpDetails: nextDpDetails,
+                      }),
+                    } as DistributionPointDetails)
+                  : undefined,
               chamberDetails:
                 assetType === "chamber" ? nextChamberDetails : undefined,
               geometry: {
@@ -2272,8 +2375,28 @@ export default function JointMapManager({
                   : jointType,
       notes: notes.trim(),
       mappingRows: [],
+      ...(assetType === "distribution-point"
+        ? {
+            status: getDpOperationalStatus({ dpDetails: nextDpDetails }),
+            buildStatus: getDpOperationalStatus({ dpDetails: nextDpDetails }),
+            properties: {
+              status: getDpOperationalStatus({ dpDetails: nextDpDetails }),
+              buildStatus: getDpOperationalStatus({ dpDetails: nextDpDetails }),
+              dpDetails: {
+                ...nextDpDetails,
+                buildStatus: getDpOperationalStatus({ dpDetails: nextDpDetails }),
+              },
+            },
+          }
+        : {}),
       poleDetails: assetType === "pole" ? nextPoleDetails : undefined,
-      dpDetails: assetType === "distribution-point" ? nextDpDetails : undefined,
+      dpDetails:
+        assetType === "distribution-point"
+          ? ({
+              ...nextDpDetails,
+              buildStatus: getDpOperationalStatus({ dpDetails: nextDpDetails }),
+            } as DistributionPointDetails)
+          : undefined,
       chamberDetails: assetType === "chamber" ? nextChamberDetails : undefined,
       geometry: {
         type: "Point",
@@ -2883,6 +3006,7 @@ export default function JointMapManager({
         powerReadings: ["", "", "", ""],
         closureType: "CBT",
         connectionsToHomes: 8,
+        buildStatus: "Planned",
       });
     }
 
@@ -4266,6 +4390,101 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
   };
 
   // =====================================================
+  // PROJECT WORKSPACE — PERSIST BULK DP STATUS
+  // Called by Workspace → Build manager tools. This uses the
+  // existing savedJoints state and split chunk mirroring path, so
+  // it does not introduce a second storage system.
+  // =====================================================
+  const handleWorkspaceBulkDpStatusUpdate = (args: {
+    assetIds: string[];
+    status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
+    note: string;
+  }) => {
+    const ids = new Set((args.assetIds || []).map(String));
+    if (!ids.size) {
+      alert("No DPs selected for update.");
+      return;
+    }
+
+    const reason = args.note?.trim();
+    if (!reason) {
+      alert("A manager note is required before updating DP status.");
+      return;
+    }
+
+    const beforeAssets = (savedJoints ?? []).filter((asset) =>
+      ids.has(String(asset.id || "")),
+    );
+
+    const updatedById = new Map<string, SavedMapAsset>();
+
+    beforeAssets.forEach((asset) => {
+      const nextAsset = withAssetEditedMetadata(
+        markAssetForLiveSync(
+          syncDpOperationalStatusOnAsset(
+            asset as any,
+            args.status,
+          ) as SavedMapAsset,
+        ),
+        "updated",
+        reason,
+      );
+
+      updatedById.set(String(asset.id || ""), nextAsset);
+    });
+
+    setSavedJoints((prev) =>
+      (prev ?? []).map((asset) => {
+        const updatedAsset = updatedById.get(String(asset.id || ""));
+        return updatedAsset || asset;
+      }),
+    );
+
+    beforeAssets.forEach((beforeAsset) => {
+      const afterAsset = updatedById.get(String(beforeAsset.id || ""));
+      if (!afterAsset) return;
+
+      writeAssetAuditLog({
+        asset: afterAsset,
+        action: "updated",
+        reason,
+        comment: `Manager bulk DP status update from Project Workspace: ${args.status}`,
+        before: {
+          status: (beforeAsset as any).status,
+          buildStatus: (beforeAsset as any).dpDetails?.buildStatus,
+        },
+        after: {
+          status: (afterAsset as any).status,
+          buildStatus: (afterAsset as any).dpDetails?.buildStatus,
+        },
+      });
+    });
+
+    alert(
+      `Updated ${beforeAssets.length} DP${beforeAssets.length === 1 ? "" : "s"} to ${args.status}.`,
+    );
+  };
+
+
+  // =====================================================
+  // PROJECT WORKSPACE — PERSIST SINGLE DP STATUS
+  // Called by Asset Intelligence quick action buttons. It reuses
+  // the same bulk status save path so audit/live-sync/chunk mirroring
+  // remain consistent.
+  // =====================================================
+  const handleWorkspaceSingleDpStatusUpdate = (args: {
+    assetId: string;
+    status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
+    note: string;
+  }) => {
+    handleWorkspaceBulkDpStatusUpdate({
+      assetIds: [args.assetId],
+      status: args.status,
+      note: args.note,
+    });
+  };
+
+  // =====================================================
   // PROJECT WORKSPACE FULL SCREEN MODE
   // Keeps Leaflet mounted separately from the workspace shell.
   // This prevents map pane/marker position errors while the
@@ -4320,6 +4539,8 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
           setIsProjectWorkspaceOpen(false);
           onOpenJoint(asset);
         }}
+        onBulkUpdateDpStatus={handleWorkspaceBulkDpStatusUpdate}
+        onUpdateDpStatus={handleWorkspaceSingleDpStatusUpdate}
         onExport={handleExportGeoJson}
       />
     );

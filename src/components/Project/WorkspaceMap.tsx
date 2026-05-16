@@ -19,6 +19,7 @@ import {
   TileLayer,
   Tooltip,
   useMap,
+  useMapEvents,
 } from "react-leaflet";
 import type { LatLngLiteral } from "leaflet";
 import L from "leaflet";
@@ -52,6 +53,12 @@ type WorkspaceMapProps = {
   showCableDistances?: boolean;
   openreachLayers?: OpenreachLayerVisibility;
   visibleLayers?: WorkspaceLayerVisibility;
+  traceHighlightedAssetIds?: string[];
+  traceHighlightKinds?: Record<string, string>;
+  managerAreaPoints?: LatLngLiteral[];
+  managerAreaDrawMode?: boolean;
+  onManagerAreaPointAdd?: (point: LatLngLiteral) => void;
+  onManagerAreaClear?: () => void;
   onAssetSelect?: (asset: SavedMapAsset) => void;
 };
 
@@ -114,6 +121,24 @@ function SafeMapLifecycle({ bounds }: { bounds: WorkspaceBounds | null }) {
 
     return () => window.clearTimeout(timeoutId);
   }, [map, bounds]);
+
+
+  return null;
+}
+
+function ManagerAreaDrawingHandler({
+  enabled,
+  onPointAdd,
+}: {
+  enabled?: boolean;
+  onPointAdd?: (point: LatLngLiteral) => void;
+}) {
+  useMapEvents({
+    click(event) {
+      if (!enabled) return;
+      onPointAdd?.({ lat: event.latlng.lat, lng: event.latlng.lng });
+    },
+  });
 
   return null;
 }
@@ -233,10 +258,13 @@ function isOverhead(asset: SavedMapAsset): boolean {
   return method.includes("oh") || method.includes("overhead");
 }
 
-function getAssetMarkerIcon(asset: SavedMapAsset, selected: boolean) {
+function getAssetMarkerIcon(asset: SavedMapAsset, selected: boolean, traceKind: string | null = null) {
   const type = getAssetType(asset);
+  const traceColour = getTraceColour(traceKind);
   const colour = selected
     ? "#facc15"
+    : traceColour
+      ? traceColour
     : type.includes("distribution") || type.includes("dp")
       ? "#22c55e"
       : type.includes("pole")
@@ -305,6 +333,44 @@ function isLayerVisibleForAsset(asset: SavedMapAsset, visibleLayers: WorkspaceLa
   return visibleLayers.other;
 }
 
+
+function assetIdentityKeys(asset: SavedMapAsset): string[] {
+  const item = asset as any;
+  return [
+    item.id,
+    item.assetId,
+    item.name,
+    item.jointName,
+    item.label,
+    item.cableId,
+    item.cableName,
+  ]
+    .map((value) => String(value ?? "").trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function getTraceKind(
+  asset: SavedMapAsset,
+  highlightedAssetIds: string[],
+  traceHighlightKinds: Record<string, string>,
+): string | null {
+  const highlighted = new Set(highlightedAssetIds.map((value) => String(value).toLowerCase()));
+  const keys = assetIdentityKeys(asset);
+  const matchedKey = keys.find((key) => highlighted.has(key) || traceHighlightKinds[key]);
+  return matchedKey ? traceHighlightKinds[matchedKey] || "selected" : null;
+}
+
+function getTraceColour(kind: string | null): string | null {
+  if (kind === "selected") return "#facc15";
+  if (kind === "upstream") return "#38bdf8";
+  if (kind === "downstream") return "#22c55e";
+  if (kind === "branch") return "#f97316";
+  if (kind === "home") return "#a78bfa";
+  if (kind === "fibre") return "#e879f9";
+  if (kind === "qa") return "#fb7185";
+  return null;
+}
+
 // =====================================================
 // COMPONENT
 // =====================================================
@@ -338,6 +404,12 @@ export default function WorkspaceMap({
     other: true,
   },
   openreachLayers = DEFAULT_OPENREACH_LAYERS,
+  traceHighlightedAssetIds = [],
+  traceHighlightKinds = {},
+  managerAreaPoints = [],
+  managerAreaDrawMode = false,
+  onManagerAreaPointAdd,
+  onManagerAreaClear,
   onAssetSelect,
 }: WorkspaceMapProps) {
   const bounds = useMemo(() => getBoundsFromAssets(projectArea, assets), [projectArea, assets]);
@@ -371,6 +443,40 @@ export default function WorkspaceMap({
       >
         <WorkspaceBaseLayers />
         <SafeMapLifecycle bounds={bounds} />
+        <ManagerAreaDrawingHandler
+          enabled={managerAreaDrawMode}
+          onPointAdd={onManagerAreaPointAdd}
+        />
+
+        {managerAreaPoints.length > 0 && (
+          <Polyline
+            positions={managerAreaPoints.map((point) => [point.lat, point.lng] as [number, number])}
+            pathOptions={{
+              color: "#facc15",
+              weight: 3,
+              opacity: 0.95,
+              dashArray: "6, 8",
+            }}
+          >
+            <Tooltip sticky>Manager drawn area</Tooltip>
+          </Polyline>
+        )}
+
+        {managerAreaPoints.length >= 3 && (
+          <Polygon
+            positions={managerAreaPoints.map((point) => [point.lat, point.lng] as [number, number])}
+            pathOptions={{
+              color: "#facc15",
+              weight: 3,
+              fillOpacity: 0.12,
+              dashArray: "6, 8",
+            }}
+            eventHandlers={{ contextmenu: () => onManagerAreaClear?.() }}
+          >
+            <Tooltip sticky>Manager bulk update area</Tooltip>
+          </Polygon>
+        )}
+
 
         {visibleLayers.projectBoundary && projectArea &&
           getPolygonRings(projectArea).map((ring, index) => (
@@ -401,15 +507,17 @@ export default function WorkspaceMap({
         {dropCableAssets.map((asset) => {
           const points = getLinePoints(asset);
           const midpoint = points[Math.floor(points.length / 2)];
+          const traceKind = getTraceKind(asset, traceHighlightedAssetIds, traceHighlightKinds);
+          const traceColour = getTraceColour(traceKind);
 
           return (
             <React.Fragment key={`workspace-drop-cable-${asset.id}`}>
               <Polyline
                 positions={points.map((point) => [point.lat, point.lng] as [number, number])}
                 pathOptions={{
-                  color: selectedAssetId === asset.id ? "#facc15" : "#22c55e",
-                  weight: selectedAssetId === asset.id ? 5 : 3,
-                  opacity: selectedAssetId === asset.id ? 1 : 0.62,
+                  color: selectedAssetId === asset.id ? "#facc15" : traceColour || "#22c55e",
+                  weight: selectedAssetId === asset.id || traceKind ? 6 : 3,
+                  opacity: selectedAssetId === asset.id || traceKind ? 1 : 0.62,
                   dashArray: "4, 7",
                 }}
                 eventHandlers={{ click: (event) => selectWorkspaceAsset(asset, onAssetSelect, event) }}
@@ -438,6 +546,8 @@ export default function WorkspaceMap({
         {designCableAssets.map((asset) => {
           const points = getLinePoints(asset);
           const midpoint = points[Math.floor(points.length / 2)];
+          const traceKind = getTraceKind(asset, traceHighlightedAssetIds, traceHighlightKinds);
+          const traceColour = getTraceColour(traceKind);
 
           return (
             <React.Fragment key={`workspace-cable-${asset.id}`}>
@@ -487,12 +597,13 @@ export default function WorkspaceMap({
           const point = getPoint(asset);
           if (!point) return null;
           const selected = selectedAssetId === asset.id;
+          const traceKind = getTraceKind(asset, traceHighlightedAssetIds, traceHighlightKinds);
 
           return (
             <Marker
               key={`workspace-point-${asset.id}`}
               position={[point.lat, point.lng]}
-              icon={getAssetMarkerIcon(asset, selected)}
+              icon={getAssetMarkerIcon(asset, selected, traceKind)}
               eventHandlers={{ click: (event) => selectWorkspaceAsset(asset, onAssetSelect, event) }}
             >
               <Popup>

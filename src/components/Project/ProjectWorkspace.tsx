@@ -8,6 +8,7 @@ import type { SavedMapAsset } from "../map/types";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../firebase";
 import { auditAreaAssets, type AuditIssue } from "../../services/areaAudit";
+import { buildTopologyTrace } from "../../services/topologyTraceService";
 import {
   buildNetworkGraph,
   findDisconnectedAssets,
@@ -82,6 +83,16 @@ type ProjectWorkspaceProps = {
   projectAreas?: SavedMapAsset[];
   activeProjectId?: string | null;
   onSelectProject?: (projectId: string) => void;
+  onBulkUpdateDpStatus?: (args: {
+    assetIds: string[];
+    status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
+    note: string;
+  }) => void;
+  onUpdateDpStatus?: (args: {
+    assetId: string;
+    status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
+    note: string;
+  }) => void;
 };
 
 const tabs: { id: WorkspaceTab; label: string }[] = [
@@ -146,6 +157,32 @@ const openreachLayerOptions: {
   { key: "poles", label: "OR Poles" },
   { key: "labels", label: "OR Route Labels" },
 ];
+
+
+function syncWorkspaceDpStatus(asset: SavedMapAsset, status: string): SavedMapAsset {
+  const item = asset as any;
+  const nextDpDetails = {
+    ...(item.dpDetails || item.properties?.dpDetails || {}),
+    buildStatus: status,
+  };
+
+  return {
+    ...item,
+    status,
+    buildStatus: status,
+    dpDetails: nextDpDetails,
+    properties: {
+      ...(item.properties || {}),
+      status,
+      buildStatus: status,
+      dpDetails: {
+        ...((item.properties || {}).dpDetails || {}),
+        ...nextDpDetails,
+        buildStatus: status,
+      },
+    },
+  } as SavedMapAsset;
+}
 
 function isHomeDropCableAsset(
   asset: SavedMapAsset | null | undefined,
@@ -530,6 +567,36 @@ function StatCard({
   );
 }
 
+type TraceHighlightKind =
+  | "selected"
+  | "upstream"
+  | "downstream"
+  | "branch"
+  | "home"
+  | "fibre"
+  | "qa";
+
+function addTraceHighlight(
+  highlights: Record<string, TraceHighlightKind>,
+  asset: SavedMapAsset | null | undefined,
+  kind: TraceHighlightKind,
+) {
+  if (!asset) return;
+
+  const keys = getAssetIdentityKeys(asset);
+  keys.forEach((key) => {
+    if (!key) return;
+    if (highlights[key] === "selected") return;
+    highlights[key] = kind;
+  });
+}
+
+function getTraceHighlightIdList(
+  highlights: Record<string, TraceHighlightKind>,
+): string[] {
+  return Object.keys(highlights).filter(Boolean);
+}
+
 export default function ProjectWorkspace({
   projectName,
   status = "Build Phase",
@@ -545,6 +612,8 @@ export default function ProjectWorkspace({
   projectAreas = [],
   activeProjectId = null,
   onSelectProject,
+  onBulkUpdateDpStatus,
+  onUpdateDpStatus,
 }: ProjectWorkspaceProps) {
   const [openreachLayers, setOpenreachLayers] =
     React.useState<OpenreachLayerVisibility>(defaultOpenreachLayers);
@@ -556,6 +625,10 @@ export default function ProjectWorkspace({
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
   const [mappingRowsByAssetId, setMappingRowsByAssetId] =
     useState<MappingRowsByAssetId>({});
+  const [managerAreaPoints, setManagerAreaPoints] = useState<
+    { lat: number; lng: number }[]
+  >([]);
+  const [isManagerAreaDrawing, setIsManagerAreaDrawing] = useState(false);
 
   const mappingAssetKey = useMemo(
     () =>
@@ -672,6 +745,42 @@ export default function ProjectWorkspace({
       low: auditIssues.filter((issue) => issue.severity === "low"),
     }),
     [auditIssues],
+  );
+
+  const traceHighlightKinds = useMemo(() => {
+    const highlights: Record<string, TraceHighlightKind> = {};
+
+    if (activeOperationPanel !== "trace" || !fullSelectedWorkspaceAsset) {
+      return highlights;
+    }
+
+    const trace = buildTopologyTrace({
+      selectedAsset: fullSelectedWorkspaceAsset,
+      assets: workspaceAssets,
+      graph: networkGraph,
+      auditIssues,
+    });
+
+    addTraceHighlight(highlights, fullSelectedWorkspaceAsset, "selected");
+    trace.upstream.forEach((row) => addTraceHighlight(highlights, row.asset, "upstream"));
+    trace.downstream.forEach((row) => addTraceHighlight(highlights, row.asset, "downstream"));
+    trace.branches.forEach((row) => addTraceHighlight(highlights, row.asset, "branch"));
+    trace.homes.forEach((row) => addTraceHighlight(highlights, row.asset, "home"));
+    trace.fibre.forEach((row) => addTraceHighlight(highlights, row.asset, "fibre"));
+    trace.qa.forEach((row) => addTraceHighlight(highlights, row.asset, "qa"));
+
+    return highlights;
+  }, [
+    activeOperationPanel,
+    fullSelectedWorkspaceAsset,
+    workspaceAssets,
+    networkGraph,
+    auditIssues,
+  ]);
+
+  const traceHighlightedAssetIds = useMemo(
+    () => getTraceHighlightIdList(traceHighlightKinds),
+    [traceHighlightKinds],
   );
 
   const openOperationPanel = (
@@ -870,6 +979,8 @@ export default function ProjectWorkspace({
                 if (!nextProjectId) return;
                 setSelectedWorkspaceAsset(null);
                 setActiveOperationPanel("none");
+                setManagerAreaPoints([]);
+                setIsManagerAreaDrawing(false);
                 onSelectProject?.(nextProjectId);
               }}
               style={projectSwitcherSelect}
@@ -1116,6 +1227,17 @@ export default function ProjectWorkspace({
                   selectedWorkspaceAsset?.id ??
                   null
                 }
+                traceHighlightedAssetIds={traceHighlightedAssetIds}
+                traceHighlightKinds={traceHighlightKinds}
+                managerAreaPoints={managerAreaPoints}
+                managerAreaDrawMode={isManagerAreaDrawing}
+                onManagerAreaPointAdd={(point) => {
+                  setManagerAreaPoints((prev) => [...prev, point]);
+                }}
+                onManagerAreaClear={() => {
+                  setManagerAreaPoints([]);
+                  setIsManagerAreaDrawing(false);
+                }}
                 showCableDistances
                 visibleLayers={visibleLayers}
                 onAssetSelect={(asset) => {
@@ -1182,6 +1304,15 @@ export default function ProjectWorkspace({
                 onSelectAsset={setSelectedWorkspaceAsset}
                 onZoomAsset={setSelectedWorkspaceAsset}
                 onOpenJointEditor={onOpenJointEditor}
+                onUpdateDpStatus={({ asset, status, note }) => {
+                  const syncedAsset = syncWorkspaceDpStatus(asset, status);
+                  setSelectedWorkspaceAsset(syncedAsset);
+                  onUpdateDpStatus?.({
+                    assetId: asset.id,
+                    status,
+                    note,
+                  });
+                }}
               />
             </section>
           ) : (
@@ -1195,6 +1326,24 @@ export default function ProjectWorkspace({
               auditIssues={auditIssues}
               disconnectedAssets={disconnectedAssets}
               networkGraph={networkGraph}
+              managerAreaPoints={managerAreaPoints}
+              isManagerAreaDrawing={isManagerAreaDrawing}
+              onStartManagerAreaDrawing={() => {
+                setActiveTab("build");
+                setManagerAreaPoints([]);
+                setIsManagerAreaDrawing(true);
+              }}
+              onStopManagerAreaDrawing={() => setIsManagerAreaDrawing(false)}
+              onClearManagerAreaDrawing={() => {
+                setManagerAreaPoints([]);
+                setIsManagerAreaDrawing(false);
+              }}
+              onBulkUpdateDpStatus={onBulkUpdateDpStatus}
+              onSelectAsset={(asset) => {
+                setSelectedWorkspaceAsset(asset);
+                setSearchTerm(getWorkspaceAssetTitle(asset));
+              }}
+              onOpenJointEditor={onOpenJointEditor}
               onOpenPanel={(panel, tab) =>
                 openOperationPanel(
                   panel as WorkspaceOperationPanel,
@@ -1417,6 +1566,8 @@ export default function ProjectWorkspace({
                   onSelectAsset={(asset) => {
                     setSelectedWorkspaceAsset(asset);
                     setSearchTerm(getWorkspaceAssetTitle(asset));
+                    setActiveTab("topology");
+                    setActiveOperationPanel("trace");
                   }}
                 />
               )}
