@@ -3,6 +3,12 @@ import { useAppMode } from "../../context/AppModeContext";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { storage } from "../../firebase";
 import type { ChamberDetails, DistributionPointDetails, PoleDetails, SavedMapAsset } from "./types";
+import {
+  applyDpFibrePlanToDetails,
+  buildDpFibrePlan,
+  getArchitectureConsistencyWarnings,
+} from "../../services/dpArchitecturePlanner";
+import { allocateDpFibresForPlan } from "../../services/dpFibreAutoAllocator";
 
 type ConnectedHome = {
   port: number;
@@ -148,8 +154,6 @@ function WorkflowModeBanner({
   activeMode: "survey" | "build" | "maintenance";
 }) {
   return (
-    <>
-      <WorkflowModeBanner activeMode={activeMode} />
     <div style={modeBannerStyle(activeMode)}>
       <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4 }}>
         Current Workflow Mode
@@ -168,7 +172,6 @@ function WorkflowModeBanner({
           "Audit and maintenance traceability active."}
       </div>
     </div>
-    </>
   );
 }
 
@@ -244,7 +247,7 @@ export default function AssetDetailsSidebarSections({
     }
   }
 
-  const selectedCableId = dpDetails.afnDetails?.throughCableId || "";
+  const selectedCableId = dpDetails.afnDetails?.throughCableId || dpDetails.mduDetails?.throughCableId || "";
 
   const afnThroughCableOptions = useMemo(() => {
     const byId = new Map<string, SavedMapAsset>();
@@ -262,15 +265,17 @@ export default function AssetDetailsSidebarSections({
   }, [availableThroughCables, allAssets, currentDpId]);
 
   const selectedCable = afnThroughCableOptions.find((cable) => cable.id === selectedCableId);
-  const currentInputFibres = dpDetails.afnDetails?.inputFibres || [];
+  const currentInputFibres = dpDetails.afnDetails?.inputFibres || dpDetails.mduDetails?.inputFibres || [];
 
-  const usedByOtherAfns = useMemo(() => {
+  const usedByOtherReservations = useMemo(() => {
     const used = new Set<number>();
     allDistributionPoints.forEach((asset) => {
       if (asset.id === currentDpId) return;
       const afn = asset.dpDetails?.afnDetails;
-      if (!afn?.throughCableId || afn.throughCableId !== selectedCableId) return;
-      (afn.inputFibres || []).forEach((fibre) => used.add(Number(fibre)));
+      const mdu = asset.dpDetails?.mduDetails;
+      const throughCableId = afn?.throughCableId || mdu?.throughCableId || "";
+      if (!throughCableId || throughCableId !== selectedCableId) return;
+      [...(afn?.inputFibres || []), ...(mdu?.inputFibres || [])].forEach((fibre) => used.add(Number(fibre)));
     });
     allAssets.forEach((asset) => {
       if (asset.assetType !== "cable") return;
@@ -284,9 +289,66 @@ export default function AssetDetailsSidebarSections({
   }, [allDistributionPoints, allAssets, currentDpId, selectedCableId]);
 
   const fibreTotal = Number(String(selectedCable?.fibreCount || "48F").replace(/\D/g, "")) || 48;
-  const dpCapacity = dpDetails.closureType === "AFN" ? currentInputFibres.length * 8 : Number(dpDetails.connectionsToHomes || 0);
+  const dpCapacity = dpDetails.closureType === "AFN" ? Number(dpDetails.autoFibrePlan?.capacity || currentInputFibres.length * 8) : Number(dpDetails.connectionsToHomes || dpDetails.autoFibrePlan?.capacity || 0);
   const dpUsed = connectedHomes.length;
   const dpAvailable = Math.max(0, dpCapacity - dpUsed);
+
+  const dpAutoFibrePlan = useMemo(() => buildDpFibrePlan({
+    closureType: dpDetails.closureType || "CBT",
+    connectedHomes: dpUsed,
+    currentInputFibres,
+    mduFibres: dpDetails.mduDetails?.mduFibres,
+    mduSplitterFibres: dpDetails.mduDetails?.splitterFibres,
+  }), [
+    dpDetails.closureType,
+    dpDetails.mduDetails?.mduFibres,
+    dpDetails.mduDetails?.splitterFibres,
+    dpUsed,
+    currentInputFibres,
+  ]);
+
+  const architectureWarnings = useMemo(() => getArchitectureConsistencyWarnings({
+    currentDpId,
+    currentClosureType: dpDetails.closureType || "CBT",
+    currentThroughCableId: selectedCableId || dpDetails.mduDetails?.throughCableId || null,
+    allDistributionPoints,
+  }), [
+    currentDpId,
+    dpDetails.closureType,
+    dpDetails.mduDetails?.throughCableId,
+    selectedCableId,
+    allDistributionPoints,
+  ]);
+
+  const suggestedFibreAllocation = useMemo(() => {
+    if (dpAutoFibrePlan.architecture === "CBT") return null;
+
+    return allocateDpFibresForPlan({
+      currentDpId,
+      currentClosureType: dpDetails.closureType,
+      currentDpDetails: dpDetails,
+      connectedHomes: dpUsed,
+      plan: dpAutoFibrePlan,
+      selectedThroughCableId: selectedCableId || dpDetails.mduDetails?.throughCableId || null,
+      availableThroughCables,
+      allDistributionPoints,
+      allAssets,
+    });
+  }, [
+    allAssets,
+    allDistributionPoints,
+    availableThroughCables,
+    currentDpId,
+    dpAutoFibrePlan,
+    dpDetails,
+    dpUsed,
+    selectedCableId,
+  ]);
+
+  function applyAutoFibrePlan() {
+    const allocation = suggestedFibreAllocation || undefined;
+    onChangeDpDetails(applyDpFibrePlanToDetails(dpDetails, dpAutoFibrePlan, allocation || undefined));
+  }
 
   function updateAfnDetails(next: Partial<NonNullable<DistributionPointDetails["afnDetails"]>>) {
     const nextFibres = next.inputFibres || currentInputFibres;
@@ -313,7 +375,7 @@ export default function AssetDetailsSidebarSections({
       updateAfnDetails({ inputFibres: currentInputFibres.filter((item) => item !== fibre) });
       return;
     }
-    if (currentInputFibres.length >= 4 || usedByOtherAfns.has(fibre)) return;
+    if (currentInputFibres.length >= 24 || usedByOtherReservations.has(fibre)) return;
     updateAfnDetails({ inputFibres: [...currentInputFibres, fibre].sort((a, b) => a - b) });
   }
 
@@ -464,6 +526,100 @@ export default function AssetDetailsSidebarSections({
   <option value="MDU_SPLITTER">MDU + Splitter</option>
 </select>
 
+        <div
+          style={{
+            marginTop: 10,
+            padding: 10,
+            border: `1px solid ${dpAutoFibrePlan.status === "error" ? "#dc2626" : dpAutoFibrePlan.status === "warning" ? "#f59e0b" : "#334155"}`,
+            borderRadius: 10,
+            background: "#020617",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+            <div>
+              <div style={{ fontWeight: 900, color: "#e5e7eb" }}>
+                Auto Fibre Plan — {dpAutoFibrePlan.architecture}
+              </div>
+              <div style={helpText}>
+                Closure architecture stays locked. This planner will not mix CBTs and AFNs on the same network leg.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={applyAutoFibrePlan}
+              style={{ ...secondaryButtonStyle, whiteSpace: "nowrap", background: "#2563eb", color: "white" }}
+            >
+              Apply Plan
+            </button>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginTop: 10 }}>
+            {[
+              ["Homes", dpAutoFibrePlan.connectedHomes],
+              ["Capacity", dpAutoFibrePlan.capacity],
+              ["Input Fibres", dpAutoFibrePlan.requiredInputFibres],
+              ["Available", dpAutoFibrePlan.availableOutputs],
+            ].map(([title, value]) => (
+              <div
+                key={String(title)}
+                style={{
+                  background: "#111827",
+                  border: "1px solid #334155",
+                  borderRadius: 8,
+                  padding: 7,
+                  textAlign: "center",
+                }}
+              >
+                <strong>{value}</strong>
+                <br />
+                <span style={{ color: "#9ca3af", fontSize: "0.72rem" }}>{title}</span>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ ...helpText, marginTop: 8 }}>
+            {dpAutoFibrePlan.title}
+          </div>
+
+          {suggestedFibreAllocation ? (
+            <div style={{ ...helpText, marginTop: 8 }}>
+              Auto through cable: <strong>{suggestedFibreAllocation.throughCableName || "not found"}</strong>
+              <br />
+              Local fibres: <strong>{suggestedFibreAllocation.localReservedFibres}</strong>
+              {" · "}
+              Branch demand: <strong>{suggestedFibreAllocation.branchReservedFibres}</strong>
+              {" · "}
+              Downstream already ahead: <strong>{suggestedFibreAllocation.downstreamReservedFibres}</strong>
+              <br />
+              Reserved on parent: <strong>{suggestedFibreAllocation.inputFibres.join(", ") || "none"}</strong>
+            </div>
+          ) : null}
+
+          {[...dpAutoFibrePlan.warnings, ...architectureWarnings, ...(suggestedFibreAllocation?.warnings || [])].map((warning) => (
+            <div
+              key={warning}
+              style={{
+                marginTop: 8,
+                padding: 8,
+                borderRadius: 8,
+                background: "rgba(127,29,29,0.35)",
+                border: "1px solid rgba(248,113,113,0.45)",
+                color: "#fecaca",
+                fontSize: "0.78rem",
+                lineHeight: 1.35,
+              }}
+            >
+              {warning}
+            </div>
+          ))}
+
+          {(suggestedFibreAllocation?.branchNotes || []).slice(0, 4).map((note) => (
+            <div key={note} style={{ ...helpText, marginTop: 6 }}>
+              • {note}
+            </div>
+          ))}
+        </div>
+
         {dpDetails.closureType === "AFN" ? <>
           <div style={helpText}>AFN uses selected input fibres from a through cable. Each selected fibre gives 8 outputs.</div>
           <div style={labelStyle}>Through Cable</div>
@@ -475,7 +631,7 @@ export default function AssetDetailsSidebarSections({
             {Array.from({ length: fibreTotal }, (_, index) => {
               const fibre = index + 1;
               const selectedHere = currentInputFibres.includes(fibre);
-              const usedElsewhere = usedByOtherAfns.has(fibre);
+              const usedElsewhere = usedByOtherReservations.has(fibre);
               return <button key={fibre} type="button" disabled={usedElsewhere && !selectedHere} onClick={() => toggleFibre(fibre)} style={{ ...secondaryButtonStyle, padding: "5px 4px", background: selectedHere ? "#2563eb" : usedElsewhere ? "#374151" : "#111827", opacity: usedElsewhere && !selectedHere ? 0.45 : 1 }}>F{fibre}</button>;
             })}
           </div> : null}
@@ -506,8 +662,7 @@ dpDetails.closureType === "MDU_SPLITTER" ? (
             totalReservedFibres:
               (dpDetails.mduDetails?.mduFibres || 6) +
               (dpDetails.mduDetails?.splitterFibres || 0),
-            inputFibres:
-              dpDetails.mduDetails?.inputFibres || [],
+            inputFibres: [],
           },
         });
       }}
@@ -548,6 +703,7 @@ dpDetails.closureType === "MDU_SPLITTER" ? (
             splitterFibres,
             totalReservedFibres:
               mduFibres + splitterFibres,
+            inputFibres: dpDetails.mduDetails?.inputFibres || [],
           },
         });
       }}
@@ -580,6 +736,7 @@ dpDetails.closureType === "MDU_SPLITTER" ? (
                 mduFibres,
                 totalReservedFibres:
                   splitterFibres + mduFibres,
+                inputFibres: dpDetails.mduDetails?.inputFibres || [],
               },
             });
           }}
@@ -592,7 +749,7 @@ dpDetails.closureType === "MDU_SPLITTER" ? (
       Reserved fibres:
       {" "}
       <strong>
-        {dpDetails.mduDetails?.totalReservedFibres || 0}
+        {dpDetails.autoFibrePlan?.reservedFibres || dpDetails.mduDetails?.totalReservedFibres || 0}
       </strong>
     </div>
   </>

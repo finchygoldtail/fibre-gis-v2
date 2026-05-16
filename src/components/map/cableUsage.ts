@@ -114,6 +114,30 @@ function manualUsedFibres(cable: any): number {
   return 0;
 }
 
+function maxReservedDpFibreOnCable(cable: any, allAssets: any[] = []): number {
+  const cableId = String(cable?.id || "");
+  if (!cableId) return 0;
+
+  let maxFibre = 0;
+
+  (allAssets || []).forEach((asset: any) => {
+    const details = asset?.dpDetails;
+    if (!details) return;
+
+    const afn = details.afnDetails;
+    const mdu = details.mduDetails;
+    const throughCableId = String(afn?.throughCableId || mdu?.throughCableId || "");
+    if (throughCableId !== cableId) return;
+
+    [...(afn?.inputFibres || []), ...(mdu?.inputFibres || [])].forEach((value: any) => {
+      const fibre = Number(value);
+      if (Number.isFinite(fibre) && fibre > maxFibre) maxFibre = fibre;
+    });
+  });
+
+  return maxFibre;
+}
+
 function rowLooksLikeHeader(text: string): boolean {
   return (
     text.includes("fibre") &&
@@ -322,6 +346,8 @@ export function deriveCableUsageFromJointExcel(args: {
     usedFibres = manualUsedFibres(cable);
   }
 
+  usedFibres = Math.max(usedFibres, maxReservedDpFibreOnCable(cable, allAssets));
+
   if (capacity > 0) usedFibres = Math.min(capacity, usedFibres);
 
   return {
@@ -343,7 +369,8 @@ export function getCableUsedFibres(cable: any, allAssets: any[] = []): number {
   }
 
   const manual = manualUsedFibres(cable);
-  if (manual > 0) return manual;
+  const dpReserved = maxReservedDpFibreOnCable(cable, allAssets);
+  if (manual > 0 || dpReserved > 0) return Math.max(manual, dpReserved);
 
   // Display fallback only. Save/update code calls deriveCableUsageFromJointExcel
   // with route points so endpoint joints can be read accurately.

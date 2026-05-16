@@ -273,6 +273,25 @@ function resolveFullProjectAsset(
   } as SavedMapAsset;
 }
 
+function findWorkspaceAssetForIssue(
+  issue: AuditIssue,
+  assets: SavedMapAsset[],
+): SavedMapAsset | null {
+  const issueKeys = new Set(
+    [issue.assetId, issue.assetName, (issue as any).id, (issue as any).asset?.id]
+      .map(assetMatchKey)
+      .filter(Boolean),
+  );
+
+  if (!issueKeys.size) return null;
+
+  return (
+    assets.find((asset) =>
+      getAssetIdentityKeys(asset).some((key) => issueKeys.has(key)),
+    ) || null
+  );
+}
+
 function getWorkspaceAssetTitle(
   asset: SavedMapAsset | null | undefined,
 ): string {
@@ -594,6 +613,8 @@ export default function ProjectWorkspace({
   );
   const [activeOperationPanel, setActiveOperationPanel] =
     useState<WorkspaceOperationPanel>("none");
+  const [activeIssueSeverity, setActiveIssueSeverity] =
+    useState<"high" | "medium" | "low" | null>(null);
 
   const auditIssues = useMemo(
     () => auditAreaAssets(workspaceAssets),
@@ -672,6 +693,28 @@ export default function ProjectWorkspace({
     return rows;
   }, [fullSelectedWorkspaceAsset, networkGraph]);
 
+  const selectedTraceSummary = useMemo(() => {
+    const lowerType = (asset: any) =>
+      String(asset?.assetType || asset?.type || asset?.jointType || asset?.cableType || "").toLowerCase();
+
+    return {
+      connectedAssets: selectedTraceRows.length,
+      branchCables: selectedTraceRows.filter((row) => {
+        const type = lowerType(row.asset);
+        return type.includes("cable") || row.asset?.geometry?.type === "LineString";
+      }).length,
+      connectedHomes: selectedTraceRows.filter((row) => lowerType(row.asset).includes("home")).length,
+      connectedDps: selectedTraceRows.filter((row) => {
+        const type = lowerType(row.asset);
+        return type.includes("distribution") || type.includes("dp") || type.includes("cbt") || type.includes("afn");
+      }).length,
+      connectedJoints: selectedTraceRows.filter((row) => {
+        const type = lowerType(row.asset);
+        return type.includes("joint") || type.includes("ag") || type.includes("lmj") || type.includes("cmj");
+      }).length,
+    };
+  }, [selectedTraceRows]);
+
   const designCableCount = useMemo(
     () => workspaceAssets.filter(isDesignCableAsset).length,
     [workspaceAssets],
@@ -726,6 +769,22 @@ export default function ProjectWorkspace({
   const openInternalTraceTool = () => {
     setActiveTab("topology");
     setActiveOperationPanel("trace");
+  };
+
+  const openIssueSeverity = (severity: "high" | "medium" | "low") => {
+    setActiveIssueSeverity(severity);
+    setActiveTab("qa");
+    setActiveOperationPanel("qa");
+  };
+
+  const handleAuditIssueSelect = (issue: AuditIssue) => {
+    const matchedAsset = findWorkspaceAssetForIssue(issue, workspaceAssets);
+    if (matchedAsset) {
+      setSelectedWorkspaceAsset(matchedAsset);
+      setSearchTerm(getWorkspaceAssetTitle(matchedAsset));
+    }
+    setActiveTab("qa");
+    setActiveOperationPanel("qa");
   };
 
   const handleGenerateReport = () => {
@@ -1135,7 +1194,23 @@ export default function ProjectWorkspace({
                 }
                 showCableDistances
                 visibleLayers={visibleLayers}
-                onAssetSelect={setSelectedWorkspaceAsset}
+                onAssetSelect={(asset) => {
+                  const assetType = String((asset as any).assetType || (asset as any).type || "").toLowerCase();
+                  setSelectedWorkspaceAsset(asset);
+
+                  if (assetType === "ag-joint" || assetType === "joint" || assetType.includes("joint")) {
+                    onOpenJointEditor?.(asset);
+                    return;
+                  }
+
+                  if (asset.geometry?.type === "LineString" || assetType.includes("cable")) {
+                    setActiveTab("topology");
+                    setActiveOperationPanel("trace");
+                    return;
+                  }
+
+                  setActiveOperationPanel("none");
+                }}
               />
 
               <div style={mapAssetInspector}>
@@ -1178,8 +1253,8 @@ export default function ProjectWorkspace({
                 projectName={projectName}
                 projectAssets={workspaceAssets}
                 onClose={() => setSelectedWorkspaceAsset(null)}
-                onOpenTopology={onOpenFibreTopology}
-                onOpenQA={onOpenQA}
+                onOpenTopology={openInternalTraceTool}
+                onOpenQA={() => openOperationPanel("qa", "qa")}
                 onSelectAsset={setSelectedWorkspaceAsset}
                 onZoomAsset={setSelectedWorkspaceAsset}
                 onOpenJointEditor={onOpenJointEditor}
@@ -1203,8 +1278,8 @@ export default function ProjectWorkspace({
                 )
               }
               onOpenTrace={openInternalTraceTool}
-              onOpenQA={onOpenQA}
-              onOpenFibreTopology={onOpenFibreTopology}
+              onOpenQA={() => openOperationPanel("qa", "qa")}
+              onOpenFibreTopology={openInternalTraceTool}
               onExport={onExport}
               onBackToMap={onBackToMap}
             />
@@ -1303,42 +1378,69 @@ export default function ProjectWorkspace({
                       label="High"
                       value={issueBuckets.high.length}
                       tone="#7f1d1d"
+                      active={activeIssueSeverity === "high"}
+                      onClick={() => openIssueSeverity("high")}
                     />
                     <IssueCard
                       label="Medium"
                       value={issueBuckets.medium.length}
                       tone="#78350f"
+                      active={activeIssueSeverity === "medium"}
+                      onClick={() => openIssueSeverity("medium")}
                     />
                     <IssueCard
                       label="Low"
                       value={issueBuckets.low.length}
                       tone="#1e3a8a"
+                      active={activeIssueSeverity === "low"}
+                      onClick={() => openIssueSeverity("low")}
                     />
                   </div>
+                  {activeIssueSeverity ? (
+                    <div style={emptyPanel}>
+                      Showing {activeIssueSeverity.toUpperCase()} issues only. Click another severity card to switch.
+                    </div>
+                  ) : null}
                   <div style={operationList}>
                     {auditIssues.length === 0 ? (
                       <div style={emptyPanel}>
                         No QA issues found for this project area.
                       </div>
                     ) : (
-                      auditIssues
-                        .slice(0, 12)
-                        .map((issue: AuditIssue, index: number) => (
-                          <div
-                            key={`${issue.assetId}-${issue.issue}-${index}`}
-                            style={operationListItem}
-                          >
-                            <strong>
-                              {issue.severity.toUpperCase()} — {issue.category}
-                            </strong>
-                            <span>
-                              {issue.assetName ||
-                                issue.assetId ||
-                                "Unknown asset"}
-                            </span>
-                            <small>{issue.issue}</small>
-                          </div>
-                        ))
+                      (activeIssueSeverity
+                        ? issueBuckets[activeIssueSeverity]
+                        : auditIssues
+                      )
+                        .slice(0, 30)
+                        .map((issue: AuditIssue, index: number) => {
+                          const matchedAsset = findWorkspaceAssetForIssue(issue, workspaceAssets);
+
+                          return (
+                            <button
+                              key={`${issue.assetId}-${issue.issue}-${index}`}
+                              type="button"
+                              style={{
+                                ...operationListItem,
+                                textAlign: "left",
+                                cursor: matchedAsset ? "pointer" : "default",
+                              }}
+                              onClick={() => handleAuditIssueSelect(issue)}
+                            >
+                              <strong>
+                                {issue.severity.toUpperCase()} — {issue.category}
+                              </strong>
+                              <span>
+                                {issue.assetName ||
+                                  issue.assetId ||
+                                  "Unknown asset"}
+                              </span>
+                              <small>{issue.issue}</small>
+                              <small style={{ color: matchedAsset ? "#93c5fd" : "#64748b" }}>
+                                {matchedAsset ? "Click to select asset and show it on the workspace map" : "Asset not found in current project scope"}
+                              </small>
+                            </button>
+                          );
+                        })
                     )}
                   </div>
                 </div>
@@ -1394,6 +1496,14 @@ export default function ProjectWorkspace({
                         <span>
                           {getWorkspaceAssetType(fullSelectedWorkspaceAsset)}
                         </span>
+                      </div>
+
+                      <div style={operationGrid}>
+                        <InfoRow label="Connected Assets" value={formatNumber(selectedTraceSummary.connectedAssets)} />
+                        <InfoRow label="Branch Cables" value={formatNumber(selectedTraceSummary.branchCables)} />
+                        <InfoRow label="Connected DPs" value={formatNumber(selectedTraceSummary.connectedDps)} />
+                        <InfoRow label="Connected Homes" value={formatNumber(selectedTraceSummary.connectedHomes)} />
+                        <InfoRow label="Connected Joints" value={formatNumber(selectedTraceSummary.connectedJoints)} />
                       </div>
 
                       <div style={operationList}>
@@ -1518,16 +1628,32 @@ function IssueCard({
   label,
   value,
   tone,
+  active = false,
+  onClick,
 }: {
   label: string;
   value: number;
   tone: string;
+  active?: boolean;
+  onClick?: () => void;
 }) {
   return (
-    <div style={{ ...issueCard, background: tone }}>
+    <button
+      type="button"
+      style={{
+        ...issueCard,
+        background: tone,
+        border: active ? "2px solid #93c5fd" : "1px solid rgba(255,255,255,0.12)",
+        cursor: "pointer",
+        textAlign: "left",
+        color: "#fff",
+      }}
+      onClick={onClick}
+    >
       <div style={{ fontSize: 12, opacity: 0.9 }}>{label}</div>
       <div style={{ fontSize: 28, fontWeight: 900 }}>{value}</div>
-    </div>
+      <small style={{ opacity: 0.75 }}>Open assets</small>
+    </button>
   );
 }
 

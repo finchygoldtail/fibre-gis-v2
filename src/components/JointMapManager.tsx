@@ -4086,7 +4086,7 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
 
 
 
-        <details open style={card}>
+        <details style={card}>
           <summary style={sectionSummary}>Survey Cleanup</summary>
           <div style={sectionBody}>
             <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.4 }}>
@@ -4150,7 +4150,7 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
           </div>
         </details>
 
-        <details open style={card}>
+        <details style={card}>
           <summary style={sectionSummary}>Home Reassignment</summary>
           <div style={sectionBody}>
             <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.4 }}>
@@ -4206,7 +4206,7 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
           </div>
         </details>
 
-        <details open style={card}>
+        <details open={Boolean(editingAssetId)} style={card}>
           <summary style={sectionSummary}>
             {editingAssetId ? "Asset Details" : "Asset Editor"}
           </summary>
@@ -4663,6 +4663,22 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
             assets={visibleProjectAssets}
             visibleLayers={visibleLayers}
             onOpenAsset={(asset) => {
+              const routedType = String((asset as any).assetType || (asset as any).type || "").toLowerCase();
+
+              // PHASE 7A WORKSPACE WIRING:
+              // Open operational editors directly where possible.
+              // This deliberately does not touch storage, cable drawing, drops, AFN/MDU logic,
+              // or Firestore chunk persistence.
+              if (routedType === "ag-joint" || routedType === "joint" || routedType.includes("joint")) {
+                onOpenJoint(asset);
+                return;
+              }
+
+              if (routedType === "street-cab" || routedType.includes("street") || routedType.includes("cab")) {
+                setOpenStreetCabAsset(asset);
+                return;
+              }
+
               handleEditAsset(asset);
               setIsPanelOpen(true);
             }}

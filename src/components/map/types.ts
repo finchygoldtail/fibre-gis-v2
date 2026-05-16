@@ -11,6 +11,8 @@ export type AssetType =
   | "cable";
 export type CableType = "Feeder Cable" | "ULW Cable" | "Link Cable" | "AFN Spine Cable" | "PIA Overlay";
 
+export type DistributionArchitecture = "CBT" | "AFN" | "MDU" | "MDU_SPLITTER";
+
 export type FibreCount =
   | "12F"
   | "24F"
@@ -44,11 +46,29 @@ export type PoleDetails = {
 export type DistributionPointDetails = {
   powerReadings: string[];
 
-  closureType:
-    | "CBT"
-    | "AFN"
-    | "MDU"
-    | "MDU_SPLITTER";
+  closureType: DistributionArchitecture;
+
+  /**
+   * PHASE 7A.1
+   * Network-level serving architecture for this DP/chain.
+   * This allows the planner to keep CBT, AFN and MDU logic consistent
+   * instead of mixing closure types randomly per DP.
+   */
+  networkArchitecture?: DistributionArchitecture;
+
+  /**
+   * Last calculated automatic fibre plan. This is metadata only; it does
+   * not replace cable/drop save logic.
+   */
+  autoFibrePlan?: {
+    connectedHomes: number;
+    requiredInputFibres: number;
+    branchReservedFibres?: number;
+    downstreamReservedFibres?: number;
+    reservedFibres: number;
+    capacity: number;
+    updatedAt: string;
+  };
 
   connectionsToHomes: number;
 

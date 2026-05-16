@@ -923,7 +923,11 @@ export default function AssetMarkersLayer({
               ) : null}
 
               <button style={actionButtonStyle} onClick={() => onEditAsset(asset)}>
-                Edit
+                {asset.assetType === "ag-joint" || String((asset as any).type || "").toLowerCase().includes("joint")
+                  ? "Move Joint"
+                  : asset.assetType === "cable"
+                  ? "Edit Details"
+                  : "Edit Details"}
               </button>
 
               <button style={deleteButtonStyle} onClick={() => onDeleteAsset(asset.id)}>
