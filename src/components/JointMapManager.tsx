@@ -72,6 +72,7 @@ import {
   getAssetLatLng,
 } from "./map/utils/generateDrops";
 import StreetCabDesigner from "./streetcab/StreetCabDesigner";
+import DistributionPointEditor from "./dp/DistributionPointEditor";
 import ProjectAreaSelector from "./map/projects/ProjectAreaSelector";
 import { filterAssetsForProjectArea } from "./map/projects/projectAssetFilter";
 import {
@@ -1361,6 +1362,8 @@ export default function JointMapManager({
 
   const [openStreetCabAsset, setOpenStreetCabAsset] =
     useState<SavedMapAsset | null>(null);
+  const [openDistributionPointAsset, setOpenDistributionPointAsset] =
+    useState<SavedMapAsset | null>(null);
 
   // =====================================================
   // ONE MAP-ASSET SAVE PATH
@@ -1803,6 +1806,7 @@ export default function JointMapManager({
     setShowPoleModal(false);
     setShowDpModal(false);
     setShowChamberModal(false);
+    setOpenDistributionPointAsset(null);
   };
 
   const openCableModalForNew = () => {
@@ -4606,6 +4610,10 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         }}
         onOpenJointEditor={(asset) => {
           setIsProjectWorkspaceOpen(false);
+          if (asset.assetType === "distribution-point") {
+            setOpenDistributionPointAsset(asset);
+            return;
+          }
           onOpenJoint(asset);
         }}
         onBulkUpdateDpStatus={handleWorkspaceBulkDpStatusUpdate}
@@ -5069,6 +5077,18 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
                   </button>
                 ) : null}
 
+                {currentEditingAsset?.assetType === "distribution-point" ? (
+                  <button
+                    onClick={() =>
+                      currentEditingAsset &&
+                      setOpenDistributionPointAsset(currentEditingAsset)
+                    }
+                    style={{ ...btnPrimary, marginTop: 10 }}
+                  >
+                    Open DP Operations Editor
+                  </button>
+                ) : null}
+
                 <AssetActivityMiniSummary asset={currentEditingAsset} />
                 <button
                   onClick={() => openMaintenanceHistory(currentEditingAsset)}
@@ -5466,11 +5486,32 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
                 return;
               }
 
+              if (
+                routedType === "distribution-point" ||
+                routedType.includes("distribution") ||
+                routedType === "dp" ||
+                routedType.includes("afn") ||
+                routedType.includes("cbt") ||
+                routedType.includes("mdu")
+              ) {
+                setOpenDistributionPointAsset(asset);
+                setShowDpModal(false);
+                setIsPanelOpen(false);
+                return;
+              }
+
               handleEditAsset(asset);
               setIsPanelOpen(true);
             }}
             onDeleteAsset={handleDeleteAsset}
-            onEditAsset={handleEditAsset}
+            onEditAsset={(asset) => {
+              // PHASE 8B.2 — Keep Edit Details as metadata editing.
+              // The dedicated DP Operations editor is opened via the map Open/Operations path
+              // and the side-panel "Open DP Operations Editor" button.
+              // Do not route Edit Details into DistributionPointEditor.
+              handleEditAsset(asset);
+              setIsPanelOpen(true);
+            }}
             moveHomesMode={mapMode === "move-homes"}
             selectedMoveHomeIds={selectedMoveHomeIds}
             onToggleMoveHome={handleToggleMoveHomeSelection}
@@ -6097,6 +6138,36 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
             {isLayersOpen ? "Hide Layers" : "Layers"}
           </button>
         </>
+      )}
+
+
+      {openDistributionPointAsset && (
+        <DistributionPointEditor
+          asset={openDistributionPointAsset}
+          allAssets={allMapAssets}
+          onClose={() => {
+            setOpenDistributionPointAsset(null);
+            if (activeProjectArea) {
+              setIsProjectWorkspaceOpen(true);
+            }
+          }}
+          onSaveRouting={({ asset, nextDetails }) => {
+            const updatedAsset = {
+              ...(asset as any),
+              dpDetails: nextDetails,
+              properties: {
+                ...((asset as any).properties || {}),
+                dpDetails: nextDetails,
+              },
+            } as SavedMapAsset;
+
+            const savedAsset = saveMapAssetToState(updatedAsset, {
+              message: "DP routing updated",
+            });
+
+            setOpenDistributionPointAsset(savedAsset);
+          }}
+        />
       )}
 
       {openStreetCabAsset && (

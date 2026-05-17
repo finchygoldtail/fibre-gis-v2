@@ -896,7 +896,19 @@ export default function ProjectWorkspace({
     useState<SavedMapAsset | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>(() => {
+    if (typeof window === "undefined") return "overview";
+    try {
+      const requestedTab = window.localStorage.getItem("alistra-workspace-return-tab") as WorkspaceTab | null;
+      if (requestedTab && tabs.some((tab) => tab.id === requestedTab)) {
+        window.localStorage.removeItem("alistra-workspace-return-tab");
+        return requestedTab;
+      }
+    } catch {
+      // Ignore localStorage issues in private browsing.
+    }
+    return "overview";
+  });
   const [mappingRowsByAssetId, setMappingRowsByAssetId] =
     useState<MappingRowsByAssetId>({});
   const [managerAreaPoints, setManagerAreaPoints] = useState<
