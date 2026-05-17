@@ -63,10 +63,12 @@ export default function WorkspaceBuild({
   projectArea,
   managerAreaPoints = [],
   isManagerAreaDrawing = false,
+  areaDistributionPoints = [],
   onStartManagerAreaDrawing,
   onStopManagerAreaDrawing,
   onClearManagerAreaDrawing,
   onBulkUpdateDpStatus,
+  onClearDpFibreAllocations,
   onSelectAsset,
   onOpenJointEditor,
   onBackToMap,
@@ -124,6 +126,33 @@ export default function WorkspaceBuild({
       onClearDrawingArea={onClearManagerAreaDrawing}
       onBulkUpdateDpStatus={onBulkUpdateDpStatus}
     />
+
+    <section style={wide}>
+      <h3 style={title}>DP Fibre Allocation Reset</h3>
+      <p style={{ color: "#cbd5e1", marginTop: 0 }}>
+        Clears only fibre allocation/routing state from every DP in this selected polygon.
+        DP names, closure types, homes, notes, photos, statuses and selected through-cables are kept.
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10, marginBottom: 12 }}>
+        <Tile label="Area DPs" value={n(areaDistributionPoints.length)} />
+        <Tile label="Action" value="Clear fibres" />
+      </div>
+      <button
+        type="button"
+        style={{
+          ...button,
+          background: "#7f1d1d",
+          borderColor: "rgba(248,113,113,0.42)",
+        }}
+        onClick={onClearDpFibreAllocations}
+        disabled={!areaDistributionPoints.length || !onClearDpFibreAllocations}
+      >
+        Clear DP Fibre Allocations In Area
+      </button>
+      <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 8 }}>
+        Use this before Rebuild Chain when old manual fibre allocations need wiping clean across the fibrehood.
+      </div>
+    </section>
 
     <section style={wide}>
       <h3 style={title}>Build Actions</h3>

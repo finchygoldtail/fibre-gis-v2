@@ -8,6 +8,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import type { DistributionPointDetails, SavedMapAsset } from "../map/types";
+import { buildDpRoutingState } from "../../services/network";
 
 type ConnectedHomeRow = {
   id: string;
@@ -490,6 +491,11 @@ export default function DistributionPointEditor({
     [asset, allAssets],
   );
 
+  const computedDpRoutingState = useMemo(
+    () => (asset ? buildDpRoutingState(asset as any) : null),
+    [asset],
+  );
+
   const capacity = useMemo(
     () => getCapacity(asset, connectedHomes.length),
     [asset, connectedHomes.length],
@@ -743,6 +749,7 @@ export default function DistributionPointEditor({
             <Metric label="Incoming" value={`${incomingFibreCount}F`} colour="#38bdf8" />
             <Metric label="Used" value={consumedFibreCount} colour="#fbbf24" />
             <Metric label={draftRouting.hasDownstreamCable ? "Passthrough" : "Spare / EOL"} value={`${draftRouting.hasDownstreamCable ? passthroughFibreCount : spareEndOfLineFibreCount}F`} colour="#4ade80" />
+            <Metric label="Network state" value={`${computedDpRoutingState?.usedFibres.length || 0}F`} colour="#a78bfa" />
           </div>
 
           <div style={{ background: "rgba(15,23,42,0.72)", border: "1px solid rgba(148,163,184,0.12)", borderRadius: 12, padding: 12 }}>

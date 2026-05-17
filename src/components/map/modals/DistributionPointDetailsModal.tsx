@@ -278,6 +278,29 @@ export default function DistributionPointDetailsModal({
           <option value="MDU_SPLITTER">MDU + Splitter</option>
         </select>
 
+        <label>DP Role</label>
+        <select
+          value={details.dpRole || "serving"}
+          onChange={(e) =>
+            update(
+              "dpRole" as keyof DistributionPointDetails,
+              e.target.value as "serving" | "splice_only",
+            )
+          }
+        >
+          <option value="serving">Serving DP / customer allocation</option>
+          <option value="splice_only">Splice-only / passthrough</option>
+        </select>
+
+        {details.dpRole === "splice_only" ? (
+          <div className="afn-summary" style={{ borderColor: "#f59e0b" }}>
+            <strong>Splice-only mode</strong>
+            <br />
+            This AFN stays in topology and passthrough propagation, but SB fibre
+            allocation will ignore it when Rebuild Chain runs.
+          </div>
+        ) : null}
+
         {details.closureType === "AFN" ? (
           <div className="afn-panel">
             <strong>AFN loop-through splitter</strong>

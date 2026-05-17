@@ -18,6 +18,8 @@ export type CableType =
 
 export type DistributionArchitecture = "CBT" | "AFN" | "MDU" | "MDU_SPLITTER";
 
+export type DistributionPointRole = "serving" | "splice_only";
+
 export type FibreCount =
   | "12F"
   | "24F"
@@ -103,6 +105,13 @@ export type DistributionPointDetails = {
   connectionsToHomes: number;
 
   buildStatus?: string;
+
+  /**
+   * Operational role for the DP/AFN.
+   * serving = can receive SB/customer fibre allocations.
+   * splice_only = remains in topology/passthrough, but is ignored by SB allocation.
+   */
+  dpRole?: DistributionPointRole;
 
   // =====================================================
   // AFN DETAILS

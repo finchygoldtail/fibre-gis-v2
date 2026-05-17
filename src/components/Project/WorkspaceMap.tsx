@@ -26,6 +26,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { SavedMapAsset } from "../map/types";
 import OpenreachOverlayLayer, { type OpenreachLayerVisibility } from "../map/OpenreachOverlayLayer";
+import type { NetworkState } from "../../services/network";
 
 // =====================================================
 // TYPES
@@ -55,6 +56,7 @@ type WorkspaceMapProps = {
   visibleLayers?: WorkspaceLayerVisibility;
   traceHighlightedAssetIds?: string[];
   traceHighlightKinds?: Record<string, string>;
+  networkState?: NetworkState;
   managerAreaPoints?: LatLngLiteral[];
   managerAreaDrawMode?: boolean;
   onManagerAreaPointAdd?: (point: LatLngLiteral) => void;
@@ -443,6 +445,7 @@ export default function WorkspaceMap({
   openreachLayers = DEFAULT_OPENREACH_LAYERS,
   traceHighlightedAssetIds = [],
   traceHighlightKinds = {},
+  networkState,
   managerAreaPoints = [],
   managerAreaDrawMode = false,
   onManagerAreaPointAdd,
@@ -546,6 +549,7 @@ export default function WorkspaceMap({
           const midpoint = points[Math.floor(points.length / 2)];
           const traceKind = getTraceKind(asset, traceHighlightedAssetIds, traceHighlightKinds);
           const traceColour = getTraceColour(traceKind);
+          const cableState = networkState?.cableStates[asset.id];
 
           return (
             <React.Fragment key={`workspace-drop-cable-${asset.id}`}>
@@ -561,6 +565,7 @@ export default function WorkspaceMap({
               >
                 <Tooltip sticky>
                   {getAssetName(asset)} · drop · {formatDistance(distanceMeters(points))}
+                  {cableState ? ` · ${cableState.usedFibres}/${cableState.capacity || "?"}F` : ""}
                 </Tooltip>
               </Polyline>
 
@@ -585,6 +590,7 @@ export default function WorkspaceMap({
           const midpoint = points[Math.floor(points.length / 2)];
           const traceKind = getTraceKind(asset, traceHighlightedAssetIds, traceHighlightKinds);
           const traceColour = getTraceColour(traceKind);
+          const cableState = networkState?.cableStates[asset.id];
 
           return (
             <React.Fragment key={`workspace-cable-${asset.id}`}>
@@ -611,6 +617,7 @@ export default function WorkspaceMap({
               >
                 <Tooltip sticky>
                   {getAssetName(asset)} · {formatDistance(distanceMeters(points))}
+                  {cableState ? ` · ${cableState.usedFibres}/${cableState.capacity || "?"}F · ${cableState.utilisationPercent}%` : ""}
                 </Tooltip>
               </Polyline>
 

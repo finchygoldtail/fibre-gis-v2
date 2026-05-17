@@ -20,6 +20,7 @@ type Props = {
   networkGraph?: any;
   managerAreaPoints?: { lat: number; lng: number }[];
   isManagerAreaDrawing?: boolean;
+  areaDistributionPoints?: any[];
   onStartManagerAreaDrawing?: () => void;
   onStopManagerAreaDrawing?: () => void;
   onClearManagerAreaDrawing?: () => void;
@@ -28,6 +29,7 @@ type Props = {
     status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
     note: string;
   }) => void;
+  onClearDpFibreAllocations?: () => void;
   onSelectAsset?: (asset: any) => void;
   onOpenJointEditor?: (asset: any) => void;
   onOpenPanel?: (panel: string, tab?: string) => void;

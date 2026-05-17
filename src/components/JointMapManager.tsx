@@ -61,6 +61,7 @@ import {
   buildNetworkGraph,
   findDisconnectedAssets,
 } from "../services/networkGraph";
+import { clearDpFibreAllocationsForAssets } from "../services/network";
 
 import { routePointsToRoads } from "./map/utils/routeToRoads";
 import {
@@ -4540,6 +4541,85 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
 
 
   // =====================================================
+  // PROJECT WORKSPACE — CLEAR DP FIBRE ALLOCATIONS IN AREA
+  // Clears only operational fibre allocation/routing fields from DPs.
+  // It does NOT delete DPs, homes, drops, geometry, status, notes,
+  // photos or selected through-cable choices.
+  // =====================================================
+  const handleWorkspaceClearDpFibreAllocations = (args: {
+    assetIds: string[];
+    note: string;
+  }) => {
+    const ids = new Set((args.assetIds || []).map(String));
+    if (!ids.size) {
+      alert("No DPs selected for fibre allocation clear.");
+      return;
+    }
+
+    const reason = args.note?.trim();
+    if (!reason) {
+      alert("An audit note is required before clearing DP fibre allocations.");
+      return;
+    }
+
+    const beforeAssets = (savedJoints ?? []).filter((asset) =>
+      ids.has(String(asset.id || "")),
+    );
+
+    if (!beforeAssets.length) {
+      alert("No matching DPs were found in the saved map assets.");
+      return;
+    }
+
+    const clearResult = clearDpFibreAllocationsForAssets(beforeAssets);
+    const updatedById = new Map<string, SavedMapAsset>();
+
+    clearResult.assets.forEach((asset) => {
+      const nextAsset = withAssetEditedMetadata(
+        markAssetForLiveSync(asset as SavedMapAsset),
+        "updated",
+        reason,
+      );
+
+      updatedById.set(String(asset.id || ""), nextAsset);
+    });
+
+    setSavedJoints((prev) =>
+      (prev ?? []).map((asset) => {
+        const updatedAsset = updatedById.get(String(asset.id || ""));
+        return updatedAsset || asset;
+      }),
+    );
+
+    beforeAssets.forEach((beforeAsset) => {
+      const afterAsset = updatedById.get(String(beforeAsset.id || ""));
+      if (!afterAsset) return;
+
+      writeAssetAuditLog({
+        asset: afterAsset,
+        action: "updated",
+        reason,
+        comment: "Manager cleared DP fibre allocations from selected project area ready for Rebuild Chain.",
+        before: {
+          dpDetails: (beforeAsset as any).dpDetails,
+          allocatedInputFibres: (beforeAsset as any).allocatedInputFibres,
+          usedFibres: (beforeAsset as any).usedFibres,
+        },
+        after: {
+          dpDetails: (afterAsset as any).dpDetails,
+          allocatedInputFibres: (afterAsset as any).allocatedInputFibres,
+          usedFibres: (afterAsset as any).usedFibres,
+        },
+      });
+    });
+
+    alert(
+      `Cleared fibre allocations from ${clearResult.summary.clearedDpCount} DP${clearResult.summary.clearedDpCount === 1 ? "" : "s"} in this area. You can now run Rebuild Chain.`,
+    );
+  };
+
+
+  // =====================================================
   // PROJECT WORKSPACE — PERSIST SINGLE DP STATUS
   // Called by Asset Intelligence quick action buttons. It reuses
   // the same bulk status save path so audit/live-sync/chunk mirroring
@@ -4618,6 +4698,7 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         }}
         onBulkUpdateDpStatus={handleWorkspaceBulkDpStatusUpdate}
         onUpdateDpStatus={handleWorkspaceSingleDpStatusUpdate}
+        onClearDpFibreAllocations={handleWorkspaceClearDpFibreAllocations}
         onExport={handleExportGeoJson}
       />
     );

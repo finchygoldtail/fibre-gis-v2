@@ -13,6 +13,7 @@ import type { SavedMapAsset } from "../JointMapManager";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../firebase";
 import { getCableUsedFibres } from "./cableUsage";
+import { buildNetworkState } from "../../services/network";
 type Props = {
   assets: SavedMapAsset[];
   cablesVisible: boolean;
@@ -885,6 +886,8 @@ export default function CableLinesLayer({
     },
   });
 
+  const networkState = useMemo(() => buildNetworkState(assets as any), [assets]);
+
   if (!cablesVisible) return null;
 
   const isLayerOn = (key: string) => visibleLayers[key] !== false;
@@ -1022,12 +1025,30 @@ export default function CableLinesLayer({
               (row) => rowMentionsCable(row, asset),
             );
 
+        const cableState = networkState.cableStates[asset.id];
+
+        const localLegacyUsedFibres = getCableUsedFibres(asset, assets);
         const usedFibres = clampToCableCapacity(
           asset,
-          Math.max(getCableUsedFibres(asset, assets), usedFibresFromSharedMappings),
+          Math.max(
+            cableState?.usedFibres ?? 0,
+            localLegacyUsedFibres,
+            usedFibresFromSharedMappings,
+          ),
         );
 
-        const usedFibreRangeLabel = formatFibreRanges(usedFibreNumbersFromMappings);
+        const usedFibreNumbers = usedFibreNumbersFromMappings.length
+          ? usedFibreNumbersFromMappings
+          : cableState?.usedFibreNumbers || [];
+
+        const networkStateSource = usedFibreNumbersFromMappings.length || usedFibresFromSharedMappings > 0
+          ? "joint-mapping-engine"
+          : cableState?.source || (localLegacyUsedFibres > 0 ? "network-state-cable-usage" : "network-state");
+
+        const usedFibreRangeLabel = formatFibreRanges(usedFibreNumbers);
+        const capacityWarning = cableState?.warnings?.length
+          ? cableState.warnings.join(" • ")
+          : getCableCapacityWarning(asset, usedFibres);
 
         return (
           <React.Fragment key={asset.id}>
@@ -1080,6 +1101,16 @@ export default function CableLinesLayer({
                   <div>
                     <b>Fibre numbers:</b> {usedFibreRangeLabel}
                   </div>
+
+                  <div style={{ marginTop: 4, color: "#64748b", fontSize: 12 }}>
+                    <b>Network state:</b> {networkStateSource}
+                  </div>
+
+                  {capacityWarning ? (
+                    <div style={{ marginTop: 4, color: cableState?.warnings?.length ? "#dc2626" : "#475569", fontSize: 12 }}>
+                      {capacityWarning}
+                    </div>
+                  ) : null}
 
                   <div>
                     <b>From:</b> {getAssetDisplayName(startAsset)}

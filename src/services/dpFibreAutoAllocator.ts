@@ -283,6 +283,34 @@ function getDpArchitecture(asset: any): DistributionArchitecture {
   );
 }
 
+function getExplicitMduReservedFibres(details: any, architecture: DistributionArchitecture): number {
+  const existing = details?.mduDetails || {};
+
+  const totalReserved = Number(existing?.totalReservedFibres);
+  if (Number.isFinite(totalReserved) && totalReserved > 0) {
+    return Math.floor(totalReserved);
+  }
+
+  const selectedCount = Array.isArray(existing?.inputFibres)
+    ? existing.inputFibres.length
+    : 0;
+  if (selectedCount > 0) return selectedCount;
+
+  const direct = Number(existing?.mduFibres || 0);
+  const splitter =
+    architecture === "MDU_SPLITTER"
+      ? Number(existing?.splitterFibres || 0)
+      : 0;
+
+  if (Number.isFinite(direct + splitter) && direct + splitter > 0) {
+    return Math.floor(direct + splitter);
+  }
+
+  // Safe default: MDU buildings reserve a fixed building feed.
+  // Connected flats are internal outputs and must not inflate external fibre demand.
+  return architecture === "MDU_SPLITTER" ? 8 : 6;
+}
+
 function countConnectedHomesFromDrops(
   dpId: string,
   allAssets: SavedMapAsset[],
@@ -351,23 +379,7 @@ function getLocalReservedFibres(
   }
 
   if (architecture === "MDU" || architecture === "MDU_SPLITTER") {
-    const existing = details?.mduDetails;
-    const existingCount = Array.isArray(existing?.inputFibres)
-      ? existing.inputFibres.length
-      : 0;
-    if (existingCount > 0) return existingCount;
-    const direct = Number(existing?.mduFibres || 0);
-    const splitter =
-      architecture === "MDU_SPLITTER"
-        ? Number(existing?.splitterFibres || 0)
-        : 0;
-    if (direct + splitter > 0) return Math.floor(direct + splitter);
-    const connectedHomes = Number(
-      details?.autoFibrePlan?.connectedHomes ||
-        countConnectedHomesFromDrops(dpId, allAssets) ||
-        0,
-    );
-    return Math.max(0, connectedHomes);
+    return getExplicitMduReservedFibres(details, architecture);
   }
 
   return 0;
@@ -913,7 +925,7 @@ export function allocateDpFibresForPlan(
     {
       label: "Downstream already reserved",
       value: downstreamReservedFibres,
-      help: "Fibres consumed by AFN/MDU assets further towards the end of the run. Fibre 1 starts at the run end.",
+      help: "Fibres consumed by AFN/MDU assets further towards the end of the run. For MDU, this is the fixed building reserve, not one fibre per flat. Fibre 1 starts at the run end.",
     },
     {
       label: "Local demand",

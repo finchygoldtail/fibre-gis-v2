@@ -356,11 +356,18 @@ export default function AssetDetailsSidebarSections({
       ? Number(
           dpDetails.autoFibrePlan?.capacity || currentInputFibres.length * 8,
         )
-      : Number(
-          dpDetails.connectionsToHomes ||
+      : dpDetails.closureType === "MDU" || dpDetails.closureType === "MDU_SPLITTER"
+        ? Number(
             dpDetails.autoFibrePlan?.capacity ||
-            0,
-        );
+              dpDetails.connectionsToHomes ||
+              connectedHomes.length ||
+              0,
+          )
+        : Number(
+            dpDetails.connectionsToHomes ||
+              dpDetails.autoFibrePlan?.capacity ||
+              0,
+          );
   const dpUsed = connectedHomes.length;
   const dpAvailable = Math.max(0, dpCapacity - dpUsed);
 
@@ -842,6 +849,22 @@ export default function AssetDetailsSidebarSections({
           <option value="MDU_SPLITTER">MDU + Splitter</option>
         </select>
 
+        <div style={labelStyle}>DP Role</div>
+        <select
+          value={(dpDetails as any).dpRole || "serving"}
+          onChange={(e) => updateDp("dpRole", e.target.value)}
+          style={inputStyle}
+        >
+          <option value="serving">Serving DP</option>
+          <option value="splice_only">Splice-only / passthrough</option>
+        </select>
+        <div style={helpText}>
+          Use <strong>Serving DP</strong> for AFNs/CBTs/MDUs that feed customers.
+          Use <strong>Splice-only / passthrough</strong> for pole-top AFNs that
+          are only splicing fibres through the route. Splice-only DPs stay in
+          the topology but are ignored by the SB fibre allocation matcher.
+        </div>
+
         <div
           style={{
             marginTop: 10,
@@ -1141,7 +1164,10 @@ export default function AssetDetailsSidebarSections({
         {dpDetails.closureType === "MDU" ||
         dpDetails.closureType === "MDU_SPLITTER" ? (
           <>
-            <div style={helpText}>MDU fibre reservation from parent cable.</div>
+            <div style={helpText}>
+              MDU fibre reservation from parent cable. Flats are counted as
+              internal building outputs and do not each reserve a separate spine fibre.
+            </div>
 
             <div style={labelStyle}>Through Cable</div>
 
@@ -1236,12 +1262,17 @@ export default function AssetDetailsSidebarSections({
             ) : null}
 
             <div style={helpText}>
-              Reserved fibres:{" "}
+              Reserved spine fibres:{" "}
               <strong>
                 {dpDetails.autoFibrePlan?.reservedFibres ||
                   dpDetails.mduDetails?.totalReservedFibres ||
-                  0}
+                  ((dpDetails.mduDetails?.mduFibres || 6) +
+                    (dpDetails.closureType === "MDU_SPLITTER"
+                      ? dpDetails.mduDetails?.splitterFibres || 2
+                      : 0))}
               </strong>
+              <br />
+              Internal flats connected: <strong>{dpUsed}</strong>
             </div>
           </>
         ) : null}

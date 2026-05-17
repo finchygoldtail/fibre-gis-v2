@@ -89,6 +89,37 @@ function clampCount(value: number): number {
   return Math.max(0, Math.floor(Number.isFinite(value) ? value : 0));
 }
 
+function firstPositiveNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed > 0) return Math.floor(parsed);
+  }
+  return null;
+}
+
+function getMduReservedFibres(input: BuildDpFibrePlanInput, architecture: DistributionArchitecture): {
+  directFibres: number;
+  splitterFibres: number;
+  reservedFibres: number;
+  source: string;
+} {
+  // MDU flats are internal building outputs. They must not be treated like
+  // individual external drop fibres on the spine. The external network only
+  // reserves the explicit building feed/splitter fibres.
+  const directFibres = firstPositiveNumber(input.mduFibres, 6) || 6;
+  const splitterFibres =
+    architecture === "MDU_SPLITTER"
+      ? firstPositiveNumber(input.mduSplitterFibres, 2) || 2
+      : 0;
+
+  return {
+    directFibres,
+    splitterFibres,
+    reservedFibres: directFibres + splitterFibres,
+    source: "mdu-fixed-building-reserve",
+  };
+}
+
 function architectureFamily(
   value: DistributionArchitecture,
 ): "CBT_TERMINAL" | "PASSTHROUGH_SPLITTER" {
@@ -179,24 +210,21 @@ export function buildDpFibrePlan(input: BuildDpFibrePlanInput): DpFibrePlan {
   }
 
   if (architecture === "MDU" || architecture === "MDU_SPLITTER") {
-    const directFibres = clampCount(
-      input.mduFibres ?? Math.max(connectedHomes, 6),
-    );
-    const splitterFibres =
+    const { directFibres, splitterFibres, reservedFibres } =
+      getMduReservedFibres(input, architecture);
+
+    // Capacity is an internal building capacity. Connected flats consume
+    // internal splitter/MDU outputs, not one spine fibre per flat.
+    const internalSplitterCapacity = splitterFibres * 8;
+    const internalCapacity =
       architecture === "MDU_SPLITTER"
-        ? clampCount(input.mduSplitterFibres ?? 2)
-        : 0;
-    const splitterCapacity = splitterFibres * 8;
-    const capacity =
-      architecture === "MDU_SPLITTER"
-        ? directFibres + splitterCapacity
-        : directFibres;
-    const reservedFibres = directFibres + splitterFibres;
+        ? Math.max(connectedHomes, directFibres + internalSplitterCapacity)
+        : Math.max(connectedHomes, directFibres);
     const warnings: string[] = [];
 
-    if (connectedHomes > capacity) {
+    if (connectedHomes > internalCapacity) {
       warnings.push(
-        `${connectedHomes} homes exceeds the current MDU capacity of ${capacity}. Increase direct/splitter fibres or split the building feed.`,
+        `${connectedHomes} flats exceeds the current MDU internal capacity of ${internalCapacity}. Increase MDU/splitter outputs or split the building internally.`,
       );
     }
 
@@ -204,22 +232,23 @@ export function buildDpFibrePlan(input: BuildDpFibrePlanInput): DpFibrePlan {
       architecture,
       connectedHomes,
       requiredCustomerOutputs: connectedHomes,
-      capacity,
-      availableOutputs: Math.max(0, capacity - connectedHomes),
+      capacity: internalCapacity,
+      availableOutputs: Math.max(0, internalCapacity - connectedHomes),
       requiredInputFibres: reservedFibres,
       reservedFibres,
-      recommendedPortCount: capacity,
+      recommendedPortCount: internalCapacity,
       splitterRatio: architecture === "MDU_SPLITTER" ? "1:8" : undefined,
       status: warnings.length ? "warning" : "ok",
       title:
         architecture === "MDU_SPLITTER"
-          ? "MDU + splitter plan"
-          : "MDU direct-feed plan",
+          ? `${reservedFibres} fibre MDU + splitter reserve`
+          : `${reservedFibres} fibre MDU building reserve`,
       notes: [
         "MDU architecture locked for building-fed distribution.",
+        "Connected flats are internal MDU outputs and do not each reserve a separate spine fibre.",
         architecture === "MDU_SPLITTER"
-          ? "Direct building fibres and splitter fibres are reserved separately from the through cable."
-          : "Direct-feed MDU fibres are reserved from the through cable.",
+          ? "Direct building fibres and local splitter fibres are reserved separately from the through cable."
+          : "Direct-feed MDU building fibres are reserved from the through cable.",
       ],
       warnings,
     };
@@ -288,7 +317,7 @@ export function applyDpFibrePlanToDetails(
 
   if (plan.architecture === "MDU" || plan.architecture === "MDU_SPLITTER") {
     const existing = details.mduDetails;
-    const mduFibres = existing?.mduFibres || Math.max(plan.connectedHomes, 6);
+    const mduFibres = existing?.mduFibres || 6;
     const splitterFibres =
       plan.architecture === "MDU_SPLITTER" ? existing?.splitterFibres || 2 : 0;
     return {

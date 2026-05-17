@@ -9,10 +9,7 @@ import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../firebase";
 import { auditAreaAssets, type AuditIssue } from "../../services/areaAudit";
 import { buildTopologyTrace } from "../../services/topologyTraceService";
-import {
-  buildNetworkGraph,
-  findDisconnectedAssets,
-} from "../../services/networkGraph";
+import { buildNetworkState, isDistributionPointAsset } from "../../services/network";
 
 // =====================================================
 // FILE: ProjectWorkspace.tsx
@@ -91,6 +88,10 @@ type ProjectWorkspaceProps = {
   onUpdateDpStatus?: (args: {
     assetId: string;
     status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
+    note: string;
+  }) => void;
+  onClearDpFibreAllocations?: (args: {
+    assetIds: string[];
     note: string;
   }) => void;
 };
@@ -888,6 +889,7 @@ export default function ProjectWorkspace({
   onSelectProject,
   onBulkUpdateDpStatus,
   onUpdateDpStatus,
+  onClearDpFibreAllocations,
 }: ProjectWorkspaceProps) {
   const [openreachLayers, setOpenreachLayers] =
     React.useState<OpenreachLayerVisibility>(defaultOpenreachLayers);
@@ -1016,14 +1018,55 @@ export default function ProjectWorkspace({
     return true;
   });
 }, [workspaceAssets]);
-  const networkGraph = useMemo(
-    () => buildNetworkGraph(workspaceAssets),
+  const networkState = useMemo(
+    () => buildNetworkState(workspaceAssets),
     [workspaceAssets],
   );
+
+  const networkGraph = networkState.graph;
+
   const disconnectedAssets = useMemo(
-    () => findDisconnectedAssets(networkGraph),
-    [networkGraph],
+    () => networkState.nodes.filter((node) => node.connectedTo.length === 0),
+    [networkState],
   );
+
+  const areaDistributionPoints = useMemo(
+    () => workspaceAssets.filter((asset) => isDistributionPointAsset(asset)),
+    [workspaceAssets],
+  );
+
+  const handleClearAreaDpFibreAllocations = () => {
+    const assetIds = areaDistributionPoints.map((asset) => asset.id).filter(Boolean);
+
+    if (!assetIds.length) {
+      alert("No DPs were found inside this selected project area.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Clear fibre allocations from ${assetIds.length} DP${assetIds.length === 1 ? "" : "s"} in ${projectName}?\n\nThis keeps DP names, closure types, homes, photos, notes, status and selected through-cables. It only clears fibre allocation/routing state so Rebuild Chain can calculate cleanly.`,
+    );
+
+    if (!confirmed) return;
+
+    const note = window.prompt(
+      "Audit note required: why are you clearing DP fibre allocations in this area?",
+      "Clear DP fibre allocations ready for Rebuild Chain",
+    );
+
+    if (note === null) return;
+
+    const trimmed = note.trim();
+    if (!trimmed) {
+      alert("An audit note is required before clearing DP fibre allocations.");
+      return;
+    }
+
+    onClearDpFibreAllocations?.({
+      assetIds,
+      note: trimmed,
+    });
+  };
 
   const searchResults = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -1385,6 +1428,10 @@ const homesLive = Math.max(
     rows.push(["Drop cables", displayStats.dropCables ?? 0]);
     rows.push(["Graph nodes", networkGraph.nodes.size]);
     rows.push(["Graph links", networkGraph.edges.size]);
+    rows.push(["Network State used fibres", networkState.summary.usedFibres]);
+    rows.push(["Network State spare fibres", networkState.summary.spareFibres]);
+    rows.push(["Network State passthrough fibres", networkState.summary.passthroughFibres]);
+    rows.push(["Network State warnings", networkState.summary.warnings]);
     rows.push(["Unmatched cable IDs", displayStats.unmatchedCableIds ?? 0]);
     rows.push([]);
 
@@ -1898,6 +1945,7 @@ const homesLive = Math.max(
                 }
                 traceHighlightedAssetIds={traceHighlightedAssetIds}
                 traceHighlightKinds={traceHighlightKinds}
+                networkState={networkState}
                 managerAreaPoints={managerAreaPoints}
                 managerAreaDrawMode={isManagerAreaDrawing}
                 onManagerAreaPointAdd={(point) => {
@@ -2007,7 +2055,9 @@ const homesLive = Math.max(
                 setManagerAreaPoints([]);
                 setIsManagerAreaDrawing(false);
               }}
+              areaDistributionPoints={areaDistributionPoints}
               onBulkUpdateDpStatus={onBulkUpdateDpStatus}
+              onClearDpFibreAllocations={handleClearAreaDpFibreAllocations}
               onSelectAsset={(asset) => {
                 setSelectedWorkspaceAsset(asset);
                 setSearchTerm(getWorkspaceAssetTitle(asset));
