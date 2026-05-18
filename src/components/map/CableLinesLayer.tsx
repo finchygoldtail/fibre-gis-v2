@@ -14,6 +14,7 @@ import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../firebase";
 import { getCableUsedFibres } from "./cableUsage";
 import { buildNetworkState } from "../../services/network";
+import { isOpenreachReferenceAsset } from "../../services/orAssetStorage";
 type Props = {
   assets: SavedMapAsset[];
   cablesVisible: boolean;
@@ -893,6 +894,8 @@ export default function CableLinesLayer({
   const isLayerOn = (key: string) => visibleLayers[key] !== false;
 
   const cableAssets = assets.filter((asset) => {
+    if (isOpenreachReferenceAsset(asset)) return false;
+
     if (
       asset.assetType !== "cable" ||
       asset.geometry?.type !== "LineString" ||

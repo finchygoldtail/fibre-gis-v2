@@ -21,6 +21,35 @@ function getDistanceMeters(a: LatLngLiteral, b: LatLngLiteral): number {
   return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }
 
+
+function isReferenceInfrastructureAsset(asset: any): boolean {
+  const haystack = [
+    asset?.source,
+    asset?.assetType,
+    asset?.jointType,
+    asset?.cableType,
+    asset?.name,
+    asset?.piaRef,
+    asset?.piaKind,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return (
+    asset?.readOnly === true ||
+    asset?.isReferenceAsset === true ||
+    haystack.includes("openreach") ||
+    haystack.includes("pia") ||
+    haystack.includes("pol:") ||
+    haystack.includes("mp:") ||
+    haystack.includes("jc:") ||
+    haystack.includes("ch:") ||
+    haystack.includes("osp:") ||
+    haystack.includes("missing pole")
+  );
+}
+
 const SNAP_TARGET_TYPES = [
   "pole",
   "distribution-point",
@@ -42,10 +71,24 @@ export function snapPointToAssets(
   const snapTargets = assets.filter((asset) => {
     if (!asset) return false;
     if (!asset.geometry) return false;
+    // OR / PIA reference assets are read-only, but they ARE valid snap targets.
+    // Do not exclude them here: they are excluded from editing/topology elsewhere.
     if (asset.geometry.type !== "Point") return false;
     if (!Array.isArray(asset.geometry.coordinates)) return false;
 
-    return SNAP_TARGET_TYPES.includes(asset.assetType as any);
+    const assetType = String((asset as any).assetType || "").toLowerCase();
+    const jointType = String((asset as any).jointType || "").toLowerCase();
+
+    if (SNAP_TARGET_TYPES.includes(asset.assetType as any)) return true;
+
+    // Allow OR / PIA reference poles and chambers to be snap-only targets.
+    return (
+      isReferenceInfrastructureAsset(asset) &&
+      (assetType === "pole" ||
+        assetType === "chamber" ||
+        jointType.includes("pole") ||
+        jointType.includes("chamber"))
+    );
   });
 
   let bestPoint: LatLngLiteral | null = null;

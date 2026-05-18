@@ -18,6 +18,44 @@ import { buildCableUsageStates } from "./cableUsageEngine";
 import { buildFibrePropagationState } from "./fibrePropagation";
 import { buildJointToDpFibreMatchState } from "./jointToDpFibreMatcher";
 
+
+function isReferenceInfrastructureAsset(asset: any): boolean {
+  const haystack = [
+    asset?.source,
+    asset?.assetType,
+    asset?.type,
+    asset?.jointType,
+    asset?.cableType,
+    asset?.routeType,
+    asset?.name,
+    asset?.label,
+    asset?.piaRef,
+    asset?.piaKind,
+    asset?.importedProperties?.Name,
+    asset?.importedProperties?.name,
+    asset?.importedProperties?.Description,
+    asset?.importedProperties?.description,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return (
+    asset?.readOnly === true ||
+    asset?.isReferenceAsset === true ||
+    haystack.includes("openreach") ||
+    haystack.includes("pia overlay") ||
+    haystack.includes("pia route") ||
+    haystack.includes("osp:") ||
+    haystack.includes("pol:") ||
+    haystack.includes("mp:") ||
+    haystack.includes("jc:") ||
+    haystack.includes("ch:") ||
+    haystack.includes("chamber:") ||
+    haystack.includes("missing pole")
+  );
+}
+
 function uniqueSorted(values: unknown[]): number[] {
   return Array.from(
     new Set(
@@ -113,9 +151,11 @@ function enrichDpStatesWithJointMatches(args: {
 }
 
 export function buildNetworkState(assets: NetworkAsset[] = []): NetworkState {
-  const topology = buildTopologyGraphState(assets);
-  const baseDpStates = buildDpRoutingStates(assets);
-  const jointToDpMatches = buildJointToDpFibreMatchState(assets);
+  const operationalAssets = (assets || []).filter((asset) => !isReferenceInfrastructureAsset(asset));
+
+  const topology = buildTopologyGraphState(operationalAssets);
+  const baseDpStates = buildDpRoutingStates(operationalAssets);
+  const jointToDpMatches = buildJointToDpFibreMatchState(operationalAssets);
   const dpStates = enrichDpStatesWithJointMatches({
     dpStates: baseDpStates,
     jointToDpMatches,
@@ -124,7 +164,7 @@ export function buildNetworkState(assets: NetworkAsset[] = []): NetworkState {
   // First pass: build cable state from saved records + direct DP routing.
   // This gives propagation enough cable metadata to validate references.
   const baseCableStates = buildCableUsageStates({
-    assets,
+    assets: operationalAssets,
     graph: topology.graph,
     dpStates,
   });
@@ -138,7 +178,7 @@ export function buildNetworkState(assets: NetworkAsset[] = []): NetworkState {
 
   // Final pass: feed propagated cable fibres back into cable utilisation.
   const cableStates = buildCableUsageStates({
-    assets,
+    assets: operationalAssets,
     graph: topology.graph,
     dpStates,
     propagatedCableFibres: basePropagation.propagatedCableFibres,
@@ -151,7 +191,7 @@ export function buildNetworkState(assets: NetworkAsset[] = []): NetworkState {
   });
 
   const baseState: Omit<NetworkState, "summary" | "warnings" | "generatedAt"> = {
-    assets,
+    assets: operationalAssets,
     graph: topology.graph,
     nodes: topology.nodes,
     edges: topology.edges,

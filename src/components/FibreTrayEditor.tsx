@@ -663,7 +663,17 @@ export const FibreTrayEditor: React.FC = () => {
         loadedFileName,
       };
 
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
+      const projectForLocalStorage: PersistedProject = {
+        ...project,
+        // Do not cache the full live map in browser storage. Firestore chunks
+        // are the source of truth; localStorage is only for the open tray state.
+        // This prevents QuotaExceededError from killing the save effect.
+        savedJoints: [],
+        // Large uploaded sheets are stored in Firestore jointMappings chunks.
+        mappingRows: mappingRows.length > 500 ? [] : mappingRows,
+      };
+
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(projectForLocalStorage));
     } catch (err) {
       console.error("Failed to save project:", err);
     }

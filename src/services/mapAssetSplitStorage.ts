@@ -12,6 +12,11 @@
 //     etc.
 // - JointMapManager can load from these split chunks when present, while
 //   the old master chunk remains as the fallback/backup.
+//
+// DATA LOSS GUARD:
+// - Empty incoming buckets do NOT delete existing bucket chunks.
+// - Suspicious bucket drops are blocked unless explicitly forced.
+// - Replacement chunks are written before old excess chunks are removed.
 // =====================================================
 
 import {
@@ -38,8 +43,19 @@ type SplitBucket =
   | "homes"
   | "other";
 
+export type SaveSplitMapAssetsOptions = {
+  /**
+   * Use only for deliberate admin cleanup. Normal map autosave/mirroring must
+   * leave this false so tablet/slow-load partial state cannot wipe buckets.
+   */
+  allowDestructiveSave?: boolean;
+  reason?: string;
+};
+
 const BUSINESS_ID = "fibre-gis-v2";
 const CHUNK_TARGET_CHAR_LENGTH = 650_000;
+const DESTRUCTIVE_BUCKET_DROP_RATIO = 0.65;
+const MIN_BUCKET_ASSETS_FOR_DROP_GUARD = 3;
 
 const SPLIT_BUCKETS: SplitBucket[] = [
   "joints",
@@ -154,6 +170,54 @@ function removeUndefinedDeep(value: any): any {
   return value;
 }
 
+
+function makeFirestoreSafeValue(value: any): any {
+  if (value === undefined) return undefined;
+
+  if (Array.isArray(value)) {
+    // Firestore supports arrays, but not arrays that contain arrays.
+    // GeoJSON routes/polygons and Leaflet cached paths are nested arrays,
+    // so store those values as JSON strings inside asset docs.
+    if (value.some((item) => Array.isArray(item))) {
+      return JSON.stringify(value);
+    }
+
+    return value
+      .map((item) => makeFirestoreSafeValue(item))
+      .filter((item) => item !== undefined);
+  }
+
+  if (value && typeof value === "object") {
+    const output: Record<string, any> = {};
+    Object.entries(value).forEach(([key, child]) => {
+      if (child === undefined) return;
+      output[key] = makeFirestoreSafeValue(child);
+    });
+    return output;
+  }
+
+  return value;
+}
+
+function stripKnownRuntimeGeometryCaches(copy: any): void {
+  // These fields are useful at runtime but unsafe/noisy for split Firestore docs.
+  // Main storage already rebuilds from geometryType + geometryCoordinatesJson.
+  delete copy.coordinates;
+  delete copy.route;
+  delete copy.routes;
+  delete copy.path;
+  delete copy.paths;
+  delete copy.points;
+  delete copy.latlngs;
+  delete copy.latLngs;
+  delete copy.pathCoordinates;
+  delete copy.cachedPoints;
+  delete copy.renderCoordinates;
+  delete copy.leafletLatLngs;
+  delete copy.polyline;
+  delete copy.polygon;
+}
+
 function toFirestoreSafeAsset(asset: SavedMapAsset): Record<string, any> {
   const copy: any = removeUndefinedDeep({ ...(asset as any) });
 
@@ -177,7 +241,8 @@ function toFirestoreSafeAsset(asset: SavedMapAsset): Record<string, any> {
     delete copy.model;
   }
 
-  return removeUndefinedDeep(copy);
+  stripKnownRuntimeGeometryCaches(copy);
+  return makeFirestoreSafeValue(removeUndefinedDeep(copy));
 }
 
 function fromFirestoreSafeAsset(asset: any): SavedMapAsset {
@@ -238,8 +303,8 @@ function splitIntoChunks(assets: Record<string, any>[]) {
   return chunks;
 }
 
-async function deleteExtraChunks(bucket: SplitBucket, keepCount: number) {
-  const chunksRef = collection(
+function bucketChunksCollection(bucket: SplitBucket) {
+  return collection(
     db,
     "businesses",
     BUSINESS_ID,
@@ -247,7 +312,21 @@ async function deleteExtraChunks(bucket: SplitBucket, keepCount: number) {
     bucket,
     "chunks",
   );
-  const snapshot = await getDocs(chunksRef);
+}
+
+async function getExistingBucketAssetCount(bucket: SplitBucket): Promise<number> {
+  const snapshot = await getDocs(bucketChunksCollection(bucket));
+
+  return snapshot.docs.reduce((total, chunkDoc) => {
+    const data = chunkDoc.data() as any;
+    if (typeof data.count === "number") return total + data.count;
+    if (Array.isArray(data.assets)) return total + data.assets.length;
+    return total;
+  }, 0);
+}
+
+async function deleteExtraChunks(bucket: SplitBucket, keepCount: number) {
+  const snapshot = await getDocs(bucketChunksCollection(bucket));
 
   await Promise.all(
     snapshot.docs
@@ -260,7 +339,33 @@ async function deleteExtraChunks(bucket: SplitBucket, keepCount: number) {
   );
 }
 
-export async function saveSplitMapAssets(assets: SavedMapAsset[]) {
+function shouldBlockBucketSave(
+  bucket: SplitBucket,
+  existingCount: number,
+  nextCount: number,
+): string | null {
+  if (existingCount > 0 && nextCount === 0) {
+    return `Refusing to wipe split map bucket '${bucket}'. Existing count=${existingCount}, next count=0.`;
+  }
+
+  if (
+    existingCount >= MIN_BUCKET_ASSETS_FOR_DROP_GUARD &&
+    nextCount < Math.floor(existingCount * DESTRUCTIVE_BUCKET_DROP_RATIO)
+  ) {
+    return `Refusing suspicious split map bucket save for '${bucket}'. Existing count=${existingCount}, next count=${nextCount}.`;
+  }
+
+  return null;
+}
+
+export async function saveSplitMapAssets(
+  assets: SavedMapAsset[],
+  options: SaveSplitMapAssetsOptions = {},
+) {
+  if (!Array.isArray(assets)) {
+    throw new Error("Refusing to save split map assets: assets is not an array.");
+  }
+
   const byBucket = new Map<SplitBucket, SavedMapAsset[]>();
   SPLIT_BUCKETS.forEach((bucket) => byBucket.set(bucket, []));
 
@@ -271,8 +376,35 @@ export async function saveSplitMapAssets(assets: SavedMapAsset[]) {
   await Promise.all(
     SPLIT_BUCKETS.map(async (bucket) => {
       const bucketAssets = byBucket.get(bucket) ?? [];
+      const existingCount = await getExistingBucketAssetCount(bucket);
+
+      if (!options.allowDestructiveSave) {
+        const blockReason = shouldBlockBucketSave(
+          bucket,
+          existingCount,
+          bucketAssets.length,
+        );
+
+        if (blockReason) {
+          console.warn("ALISTRA SPLIT STORAGE GUARD BLOCKED BUCKET SAVE", {
+            bucket,
+            blockReason,
+            existingCount,
+            nextCount: bucketAssets.length,
+          });
+          return;
+        }
+      }
+
       const safeAssets = bucketAssets.map(toFirestoreSafeAsset);
       const chunks = splitIntoChunks(safeAssets);
+
+      if (chunks.length === 0 && existingCount > 0 && !options.allowDestructiveSave) {
+        console.warn(
+          `Skipped empty split bucket save for '${bucket}' to protect existing data.`,
+        );
+        return;
+      }
 
       const bucketDocRef = doc(
         db,
@@ -291,11 +423,15 @@ export async function saveSplitMapAssets(assets: SavedMapAsset[]) {
           mapAssetsPath: `mapAssets/${bucket}/chunks`,
           mapAssetsCount: bucketAssets.length,
           chunkCount: chunks.length,
+          safetyGuarded: true,
+          saveReason: options.reason || "split-mirror-save",
           updatedAt: serverTimestamp(),
         },
         { merge: true },
       );
 
+      // Write replacement chunks first. Only delete excess old chunks after all
+      // replacement chunks have succeeded.
       await Promise.all(
         chunks.map((chunkAssets, index) =>
           setDoc(
@@ -328,14 +464,7 @@ export async function saveSplitMapAssets(assets: SavedMapAsset[]) {
 export async function loadSplitMapAssets(): Promise<SavedMapAsset[]> {
   const results = await Promise.all(
     SPLIT_BUCKETS.map(async (bucket) => {
-      const chunksRef = collection(
-        db,
-        "businesses",
-        BUSINESS_ID,
-        "mapAssets",
-        bucket,
-        "chunks",
-      );
+      const chunksRef = bucketChunksCollection(bucket);
 
       const snapshot = await getDocs(query(chunksRef, orderBy("order", "asc")));
       const bucketAssets: SavedMapAsset[] = [];

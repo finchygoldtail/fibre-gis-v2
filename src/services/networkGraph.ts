@@ -77,6 +77,42 @@ function textOf(...values: unknown[]): string {
     .replace(/[\s_/-]+/g, " ");
 }
 
+
+function isReferenceInfrastructureAsset(asset: any): boolean {
+  const text = textOf(
+    asset?.source,
+    asset?.assetType,
+    asset?.type,
+    asset?.jointType,
+    asset?.cableType,
+    asset?.routeType,
+    asset?.name,
+    asset?.label,
+    asset?.piaRef,
+    asset?.piaKind,
+    asset?.importedProperties?.Name,
+    asset?.importedProperties?.name,
+    asset?.importedProperties?.Description,
+    asset?.importedProperties?.description,
+  );
+
+  return (
+    asset?.readOnly === true ||
+    asset?.isReferenceAsset === true ||
+    text.includes("openreach") ||
+    text.includes("pia overlay") ||
+    text.includes("pia route") ||
+    text.includes("pia") ||
+    text.includes("osp:") ||
+    text.includes("pol:") ||
+    text.includes("mp:") ||
+    text.includes("jc:") ||
+    text.includes("ch:") ||
+    text.includes("chamber:") ||
+    text.includes("missing pole")
+  );
+}
+
 function idOf(asset: any, prefix = "asset"): string {
   return String(
     asset?.id ||
@@ -225,12 +261,14 @@ function pushUnique(values: string[], value: string) {
 }
 
 export function buildNetworkGraph(assets: any[] = []): NetworkGraph {
+  const operationalAssets = (assets || []).filter((asset) => !isReferenceInfrastructureAsset(asset));
+
   const graph: NetworkGraph = {
     nodes: new Map(),
     edges: new Map(),
   };
 
-  for (const asset of assets) {
+  for (const asset of operationalAssets) {
     if (!isNodeAsset(asset)) continue;
     const id = idOf(asset, "node");
     graph.nodes.set(id, {
@@ -243,7 +281,7 @@ export function buildNetworkGraph(assets: any[] = []): NetworkGraph {
     });
   }
 
-  for (const asset of assets) {
+  for (const asset of operationalAssets) {
     if (!isEdgeAsset(asset)) continue;
     const endpoints = getLineEndpoints(asset);
     if (!endpoints) continue;
@@ -344,6 +382,7 @@ export function traceAssetConnections(assetId: string, graph: NetworkGraph, maxD
 }
 
 export function getNetworkSummary(assets: any[] = [], graph: NetworkGraph = buildNetworkGraph(assets)): NetworkSummary {
+  assets = (assets || []).filter((asset) => !isReferenceInfrastructureAsset(asset));
   const nodes = Array.from(graph.nodes.values());
   const edges = Array.from(graph.edges.values());
   const dps = nodes.filter((node) => node.kind === "dp");

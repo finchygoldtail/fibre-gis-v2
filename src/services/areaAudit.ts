@@ -14,6 +14,37 @@ export type AuditIssue = {
 
 type Coordinate = [number, number];
 
+
+function isReferenceInfrastructureAsset(asset: any): boolean {
+  const haystack = [
+    asset?.source,
+    asset?.assetType,
+    asset?.type,
+    asset?.jointType,
+    asset?.cableType,
+    asset?.routeType,
+    asset?.name,
+    asset?.piaRef,
+    asset?.piaKind,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return (
+    asset?.readOnly === true ||
+    asset?.isReferenceAsset === true ||
+    haystack.includes("openreach") ||
+    haystack.includes("pia") ||
+    haystack.includes("osp:") ||
+    haystack.includes("pol:") ||
+    haystack.includes("mp:") ||
+    haystack.includes("jc:") ||
+    haystack.includes("ch:") ||
+    haystack.includes("missing pole")
+  );
+}
+
 function getAssetId(asset: any): string {
   return String(asset?.id || asset?.assetId || "unknown");
 }
@@ -840,7 +871,7 @@ function addFibreAllocationIssues(assets: any[], issues: AuditIssue[]): void {
 
 export function auditAreaAssets(assets: any[] = []): AuditIssue[] {
   const issues: AuditIssue[] = [];
-  const validAssets = assets.filter(Boolean);
+  const validAssets = assets.filter(Boolean).filter((asset) => !isReferenceInfrastructureAsset(asset));
 
   // --------------------------------------------------
   // BASIC ASSET CHECKS

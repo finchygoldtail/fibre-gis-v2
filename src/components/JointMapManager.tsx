@@ -99,10 +99,15 @@ import {
   saveExchange,
   type ExchangeAsset,
 } from "./map/storage/exchangeStorage";
+// Split storage is disabled during storage-integrity recovery.
+// Main chunks are the only authoritative save/load path.
 import {
-  loadSplitMapAssets,
-  saveSplitMapAssets,
-} from "../services/mapAssetSplitStorage";
+  isOpenreachReferenceAsset,
+  loadOrAssets,
+  mergeAndSaveOrAssets,
+  normaliseOpenreachAsset,
+  saveOrAssets,
+} from "../services/orAssetStorage";
 export type SavedJoint = SavedMapAsset;
 export type { SavedMapAsset };
 
@@ -291,6 +296,12 @@ type LayerVisibility = {
   l3: boolean;
   newPoles: boolean;
   orPoles: boolean;
+  orChambers: boolean;
+  orDucts: boolean;
+  orLabels: boolean;
+  suggestedPoles: boolean;
+  suggestedChambers: boolean;
+  suggestedDucts: boolean;
   fw2: boolean;
   fw4: boolean;
   fw6: boolean;
@@ -317,8 +328,6 @@ type LayerVisibility = {
 // the same layer setup.
 // =====================================================
 const LAYER_PREFERENCE_STORAGE_KEY = "alistra-gis-layer-preferences-v2";
-const OPENREACH_LAYER_PREFERENCE_STORAGE_KEY =
-  "alistra-gis-openreach-layer-preferences-v2";
 
 const DEFAULT_VISIBLE_LAYERS: LayerVisibility = {
   agJoints: true,
@@ -338,6 +347,12 @@ const DEFAULT_VISIBLE_LAYERS: LayerVisibility = {
   l3: true,
   newPoles: false,
   orPoles: false,
+  orChambers: false,
+  orDucts: false,
+  orLabels: false,
+  suggestedPoles: false,
+  suggestedChambers: false,
+  suggestedDucts: false,
   fw2: false,
   fw4: false,
   fw6: false,
@@ -356,16 +371,6 @@ const DEFAULT_VISIBLE_LAYERS: LayerVisibility = {
   unserviceable: true,
   liveNotReady: true,
 };
-
-const DEFAULT_OPENREACH_LAYERS = {
-  ducts: false,
-  trenches: false,
-  spans: false,
-  chambers: false,
-  poles: false,
-  labels: false,
-};
-
 function loadStoredLayerPreferences<T extends Record<string, boolean>>(
   key: string,
   defaults: T,
@@ -1022,6 +1027,71 @@ function normalizeMapAsset(asset: SavedMapAsset): SavedMapAsset {
     }
   }
 
+  // Repair older OR / PIA imports that were previously classified as DPs.
+  // This fixes existing saved POL:DATA / JC:* point assets without requiring
+  // manual deletion. It only changes Openreach-prefixed point imports.
+  const geometryType = String(copy.geometry?.type || copy.geometryType || "").toLowerCase();
+  const nameText = String(
+    copy.name ||
+      copy.piaRef ||
+      copy.importedProperties?.Name ||
+      copy.importedProperties?.name ||
+      copy.id ||
+      "",
+  )
+    .trim()
+    .toUpperCase();
+
+  const isSuggestedReference =
+    nameText.includes("SUGGESTED") ||
+    nameText.includes("PROPOSED") ||
+    nameText.startsWith("SP:") ||
+    nameText.includes("SUGG:");
+
+  const isNpReference =
+    nameText.startsWith("NP:") ||
+    nameText.startsWith("NP-") ||
+    nameText.startsWith("NP ") ||
+    nameText.includes("NEW POLE") ||
+    nameText.includes("MISSING POLE");
+
+  if (
+    geometryType === "point" &&
+    (isNpReference ||
+      isSuggestedReference ||
+      nameText.startsWith("POL:") ||
+      nameText.startsWith("MP:"))
+  ) {
+    copy.assetType = "pole";
+    copy.referenceSubtype = isSuggestedReference ? "suggested" : isNpReference ? "np" : "or";
+    copy.jointType = isSuggestedReference
+      ? "Suggested Pole"
+      : isNpReference
+        ? "NP Pole"
+        : "OR Pole";
+    copy.source = copy.source || "pia-overlay";
+    copy.poleDetails = {
+      ...(copy.poleDetails || {}),
+      poleType: isSuggestedReference ? "suggested" : isNpReference ? "new" : "or",
+    };
+    delete copy.dpDetails;
+  }
+
+  if (
+    geometryType === "point" &&
+    (nameText.startsWith("JC:") || nameText.startsWith("CH:") || nameText.startsWith("CHAMBER:"))
+  ) {
+    copy.assetType = "chamber";
+    copy.referenceSubtype = isSuggestedReference ? "suggested" : "or";
+    copy.jointType = isSuggestedReference ? "Suggested Chamber" : "OR Chamber";
+    copy.source = copy.source || "pia-overlay";
+    copy.chamberDetails = {
+      ...(copy.chamberDetails || {}),
+      chamberType: copy.chamberDetails?.chamberType || (isSuggestedReference ? "Suggested Chamber" : "OR Chamber"),
+    };
+    delete copy.dpDetails;
+  }
+
   return copy as SavedMapAsset;
 }
 
@@ -1231,20 +1301,6 @@ export default function JointMapManager({
     saveStoredLayerPreferences(LAYER_PREFERENCE_STORAGE_KEY, visibleLayers);
   }, [visibleLayers]);
 
-  const [openreachLayers, setOpenreachLayers] = useState(() =>
-    loadStoredLayerPreferences(
-      OPENREACH_LAYER_PREFERENCE_STORAGE_KEY,
-      DEFAULT_OPENREACH_LAYERS,
-    ),
-  );
-
-  useEffect(() => {
-    saveStoredLayerPreferences(
-      OPENREACH_LAYER_PREFERENCE_STORAGE_KEY,
-      openreachLayers,
-    );
-  }, [openreachLayers]);
-
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [isRoutingCable, setIsRoutingCable] = useState(false);
   const [isLoadingOsmHomes, setIsLoadingOsmHomes] = useState(false);
@@ -1253,12 +1309,69 @@ export default function JointMapManager({
   const [loadedHomesProjectId, setLoadedHomesProjectId] = useState<
     string | null
   >(null);
+  const [orAssets, setOrAssets] = useState<SavedMapAsset[]>([]);
+  const [orAssetsLoaded, setOrAssetsLoaded] = useState(false);
   const [mapBounds, setMapBounds] = useState<OsmBounds | null>(null);
 
   const normalizedSavedJoints = useMemo(
     () => (savedJoints ?? []).map(normalizeMapAsset),
     [savedJoints],
   );
+
+  const operationalSavedJoints = useMemo(
+    () => normalizedSavedJoints.filter((asset) => !isOpenreachReferenceAsset(asset)),
+    [normalizedSavedJoints],
+  );
+
+  const legacyOpenreachAssets = useMemo(
+    () => normalizedSavedJoints.filter(isOpenreachReferenceAsset).map(normaliseOpenreachAsset),
+    [normalizedSavedJoints],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    loadOrAssets()
+      .then((loadedOrAssets) => {
+        if (cancelled) return;
+        setOrAssets(loadedOrAssets.map(normaliseOpenreachAsset));
+        setOrAssetsLoaded(true);
+      })
+      .catch((err) => {
+        console.error("Failed to load OR reference assets", err);
+        if (!cancelled) setOrAssetsLoaded(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const openreachReferenceAssets = useMemo(() => {
+    const byId = new Map<string, SavedMapAsset>();
+
+    legacyOpenreachAssets.forEach((asset) => {
+      if (asset?.id) byId.set(asset.id, normaliseOpenreachAsset(asset));
+    });
+
+    orAssets.forEach((asset) => {
+      if (asset?.id) byId.set(asset.id, normaliseOpenreachAsset(asset));
+    });
+
+    return Array.from(byId.values());
+  }, [legacyOpenreachAssets, orAssets]);
+
+  useEffect(() => {
+    if (!orAssetsLoaded || legacyOpenreachAssets.length === 0) return;
+
+    mergeAndSaveOrAssets(legacyOpenreachAssets, {
+      reason: "migrate legacy OR assets out of main savedJoints",
+    })
+      .then(setOrAssets)
+      .catch((err) => {
+        console.error("Failed to migrate legacy OR assets into OR chunks", err);
+      });
+  }, [orAssetsLoaded, legacyOpenreachAssets]);
 
   // =====================================================
   // SPLIT MAP ASSET STORAGE MIGRATION
@@ -1276,46 +1389,16 @@ export default function JointMapManager({
   // - Once legacy/main assets are present, they are mirrored to split chunks.
   // - Empty arrays are never written, so an early blank render cannot wipe data.
   // =====================================================
-  const splitStorageLoadAttemptedRef = useRef(false);
   const splitStorageLastSavedSignatureRef = useRef("");
 
-  useEffect(() => {
-    if (splitStorageLoadAttemptedRef.current) return;
-    splitStorageLoadAttemptedRef.current = true;
-
-    let cancelled = false;
-
-    loadSplitMapAssets()
-      .then((splitAssets) => {
-        if (cancelled || splitAssets.length === 0) return;
-
-        setSavedJoints((prev) => {
-          const merged = new Map<string, SavedMapAsset>();
-          (prev ?? []).map(normalizeMapAsset).forEach((asset) => {
-            if (asset?.id) merged.set(asset.id, asset);
-          });
-          splitAssets.map(normalizeMapAsset).forEach((asset) => {
-            if (asset?.id) merged.set(asset.id, asset);
-          });
-          return Array.from(merged.values());
-        });
-      })
-      .catch((err) => {
-        console.warn(
-          "Split map asset chunks not loaded; using legacy main chunks fallback.",
-          err,
-        );
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [setSavedJoints]);
+  // Split storage loading is deliberately disabled.
+  // The authoritative live project state must come from mapAssets/main/chunks.
+  // Loading old split buckets here can overwrite freshly saved main chunks with stale data.
 
   useEffect(() => {
-    if (normalizedSavedJoints.length === 0) return;
+    if (operationalSavedJoints.length === 0) return;
 
-    const saveSignature = normalizedSavedJoints
+    const saveSignature = operationalSavedJoints
       .map(
         (asset: any) =>
           `${asset.id}:${asset.updatedAt || asset.syncRevision || ""}`,
@@ -1325,16 +1408,31 @@ export default function JointMapManager({
 
     if (saveSignature === splitStorageLastSavedSignatureRef.current) return;
 
-    const timer = window.setTimeout(() => {
-      splitStorageLastSavedSignatureRef.current = saveSignature;
+    const timer = window.setTimeout(async () => {
+  splitStorageLastSavedSignatureRef.current = saveSignature;
 
-      saveSplitMapAssets(normalizedSavedJoints).catch((err) => {
-        console.error("Failed to mirror map assets into split chunks", err);
-      });
-    }, 1500);
+  try {
+    // MAIN AUTHORITATIVE SAVE
+    // This is the ONLY save path allowed to control persistence.
+    // It already safely flattens geometry and has destructive-save guards.
+    const { saveMapAssetsToFirestore } = await import(
+      "../services/mapAssetStorage"
+    );
+
+    await saveMapAssetsToFirestore(operationalSavedJoints, {
+      reason: "joint-map-manager-primary-save",
+    });
+
+    // Split-storage mirroring is temporarily disabled during the storage
+    // integrity phase. Main chunks are the only authoritative save target.
+    // Re-enable this only after split buckets are proven stable and rules allow them.
+  } catch (err) {
+    console.error("PRIMARY MAP SAVE FAILED", err);
+  }
+}, 1500);
 
     return () => window.clearTimeout(timer);
-  }, [normalizedSavedJoints]);
+  }, [operationalSavedJoints]);
 
   const normalizedProjectHomes = useMemo(
     () => (projectHomes ?? []).map(normalizeMapAsset),
@@ -1444,10 +1542,10 @@ export default function JointMapManager({
 
   const allMapAssets = useMemo(() => {
     const byId = new Map<string, SavedMapAsset>();
-    normalizedSavedJoints.forEach((asset) => byId.set(asset.id, asset));
+    operationalSavedJoints.forEach((asset) => byId.set(asset.id, asset));
     normalizedProjectHomes.forEach((asset) => byId.set(asset.id, asset));
     return Array.from(byId.values());
-  }, [normalizedSavedJoints, normalizedProjectHomes]);
+  }, [operationalSavedJoints, normalizedProjectHomes]);
 
   const currentEditingAsset = useMemo(
     () => allMapAssets.find((asset) => asset.id === editingAssetId) || null,
@@ -1582,6 +1680,47 @@ export default function JointMapManager({
   );
 
   const visibleProjectAreas = useMemo(() => projectAreas, [projectAreas]);
+
+  const visibleOpenreachAssets = useMemo(
+    () => filterAssetsForProjectArea(openreachReferenceAssets, activeProjectArea),
+    [activeProjectArea, openreachReferenceAssets],
+  );
+
+  const snapCandidateAssets = useMemo(() => {
+    const byId = new Map<string, SavedMapAsset>();
+    visibleProjectAssets.forEach((asset) => {
+      if (asset?.id) byId.set(asset.id, asset);
+    });
+    visibleOpenreachAssets.forEach((asset) => {
+      if (asset?.id) byId.set(asset.id, asset);
+    });
+    return Array.from(byId.values());
+  }, [visibleProjectAssets, visibleOpenreachAssets]);
+
+  const openreachLayerVisibility = useMemo(
+    () => ({
+      ducts: visibleLayers.orDucts !== false,
+      trenches: visibleLayers.orDucts !== false,
+      spans: visibleLayers.orDucts !== false,
+      chambers: visibleLayers.orChambers !== false,
+      poles: visibleLayers.orPoles !== false,
+      labels: visibleLayers.orLabels !== false,
+      newPoles: visibleLayers.newPoles !== false,
+      suggestedPoles: visibleLayers.suggestedPoles !== false,
+      suggestedChambers: visibleLayers.suggestedChambers !== false,
+      suggestedDucts: visibleLayers.suggestedDucts !== false,
+    }),
+    [
+      visibleLayers.orDucts,
+      visibleLayers.orChambers,
+      visibleLayers.orPoles,
+      visibleLayers.orLabels,
+      visibleLayers.newPoles,
+      visibleLayers.suggestedPoles,
+      visibleLayers.suggestedChambers,
+      visibleLayers.suggestedDucts,
+    ],
+  );
 
   // =====================================================
   // PROJECT WORKSPACE SUMMARY STATS
@@ -2581,16 +2720,16 @@ export default function JointMapManager({
       const firstPoint = draftCablePoints[0];
       const lastPoint = draftCablePoints[draftCablePoints.length - 1];
       const endpointDps = [
-        findDpAtCableEnd(savedJoints, firstPoint),
-        findDpAtCableEnd(savedJoints, lastPoint),
+        findDpAtCableEnd(operationalSavedJoints, firstPoint),
+        findDpAtCableEnd(operationalSavedJoints, lastPoint),
       ].filter(Boolean) as SavedMapAsset[];
 
       // Use both the drawn cable route and the road-routed cable route.
       // Road routing can pull the line away from poles/DPs, so checking only
       // the final routed line can miss DPs sitting on the actual pole line.
       const routeDps = [
-        ...findDpsAlongCable(savedJoints, draftCablePoints, 35),
-        ...findDpsAlongCable(savedJoints, routedCoordinates, 35),
+        ...findDpsAlongCable(operationalSavedJoints, draftCablePoints, 35),
+        ...findDpsAlongCable(operationalSavedJoints, routedCoordinates, 35),
       ];
 
       const fedDps = Array.from(
@@ -2765,7 +2904,7 @@ export default function JointMapManager({
   const handleMoveCablePoint = (index: number, point: LatLngLiteral) => {
     const snapped = snapPointToAssets(
       point,
-      (savedJoints ?? []).filter((asset) => asset.assetType !== "area"),
+      snapCandidateAssets.filter((asset) => asset.assetType !== "area"),
       snapEnabled,
       8,
     );
@@ -2784,7 +2923,7 @@ export default function JointMapManager({
   const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
     const snapped = snapPointToAssets(
       point,
-      (savedJoints ?? []).filter((asset) => asset.assetType !== "area"),
+      snapCandidateAssets.filter((asset) => asset.assetType !== "area"),
       snapEnabled,
       8,
     );
@@ -3106,7 +3245,7 @@ export default function JointMapManager({
   const handleCablePoint = (point: LatLngLiteral) => {
     const snapped = snapPointToAssets(
       point,
-      (savedJoints ?? []).filter((asset) => asset.assetType !== "area"),
+      snapCandidateAssets.filter((asset) => asset.assetType !== "area"),
       snapEnabled,
       8,
     );
@@ -3597,14 +3736,15 @@ export default function JointMapManager({
           return;
         }
 
-        setSavedJoints((prev) => [
-          ...prev.filter(
-            (asset) => String((asset as any).source || "") !== "pia-overlay",
-          ),
-          ...piaAssets,
-        ]);
+        const mergedOrAssets = await mergeAndSaveOrAssets(
+          piaAssets.map(normaliseOpenreachAsset),
+          { reason: "PIA overlay GeoJSON import" },
+        );
+
+        setOrAssets(mergedOrAssets);
+
         alert(
-          `Imported ${piaAssets.length} PIA overlay routes. Existing PIA overlay routes were replaced.`,
+          `Imported ${piaAssets.length} PIA overlay route(s) into read-only OR reference storage.`,
         );
       } catch (err: any) {
         console.error(err);
@@ -3665,6 +3805,75 @@ export default function JointMapManager({
       .toLowerCase();
   };
 
+  const getOpenreachFeatureName = (feature: any): string => {
+    const props = feature?.properties || {};
+    return String(
+      props.Name ||
+        props.name ||
+        props.ref ||
+        props.Ref ||
+        props.id ||
+        props.ID ||
+        feature?.id ||
+        "",
+    )
+      .trim()
+      .toUpperCase();
+  };
+
+  const getOpenreachFeatureDescription = (feature: any): string => {
+    const props = feature?.properties || {};
+    return String(props.description || props.Description || props.notes || props.Notes || "")
+      .trim()
+      .toUpperCase();
+  };
+
+  const isOpenreachPoleFeature = (feature: any): boolean => {
+    const name = getOpenreachFeatureName(feature);
+    const text = `${name} ${getOpenreachFeatureDescription(feature)} ${buildGeoJsonAssetText(feature)}`.toUpperCase();
+    return (
+      name.startsWith("POL:") ||
+      name.startsWith("MP:") ||
+      name.startsWith("POLE:") ||
+      text.includes("MISSING POLE") ||
+      text.includes(" POLE") ||
+      text.includes("OR POLE")
+    );
+  };
+
+  const isOpenreachChamberFeature = (feature: any): boolean => {
+    const name = getOpenreachFeatureName(feature);
+    const text = `${name} ${getOpenreachFeatureDescription(feature)} ${buildGeoJsonAssetText(feature)}`.toUpperCase();
+    return (
+      name.startsWith("JC:") ||
+      name.startsWith("JNT:") ||
+      name.startsWith("CH:") ||
+      name.startsWith("CHAMBER:") ||
+      text.includes(" CHAMBER") ||
+      text.includes("JOINT CHAMBER") ||
+      text.includes("JBF") ||
+      text.includes("JB")
+    );
+  };
+
+  const isOpenreachRouteFeature = (feature: any): boolean => {
+    const name = getOpenreachFeatureName(feature);
+    const text = `${name} ${getOpenreachFeatureDescription(feature)} ${buildGeoJsonAssetText(feature)}`;
+    return (
+      name.startsWith("OSP:") ||
+      text.includes("OSP:TRNCH") ||
+      text.includes("TRNCH") ||
+      text.includes("TRENCH") ||
+      text.includes("OSP:CND") ||
+      text.includes("CND") ||
+      text.includes("DUCT") ||
+      text.includes("SPAN") ||
+      text.includes("OVERHEAD") ||
+      text.includes("PIA") ||
+      text.includes("OPENREACH")
+    );
+  };
+
   const classifyGeoJsonFeature = (
     feature: any,
   ): AssetType | "pia-route" | "home" | "area" | "cable" => {
@@ -3674,6 +3883,22 @@ export default function JointMapManager({
     const propKeys = Object.keys(props).join(" ").toLowerCase();
 
     if (geometryType.includes("Polygon")) return "area";
+
+    // Openreach KML/QGIS exports often use short asset prefixes in Name:
+    //   POL:* = pole, JC:* / CH:* = joint chamber, OSP:* = duct/trench/span.
+    // Do this before the generic Point fallback, otherwise POL:DATA points
+    // become distribution-points and render as black DP squares.
+    if (geometryType === "Point" && isOpenreachPoleFeature(feature)) {
+      return "pole" as AssetType;
+    }
+
+    if (geometryType === "Point" && isOpenreachChamberFeature(feature)) {
+      return "chamber" as AssetType;
+    }
+
+    if (geometryType.includes("LineString") && isOpenreachRouteFeature(feature)) {
+      return "pia-route";
+    }
 
     // UPRN home GeoJSON often stores the useful clue in the FIELD NAME
     // e.g. { UPRN: "123..." }, not in the field value. The old logic only
@@ -3861,23 +4086,32 @@ export default function JointMapManager({
       }
 
       if (classifiedType === "pia-route") {
-        if (geometryType === "LineString") {
-          const coords = convertGeoJsonLine(feature.geometry.coordinates);
+        const makePiaAsset = (coords: [number, number][], lineIndex?: number) => {
           if (coords.length < 2) return;
+          const text = `${getOpenreachFeatureName(feature)} ${getOpenreachFeatureDescription(feature)} ${buildGeoJsonAssetText(feature)}`.toLowerCase();
+          const base = buildImportedAssetBase(feature, index, "pia");
           networkAssets.push(
             markAssetForLiveSync(
               {
-                ...buildImportedAssetBase(feature, index, "pia"),
-                id: `pia-${crypto.randomUUID()}`,
+                ...base,
+                id: lineIndex !== undefined ? `pia-${crypto.randomUUID()}-${lineIndex + 1}` : `pia-${crypto.randomUUID()}`,
+                name: lineIndex !== undefined ? `${base.name} ${lineIndex + 1}` : base.name,
                 assetType: "pia-route" as any,
                 jointType: "PIA Route",
+                readOnly: true,
+                source: "openreach",
+                isReferenceAsset: true,
                 cableType: "PIA Overlay",
-                installMethod: "Underground",
+                installMethod:
+                  text.includes("span") || text.includes("overhead")
+                    ? "OH"
+                    : "Underground",
                 piaKind:
-                  buildGeoJsonAssetText(feature).includes("trench") ||
-                  buildGeoJsonAssetText(feature).includes("trnch")
+                  text.includes("trench") || text.includes("trnch")
                     ? "trench"
-                    : "duct",
+                    : text.includes("span") || text.includes("overhead")
+                      ? "span"
+                      : "duct",
                 geometry: {
                   type: "LineString",
                   coordinates: coords,
@@ -3886,7 +4120,18 @@ export default function JointMapManager({
               true,
             ),
           );
+        };
+
+        if (geometryType === "LineString") {
+          makePiaAsset(convertGeoJsonLine(feature.geometry.coordinates));
         }
+
+        if (geometryType === "MultiLineString" && Array.isArray(feature.geometry.coordinates)) {
+          feature.geometry.coordinates.forEach((line: any, lineIndex: number) =>
+            makePiaAsset(convertGeoJsonLine(line), lineIndex),
+          );
+        }
+
         return;
       }
 
@@ -3898,12 +4143,19 @@ export default function JointMapManager({
           index,
           String(classifiedType),
         );
+        const isOrPole = classifiedType === "pole" && isOpenreachPoleFeature(feature);
+        const isOrChamber =
+          classifiedType === "chamber" && isOpenreachChamberFeature(feature);
         const jointType = readGeoJsonProp(
           props,
           ["jointType", "JointType", "type", "Type", "dpType", "DPType"],
           classifiedType === "distribution-point"
             ? "DP"
-            : String(classifiedType),
+            : isOrPole
+              ? "OR Pole"
+              : isOrChamber
+                ? "OR Chamber"
+                : String(classifiedType),
         );
 
         networkAssets.push(
@@ -3912,6 +4164,23 @@ export default function JointMapManager({
               ...base,
               assetType: classifiedType as AssetType,
               jointType,
+              source: isOrPole || isOrChamber ? "openreach" : base.source,
+              readOnly: isOrPole || isOrChamber ? true : (base as any).readOnly,
+              isReferenceAsset: isOrPole || isOrChamber ? true : (base as any).isReferenceAsset,
+              poleDetails:
+                classifiedType === "pole"
+                  ? ({ poleType: isOrPole ? "or" : "new" } as any)
+                  : undefined,
+              chamberDetails:
+                classifiedType === "chamber"
+                  ? ({
+                      chamberType: readGeoJsonProp(
+                        props,
+                        ["chamberType", "ChamberType", "type", "Type"],
+                        isOrChamber ? "OR Chamber" : "fw2",
+                      ),
+                    } as any)
+                  : undefined,
               dpDetails:
                 classifiedType === "distribution-point"
                   ? ({ dpType: jointType || "DP", status: base.status } as any)
@@ -4129,11 +4398,27 @@ export default function JointMapManager({
           }
         }
 
-        if (networkAssets.length) {
+        const importedOrAssets = networkAssets
+          .filter(isOpenreachReferenceAsset)
+          .map(normaliseOpenreachAsset);
+        const designedNetworkAssets = networkAssets.filter(
+          (asset) => !isOpenreachReferenceAsset(asset),
+        );
+
+        let savedOrCount = 0;
+        if (importedOrAssets.length) {
+          const mergedOrAssets = await mergeAndSaveOrAssets(importedOrAssets, {
+            reason: "GeoJSON OR reference import",
+          });
+          setOrAssets(mergedOrAssets);
+          savedOrCount = importedOrAssets.length;
+        }
+
+        if (designedNetworkAssets.length) {
           const existingIds = new Set(
             savedJoints.map((asset) => String(asset.id)),
           );
-          const dedupedNetworkAssets = networkAssets.filter((asset) => {
+          const dedupedNetworkAssets = designedNetworkAssets.filter((asset) => {
             const id = String(asset.id);
             if (existingIds.has(id)) return false;
             existingIds.add(id);
@@ -4143,7 +4428,7 @@ export default function JointMapManager({
         }
 
         alert(
-          `Imported ${networkAssets.length} network asset(s) and ${savedHomeCount} home(s) from GeoJSON.`,
+          `Imported ${designedNetworkAssets.length} designed network asset(s), ${savedOrCount} OR reference asset(s), and ${savedHomeCount} home(s) from GeoJSON.`,
         );
       } catch (err: any) {
         console.error(err);
@@ -4281,7 +4566,7 @@ export default function JointMapManager({
     );
   };
 
-  const handleDeletePiaOverlayForActiveProject = () => {
+  const handleDeletePiaOverlayForActiveProject = async () => {
     if (!activeProjectArea) {
       alert(
         "Select a project area first, then delete the PIA / Openreach overlay for that area.",
@@ -4290,7 +4575,7 @@ export default function JointMapManager({
     }
 
     const scopedPiaAssets = filterAssetsForProjectArea(
-      savedJoints.filter((asset) => isPiaOverlayAsset(asset)),
+      openreachReferenceAssets.filter((asset) => isPiaOverlayAsset(asset)),
       activeProjectArea,
     );
 
@@ -4312,9 +4597,27 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
 
     const deleteIds = new Set(scopedPiaAssets.map((asset) => String(asset.id)));
 
+    const remainingOrAssets = openreachReferenceAssets.filter(
+      (asset) => !deleteIds.has(String(asset.id)),
+    );
+
+    setOrAssets(remainingOrAssets);
+
+    try {
+      await saveOrAssets(remainingOrAssets, {
+        allowDestructiveSave: true,
+        reason: "delete OR overlay for selected project area",
+      });
+    } catch (err) {
+      console.error("Failed to save OR overlay deletion", err);
+      alert("OR overlay deletion failed to save. Check console.");
+      return;
+    }
+
     setSavedJoints((prev) =>
       prev.filter((asset) => !deleteIds.has(String(asset.id))),
     );
+
     alert(
       `Deleted ${scopedPiaAssets.length} PIA / Openreach overlay route(s) from ${areaName}.`,
     );
@@ -4330,12 +4633,28 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
 
       if (!Array.isArray(parsed)) throw new Error("Invalid file");
 
-      setSavedJoints(
-        (parsed as SavedMapAsset[]).map((asset) =>
-          markAssetForLiveSync(asset, !(asset as any).createdAt),
-        ),
+      const importedAssets = (parsed as SavedMapAsset[]).map((asset) =>
+        markAssetForLiveSync(asset, !(asset as any).createdAt),
       );
-      alert("Imported successfully");
+
+      const importedOrAssets = importedAssets
+        .filter(isOpenreachReferenceAsset)
+        .map(normaliseOpenreachAsset);
+      const importedDesignedAssets = importedAssets.filter(
+        (asset) => !isOpenreachReferenceAsset(asset),
+      );
+
+      if (importedOrAssets.length) {
+        const mergedOrAssets = await mergeAndSaveOrAssets(importedOrAssets, {
+          reason: "JSON import OR reference assets",
+        });
+        setOrAssets(mergedOrAssets);
+      }
+
+      setSavedJoints(importedDesignedAssets);
+      alert(
+        `Imported ${importedDesignedAssets.length} designed asset(s) and ${importedOrAssets.length} OR reference asset(s).`,
+      );
     } catch (err: any) {
       alert("Import failed: " + err.message);
     }
@@ -5514,7 +5833,7 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
 
           <MapClickHandler
             mode={mapMode}
-            assets={visibleProjectAssets}
+            assets={snapCandidateAssets}
             snapEnabled={snapEnabled}
             onPick={setPickedLocation}
             onMeasurePoint={(point) =>
@@ -5658,172 +5977,13 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
           )}
 
           <OpenreachOverlayLayer
-            assets={visibleProjectAssets}
-            visibleLayers={openreachLayers}
+            assets={visibleOpenreachAssets}
+            visibleLayers={openreachLayerVisibility}
           />
 
-          {/* =====================================================
-              IMPORTED OR / PIA GEOJSON FALLBACK RENDERER
-              This keeps screenshot-traced ducts, chambers and poles visible
-              even when the external OpenreachOverlayLayer does not recognise
-              the imported assetType / jointType combination yet.
-              ===================================================== */}
-          {openreachLayers.ducts &&
-            visibleProjectAssets
-              .filter((asset) => isImportedOrDuctAsset(asset))
-              .map((asset) => {
-                const positions = getAssetLinePositions(asset);
-                if (positions.length < 2) return null;
-
-                return (
-                  <Polyline
-                    key={`or-duct-fallback-${asset.id}`}
-                    positions={positions}
-                    pathOptions={{
-                      color: "#06b6d4",
-                      weight: 3,
-                      dashArray: "7, 7",
-                      opacity: 0.9,
-                    }}
-                    eventHandlers={{
-                      click: () => {
-                        handleEditAsset(asset);
-                        setIsPanelOpen(true);
-                      },
-                    }}
-                  >
-                    <Tooltip sticky>{asset.name || "OR duct"}</Tooltip>
-                    <Popup>
-                      <div style={{ minWidth: 190 }}>
-                        <b>{asset.name || "OR duct"}</b>
-                        <br />
-                        {String(
-                          (asset as any).jointType ||
-                            (asset as any).routeType ||
-                            "Imported OR duct",
-                        )}
-                        <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
-                          <button
-                            type="button"
-                            style={btnSecondary}
-                            onClick={() => {
-                              handleEditAsset(asset);
-                              setIsPanelOpen(true);
-                            }}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            style={btnDanger}
-                            onClick={() => handleDeleteAsset(asset.id)}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    </Popup>
-                  </Polyline>
-                );
-              })}
-
-          {openreachLayers.chambers &&
-            visibleProjectAssets
-              .filter((asset) => isImportedOrChamberAsset(asset))
-              .map((asset) => {
-                const position = getAssetPointPosition(asset);
-                if (!position) return null;
-
-                return (
-                  <Marker
-                    key={`or-chamber-fallback-${asset.id}`}
-                    position={position}
-                    eventHandlers={{
-                      click: () => {
-                        handleEditAsset(asset);
-                        setIsPanelOpen(true);
-                      },
-                    }}
-                  >
-                    <Tooltip sticky>{asset.name || "OR chamber"}</Tooltip>
-                    <Popup>
-                      <div style={{ minWidth: 190 }}>
-                        <b>{asset.name || "OR chamber"}</b>
-                        <br />
-                        {String((asset as any).jointType || "Chamber")}
-                        <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
-                          <button
-                            type="button"
-                            style={btnSecondary}
-                            onClick={() => {
-                              handleEditAsset(asset);
-                              setIsPanelOpen(true);
-                            }}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            style={btnDanger}
-                            onClick={() => handleDeleteAsset(asset.id)}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    </Popup>
-                  </Marker>
-                );
-              })}
-
-          {openreachLayers.poles &&
-            visibleProjectAssets
-              .filter((asset) => isImportedOrPoleAsset(asset))
-              .map((asset) => {
-                const position = getAssetPointPosition(asset);
-                if (!position) return null;
-
-                return (
-                  <Marker
-                    key={`or-pole-fallback-${asset.id}`}
-                    position={position}
-                    eventHandlers={{
-                      click: () => {
-                        handleEditAsset(asset);
-                        setIsPanelOpen(true);
-                      },
-                    }}
-                  >
-                    <Tooltip sticky>{asset.name || "OR pole"}</Tooltip>
-                    <Popup>
-                      <div style={{ minWidth: 190 }}>
-                        <b>{asset.name || "OR pole"}</b>
-                        <br />
-                        {String((asset as any).jointType || "Pole")}
-                        <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
-                          <button
-                            type="button"
-                            style={btnSecondary}
-                            onClick={() => {
-                              handleEditAsset(asset);
-                              setIsPanelOpen(true);
-                            }}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            style={btnDanger}
-                            onClick={() => handleDeleteAsset(asset.id)}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    </Popup>
-                  </Marker>
-                );
-              })}
+          {/* OR / PIA assets are rendered read-only by OpenreachOverlayLayer above.
+              Do not render fallback editable Leaflet markers here, otherwise
+              Openreach poles/chambers appear as blue editable map pins. */}
 
           <CableLinesLayer
             assets={visibleProjectAssets}
@@ -6164,13 +6324,6 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
           onStopMeasurement={() => setMapMode("pick")}
           onUndoMeasurementPoint={handleUndoMeasurementPoint}
           onClearMeasurements={handleClearMeasurement}
-          openreachLayers={openreachLayers}
-          onOpenreachLayerChange={(key, value) =>
-            setOpenreachLayers((prev) => ({
-              ...prev,
-              [key]: value,
-            }))
-          }
         />
       </div>
 

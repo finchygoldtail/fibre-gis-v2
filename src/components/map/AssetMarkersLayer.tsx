@@ -17,6 +17,9 @@ type LayerVisibility = {
   homesFlats?: boolean;
   newPoles?: boolean;
   orPoles?: boolean;
+  suggestedPoles?: boolean;
+  orChambers?: boolean;
+  suggestedChambers?: boolean;
   fw2?: boolean;
   fw4?: boolean;
   fw6?: boolean;
@@ -177,6 +180,38 @@ function getHomeLayerType(asset: SavedMapAsset): "sdu" | "mdu" | "flats" {
   return "sdu";
 }
 
+function isReadOnlyOpenreachAsset(asset: SavedMapAsset): boolean {
+  const item = asset as any;
+  const haystack = [
+    item.source,
+    item.assetType,
+    item.jointType,
+    item.name,
+    item.notes,
+    item.description,
+    item.piaRef,
+    item.importedProperties?.Name,
+    item.importedProperties?.name,
+    item.importedProperties?.description,
+    item.importedProperties?.Description,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return (
+    item.readOnly === true ||
+    haystack.includes("pia-overlay") ||
+    haystack.includes("openreach") ||
+    haystack.includes("pol:") ||
+    haystack.includes("mp:") ||
+    haystack.includes("jc:") ||
+    haystack.includes("ch:") ||
+    haystack.includes("osp:") ||
+    haystack.includes("missing pole")
+  );
+}
+
 function getPointLatLng(asset: SavedMapAsset): [number, number] | null {
   const coordinates = asset.geometry?.coordinates;
 
@@ -219,6 +254,7 @@ function isVisible(asset: SavedMapAsset, visibleLayers: LayerVisibility): boolea
           ""
       ).toLowerCase();
 
+      if (poleType.includes("suggested") && layers.suggestedPoles === false) return false;
       if ((poleType.includes("new") || poleType.includes("proposed")) && layers.newPoles === false) return false;
       if ((poleType.includes("or") || poleType.includes("existing")) && layers.orPoles === false) return false;
 
@@ -249,6 +285,8 @@ function isVisible(asset: SavedMapAsset, visibleLayers: LayerVisibility): boolea
           ""
       ).toLowerCase();
 
+      if (chamberType.includes("suggested") && layers.suggestedChambers === false) return false;
+      if (chamberType.includes("or") && layers.orChambers === false) return false;
       if (chamberType.includes("fw2") && layers.fw2 === false) return false;
       if (chamberType.includes("fw4") && layers.fw4 === false) return false;
       if (chamberType.includes("fw6") && layers.fw6 === false) return false;
@@ -655,6 +693,10 @@ export default function AssetMarkersLayer({
 
   return assets.filter((asset) => {
     if (asset.geometry?.type !== "Point") return false;
+
+    // Openreach / PIA reference assets render in OpenreachOverlayLayer only.
+    // They must never appear as editable blue/default map markers here.
+    if (isReadOnlyOpenreachAsset(asset)) return false;
 
     // Handle homes separately so SDU/MDU/Flats filters don't accidentally hide them
     if (asset.assetType === "home") {

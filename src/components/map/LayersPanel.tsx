@@ -3,16 +3,6 @@ import { formatDistance } from "../../utils/mapMeasure";
 
 type BasemapType = "street" | "satellite" | "hybrid" | "dark";
 
-type OpenreachLayerKey =
-  | "ducts"
-  | "trenches"
-  | "spans"
-  | "chambers"
-  | "poles"
-  | "labels";
-
-type OpenreachLayers = Record<OpenreachLayerKey, boolean>;
-
 type Props = {
   visibleLayers: Record<string, boolean>;
   setVisibleLayers: React.Dispatch<React.SetStateAction<any>>;
@@ -29,9 +19,6 @@ type Props = {
   onStopMeasurement?: () => void;
   onUndoMeasurementPoint?: () => void;
   onClearMeasurements?: () => void;
-
-  openreachLayers?: OpenreachLayers;
-  onOpenreachLayerChange?: (key: OpenreachLayerKey, value: boolean) => void;
 };
 
 type LayerOption = { label: string; key: string };
@@ -66,8 +53,9 @@ const layerGroups: LayerGroup[] = [
     title: "Poles",
     options: [
       { label: "All Poles", key: "poles" },
-      { label: "New Poles", key: "newPoles" },
+      { label: "NP / New Poles", key: "newPoles" },
       { label: "OR Poles", key: "orPoles" },
+      { label: "Suggested Poles", key: "suggestedPoles" },
     ],
   },
   {
@@ -75,6 +63,8 @@ const layerGroups: LayerGroup[] = [
     title: "Chambers",
     options: [
       { label: "All Chambers", key: "chambers" },
+      { label: "OR Chambers", key: "orChambers" },
+      { label: "Suggested Chambers", key: "suggestedChambers" },
       { label: "FW2", key: "fw2" },
       { label: "FW4", key: "fw4" },
       { label: "FW6", key: "fw6" },
@@ -103,6 +93,8 @@ const layerGroups: LayerGroup[] = [
       { label: "36 ULW", key: "ulw36" },
       { label: "24 ULW", key: "ulw24" },
       { label: "12 ULW", key: "ulw12" },
+      { label: "OR Ducts", key: "orDucts" },
+      { label: "Suggested Ducts", key: "suggestedDucts" },
     ],
   },
   {
@@ -126,17 +118,9 @@ const layerGroups: LayerGroup[] = [
     options: [
       { label: "Measurements", key: "measurements" },
       { label: "Cable distances", key: "cableDistances" },
+      { label: "OR Labels", key: "orLabels" },
     ],
   },
-];
-
-const openreachOptions: { label: string; key: OpenreachLayerKey }[] = [
-  { label: "OR Ducts", key: "ducts" },
-  { label: "OR Trenches", key: "trenches" },
-  { label: "OR Spans", key: "spans" },
-  { label: "OR Chambers", key: "chambers" },
-  { label: "OR Poles", key: "poles" },
-  { label: "OR Labels", key: "labels" },
 ];
 
 const panel: React.CSSProperties = {
@@ -267,19 +251,10 @@ export default function LayersPanel({
   onStopMeasurement,
   onUndoMeasurementPoint,
   onClearMeasurements,
-  openreachLayers = {
-    ducts: false,
-    trenches: false,
-    spans: false,
-    chambers: false,
-    poles: false,
-    labels: false,
-  },
-  onOpenreachLayerChange,
 }: Props) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     measurements: true,
-    openreach: true,
+    openreachReference: true,
   });
 
   const toggleLayer = (key: string) =>
@@ -391,37 +366,6 @@ export default function LayersPanel({
             </div>
           );
         })}
-
-        <div style={layerGroupCard}>
-          <button
-            type="button"
-            onClick={() => toggleGroup("openreach")}
-            style={layerButton}
-            aria-expanded={!!openGroups.openreach}
-          >
-            <span>Openreach / PIA</span>
-            <span aria-hidden="true" style={{ fontSize: "0.85rem", lineHeight: 1 }}>
-              {openGroups.openreach ? "▲" : "▼"}
-            </span>
-          </button>
-
-          {openGroups.openreach && (
-            <div style={dropdown}>
-              {openreachOptions.map((option) => (
-                <label key={option.key} style={layerRow}>
-                  <input
-                    type="checkbox"
-                    checked={openreachLayers[option.key] !== false}
-                    onChange={(event) =>
-                      onOpenreachLayerChange?.(option.key, event.target.checked)
-                    }
-                  />
-                  <span>{option.label}</span>
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
 
       <div style={{ ...card, padding: "0.7rem" }}>

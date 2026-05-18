@@ -131,6 +131,33 @@ function writeLocalActivityLog(log: AssetActivityLog) {
   }
 }
 
+function sanitizeActivityValue(value: unknown): unknown {
+  if (value === undefined) return null;
+  if (value === null) return null;
+
+  try {
+    return JSON.parse(
+      JSON.stringify(value, (_key, nestedValue) => {
+        if (typeof nestedValue === "function") return undefined;
+        if (nestedValue === undefined) return null;
+        return nestedValue;
+      }),
+    );
+  } catch {
+    return null;
+  }
+}
+
+function sanitizeActivityDetails(
+  value?: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const sanitized = sanitizeActivityValue(value);
+  if (!sanitized || typeof sanitized !== "object" || Array.isArray(sanitized)) {
+    return undefined;
+  }
+  return sanitized as Record<string, unknown>;
+}
+
 export async function createAssetActivityLog(args: {
   projectId?: string;
   asset: any;
@@ -154,9 +181,9 @@ export async function createAssetActivityLog(args: {
     reason: args.reason,
     comment: args.comment,
     context: args.context,
-    before: args.before,
-    after: args.after,
-    details: args.details,
+    before: sanitizeActivityValue(args.before),
+    after: sanitizeActivityValue(args.after),
+    details: sanitizeActivityDetails(args.details),
   };
 
   try {

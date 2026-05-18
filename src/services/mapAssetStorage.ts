@@ -17,9 +17,37 @@ export const MAP_SCHEMA_VERSION = 2;
 export const FIRESTORE_REF_PATH = ["businesses", MAP_BUSINESS_ID] as const;
 export const MAP_ASSET_CHUNK_SIZE = 150;
 
+const DESTRUCTIVE_DROP_RATIO = 0.65;
+const MIN_EXISTING_ASSETS_FOR_DROP_GUARD = 10;
+
 type MapAssetChunkDoc = {
   assetsJson?: string;
   chunkIndex?: number;
+};
+
+type MapAssetsMainDoc = {
+  chunkCount?: number;
+  assetCount?: number;
+};
+
+type AssetInventory = {
+  total: number;
+  cables: number;
+  polygons: number;
+  joints: number;
+  distributionPoints: number;
+  homes: number;
+  other: number;
+};
+
+export type SaveMapAssetsOptions = {
+  /**
+   * Use only for deliberate admin recovery/deletion workflows.
+   * Normal autosave must leave this false so tablet/slow-load partial state
+   * cannot wipe good Firestore chunk data.
+   */
+  allowDestructiveSave?: boolean;
+  reason?: string;
 };
 
 function safeJsonParse<T = any>(value: unknown, fallback: T): T {
@@ -30,6 +58,217 @@ function safeJsonParse<T = any>(value: unknown, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function norm(value: unknown): string {
+  return String(value ?? "").toLowerCase().trim();
+}
+
+function getAssetGeometryType(asset: any): string {
+  return norm(asset?.geometry?.type || asset?.geometryType);
+}
+
+function getAssetBucket(asset: any): keyof AssetInventory {
+  const assetType = norm(asset?.assetType);
+  const jointType = norm(asset?.jointType);
+  const geometryType = getAssetGeometryType(asset);
+
+  if (
+    assetType === "cable" ||
+    geometryType === "linestring" ||
+    jointType.includes("cable")
+  ) {
+    return "cables";
+  }
+
+  if (
+    assetType === "area" ||
+    assetType === "polygon" ||
+    assetType === "project-area" ||
+    geometryType === "polygon" ||
+    jointType.includes("polygon") ||
+    jointType.includes("area")
+  ) {
+    return "polygons";
+  }
+
+  if (
+    assetType === "distribution-point" ||
+    assetType === "distribution point" ||
+    assetType === "dp" ||
+    jointType.includes("distribution point") ||
+    jointType === "dp"
+  ) {
+    return "distributionPoints";
+  }
+
+  if (
+    assetType === "home" ||
+    jointType === "home" ||
+    Boolean(asset?.osmId) ||
+    norm(asset?.source) === "osm"
+  ) {
+    return "homes";
+  }
+
+  if (
+    assetType === "ag-joint" ||
+    jointType.includes("joint") ||
+    jointType.includes("lmj") ||
+    jointType.includes("cmj") ||
+    jointType.includes("tray")
+  ) {
+    return "joints";
+  }
+
+  return "other";
+}
+
+function countAssetInventory(assets: any[]): AssetInventory {
+  const counts: AssetInventory = {
+    total: Array.isArray(assets) ? assets.length : 0,
+    cables: 0,
+    polygons: 0,
+    joints: 0,
+    distributionPoints: 0,
+    homes: 0,
+    other: 0,
+  };
+
+  if (!Array.isArray(assets)) return counts;
+
+  assets.forEach((asset) => {
+    counts[getAssetBucket(asset)] += 1;
+  });
+
+  return counts;
+}
+
+function formatInventory(counts: AssetInventory): string {
+  return `total=${counts.total}, cables=${counts.cables}, polygons=${counts.polygons}, joints=${counts.joints}, DPs=${counts.distributionPoints}, homes=${counts.homes}, other=${counts.other}`;
+}
+
+function buildDestructiveSaveError(
+  previous: AssetInventory,
+  next: AssetInventory,
+): string | null {
+  if (next.total === 0 && previous.total > 0) {
+    return `Refusing to save zero map assets over existing Firestore data (${formatInventory(previous)}).`;
+  }
+
+  if (
+    previous.total >= MIN_EXISTING_ASSETS_FOR_DROP_GUARD &&
+    next.total < Math.floor(previous.total * DESTRUCTIVE_DROP_RATIO)
+  ) {
+    return `Refusing suspicious map asset save. Existing ${formatInventory(previous)} would become ${formatInventory(next)}.`;
+  }
+
+  if (previous.cables > 0 && next.cables === 0) {
+    return `Refusing to wipe cable assets. Existing cables=${previous.cables}, next cables=0.`;
+  }
+
+  if (previous.polygons > 0 && next.polygons === 0) {
+    return `Refusing to wipe polygon assets. Existing polygons=${previous.polygons}, next polygons=0.`;
+  }
+
+  return null;
+}
+
+async function readCurrentChunkAssets(): Promise<any[]> {
+  const mainDocRef = doc(db, ...FIRESTORE_REF_PATH, "mapAssets", "main");
+  const chunksRef = collection(
+    db,
+    ...FIRESTORE_REF_PATH,
+    "mapAssets",
+    "main",
+    "chunks",
+  );
+
+  let expectedChunkCount: number | null = null;
+
+  try {
+    const mainSnap = await getDoc(mainDocRef);
+    const mainData = mainSnap.exists() ? (mainSnap.data() as MapAssetsMainDoc) : null;
+    if (typeof mainData?.chunkCount === "number" && mainData.chunkCount >= 0) {
+      expectedChunkCount = mainData.chunkCount;
+    }
+  } catch (err) {
+    // Some rules may allow chunk reads but not the parent metadata read.
+    // In that case continue and read all chunks.
+    console.warn("Map asset parent metadata read failed; reading all chunks.", err);
+  }
+
+  const snapshot = await getDocs(chunksRef);
+
+  return snapshot.docs
+    .map((chunkDoc) => {
+      const data = chunkDoc.data() as MapAssetChunkDoc;
+      return {
+        id: chunkDoc.id,
+        index:
+          typeof data.chunkIndex === "number"
+            ? data.chunkIndex
+            : Number(chunkDoc.id.replace("chunk_", "")),
+        assets: safeJsonParse(data.assetsJson, []),
+      };
+    })
+    .filter((chunk) => {
+      if (!Number.isFinite(chunk.index)) return false;
+      if (expectedChunkCount === null) return true;
+      return chunk.index >= 0 && chunk.index < expectedChunkCount;
+    })
+    .sort((a, b) => a.index - b.index || a.id.localeCompare(b.id))
+    .flatMap((chunk) => (Array.isArray(chunk.assets) ? chunk.assets : []));
+}
+
+async function writeMapAssetsSafetyBackup(existingAssets: any[]) {
+  if (!Array.isArray(existingAssets) || existingAssets.length === 0) return;
+
+  const backupId = `map-assets-${Date.now()}`;
+  const backupChunks: any[][] = [];
+
+  for (let i = 0; i < existingAssets.length; i += MAP_ASSET_CHUNK_SIZE) {
+    backupChunks.push(existingAssets.slice(i, i + MAP_ASSET_CHUNK_SIZE));
+  }
+
+  const backupRootRef = doc(
+    db,
+    ...FIRESTORE_REF_PATH,
+    "mapAssetBackups",
+    backupId,
+  );
+
+  await setDoc(backupRootRef, {
+    backupId,
+    type: "map-assets-pre-save-safety-backup",
+    schemaVersion: MAP_SCHEMA_VERSION,
+    assetCount: existingAssets.length,
+    chunkCount: backupChunks.length,
+    createdAt: serverTimestamp(),
+    createdByUid: auth.currentUser?.uid || "unknown",
+    createdByEmail: auth.currentUser?.email || "unknown",
+  });
+
+  await Promise.all(
+    backupChunks.map((chunkAssets, index) =>
+      setDoc(
+        doc(
+          db,
+          ...FIRESTORE_REF_PATH,
+          "mapAssetBackups",
+          backupId,
+          "chunks",
+          `chunk_${String(index).padStart(5, "0")}`,
+        ),
+        {
+          chunkIndex: index,
+          assetsJson: JSON.stringify(chunkAssets),
+          count: chunkAssets.length,
+          createdAt: serverTimestamp(),
+        },
+      ),
+    ),
+  );
 }
 
 /**
@@ -55,6 +294,41 @@ export async function loadMapAssets(
   return normalizedAssets;
 }
 
+function removeUndefinedDeep(value: any): any {
+  if (Array.isArray(value)) {
+    return value.map(removeUndefinedDeep).filter((item) => item !== undefined);
+  }
+
+  if (value && typeof value === "object") {
+    const output: Record<string, any> = {};
+    Object.entries(value).forEach(([key, child]) => {
+      if (child === undefined) return;
+      output[key] = removeUndefinedDeep(child);
+    });
+    return output;
+  }
+
+  return value;
+}
+
+function stripRuntimeCoordinateCaches(copy: any) {
+  // These fields duplicate geometry.coordinates and can contain nested arrays
+  // or Leaflet objects. The authoritative route/shape is geometry, which is
+  // flattened into geometryCoordinatesJson below.
+  delete copy.coordinates;
+  delete copy.route;
+  delete copy.path;
+  delete copy.points;
+  delete copy.latlngs;
+  delete copy.latLngs;
+  delete copy.leafletLatLngs;
+  delete copy.polyline;
+  delete copy.polygon;
+  delete copy.renderCoordinates;
+  delete copy.cachedPoints;
+  delete copy.pathCoordinates;
+}
+
 /**
  * Converts runtime map assets into Firestore-safe objects.
  * Firestore does not allow nested arrays, so GeoJSON coordinates are flattened
@@ -62,13 +336,15 @@ export async function loadMapAssets(
  */
 export function cleanSavedJointsForFirebase(value: SavedJoint[]): any[] {
   return value.map((asset: any) => {
-    const copy: any = { ...asset };
+    const copy: any = removeUndefinedDeep(JSON.parse(JSON.stringify(asset ?? {})));
 
     if (copy.geometry?.coordinates !== undefined) {
       copy.geometryType = copy.geometry.type;
       copy.geometryCoordinatesJson = JSON.stringify(copy.geometry.coordinates);
       delete copy.geometry;
     }
+
+    stripRuntimeCoordinateCaches(copy);
 
     // Do not sync full uploaded joint sheets inside the main project doc.
     // Mapping rows are shared separately in jointMappings/{jointId}/chunks.
@@ -82,7 +358,7 @@ export function cleanSavedJointsForFirebase(value: SavedJoint[]): any[] {
       delete copy.mappingRowsJson;
     }
 
-    return JSON.parse(JSON.stringify(copy));
+    return removeUndefinedDeep(copy);
   });
 }
 
@@ -115,11 +391,41 @@ export function restoreSavedJointsFromFirebase(value: any[]): SavedJoint[] {
  * Chunked save path used by FibreTrayEditor.
  * This keeps the app under Firestore's document size limit by writing assets to:
  * businesses/fibre-gis-v2/mapAssets/main/chunks/chunk_00000...
+ *
+ * DATA LOSS GUARD:
+ * - Never deletes old chunks before the replacement chunks are safely written.
+ * - Refuses partial/empty saves that would wipe existing cables/polygons.
+ * - Creates a pre-save backup of the current chunk set before writing.
  */
 export async function saveMapAssetsToFirestore(
   nextSavedJoints: SavedJoint[],
+  options: SaveMapAssetsOptions = {},
 ): Promise<any[]> {
+  if (!Array.isArray(nextSavedJoints)) {
+    throw new Error("Refusing to save map assets: nextSavedJoints is not an array.");
+  }
+
   const cleaned = cleanSavedJointsForFirebase(nextSavedJoints);
+  const existingAssets = await readCurrentChunkAssets();
+  const existingInventory = countAssetInventory(existingAssets);
+  const nextInventory = countAssetInventory(cleaned);
+
+  if (!options.allowDestructiveSave) {
+    const destructiveSaveError = buildDestructiveSaveError(
+      existingInventory,
+      nextInventory,
+    );
+
+    if (destructiveSaveError) {
+      console.error("ALISTRA DATA LOSS GUARD BLOCKED SAVE", {
+        reason: destructiveSaveError,
+        previous: existingInventory,
+        next: nextInventory,
+      });
+      throw new Error(destructiveSaveError);
+    }
+  }
+
   const chunksRef = collection(
     db,
     ...FIRESTORE_REF_PATH,
@@ -128,51 +434,92 @@ export async function saveMapAssetsToFirestore(
     "chunks",
   );
 
-  const existing = await getDocs(chunksRef);
-  await Promise.all(existing.docs.map((chunkDoc) => deleteDoc(chunkDoc.ref)));
-
   const chunks: any[][] = [];
   for (let i = 0; i < cleaned.length; i += MAP_ASSET_CHUNK_SIZE) {
     chunks.push(cleaned.slice(i, i + MAP_ASSET_CHUNK_SIZE));
   }
 
+  if (chunks.length === 0 && !options.allowDestructiveSave) {
+    throw new Error("Refusing to save empty map asset chunks.");
+  }
+
+  try {
+    await writeMapAssetsSafetyBackup(existingAssets);
+  } catch (err) {
+    // Backups are important, but they must never stop the authoritative
+    // chunk save. Some deployed rules do not yet include mapAssetBackups.
+    console.warn("Map asset safety backup failed; continuing primary chunk save.", err);
+  }
+
+  // Write/overwrite replacement chunks first. Only after every new chunk has
+  // succeeded do we delete old chunks beyond the new chunk count.
   await Promise.all(
     chunks.map((chunkAssets, index) =>
       setDoc(doc(chunksRef, `chunk_${String(index).padStart(5, "0")}`), {
         chunkIndex: index,
         assetsJson: JSON.stringify(chunkAssets),
+        count: chunkAssets.length,
+        updatedAt: serverTimestamp(),
       }),
     ),
   );
 
+  try {
+    const existingChunkSnapshot = await getDocs(chunksRef);
+    await Promise.all(
+      existingChunkSnapshot.docs
+        .filter((chunkDoc) => {
+          const index = Number(chunkDoc.id.replace("chunk_", ""));
+          return Number.isFinite(index) && index >= chunks.length;
+        })
+        .map((chunkDoc) => deleteDoc(chunkDoc.ref)),
+    );
+  } catch (err) {
+    // If old chunk cleanup is blocked by rules, do not fail the save.
+    // readCurrentChunkAssets uses the parent chunkCount to ignore stale extras.
+    console.warn("Old map asset chunk cleanup failed; primary chunks were written.", err);
+  }
+
   const now = new Date().toISOString();
 
-  await setDoc(
-    doc(db, ...FIRESTORE_REF_PATH, "mapAssets", "main"),
-    {
-      chunked: true,
-      assetCount: cleaned.length,
-      chunkCount: chunks.length,
-      updatedAt: now,
-      updatedByUid: auth.currentUser?.uid || "unknown",
-      updatedByEmail: auth.currentUser?.email || "unknown",
-    },
-    { merge: true },
-  );
+  try {
+    await setDoc(
+      doc(db, ...FIRESTORE_REF_PATH, "mapAssets", "main"),
+      {
+        chunked: true,
+        assetCount: cleaned.length,
+        chunkCount: chunks.length,
+        safetyGuarded: true,
+        lastSaveInventory: nextInventory,
+        updatedAt: now,
+        updatedByUid: auth.currentUser?.uid || "unknown",
+        updatedByEmail: auth.currentUser?.email || "unknown",
+        saveReason: options.reason || "normal-save",
+      },
+      { merge: true },
+    );
+  } catch (err) {
+    console.warn("Map asset parent metadata write failed; chunks were written.", err);
+  }
 
   // Keep a small root summary for backwards visibility without risking 1MB.
-  await setDoc(
-    doc(db, ...FIRESTORE_REF_PATH),
-    {
-      mapAssetsChunked: true,
-      mapAssetsPath: "mapAssets/main/chunks",
-      mapAssetsCount: cleaned.length,
-      updatedAt: now,
-      updatedByUid: auth.currentUser?.uid || "unknown",
-      updatedByEmail: auth.currentUser?.email || "unknown",
-    },
-    { merge: true },
-  );
+  try {
+    await setDoc(
+      doc(db, ...FIRESTORE_REF_PATH),
+      {
+        mapAssetsChunked: true,
+        mapAssetsPath: "mapAssets/main/chunks",
+        mapAssetsCount: cleaned.length,
+        mapAssetsSafetyGuarded: true,
+        updatedAt: now,
+        updatedByUid: auth.currentUser?.uid || "unknown",
+        updatedByEmail: auth.currentUser?.email || "unknown",
+      },
+      { merge: true },
+    );
+  } catch (err) {
+    console.warn("Map asset root summary write failed; chunks were written.", err);
+  }
 
   return cleaned;
 }
@@ -182,29 +529,7 @@ export async function saveMapAssetsToFirestore(
  * Loads chunked mapAssets first, then falls back to legacy root savedJoints.
  */
 export async function loadMapAssetsFromFirestore(): Promise<SavedJoint[]> {
-  const chunksRef = collection(
-    db,
-    ...FIRESTORE_REF_PATH,
-    "mapAssets",
-    "main",
-    "chunks",
-  );
-
-  const snapshot = await getDocs(chunksRef);
-  const chunkAssets = snapshot.docs
-    .map((chunkDoc) => {
-      const data = chunkDoc.data() as MapAssetChunkDoc;
-      return {
-        id: chunkDoc.id,
-        index:
-          typeof data.chunkIndex === "number"
-            ? data.chunkIndex
-            : Number(chunkDoc.id.replace("chunk_", "")),
-        assets: safeJsonParse(data.assetsJson, []),
-      };
-    })
-    .sort((a, b) => a.index - b.index || a.id.localeCompare(b.id))
-    .flatMap((chunk) => (Array.isArray(chunk.assets) ? chunk.assets : []));
+  const chunkAssets = await readCurrentChunkAssets();
 
   if (chunkAssets.length > 0) {
     return restoreSavedJointsFromFirebase(chunkAssets);

@@ -31,7 +31,12 @@ import { loadMappingFile } from "../logic/mappingParser";
 import * as XLSX from "xlsx";
 import { convertLmjSheetToStandardRows } from "../logic/lmjSheetConverter";
 import { normalizeMapAssets } from "../services/mapAssetAdapter";
-import { loadMapAssets } from "../services/mapAssetStorage";
+import {
+  loadMapAssets,
+  loadMapAssetsFromFirestore,
+  saveMapAssetsToFirestore,
+} from "../services/mapAssetStorage";
+import { isOpenreachReferenceAsset } from "../services/orAssetStorage";
 
 // =====================================================
 // HELPERS
@@ -186,21 +191,26 @@ const CombinedViewer: React.FC = () => {
       ref,
       async (snap) => {
         if (snap.exists()) {
-          const parsedJoints = parseSavedJointsFromFirestore(snap.data());
+          // Prefer guarded chunked mapAssets/main/chunks. Fall back to the
+          // legacy root savedJoints only if chunks do not exist yet.
+          const chunkedAssets = await loadMapAssetsFromFirestore();
+          const parsedJoints = chunkedAssets.length > 0
+            ? chunkedAssets
+            : parseSavedJointsFromFirestore(snap.data());
 
-const normalizedJoints = normalizeMapAssets(parsedJoints);
+          const normalizedJoints = normalizeMapAssets(parsedJoints);
 
-// Prevent bad/empty normalization wiping valid state
-if (parsedJoints.length > 0 && normalizedJoints.length === 0) {
-  console.warn("Normalization failed — keeping existing map state");
-  return;
-}
+          // Prevent bad/empty normalization wiping valid state.
+          if (parsedJoints.length > 0 && normalizedJoints.length === 0) {
+            console.warn("Normalization failed — keeping existing map state");
+            return;
+          }
 
-lastSavedJsonRef.current = JSON.stringify(
-  cleanForFirebase(normalizedJoints)
-);
+          lastSavedJsonRef.current = JSON.stringify(
+            cleanForFirebase(normalizedJoints)
+          );
 
-setSavedJoints(normalizedJoints);
+          setSavedJoints(normalizedJoints);
         } else {
           const now = new Date().toISOString();
 
@@ -238,21 +248,21 @@ setSavedJoints(normalizedJoints);
 
   useEffect(() => {
     const refreshFromFirestore = async () => {
-  try {
-    const normalizedJoints = await loadMapAssets(
-      db,
-      parseSavedJointsFromFirestore
-    );
+      try {
+        const chunkedAssets = await loadMapAssetsFromFirestore();
+        const normalizedJoints = chunkedAssets.length > 0
+          ? normalizeMapAssets(chunkedAssets)
+          : await loadMapAssets(db, parseSavedJointsFromFirestore);
 
-    lastSavedJsonRef.current = JSON.stringify(
-      cleanForFirebase(normalizedJoints)
-    );
+        lastSavedJsonRef.current = JSON.stringify(
+          cleanForFirebase(normalizedJoints)
+        );
 
-    setSavedJoints(normalizedJoints);
-  } catch (err) {
-    console.error("Firebase refresh failed:", err);
-  }
-};
+        setSavedJoints(normalizedJoints);
+      } catch (err) {
+        console.error("Firebase refresh failed:", err);
+      }
+    };
 
     const handleVisibilityOrFocus = () => {
       if (document.visibilityState === "visible") {
@@ -276,30 +286,37 @@ setSavedJoints(normalizedJoints);
   useEffect(() => {
     if (!firebaseLoaded) return;
 
-    const cleanedJoints = cleanForFirebase(savedJoints);
+    const designedNetworkAssets = savedJoints.filter(
+      (asset) => !isOpenreachReferenceAsset(asset),
+    );
+
+    if (savedJoints.length > 0 && designedNetworkAssets.length === 0) {
+      console.warn(
+        "Autosave skipped because current state only contains OR reference assets.",
+      );
+      return;
+    }
+
+    if (designedNetworkAssets.length === 0) return;
+
+    const cleanedJoints = cleanForFirebase(designedNetworkAssets);
     const json = JSON.stringify(cleanedJoints);
 
     if (json === lastSavedJsonRef.current) return;
 
-    lastSavedJsonRef.current = json;
+    const timer = window.setTimeout(() => {
+      saveMapAssetsToFirestore(designedNetworkAssets, {
+        reason: "CombinedViewer autosave",
+      })
+        .then(() => {
+          lastSavedJsonRef.current = json;
+        })
+        .catch((err) => {
+          console.error("Chunked Firebase save failed:", err);
+        });
+    }, 1200);
 
-    const ref = doc(db, "businesses", "fibre-gis-v2");
-    const user = auth.currentUser;
-    const now = new Date().toISOString();
-
-    setDoc(
-      ref,
-      {
-        savedJoints: cleanedJoints,
-        updatedAt: now,
-        syncRevision: now,
-        updatedByUid: user?.uid || "unknown",
-        updatedByEmail: user?.email || "unknown",
-      },
-      { merge: true }
-    ).catch((err) => {
-      console.error("Firebase save failed:", err);
-    });
+    return () => window.clearTimeout(timer);
   }, [savedJoints, firebaseLoaded]);
   // =====================================================
   // ACTION: OPEN JOINT FROM MAP

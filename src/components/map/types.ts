@@ -40,7 +40,7 @@ export type AssetStatus =
   | "Live not ready for service";
 
 export type PoleDetails = {
-  poleType?: "new" | "or";
+  poleType?: "new" | "or" | "suggested";
   size?: string;
   year?: string;
   specialMarkings?: string;
@@ -185,7 +185,12 @@ export type SavedMapAsset = {
   homeType?: "SDU" | "MDU" | "Flats";
   status?: AssetStatus | "";
 
-  source?: "manual" | "osm" | string;
+  source?: "manual" | "osm" | "openreach" | string;
+  referenceSubtype?: "or" | "np" | "suggested" | string;
+  readOnly?: boolean;
+  isReferenceAsset?: boolean;
+  piaKind?: "duct" | "trench" | "span" | string;
+  importedProperties?: Record<string, any>;
   osmId?: string;
 
   mappingRows?: any[][];

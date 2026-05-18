@@ -431,6 +431,35 @@ function compareAuditIssues(a: AuditIssue, b: AuditIssue): number {
   return a.issue.localeCompare(b.issue);
 }
 
+
+function isReferenceInfrastructureAsset(asset: any): boolean {
+  const haystack = [
+    asset?.source,
+    asset?.assetType,
+    asset?.jointType,
+    asset?.cableType,
+    asset?.name,
+    asset?.piaRef,
+    asset?.piaKind,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return (
+    asset?.readOnly === true ||
+    asset?.isReferenceAsset === true ||
+    haystack.includes("openreach") ||
+    haystack.includes("pia") ||
+    haystack.includes("pol:") ||
+    haystack.includes("mp:") ||
+    haystack.includes("jc:") ||
+    haystack.includes("ch:") ||
+    haystack.includes("osp:") ||
+    haystack.includes("missing pole")
+  );
+}
+
 function getSeverityColours(severity: AuditSeverity) {
   if (severity === "high") {
     return {
@@ -475,6 +504,7 @@ export default function AreaAssetInspector({
 
     return (assets || [])
       .filter((asset) => asset.id !== areaAsset?.id)
+      .filter((asset) => !isReferenceInfrastructureAsset(asset))
       .filter((asset) => asset.assetType !== "area")
       .filter((asset) => {
         const coords = getAssetCoordinates(asset);
