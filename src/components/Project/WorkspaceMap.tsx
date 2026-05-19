@@ -9,7 +9,7 @@
 //             scaling only. No storage/editing logic changed.
 // =====================================================
 
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   MapContainer,
   Marker,
@@ -140,6 +140,44 @@ function ManagerAreaDrawingHandler({
       if (!enabled) return;
       onPointAdd?.({ lat: event.latlng.lat, lng: event.latlng.lng });
     },
+  });
+
+  return null;
+}
+
+
+function WorkspaceViewportTracker({
+  onChange,
+}: {
+  onChange: (bounds: WorkspaceBounds | null, zoom: number) => void;
+}) {
+  const map = useMap();
+
+  const update = () => {
+    try {
+      const bounds = map.getBounds();
+      onChange(
+        [
+          [bounds.getSouth(), bounds.getWest()],
+          [bounds.getNorth(), bounds.getEast()],
+        ],
+        map.getZoom(),
+      );
+    } catch {
+      // Ignore one frame during Leaflet mount/unmount.
+    }
+  };
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(update, 120);
+    return () => window.clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map]);
+
+  useMapEvents({
+    moveend: update,
+    zoomend: update,
+    load: update,
   });
 
   return null;
@@ -368,6 +406,48 @@ function isLayerVisibleForAsset(asset: SavedMapAsset, visibleLayers: WorkspaceLa
 }
 
 
+const WORKSPACE_VIEWPORT_PADDING_DEGREES = 0.0025;
+const WORKSPACE_MIN_ZOOM_HOMES = 17;
+const WORKSPACE_MIN_ZOOM_DROPS = 18;
+const WORKSPACE_MIN_ZOOM_CABLES = 14;
+const WORKSPACE_MIN_ZOOM_OR_ROUTES = 15;
+const WORKSPACE_MIN_ZOOM_OR_POINTS = 16;
+
+function pointInWorkspaceBounds(point: LatLngLiteral, bounds: WorkspaceBounds | null): boolean {
+  if (!bounds) return true;
+  return (
+    point.lat >= bounds[0][0] - WORKSPACE_VIEWPORT_PADDING_DEGREES &&
+    point.lat <= bounds[1][0] + WORKSPACE_VIEWPORT_PADDING_DEGREES &&
+    point.lng >= bounds[0][1] - WORKSPACE_VIEWPORT_PADDING_DEGREES &&
+    point.lng <= bounds[1][1] + WORKSPACE_VIEWPORT_PADDING_DEGREES
+  );
+}
+
+function assetInWorkspaceViewport(asset: SavedMapAsset, bounds: WorkspaceBounds | null): boolean {
+  if (!bounds) return true;
+  const points: LatLngLiteral[] = [];
+  const point = getPoint(asset);
+  if (point) points.push(point);
+  points.push(...getLinePoints(asset));
+  getPolygonRings(asset).forEach((ring) => points.push(...ring));
+  if (!points.length) return true;
+  return points.some((candidate) => pointInWorkspaceBounds(candidate, bounds));
+}
+
+function shouldRenderWorkspaceAssetAtZoom(asset: SavedMapAsset, zoom: number): boolean {
+  const type = getAssetType(asset);
+  if (isHomeDropCable(asset)) return zoom >= WORKSPACE_MIN_ZOOM_DROPS;
+  if (type.includes("home") || type.includes("premise") || type.includes("property")) return zoom >= WORKSPACE_MIN_ZOOM_HOMES;
+  if (getLinePoints(asset).length >= 2) return zoom >= WORKSPACE_MIN_ZOOM_CABLES;
+  return true;
+}
+
+function shouldRenderWorkspaceOpenreachAtZoom(asset: SavedMapAsset, zoom: number): boolean {
+  if (getLinePoints(asset).length >= 2) return zoom >= WORKSPACE_MIN_ZOOM_OR_ROUTES;
+  return zoom >= WORKSPACE_MIN_ZOOM_OR_POINTS;
+}
+
+
 function assetIdentityKeys(asset: SavedMapAsset): string[] {
   const item = asset as any;
   return [
@@ -452,10 +532,28 @@ export default function WorkspaceMap({
   onManagerAreaClear,
   onAssetSelect,
 }: WorkspaceMapProps) {
+  const [viewportBounds, setViewportBounds] = useState<WorkspaceBounds | null>(null);
+  const [viewportZoom, setViewportZoom] = useState(15);
   const bounds = useMemo(() => getBoundsFromAssets(projectArea, assets), [projectArea, assets]);
   const visibleAssets = useMemo(
-    () => assets.filter((asset) => isLayerVisibleForAsset(asset, visibleLayers)),
-    [assets, visibleLayers],
+    () =>
+      assets.filter(
+        (asset) =>
+          isLayerVisibleForAsset(asset, visibleLayers) &&
+          assetInWorkspaceViewport(asset, viewportBounds) &&
+          shouldRenderWorkspaceAssetAtZoom(asset, viewportZoom),
+      ),
+    [assets, visibleLayers, viewportBounds, viewportZoom],
+  );
+
+  const visibleOpenreachAssets = useMemo(
+    () =>
+      assets.filter(
+        (asset) =>
+          assetInWorkspaceViewport(asset, viewportBounds) &&
+          shouldRenderWorkspaceOpenreachAtZoom(asset, viewportZoom),
+      ),
+    [assets, viewportBounds, viewportZoom],
   );
 
   const pointAssets = useMemo(() => visibleAssets.filter((asset) => getPoint(asset)), [visibleAssets]);
@@ -483,6 +581,12 @@ export default function WorkspaceMap({
       >
         <WorkspaceBaseLayers />
         <SafeMapLifecycle bounds={bounds} />
+        <WorkspaceViewportTracker
+          onChange={(nextBounds, nextZoom) => {
+            setViewportBounds(nextBounds);
+            setViewportZoom(nextZoom);
+          }}
+        />
         <ManagerAreaDrawingHandler
           enabled={managerAreaDrawMode}
           onPointAdd={onManagerAreaPointAdd}
@@ -542,7 +646,7 @@ export default function WorkspaceMap({
           )),
         )}
 
-        <OpenreachOverlayLayer assets={assets} visibleLayers={openreachLayers} />
+        <OpenreachOverlayLayer assets={visibleOpenreachAssets} visibleLayers={openreachLayers} />
 
         {dropCableAssets.map((asset) => {
           const points = getLinePoints(asset);

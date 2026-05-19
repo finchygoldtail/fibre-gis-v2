@@ -2501,38 +2501,38 @@ const workspaceRoot: React.CSSProperties = {
 };
 
 const topHeader: React.CSSProperties = {
-  minHeight: 126,
+  minHeight: 74,
   display: "grid",
-  gridTemplateColumns: "minmax(260px, 0.58fr) minmax(720px, 2.7fr) auto",
+  gridTemplateColumns: "minmax(220px, 0.42fr) minmax(0, 1fr) auto",
   alignItems: "center",
-  gap: 16,
-  padding: "14px 18px 14px 24px",
+  gap: 12,
+  padding: "8px 14px 8px 16px",
   borderBottom: "1px solid rgba(148, 163, 184, 0.18)",
   background: "linear-gradient(180deg, #0f1b2d 0%, #0a1424 100%)",
 };
 
 const projectTitle: React.CSSProperties = {
   margin: 0,
-  fontSize: 28,
-  lineHeight: 1.05,
+  fontSize: 22,
+  lineHeight: 1.02,
   fontWeight: 950,
   letterSpacing: "-0.03em",
 };
 const projectSubtitle: React.CSSProperties = {
-  marginTop: 6,
+  marginTop: 3,
   color: "#94a3b8",
-  fontSize: 14,
+  fontSize: 12,
 };
 
 const projectSwitcherSelect: React.CSSProperties = {
-  marginTop: 10,
+  marginTop: 6,
   width: "100%",
-  maxWidth: 260,
+  maxWidth: 240,
   background: "#020617",
   color: "#e5e7eb",
   border: "1px solid #334155",
-  borderRadius: 10,
-  padding: "9px 11px",
+  borderRadius: 8,
+  padding: "6px 9px",
   fontWeight: 850,
   outline: "none",
   boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
@@ -2542,8 +2542,8 @@ const statusPill: React.CSSProperties = {
   color: "#86efac",
   border: "1px solid rgba(34,197,94,0.25)",
   borderRadius: 7,
-  padding: "5px 9px",
-  fontSize: 12,
+  padding: "4px 7px",
+  fontSize: 10,
   fontWeight: 800,
 };
 
@@ -2551,49 +2551,57 @@ const readinessPill: React.CSSProperties = {
   background: "rgba(15,23,42,0.68)",
   border: "1px solid rgba(148,163,184,0.35)",
   borderRadius: 7,
-  padding: "5px 9px",
-  fontSize: 12,
+  padding: "4px 7px",
+  fontSize: 10,
   fontWeight: 900,
 };
 const topMetrics: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(6, minmax(118px, 1fr))",
-  gap: 10,
+  display: "flex",
   alignItems: "stretch",
+  gap: 8,
+  overflowX: "auto",
+  overflowY: "hidden",
+  paddingBottom: 2,
+  scrollbarWidth: "thin",
 };
 const metricCard: React.CSSProperties = {
+  flex: "0 0 108px",
   background: "linear-gradient(180deg, rgba(15, 23, 42, 0.90), rgba(15, 23, 42, 0.68))",
   border: "1px solid rgba(148, 163, 184, 0.16)",
-  borderRadius: 12,
-  padding: "11px 13px",
-  minHeight: 62,
-  boxShadow: "0 10px 24px rgba(0,0,0,0.18)",
+  borderRadius: 10,
+  padding: "7px 9px",
+  minHeight: 42,
+  boxShadow: "0 8px 18px rgba(0,0,0,0.16)",
 };
 const metricLabel: React.CSSProperties = {
   color: "#cbd5e1",
-  fontSize: 11,
-  marginBottom: 5,
+  fontSize: 10,
+  marginBottom: 3,
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
 };
 const metricValue: React.CSSProperties = {
-  fontSize: 21,
+  fontSize: 17,
   fontWeight: 950,
-  lineHeight: 1.05,
+  lineHeight: 1.02,
+  whiteSpace: "nowrap",
 };
 const smallButton: React.CSSProperties = {
   background: "#132640",
   color: "#e5e7eb",
   border: "1px solid rgba(148, 163, 184, 0.25)",
   borderRadius: 8,
-  padding: "9px 12px",
+  padding: "7px 10px",
   cursor: "pointer",
   fontWeight: 700,
 };
 const tabBar: React.CSSProperties = {
-  minHeight: 50,
+  minHeight: 38,
   display: "flex",
   alignItems: "center",
-  gap: 8,
-  padding: "0 18px 0 176px",
+  gap: 6,
+  padding: "0 14px 0 152px",
   borderBottom: "1px solid rgba(148, 163, 184, 0.13)",
   background: "rgba(11, 22, 38, 0.96)",
 };
@@ -2602,7 +2610,7 @@ const tabButton: React.CSSProperties = {
   color: "#cbd5e1",
   border: "none",
   borderRadius: 8,
-  padding: "10px 16px",
+  padding: "7px 12px",
   cursor: "pointer",
   fontWeight: 700,
 };
@@ -2615,16 +2623,16 @@ const activeTabButton: React.CSSProperties = {
 const workspaceBody: React.CSSProperties = {
   flex: 1,
   display: "grid",
-  gridTemplateColumns: "176px 1fr",
+  gridTemplateColumns: "152px 1fr",
   minHeight: 0,
 };
 const leftRail: React.CSSProperties = {
   background: "linear-gradient(180deg, #07111f 0%, #050b14 100%)",
   borderRight: "1px solid rgba(148, 163, 184, 0.16)",
-  padding: "16px 12px",
+  padding: "12px 10px",
   display: "flex",
   flexDirection: "column",
-  gap: 18,
+  gap: 12,
 };
 const brandBlock: React.CSSProperties = {
   display: "flex",

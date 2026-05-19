@@ -99,6 +99,12 @@ export function isOpenreachReferenceAsset(asset: any): boolean {
     text.includes("pol:") ||
     text.includes("mp:") ||
     text.includes("missing pole") ||
+    text.includes("missing duct") ||
+    text.includes("new duct") ||
+    text.includes("suggested duct") ||
+    text.includes("sleeve") ||
+    text.includes("md:") ||
+    text.includes("sl:") ||
     text.includes("jc:") ||
     text.includes("ch:") ||
     text.includes("chamber:") ||
