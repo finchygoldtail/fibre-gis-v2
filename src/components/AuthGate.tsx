@@ -24,8 +24,8 @@ const ALLOWED_EMAILS = [
   "james.oliver@brsk.co.uk",
   "alistair.grantham@brsk.co.uk",
   "ben.almond@brsk.co.uk",
-  "maintenance1@alistragis.local"
-  "j.bowes866@gmail.com"
+  "maintenance1@alistragis.local",
+  "j.bowes866@gmail.com",
 ];
 
 type Props = {
