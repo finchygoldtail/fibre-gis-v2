@@ -4,7 +4,7 @@
 //          OR/NP/Suggested assets are snap targets only and never editable.
 // =====================================================
 
-import React from "react";
+import React, { useState } from "react";
 import { Marker, Polyline, Popup, Tooltip } from "react-leaflet";
 import L from "leaflet";
 import type { SavedMapAsset } from "./types";
@@ -26,6 +26,9 @@ export type OpenreachLayerVisibility = {
 type OpenreachOverlayLayerProps = {
   assets: SavedMapAsset[];
   visibleLayers: OpenreachLayerVisibility;
+  selectedDuctId?: string | null;
+  onSelectDuct?: (asset: SavedMapAsset) => void;
+  ductSelectionEnabled?: boolean;
 };
 
 type ReferenceSubtype = "or" | "np" | "suggested";
@@ -253,7 +256,11 @@ function renderPointPopup(asset: SavedMapAsset, kind: "pole" | "chamber") {
 export default function OpenreachOverlayLayer({
   assets,
   visibleLayers,
+  selectedDuctId = null,
+  onSelectDuct,
+  ductSelectionEnabled = false,
 }: OpenreachOverlayLayerProps) {
+  const [hoveredDuctId, setHoveredDuctId] = useState<string | null>(null);
   const routes = (assets || []).filter((asset) => {
     if (!isReferenceOverlayAsset(asset)) return false;
     if (getAssetType(asset) !== "pia-route") return false;
@@ -288,25 +295,40 @@ export default function OpenreachOverlayLayer({
 
         if (points.length < 2) return null;
 
+        const isSelected = selectedDuctId === asset.id;
+        const isHovered = hoveredDuctId === asset.id;
+        const isActive = isSelected || isHovered;
+
         return (
           <Polyline
             key={`or-pia-${asset.id}`}
             positions={points}
+            eventHandlers={{
+              mouseover: () => setHoveredDuctId(asset.id),
+              mouseout: () => setHoveredDuctId((current) => current === asset.id ? null : current),
+              click: (event: any) => {
+                if (!ductSelectionEnabled) return;
+                if (event?.originalEvent) {
+                  L.DomEvent.stopPropagation(event.originalEvent);
+                }
+                onSelectDuct?.(asset);
+              },
+            }}
             pathOptions={{
-              color: getRouteColour(subtype),
-              weight: 4,
-              opacity: 0.9,
+              color: isSelected ? "#fde047" : getRouteColour(subtype),
+              weight: isActive ? 7 : 4,
+              opacity: isActive ? 1 : 0.9,
               dashArray: getRouteDash(subtype),
               interactive: true,
             }}
           >
-            {visibleLayers.labels ? (
-              <Tooltip sticky>
-                {getAssetName(asset)}
-                <br />
-                {labelForSubtype(subtype)} {kind === "duct" ? "duct" : kind}
-              </Tooltip>
-            ) : null}
+            <Tooltip sticky>
+              {isSelected ? "SELECTED DUCT" : ductSelectionEnabled ? "Click to use this duct" : getAssetName(asset)}
+              <br />
+              {getAssetName(asset)}
+              <br />
+              {labelForSubtype(subtype)} {kind === "duct" ? "duct" : kind}
+            </Tooltip>
           </Polyline>
         );
       })}

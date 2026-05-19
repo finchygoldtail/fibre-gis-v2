@@ -56,7 +56,11 @@ import {
   withAssetEditedMetadata,
   withAssetViewedMetadata,
 } from "../services/assetActivityService";
-import { snapPointToAssets } from "./map/utils/snapToAssets";
+import {
+  shouldUseDuctTraceForInstallMethod,
+  snapPointToAssets,
+  traceReferenceDuctRouteBetweenPoints,
+} from "./map/utils/snapToAssets";
 import {
   buildNetworkGraph,
   findDisconnectedAssets,
@@ -1311,6 +1315,8 @@ export default function JointMapManager({
   >(null);
   const [orAssets, setOrAssets] = useState<SavedMapAsset[]>([]);
   const [orAssetsLoaded, setOrAssetsLoaded] = useState(false);
+  const [selectedReferenceDuctId, setSelectedReferenceDuctId] = useState<string | null>(null);
+  const [selectedReferenceDuctName, setSelectedReferenceDuctName] = useState<string>("");
   const [mapBounds, setMapBounds] = useState<OsmBounds | null>(null);
 
   const normalizedSavedJoints = useMemo(
@@ -1927,6 +1933,8 @@ export default function JointMapManager({
     setCablePiaNoiNumber("");
     setAreaLevel("L0");
     setMapMode("pick");
+    setSelectedReferenceDuctId(null);
+    setSelectedReferenceDuctName("");
     setDraftCablePoints([]);
     setDraftAreaPoints([]);
     setCableType("Feeder Cable");
@@ -1964,6 +1972,8 @@ export default function JointMapManager({
     setPickedLocation(null);
     setDraftAreaPoints([]);
     setDraftCablePoints([]);
+    setSelectedReferenceDuctId(null);
+    setSelectedReferenceDuctName("");
     setMapMode("pick");
     setShowCableModal(false);
     setIsPanelOpen(true);
@@ -2694,8 +2704,26 @@ export default function JointMapManager({
     setIsRoutingCable(true);
 
     try {
+      const shouldUseReferenceDuct = shouldUseDuctTraceForInstallMethod(installMethod);
+      const ductTracePoints = shouldUseReferenceDuct && selectedReferenceDuctId
+        ? traceReferenceDuctRouteBetweenPoints(
+            draftCablePoints[0],
+            draftCablePoints[draftCablePoints.length - 1],
+            snapCandidateAssets,
+            25,
+            selectedReferenceDuctId,
+          )
+        : null;
+
+      if (shouldUseReferenceDuct && selectedReferenceDuctId && !ductTracePoints) {
+        alert(
+          `Could not trace both cable ends onto the selected duct${selectedReferenceDuctName ? ` (${selectedReferenceDuctName})` : ""}.\n\nMove the first/last cable points closer to that duct, or clear the selected duct and choose another one.`,
+        );
+        return;
+      }
+
       const routedCoordinates = sanitiseCableRouteCoordinates(
-        await routePointsToRoads(draftCablePoints),
+        ductTracePoints ?? (await routePointsToRoads(draftCablePoints)),
       );
 
       const cableRecord = {
@@ -2710,7 +2738,9 @@ export default function JointMapManager({
         installMethod,
         parentCableId,
         allocatedInputFibres,
-        routeMode: "road",
+        routeMode: ductTracePoints ? "selected-or-duct" : "road",
+        referenceDuctId: ductTracePoints ? selectedReferenceDuctId || undefined : undefined,
+        referenceDuctName: ductTracePoints ? selectedReferenceDuctName || undefined : undefined,
         geometry: {
           type: "LineString",
           coordinates: routedCoordinates,
@@ -5979,6 +6009,22 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
           <OpenreachOverlayLayer
             assets={visibleOpenreachAssets}
             visibleLayers={openreachLayerVisibility}
+            ductSelectionEnabled={mapMode === "draw-cable" && shouldUseDuctTraceForInstallMethod(installMethod)}
+            selectedDuctId={selectedReferenceDuctId}
+            onSelectDuct={(asset) => {
+              const item = asset as any;
+              setSelectedReferenceDuctId(asset.id);
+              setSelectedReferenceDuctName(
+                String(
+                  item.name ||
+                    item.piaRef ||
+                    item.importedProperties?.Name ||
+                    item.importedProperties?.name ||
+                    asset.id ||
+                    "Selected duct",
+                ),
+              );
+            }}
           />
 
           {/* OR / PIA assets are rendered read-only by OpenreachOverlayLayer above.
