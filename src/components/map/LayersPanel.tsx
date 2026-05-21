@@ -12,6 +12,7 @@ type Props = {
   setRoadOverlayVisible: React.Dispatch<React.SetStateAction<boolean>>;
   snapEnabled: boolean;
   setSnapEnabled: React.Dispatch<React.SetStateAction<boolean>>;
+  layerCounts?: Record<string, number>;
   measurementDistance?: number;
   measurementPointCount?: number;
   isMeasuring?: boolean;
@@ -76,6 +77,9 @@ const layerGroups: LayerGroup[] = [
     title: "Homes",
     options: [
       { label: "All Homes", key: "homes" },
+      { label: "Connected Homes", key: "homesConnected" },
+      { label: "Unconnected Homes", key: "homesUnconnected" },
+      { label: "Live Homes", key: "homesLive" },
       { label: "SDU", key: "homesSdu" },
       { label: "MDU", key: "homesMdu" },
       { label: "Flats", key: "homesFlats" },
@@ -217,11 +221,13 @@ function LayerCheckbox({
   layerKey,
   visibleLayers,
   onToggle,
+  count,
 }: {
   labelText: string;
   layerKey: string;
   visibleLayers: Record<string, boolean>;
   onToggle: (key: string) => void;
+  count?: number;
 }) {
   return (
     <label style={layerRow}>
@@ -230,7 +236,21 @@ function LayerCheckbox({
         checked={visibleLayers[layerKey] !== false}
         onChange={() => onToggle(layerKey)}
       />
-      <span>{labelText}</span>
+      <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+        <span>{labelText}</span>
+        {typeof count === "number" ? (
+          <span
+            style={{
+              color: "#93c5fd",
+              fontSize: "0.75rem",
+              fontWeight: 800,
+              whiteSpace: "nowrap",
+            }}
+          >
+            ({count})
+          </span>
+        ) : null}
+      </span>
     </label>
   );
 }
@@ -244,6 +264,7 @@ export default function LayersPanel({
   setRoadOverlayVisible,
   snapEnabled,
   setSnapEnabled,
+  layerCounts = {},
   measurementDistance = 0,
   measurementPointCount = 0,
   isMeasuring = false,
@@ -348,6 +369,7 @@ export default function LayersPanel({
                       layerKey={option.key}
                       visibleLayers={visibleLayers}
                       onToggle={toggleLayer}
+                      count={layerCounts[option.key]}
                     />
                   ))}
 

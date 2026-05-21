@@ -66,8 +66,34 @@ function isDp(asset: SavedMapAsset): boolean {
 
 function isHome(asset: SavedMapAsset): boolean {
   const item = asset as any;
-  const haystack = [item.assetType, item.type, item.name, item.homeType].map(norm).join(" ");
-  return haystack.includes("home") || haystack.includes("premise") || Boolean(item.uprn || item.UPRN || item.properties?.UPRN);
+  const haystack = [item.assetType, item.type, item.name, item.label, item.homeType].map(norm).join(" ");
+
+  const hasPointGeometry =
+    asset.geometry?.type === "Point" ||
+    (typeof item.lat === "number" && typeof item.lng === "number");
+
+  if (!hasPointGeometry) return false;
+  if (isDp(asset)) return false;
+
+  const looksLikeInfrastructure =
+    haystack.includes("cable") ||
+    haystack.includes("drop") ||
+    haystack.includes("joint") ||
+    haystack.includes("pole") ||
+    haystack.includes("chamber") ||
+    haystack.includes("cabinet") ||
+    haystack.includes("cbt") ||
+    haystack.includes("afn");
+
+  if (looksLikeInfrastructure) return false;
+
+  return (
+    haystack.includes("home") ||
+    haystack.includes("premise") ||
+    haystack.includes("sdu") ||
+    haystack.includes("flat") ||
+    Boolean(item.uprn || item.UPRN || item.homeId || item.properties?.UPRN || item.properties?.uprn)
+  );
 }
 
 function isDropCable(asset: SavedMapAsset): boolean {
@@ -161,13 +187,46 @@ function dropsForDp(dp: SavedMapAsset, drops: SavedMapAsset[]): SavedMapAsset[] 
   return drops.filter((drop: any) => [drop.dpId, drop.fromAssetId, drop.connectedDpId, drop.parentDpId, drop.sourceAssetId].some((value) => valueMatchesAny(value, dpKeySet)));
 }
 
+function getHomeKey(home: any): string {
+  const raw =
+    home?.uprn ||
+    home?.UPRN ||
+    home?.properties?.UPRN ||
+    home?.properties?.uprn ||
+    home?.homeId ||
+    home?.address ||
+    home?.label ||
+    home?.name ||
+    home?.id;
+
+  if (raw) return text(raw).toLowerCase();
+
+  if (home?.geometry?.type === "Point" && Array.isArray(home.geometry.coordinates)) {
+    const [lat, lng] = home.geometry.coordinates;
+    return `${Number(lat).toFixed(7)},${Number(lng).toFixed(7)}`;
+  }
+
+  return "";
+}
+
+function uniqueHomes(homes: SavedMapAsset[]): SavedMapAsset[] {
+  const byKey = new Map<string, SavedMapAsset>();
+
+  homes.forEach((home) => {
+    const key = getHomeKey(home);
+    if (key && !byKey.has(key)) byKey.set(key, home);
+  });
+
+  return Array.from(byKey.values());
+}
+
 function buildRows(projectAssets: SavedMapAsset[]): LiveHomesDpRow[] {
   const dps = projectAssets.filter(isDp);
-  const homes = projectAssets.filter(isHome);
+  const homes = uniqueHomes(projectAssets.filter(isHome));
   const drops = projectAssets.filter(isDropCable);
 
   return dps.map((dp) => {
-    const servedHomes = homesForDp(dp, homes, drops);
+    const servedHomes = uniqueHomes(homesForDp(dp, homes, drops));
     const dpDrops = dropsForDp(dp, drops);
     const status = dpStatus(dp);
     const isLive = status === "Live";

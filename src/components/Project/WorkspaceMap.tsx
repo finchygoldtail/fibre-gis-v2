@@ -43,6 +43,9 @@ export type WorkspaceLayerVisibility = {
   chambers: boolean;
   streetCabs: boolean;
   homes: boolean;
+  homesConnected: boolean;
+  homesUnconnected: boolean;
+  homesLive: boolean;
   other: boolean;
 };
 
@@ -261,6 +264,175 @@ function getBoundsFromAssets(projectArea: SavedMapAsset | null | undefined, asse
   ];
 }
 
+
+type WorkspaceHomeStack = {
+  id: string;
+  assets: SavedMapAsset[];
+  position: LatLngLiteral;
+};
+
+const WORKSPACE_HOME_STACK_DISTANCE_METERS = 1.75;
+
+function distanceBetweenWorkspacePointsMeters(a: LatLngLiteral, b: LatLngLiteral): number {
+  const radius = 6371000;
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+
+  return 2 * radius * Math.asin(Math.sqrt(h));
+}
+
+function getWorkspaceHomeDisplayName(home: SavedMapAsset): string {
+  const item = home as any;
+  return String(
+    item.address ||
+      item.fullAddress ||
+      item.name ||
+      item.label ||
+      item.uprn ||
+      item.UPRN ||
+      item.properties?.UPRN ||
+      home.id ||
+      "Home",
+  );
+}
+
+function createWorkspaceHomeStackIcon(count: number) {
+  const size = count >= 10 ? 42 : 36;
+
+  return L.divIcon({
+    className: "alistra-workspace-home-stack",
+    html: `<div style="width:${size}px;height:${size}px;border-radius:999px;display:grid;place-items:center;background:#ef4444;color:#fff;border:3px solid #fff;box-shadow:0 0 0 3px rgba(239,68,68,0.35),0 8px 20px rgba(15,23,42,0.45);font-weight:900;font-size:0.82rem;">${count}</div>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2],
+  });
+}
+
+function groupWorkspaceHomeStacks(homes: SavedMapAsset[]): WorkspaceHomeStack[] {
+  const remaining = [...homes];
+  const stacks: WorkspaceHomeStack[] = [];
+
+  while (remaining.length) {
+    const seed = remaining.shift()!;
+    const seedPoint = getPoint(seed);
+    if (!seedPoint) continue;
+
+    const group = [seed];
+
+    for (let index = remaining.length - 1; index >= 0; index -= 1) {
+      const candidate = remaining[index];
+      const candidatePoint = getPoint(candidate);
+      if (!candidatePoint) continue;
+
+      if (distanceBetweenWorkspacePointsMeters(seedPoint, candidatePoint) <= WORKSPACE_HOME_STACK_DISTANCE_METERS) {
+        group.push(candidate);
+        remaining.splice(index, 1);
+      }
+    }
+
+    if (group.length < 2) continue;
+
+    let latTotal = 0;
+    let lngTotal = 0;
+    group.forEach((home) => {
+      const point = getPoint(home);
+      if (!point) return;
+      latTotal += point.lat;
+      lngTotal += point.lng;
+    });
+
+    stacks.push({
+      id: `workspace-home-stack-${group.map((home) => home.id).join("-")}`,
+      assets: group,
+      position: { lat: latTotal / group.length, lng: lngTotal / group.length },
+    });
+  }
+
+  return stacks;
+}
+
+function normaliseHomeStatus(value: unknown): string {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/-/g, "_");
+}
+
+function isDropCableByHome(asset: SavedMapAsset, home: SavedMapAsset): boolean {
+  const item = asset as any;
+  const homeId = String((home as any).id || "");
+  const homeKeys = [
+    homeId,
+    String((home as any).uprn || ""),
+    String((home as any).UPRN || ""),
+    String((home as any).properties?.UPRN || ""),
+    String((home as any).properties?.uprn || ""),
+  ].filter(Boolean);
+
+  if (!homeKeys.length) return false;
+
+  const dropKeys = [
+    item.fromAssetId,
+    item.toAssetId,
+    item.homeId,
+    item.connectedHomeId,
+    item.toHomeId,
+    item.fromHomeId,
+    item.uprn,
+    item.UPRN,
+  ].map((value) => String(value || ""));
+
+  return isHomeDropCable(asset) && homeKeys.some((key) => dropKeys.includes(key));
+}
+
+function getWorkspaceHomeConnectionStatus(home: SavedMapAsset, allAssets: SavedMapAsset[]): "unconnected" | "connected" | "live" {
+  const item = home as any;
+  const ownStatus = normaliseHomeStatus(
+    item.customerStatus ||
+      item.homeStatus ||
+      item.status ||
+      item.buildStatus ||
+      item.serviceStatus ||
+      item.connectionStatus ||
+      item.properties?.status,
+  );
+
+  if (ownStatus === "live") return "live";
+
+  const metadataConnection = String(item.connection || item.properties?.connection || "").toLowerCase();
+  if (item.connectedDpId || item.properties?.connectedDpId || item.dpId || metadataConnection === "connected") {
+    return "connected";
+  }
+
+  const drop = allAssets.find((asset) => isDropCableByHome(asset, home));
+  if (!drop) return "unconnected";
+
+  const dropStatus = normaliseHomeStatus((drop as any).customerStatus || (drop as any).homeStatus || (drop as any).status);
+  return dropStatus === "live" ? "live" : "connected";
+}
+
+function isHomeAssetForWorkspace(asset: SavedMapAsset): boolean {
+  const item = asset as any;
+  const type = getAssetType(asset);
+  const hasPoint = !!getPoint(asset);
+  if (!hasPoint || isHomeDropCable(asset)) return false;
+
+  return (
+    type.includes("home") ||
+    type.includes("premise") ||
+    type.includes("property") ||
+    type.includes("building") ||
+    Boolean(item.uprn || item.UPRN || item.properties?.UPRN || item.properties?.uprn || item.homeId)
+  );
+}
+
 function isHomeDropCable(asset: SavedMapAsset): boolean {
   const item = asset as any;
   const text = [item.assetType, item.type, item.cableType, item.name, item.label, item.category, item.generatedBy]
@@ -327,7 +499,7 @@ function getDpCapacityState(asset: SavedMapAsset): { colour: string; label: stri
   return { colour: "#22c55e", label: "Capacity OK", percent };
 }
 
-function getAssetMarkerIcon(asset: SavedMapAsset, selected: boolean, traceKind: string | null = null) {
+function getAssetMarkerIcon(asset: SavedMapAsset, selected: boolean, traceKind: string | null = null, homeStatus?: "unconnected" | "connected" | "live") {
   const type = getAssetType(asset);
   const traceColour = getTraceColour(traceKind);
   const dpCapacityState = getDpCapacityState(asset);
@@ -345,13 +517,17 @@ function getAssetMarkerIcon(asset: SavedMapAsset, selected: boolean, traceKind: 
           ? "#f97316"
           : type.includes("street") || type.includes("cab")
             ? "#38bdf8"
-            : type.includes("home")
-              ? "#e5e7eb"
+            : isHomeAssetForWorkspace(asset)
+              ? homeStatus === "live"
+                ? "#16a34a"
+                : homeStatus === "connected"
+                  ? "#f59e0b"
+                  : "#ef4444"
               : "#c084fc";
 
   return L.divIcon({
     className: "alistra-workspace-marker",
-    html: `<div style="width:${selected ? 18 : 14}px;height:${selected ? 18 : 14}px;border-radius:999px;background:${colour};border:2px solid #020617;box-shadow:0 0 0 2px rgba(255,255,255,0.25),0 6px 14px rgba(0,0,0,0.45);"></div>`,
+    html: `<div style="width:${selected ? 18 : 14}px;height:${selected ? 18 : 14}px;border-radius:999px;background:${colour};border:2px solid #020617;box-shadow:0 0 0 2px rgba(255,255,255,0.25),0 0 14px ${colour},0 6px 14px rgba(0,0,0,0.45);"></div>`,
     iconSize: [selected ? 18 : 14, selected ? 18 : 14],
     iconAnchor: [selected ? 9 : 7, selected ? 9 : 7],
   });
@@ -389,7 +565,7 @@ function isLayerVisibleForAsset(asset: SavedMapAsset, visibleLayers: WorkspaceLa
   if (getLinePoints(asset).length >= 2) return isHomeDropCable(asset) ? visibleLayers.dropCables : visibleLayers.cables;
   if (getPolygonRings(asset).length > 0) return visibleLayers.areas;
 
-  if (type.includes("home") || type.includes("premise") || type.includes("property") || type.includes("building")) {
+  if (isHomeAssetForWorkspace(asset)) {
     return visibleLayers.homes;
   }
 
@@ -437,7 +613,7 @@ function assetInWorkspaceViewport(asset: SavedMapAsset, bounds: WorkspaceBounds 
 function shouldRenderWorkspaceAssetAtZoom(asset: SavedMapAsset, zoom: number): boolean {
   const type = getAssetType(asset);
   if (isHomeDropCable(asset)) return zoom >= WORKSPACE_MIN_ZOOM_DROPS;
-  if (type.includes("home") || type.includes("premise") || type.includes("property")) return zoom >= WORKSPACE_MIN_ZOOM_HOMES;
+  if (isHomeAssetForWorkspace(asset)) return zoom >= WORKSPACE_MIN_ZOOM_HOMES;
   if (getLinePoints(asset).length >= 2) return zoom >= WORKSPACE_MIN_ZOOM_CABLES;
   return true;
 }
@@ -518,6 +694,9 @@ export default function WorkspaceMap({
   chambers: false,
   streetCabs: false,
   homes: false,
+  homesConnected: true,
+  homesUnconnected: true,
+  homesLive: true,
 
   other: false,
 
@@ -537,12 +716,21 @@ export default function WorkspaceMap({
   const bounds = useMemo(() => getBoundsFromAssets(projectArea, assets), [projectArea, assets]);
   const visibleAssets = useMemo(
     () =>
-      assets.filter(
-        (asset) =>
-          isLayerVisibleForAsset(asset, visibleLayers) &&
+      assets.filter((asset) => {
+        if (!isLayerVisibleForAsset(asset, visibleLayers)) return false;
+
+        if (isHomeAssetForWorkspace(asset)) {
+          const homeStatus = getWorkspaceHomeConnectionStatus(asset, assets);
+          if (homeStatus === "live" && visibleLayers.homesLive === false) return false;
+          if (homeStatus === "connected" && visibleLayers.homesConnected === false) return false;
+          if (homeStatus === "unconnected" && visibleLayers.homesUnconnected === false) return false;
+        }
+
+        return (
           assetInWorkspaceViewport(asset, viewportBounds) &&
-          shouldRenderWorkspaceAssetAtZoom(asset, viewportZoom),
-      ),
+          shouldRenderWorkspaceAssetAtZoom(asset, viewportZoom)
+        );
+      }),
     [assets, visibleLayers, viewportBounds, viewportZoom],
   );
 
@@ -557,6 +745,22 @@ export default function WorkspaceMap({
   );
 
   const pointAssets = useMemo(() => visibleAssets.filter((asset) => getPoint(asset)), [visibleAssets]);
+  const homePointAssets = useMemo(
+    () => pointAssets.filter((asset) => isHomeAssetForWorkspace(asset)),
+    [pointAssets],
+  );
+  const homeStacks = useMemo(
+    () => groupWorkspaceHomeStacks(homePointAssets),
+    [homePointAssets],
+  );
+  const stackedHomeIds = useMemo(
+    () => new Set(homeStacks.flatMap((stack) => stack.assets.map((home) => home.id))),
+    [homeStacks],
+  );
+  const renderPointAssets = useMemo(
+    () => pointAssets.filter((asset) => !stackedHomeIds.has(asset.id)),
+    [pointAssets, stackedHomeIds],
+  );
   const cableAssets = useMemo(() => visibleAssets.filter((asset) => getLinePoints(asset).length >= 2), [visibleAssets]);
   const designCableAssets = useMemo(() => cableAssets.filter((asset) => !isHomeDropCable(asset)), [cableAssets]);
   const dropCableAssets = useMemo(() => cableAssets.filter(isHomeDropCable), [cableAssets]);
@@ -741,17 +945,54 @@ export default function WorkspaceMap({
           );
         })}
 
-        {pointAssets.map((asset) => {
+        {homeStacks.map((stack) => (
+          <Marker
+            key={stack.id}
+            position={[stack.position.lat, stack.position.lng]}
+            icon={createWorkspaceHomeStackIcon(stack.assets.length)}
+          >
+            <Popup minWidth={300} maxWidth={360}>
+              <strong>Stacked homes detected</strong>
+              <br />
+              {stack.assets.length} homes are sitting within {WORKSPACE_HOME_STACK_DISTANCE_METERS}m of each other.
+              <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6, maxHeight: 240, overflowY: "auto" }}>
+                {stack.assets.map((home) => {
+                  const point = getPoint(home);
+                  const status = getWorkspaceHomeConnectionStatus(home, assets);
+
+                  return (
+                    <div key={home.id} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: 8 }}>
+                      <div style={{ fontWeight: 800 }}>{getWorkspaceHomeDisplayName(home)}</div>
+                      <div style={{ fontSize: 12, color: "#475569" }}>
+                        {status} · {point ? `${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}` : "No coordinates"}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onAssetSelect?.(home)}
+                        style={{ marginTop: 6, border: "1px solid #cbd5e1", borderRadius: 6, padding: "4px 8px", background: "#f8fafc", cursor: "pointer", fontWeight: 700 }}
+                      >
+                        Select Home
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </Popup>
+          </Marker>
+        ))}
+
+        {renderPointAssets.map((asset) => {
           const point = getPoint(asset);
           if (!point) return null;
           const selected = selectedAssetId === asset.id;
           const traceKind = getTraceKind(asset, traceHighlightedAssetIds, traceHighlightKinds);
+          const homeStatus = isHomeAssetForWorkspace(asset) ? getWorkspaceHomeConnectionStatus(asset, assets) : undefined;
 
           return (
             <Marker
               key={`workspace-point-${asset.id}`}
               position={[point.lat, point.lng]}
-              icon={getAssetMarkerIcon(asset, selected, traceKind)}
+              icon={getAssetMarkerIcon(asset, selected, traceKind, homeStatus)}
               eventHandlers={{ click: (event) => selectWorkspaceAsset(asset, onAssetSelect, event) }}
             >
               <Popup>
