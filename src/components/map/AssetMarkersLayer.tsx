@@ -12,6 +12,9 @@ type LayerVisibility = {
   cables: boolean;
   measurements: boolean;
   homes?: boolean;
+  homesConnected?: boolean;
+  homesUnconnected?: boolean;
+  homesLive?: boolean;
   homesSdu?: boolean;
   homesMdu?: boolean;
   homesFlats?: boolean;
@@ -85,7 +88,7 @@ function createCircleIcon(background: string, border: string) {
   });
 }
 
-function createHomeIcon(fill = "#94a3b8", border = "#111827") {
+function createHomeIcon(fill = "#94a3b8", border = "#111827", glow = "rgba(15, 23, 42, 0.35)") {
   return L.divIcon({
     className: "",
     html: `
@@ -95,6 +98,7 @@ function createHomeIcon(fill = "#94a3b8", border = "#111827") {
         display: grid;
         place-items: center;
         transform: translateY(-1px);
+        filter: drop-shadow(0 0 7px ${glow});
       ">
         <svg
           width="18"
@@ -488,9 +492,9 @@ function getHomeConnectionStatus(
 }
 
 function getHomeIconForStatus(status: "unconnected" | "connected" | "live") {
-  if (status === "live") return createHomeIcon("#16a34a", "#064e3b");
-  if (status === "connected") return createHomeIcon("#f59e0b", "#92400e");
-  return createHomeIcon("#94a3b8", "#334155");
+  if (status === "live") return createHomeIcon("#16a34a", "#064e3b", "rgba(22, 163, 74, 0.85)");
+  if (status === "connected") return createHomeIcon("#f59e0b", "#92400e", "rgba(245, 158, 11, 0.85)");
+  return createHomeIcon("#ef4444", "#7f1d1d", "rgba(239, 68, 68, 0.95)");
 }
 
 function getHomeConnectedDp(home: SavedMapAsset, allAssets: SavedMapAsset[]): SavedMapAsset | null {
@@ -604,6 +608,113 @@ type HomeCluster = {
 };
 
 
+type HomeStack = {
+  id: string;
+  assets: SavedMapAsset[];
+  position: [number, number];
+};
+
+const HOME_STACK_DISTANCE_METERS = 1.75;
+
+function distanceBetweenLatLngMeters(a: [number, number], b: [number, number]): number {
+  const radius = 6371000;
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const dLat = toRad(b[0] - a[0]);
+  const dLng = toRad(b[1] - a[1]);
+  const lat1 = toRad(a[0]);
+  const lat2 = toRad(b[0]);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+
+  return 2 * radius * Math.asin(Math.sqrt(h));
+}
+
+function createHomeStackIcon(count: number) {
+  const size = count >= 10 ? 42 : 36;
+
+  return L.divIcon({
+    className: "",
+    html: `
+      <div style="
+        width: ${size}px;
+        height: ${size}px;
+        border-radius: 999px;
+        display: grid;
+        place-items: center;
+        background: #ef4444;
+        color: #ffffff;
+        border: 3px solid #ffffff;
+        box-shadow: 0 0 0 3px rgba(239,68,68,0.35), 0 8px 20px rgba(15,23,42,0.42);
+        font-weight: 900;
+        font-size: 0.82rem;
+      ">${count}</div>
+    `,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2],
+  });
+}
+
+function getHomeDisplayName(home: SavedMapAsset): string {
+  const item = home as any;
+  return String(
+    item.address ||
+      item.fullAddress ||
+      item.name ||
+      item.label ||
+      item.uprn ||
+      item.UPRN ||
+      item.properties?.UPRN ||
+      home.id ||
+      "Home",
+  );
+}
+
+function groupStackedHomeAssets(homes: SavedMapAsset[]): HomeStack[] {
+  const remaining = [...homes];
+  const stacks: HomeStack[] = [];
+
+  while (remaining.length) {
+    const seed = remaining.shift()!;
+    const seedPosition = getPointLatLng(seed);
+    if (!seedPosition) continue;
+
+    const group = [seed];
+
+    for (let index = remaining.length - 1; index >= 0; index -= 1) {
+      const candidate = remaining[index];
+      const candidatePosition = getPointLatLng(candidate);
+      if (!candidatePosition) continue;
+
+      if (distanceBetweenLatLngMeters(seedPosition, candidatePosition) <= HOME_STACK_DISTANCE_METERS) {
+        group.push(candidate);
+        remaining.splice(index, 1);
+      }
+    }
+
+    if (group.length < 2) continue;
+
+    let latTotal = 0;
+    let lngTotal = 0;
+    group.forEach((home) => {
+      const position = getPointLatLng(home);
+      if (!position) return;
+      latTotal += position[0];
+      lngTotal += position[1];
+    });
+
+    stacks.push({
+      id: `home-stack-${group.map((home) => home.id).join("-")}`,
+      assets: group,
+      position: [latTotal / group.length, lngTotal / group.length],
+    });
+  }
+
+  return stacks;
+}
+
+
 function getHomeClusterBounds(cluster: HomeCluster): L.LatLngBounds | null {
   const positions = cluster.assets
     .map((home) => getPointLatLng(home))
@@ -682,14 +793,23 @@ export default function AssetMarkersLayer({
     zoom: map.getZoom(),
     bounds: map.getBounds(),
   }));
+  const [positionMoveHomeId, setPositionMoveHomeId] = useState<string | null>(null);
 
   useMapEvents({
     moveend: () => setMapView({ zoom: map.getZoom(), bounds: map.getBounds() }),
     zoomend: () => setMapView({ zoom: map.getZoom(), bounds: map.getBounds() }),
+    click: (event) => {
+      if (!positionMoveHomeId) return;
+
+      onMoveAsset?.(positionMoveHomeId, event.latlng.lat, event.latlng.lng);
+      setPositionMoveHomeId(null);
+      map.closePopup();
+    },
   });
 
   const pointAssets = useMemo(() => {
   const homesEnabled = visibleLayers.homes !== false;
+  const layers = visibleLayers as any;
 
   return assets.filter((asset) => {
     if (asset.geometry?.type !== "Point") return false;
@@ -704,6 +824,16 @@ export default function AssetMarkersLayer({
 
       const latLng = getPointLatLng(asset);
       if (!latLng) return false;
+
+      const homeStatus = getHomeConnectionStatus(asset, assets);
+      if (homeStatus === "live" && layers.homesLive === false) return false;
+      if (homeStatus === "connected" && layers.homesConnected === false) return false;
+      if (homeStatus === "unconnected" && layers.homesUnconnected === false) return false;
+
+      const homeType = getHomeLayerType(asset);
+      if (homeType === "mdu" && layers.homesMdu === false) return false;
+      if (homeType === "flats" && layers.homesFlats === false) return false;
+      if (homeType === "sdu" && layers.homesSdu === false) return false;
 
       // keep homes visible when zoomed in
       if (mapView.zoom < 10) return false;
@@ -728,9 +858,24 @@ export default function AssetMarkersLayer({
     [pointAssets]
   );
 
+  const homeStacks = useMemo(
+    () => groupStackedHomeAssets(homePointAssets),
+    [homePointAssets]
+  );
+
+  const stackedHomeIds = useMemo(
+    () => new Set(homeStacks.flatMap((stack) => stack.assets.map((home) => home.id))),
+    [homeStacks]
+  );
+
+  const nonStackedHomePointAssets = useMemo(
+    () => homePointAssets.filter((home) => !stackedHomeIds.has(home.id)),
+    [homePointAssets, stackedHomeIds]
+  );
+
   const homeClusters = useMemo(
-    () => clusterHomeAssets(homePointAssets, map),
-    [homePointAssets, map, mapView.zoom, mapView.bounds]
+    () => clusterHomeAssets(nonStackedHomePointAssets, map),
+    [nonStackedHomePointAssets, map, mapView.zoom, mapView.bounds]
   );
 
   const renderAssetMarker = (asset: SavedMapAsset) => {
@@ -738,10 +883,13 @@ export default function AssetMarkersLayer({
     if (!latLng) return null;
     const [lat, lng] = latLng;
     const isSelectedMoveHome = moveHomesMode && asset.assetType === "home" && selectedMoveHomeIds.includes(asset.id);
+    const isPositionMoveHome = asset.assetType === "home" && positionMoveHomeId === asset.id;
     const isSelectedSurveyDeleteHome = surveyDeleteHomesMode && asset.assetType === "home" && selectedSurveyDeleteHomeIds.includes(asset.id);
     const icon = isSelectedSurveyDeleteHome
       ? createHomeIcon("#ef4444", "#7f1d1d")
-      : isSelectedMoveHome
+      : isPositionMoveHome
+        ? createHomeIcon("#38bdf8", "#075985", "rgba(56, 189, 248, 0.95)")
+        : isSelectedMoveHome
         ? createHomeIcon("#38bdf8", "#075985")
         : getIconForAsset(asset, assets);
     const distributionPoints = getDistributionPoints(assets);
@@ -946,9 +1094,21 @@ export default function AssetMarkersLayer({
                 </button>
               ) : null}
 
+              {asset.assetType === "home" ? (
+                <button
+                  style={positionMoveHomeId === asset.id ? secondaryButtonStyle : actionButtonStyle}
+                  onClick={() => {
+                    setPositionMoveHomeId((current) => (current === asset.id ? null : asset.id));
+                    map.closePopup();
+                  }}
+                >
+                  {positionMoveHomeId === asset.id ? "Cancel Position Move" : "Move Position"}
+                </button>
+              ) : null}
+
               {moveHomesMode && asset.assetType === "home" ? (
                 <button style={actionButtonStyle} onClick={() => onToggleMoveHome?.(asset)}>
-                  {isSelectedMoveHome ? "Unselect" : "Select to Move"}
+                  {isSelectedMoveHome ? "Unselect DP Move" : "Select for DP Move"}
                 </button>
               ) : null}
 
@@ -982,9 +1142,120 @@ export default function AssetMarkersLayer({
     );
   };
 
+
+  const renderHomeStackMarker = (stack: HomeStack) => {
+    return (
+      <Marker
+        key={stack.id}
+        position={stack.position}
+        icon={createHomeStackIcon(stack.assets.length)}
+      >
+        <Popup minWidth={310} maxWidth={360}>
+          <div style={popupCardStyle}>
+            <div style={titleStyle}>Stacked homes detected</div>
+            <div style={subTitleStyle}>
+              {stack.assets.length} homes are sitting within {HOME_STACK_DISTANCE_METERS}m of each other.
+            </div>
+            <div style={{ ...sectionStyle, maxHeight: 260, overflowY: "auto" }}>
+              {stack.assets.map((home, index) => {
+                const status = getHomeConnectionStatus(home, assets);
+                const position = getPointLatLng(home);
+                const isSelectedMoveHome = moveHomesMode && selectedMoveHomeIds.includes(home.id);
+                const isPositionMoveHome = positionMoveHomeId === home.id;
+
+                return (
+                  <div
+                    key={home.id}
+                    style={{
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 10,
+                      padding: 8,
+                      background: index === 0 ? "#f8fafc" : "#ffffff",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 6,
+                    }}
+                  >
+                    <div style={{ fontWeight: 800, color: "#111827", fontSize: "0.86rem" }}>
+                      {getHomeDisplayName(home)}
+                    </div>
+                    <div style={{ fontSize: "0.78rem", color: "#475569" }}>
+                      Status: {status} · {position ? `${position[0].toFixed(6)}, ${position[1].toFixed(6)}` : "No coordinates"}
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      <button type="button" style={actionButtonStyle} onClick={() => onEditAsset(home)}>
+                        Open
+                      </button>
+                      <button
+                        type="button"
+                        style={isPositionMoveHome ? secondaryButtonStyle : actionButtonStyle}
+                        onClick={() => {
+                          setPositionMoveHomeId((current) => (current === home.id ? null : home.id));
+                          map.closePopup();
+                        }}
+                      >
+                        {isPositionMoveHome ? "Cancel Position Move" : "Move Position"}
+                      </button>
+                      <button type="button" style={actionButtonStyle} onClick={() => onToggleMoveHome?.(home)}>
+                        {isSelectedMoveHome ? "Selected for DP Move" : "Change DP"}
+                      </button>
+                      <button
+                        type="button"
+                        style={deleteButtonStyle}
+                        onClick={() => {
+                          if (window.confirm(`Delete duplicate home ${getHomeDisplayName(home)}?`)) {
+                            onDeleteAsset(home.id);
+                          }
+                        }}
+                      >
+                        Delete Duplicate
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              style={secondaryButtonStyle}
+              onClick={() => map.setView(stack.position, Math.max(map.getZoom(), 20), { animate: true })}
+            >
+              Zoom to stack
+            </button>
+          </div>
+        </Popup>
+      </Marker>
+    );
+  };
+
   return (
     <>
+      {positionMoveHomeId ? (
+        <div
+          style={{
+            position: "absolute",
+            top: 12,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 1000,
+            background: "#0f172a",
+            color: "#ffffff",
+            border: "1px solid #38bdf8",
+            borderRadius: 999,
+            padding: "7px 12px",
+            fontSize: "0.78rem",
+            fontWeight: 800,
+            boxShadow: "0 8px 20px rgba(15,23,42,0.28)",
+            pointerEvents: "none",
+          }}
+        >
+          Click the new position for this home
+        </div>
+      ) : null}
+
       {nonHomePointAssets.map(renderAssetMarker)}
+
+      {homeStacks.map(renderHomeStackMarker)}
 
       {homeClusters.map((cluster) => {
         if (cluster.assets.length === 1) {
