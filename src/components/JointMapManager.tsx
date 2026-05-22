@@ -5552,7 +5552,7 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         stats={projectWorkspaceStats}
         projectArea={activeProjectArea}
         projectAssets={visibleProjectAssets}
-        projectAreas={visibleProjectAreas}
+        projectAreas={projectAreas}
         activeProjectId={activeProjectId}
         onSelectProject={handleSelectProject}
         onBackToMap={() => setIsProjectWorkspaceOpen(false)}

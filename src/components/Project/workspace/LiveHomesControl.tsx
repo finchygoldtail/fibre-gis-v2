@@ -20,6 +20,13 @@ export type LiveHomesDpRow = {
 
 type Props = {
   projectAssets: SavedMapAsset[];
+  /**
+   * Canonical workspace stats from ProjectWorkspace.
+   * These already include the de-duped home/pass/live calculations used by
+   * the top KPI bar and readiness cards, so the Live Homes panel must use
+   * them for its headline totals instead of recalculating a second version.
+   */
+  stats?: any;
   onSelectAsset?: (asset: SavedMapAsset) => void;
   onOpenAsset?: (asset: SavedMapAsset) => void;
 };
@@ -66,7 +73,14 @@ function isDp(asset: SavedMapAsset): boolean {
 
 function isHome(asset: SavedMapAsset): boolean {
   const item = asset as any;
-  const haystack = [item.assetType, item.type, item.name, item.label, item.homeType].map(norm).join(" ");
+  const haystack = [
+    item.assetType,
+    item.type,
+    item.name,
+    item.label,
+    item.homeType,
+    item.category,
+  ].map(norm).join(" ");
 
   const hasPointGeometry =
     asset.geometry?.type === "Point" ||
@@ -74,6 +88,7 @@ function isHome(asset: SavedMapAsset): boolean {
 
   if (!hasPointGeometry) return false;
   if (isDp(asset)) return false;
+  if (isDropCable(asset)) return false;
 
   const looksLikeInfrastructure =
     haystack.includes("cable") ||
@@ -82,17 +97,24 @@ function isHome(asset: SavedMapAsset): boolean {
     haystack.includes("pole") ||
     haystack.includes("chamber") ||
     haystack.includes("cabinet") ||
+    haystack.includes("street cab") ||
+    haystack.includes("streetcab") ||
     haystack.includes("cbt") ||
     haystack.includes("afn");
 
   if (looksLikeInfrastructure) return false;
 
-  return (
-    haystack.includes("home") ||
-    haystack.includes("premise") ||
-    haystack.includes("sdu") ||
-    haystack.includes("flat") ||
-    Boolean(item.uprn || item.UPRN || item.homeId || item.properties?.UPRN || item.properties?.uprn)
+  return Boolean(
+    item.uprn ||
+      item.UPRN ||
+      item.properties?.UPRN ||
+      item.properties?.uprn ||
+      item.homeId ||
+      haystack.includes("home") ||
+      haystack.includes("premise") ||
+      haystack.includes("property") ||
+      haystack.includes("sdu") ||
+      haystack.includes("flat")
   );
 }
 
@@ -220,6 +242,120 @@ function uniqueHomes(homes: SavedMapAsset[]): SavedMapAsset[] {
   return Array.from(byKey.values());
 }
 
+function normaliseHomeStatus(value: unknown): string {
+  return text(value)
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/-/g, "_");
+}
+
+function homeIdentifierSet(home: SavedMapAsset): Set<string> {
+  const item = home as any;
+  const keys = [
+    home.id,
+    item.assetId,
+    item.homeId,
+    item.uprn,
+    item.UPRN,
+    item.properties?.UPRN,
+    item.properties?.uprn,
+  ]
+    .map((value) => text(value).toLowerCase())
+    .filter(Boolean);
+
+  const expanded = new Set<string>();
+  keys.forEach((key) => {
+    expanded.add(key);
+    expanded.add(key.replace(/^uprn-/, ""));
+    expanded.add(`uprn-${key.replace(/^uprn-/, "")}`);
+  });
+
+  return expanded;
+}
+
+function dropLinksToHome(drop: SavedMapAsset, home: SavedMapAsset): boolean {
+  if (!isDropCable(drop)) return false;
+  const dropItem = drop as any;
+  const homeKeys = homeIdentifierSet(home);
+  const dropKeys = [
+    dropItem.homeId,
+    dropItem.toAssetId,
+    dropItem.connectedHomeId,
+    dropItem.toHomeId,
+    dropItem.fromHomeId,
+    dropItem.uprn,
+    dropItem.UPRN,
+  ]
+    .map((value) => text(value).toLowerCase())
+    .filter(Boolean);
+
+  return dropKeys.some((key) => homeKeys.has(key) || homeKeys.has(key.replace(/^uprn-/, "")) || homeKeys.has(`uprn-${key.replace(/^uprn-/, "")}`));
+}
+
+function homeOperationalState(home: SavedMapAsset, allAssets: SavedMapAsset[]): "unconnected" | "connected" | "live" {
+  const item = home as any;
+  const ownStatus = normaliseHomeStatus(
+    item.customerStatus ||
+      item.homeStatus ||
+      item.status ||
+      item.buildStatus ||
+      item.serviceStatus ||
+      item.connectionStatus ||
+      item.properties?.status,
+  );
+
+  if (ownStatus === "live") return "live";
+
+  const metadataConnection = norm(item.connection || item.properties?.connection);
+  if (
+    item.connectedDpId ||
+    item.properties?.connectedDpId ||
+    item.connectedDP ||
+    item.dpId ||
+    metadataConnection === "connected" ||
+    ownStatus === "connected"
+  ) {
+    return "connected";
+  }
+
+  const linkedDrop = allAssets.find((asset) => dropLinksToHome(asset, home));
+  if (!linkedDrop) return "unconnected";
+
+  const dropItem = linkedDrop as any;
+  const dropStatus = normaliseHomeStatus(dropItem.customerStatus || dropItem.homeStatus || dropItem.status || dropItem.serviceStatus);
+  return dropStatus === "live" ? "live" : "connected";
+}
+
+function canonicalWorkspaceHomeTotals(projectAssets: SavedMapAsset[]) {
+  const homes = uniqueHomes(projectAssets.filter(isHome));
+  const liveOrConnected = homes.filter((home) => homeOperationalState(home, projectAssets) !== "unconnected").length;
+
+  return {
+    homesPassed: homes.length,
+    homesLive: liveOrConnected,
+    homesNotLive: Math.max(homes.length - liveOrConnected, 0),
+  };
+}
+
+function canonicalStatsTotals(stats: any, projectAssets: SavedMapAsset[]) {
+  const fallback = canonicalWorkspaceHomeTotals(projectAssets);
+  const rollout = stats?.rolloutKpis || {};
+  const homesPassed = Number(rollout.homesPassed ?? stats?.homesPassed ?? fallback.homesPassed);
+  const homesLive = Number(rollout.homesLive ?? stats?.homesConnected ?? fallback.homesLive);
+  const homesNotLive = Number(
+    rollout.homesNotLive ??
+      (Number.isFinite(homesPassed) && Number.isFinite(homesLive)
+        ? Math.max(homesPassed - homesLive, 0)
+        : fallback.homesNotLive),
+  );
+
+  return {
+    homesPassed: Number.isFinite(homesPassed) ? homesPassed : fallback.homesPassed,
+    homesLive: Number.isFinite(homesLive) ? homesLive : fallback.homesLive,
+    homesNotLive: Number.isFinite(homesNotLive) ? homesNotLive : fallback.homesNotLive,
+  };
+}
+
 function buildRows(projectAssets: SavedMapAsset[]): LiveHomesDpRow[] {
   const dps = projectAssets.filter(isDp);
   const homes = uniqueHomes(projectAssets.filter(isHome));
@@ -229,7 +365,7 @@ function buildRows(projectAssets: SavedMapAsset[]): LiveHomesDpRow[] {
     const servedHomes = uniqueHomes(homesForDp(dp, homes, drops));
     const dpDrops = dropsForDp(dp, drops);
     const status = dpStatus(dp);
-    const isLive = status === "Live";
+    const liveHomes = servedHomes.filter((home) => homeOperationalState(home, projectAssets) !== "unconnected").length;
     const capacity = dpCapacity(dp, servedHomes.length);
     const capacityUsed = Math.max(servedHomes.length, dpDrops.length);
     const capacityPercent = capacity > 0 ? (capacityUsed / capacity) * 100 : 0;
@@ -241,8 +377,8 @@ function buildRows(projectAssets: SavedMapAsset[]): LiveHomesDpRow[] {
       closureType: closureType(dp),
       status,
       homesServed: servedHomes.length,
-      liveHomes: isLive ? servedHomes.length : 0,
-      notLiveHomes: isLive ? 0 : servedHomes.length,
+      liveHomes,
+      notLiveHomes: Math.max(servedHomes.length - liveHomes, 0),
       dropCableCount: dpDrops.length,
       capacity,
       capacityUsed,
@@ -253,7 +389,7 @@ function buildRows(projectAssets: SavedMapAsset[]): LiveHomesDpRow[] {
   }).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 }
 
-export default function LiveHomesControl({ projectAssets, onSelectAsset, onOpenAsset }: Props) {
+export default function LiveHomesControl({ projectAssets, stats, onSelectAsset, onOpenAsset }: Props) {
   const [search, setSearch] = useState("");
   const [liveFilter, setLiveFilter] = useState<LiveFilter>("all");
   const [closureFilter, setClosureFilter] = useState<ClosureFilter>("all");
@@ -281,22 +417,33 @@ export default function LiveHomesControl({ projectAssets, onSelectAsset, onOpenA
   );
 
   const summary = useMemo(() => {
-    const totalHomes = filteredRows.reduce((sum, row) => sum + row.homesServed, 0);
-    const liveHomes = filteredRows.reduce((sum, row) => sum + row.liveHomes, 0);
+    const filtersAreShowingWholeArea =
+      !search.trim() && liveFilter === "all" && closureFilter === "all";
+
+    const rowTotalHomes = filteredRows.reduce((sum, row) => sum + row.homesServed, 0);
+    const rowLiveHomes = filteredRows.reduce((sum, row) => sum + row.liveHomes, 0);
     const drops = filteredRows.reduce((sum, row) => sum + row.dropCableCount, 0);
     const nearCapacity = filteredRows.filter((row) => row.operationalRisk === "WARN" || row.operationalRisk === "FULL").length;
     const overCapacity = filteredRows.filter((row) => row.operationalRisk === "OVER").length;
+    const canonicalTotals = canonicalStatsTotals(stats, projectAssets);
+
+    const totalHomes = filtersAreShowingWholeArea ? canonicalTotals.homesPassed : rowTotalHomes;
+    const liveHomes = filtersAreShowingWholeArea ? canonicalTotals.homesLive : rowLiveHomes;
+    const notLiveHomes = filtersAreShowingWholeArea
+      ? canonicalTotals.homesNotLive
+      : Math.max(totalHomes - liveHomes, 0);
+
     return {
       dps: filteredRows.length,
       totalHomes,
       liveHomes,
-      notLiveHomes: Math.max(totalHomes - liveHomes, 0),
+      notLiveHomes,
       drops,
       nearCapacity,
       overCapacity,
       livePercent: totalHomes ? Math.round((liveHomes / totalHomes) * 100) : 0,
     };
-  }, [filteredRows]);
+  }, [filteredRows, search, liveFilter, closureFilter, stats, projectAssets]);
 
   return (
     <section style={widePanel}>

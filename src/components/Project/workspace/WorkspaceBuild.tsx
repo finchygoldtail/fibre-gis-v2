@@ -73,7 +73,9 @@ export default function WorkspaceBuild({
   onOpenJointEditor,
   onBackToMap,
 }: Props) {
-  const remaining = Math.max(0, Number(stats?.homesPassed || 0) - Number(stats?.homesConnected || 0));
+  const canonicalHomesPassed = Number(stats?.rolloutKpis?.homesPassed ?? stats?.homesPassed ?? 0);
+  const canonicalHomesLive = Number(stats?.rolloutKpis?.homesLive ?? stats?.homesConnected ?? 0);
+  const remaining = Math.max(0, canonicalHomesPassed - canonicalHomesLive);
   const readiness = stats?.operationalReadiness;
   const blockers = Array.isArray(readiness?.blockers) ? readiness.blockers : [];
   const nextActions = Array.isArray(readiness?.nextActions) ? readiness.nextActions : [];
@@ -102,13 +104,14 @@ export default function WorkspaceBuild({
 
     <section style={panel}>
       <h3 style={title}>Homes</h3>
-      <Row label="Passed" value={n(stats?.homesPassed)} />
-      <Row label="Connected" value={n(stats?.homesConnected)} />
+      <Row label="Passed" value={n(canonicalHomesPassed)} />
+      <Row label="Live / Connected" value={n(canonicalHomesLive)} />
       <Row label="Remaining" value={n(remaining)} />
     </section>
 
     <LiveHomesControl
       projectAssets={projectAssets}
+      stats={stats}
       onSelectAsset={onSelectAsset}
       onOpenAsset={(asset) => {
         onSelectAsset?.(asset);
