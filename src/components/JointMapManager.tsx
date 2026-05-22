@@ -38,7 +38,6 @@ import AssetMarkersLayer from "./map/AssetMarkersLayer";
 import CableLinesLayer from "./map/CableLinesLayer";
 import OpenreachOverlayLayer from "./map/OpenreachOverlayLayer";
 import CableDetailsModal from "./map/CableDetailsModal";
-import AreaAssetInspector from "./map/AreaAssetInspector";
 import { loadMapView, saveMapView } from "./map/mapViewMemory";
 import PoleDetailsModal from "./map/modals/PoleDetailsModal";
 import DistributionPointDetailsModal from "./map/modals/DistributionPointDetailsModal";
@@ -5517,6 +5516,365 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
     });
   };
 
+
+  // =====================================================
+  // PROJECT WORKSPACE — ADDRESS SHEET SB / HOME / DROP ASSIGNMENT
+  // Uses the uploaded address sheet match report to:
+  //   1) create or update splitter-box DPs by sheet splitter_box
+  //   2) stamp matched homes with the assigned SB/DP
+  //   3) optionally replace those homes' existing drops with SB→home drops
+  // This deliberately ignores OR pole/chamber references for now and keeps
+  // all writes on the existing savedJoints + projectHomes paths.
+  // =====================================================
+  const handleWorkspaceAddressSheetAssignments = async (request: {
+    rows: any[];
+    overwriteExistingDrops?: boolean;
+    note: string;
+  }) => {
+    const rows = (request.rows || []).filter(
+      (row) => row?.homeAsset && String(row?.splitterBox || "").trim(),
+    );
+
+    if (!rows.length) {
+      alert("No matched address sheet rows were supplied for SB assignment.");
+      return;
+    }
+
+    const reason = String(request.note || "").trim();
+    if (!reason) {
+      alert("An audit note is required before assigning SBs and drops.");
+      return;
+    }
+
+    const compact = (value: unknown) =>
+      String(value ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "");
+
+    const safeId = (value: unknown) =>
+      String(value ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "") || "splitter";
+
+    const getTitle = (asset: any) =>
+      String(asset?.name || asset?.jointName || asset?.label || asset?.assetId || asset?.id || "");
+
+    const isSplitterDp = (asset: SavedMapAsset | null | undefined) => {
+      if (!asset) return false;
+      const item = asset as any;
+      if (asset.geometry?.type === "LineString") return false;
+      const text = [
+        item.assetType,
+        item.type,
+        item.jointType,
+        item.dpType,
+        item.closureType,
+        item.name,
+        item.label,
+      ]
+        .map((value) => String(value ?? "").toLowerCase())
+        .join(" ");
+
+      return (
+        text.includes("distribution") ||
+        text.includes("splitter") ||
+        text.includes("sb") ||
+        text.includes("dp") ||
+        text.includes("cbt") ||
+        text.includes("afn") ||
+        text.includes("mdu")
+      );
+    };
+
+    const findExistingSplitter = (splitterBox: string) => {
+      const target = compact(splitterBox);
+      if (!target) return null;
+
+      return (
+        allMapAssets.find((asset) => {
+          if (!isSplitterDp(asset)) return false;
+          const title = compact(getTitle(asset));
+          return title === target || title.includes(target) || target.includes(title);
+        }) || null
+      );
+    };
+
+    const fullHomeById = new Map<string, SavedMapAsset>();
+    allMapAssets.forEach((asset) => {
+      if (asset?.id) fullHomeById.set(String(asset.id), asset);
+    });
+
+    const groups = new Map<string, any[]>();
+    rows.forEach((row) => {
+      const splitterBox = String(row.splitterBox || "").trim();
+      if (!splitterBox) return;
+      const current = groups.get(splitterBox) || [];
+      current.push(row);
+      groups.set(splitterBox, current);
+    });
+
+    const now = new Date().toISOString();
+    const updatedHomeById = new Map<string, SavedMapAsset>();
+    const splitterById = new Map<string, SavedMapAsset>();
+    const newDropsById = new Map<string, SavedMapAsset>();
+    const affectedHomeDropKeys = new Set<string>();
+
+    let skippedHomes = 0;
+
+    groups.forEach((groupRows, splitterBox) => {
+      const matchedHomes = groupRows
+        .map((row) => fullHomeById.get(String(row.homeAsset?.id || "")) || row.homeAsset)
+        .filter(Boolean) as SavedMapAsset[];
+
+      const homePoints = matchedHomes
+        .map((home) => getAssetLatLng(home as any))
+        .filter(Boolean) as { lat: number; lng: number }[];
+
+      if (!matchedHomes.length || !homePoints.length) {
+        skippedHomes += matchedHomes.length;
+        return;
+      }
+
+      const existingSplitter = findExistingSplitter(splitterBox);
+      const splitterId = String(existingSplitter?.id || `sb_${safeId(splitterBox)}`);
+      const centre = existingSplitter
+        ? getAssetLatLng(existingSplitter as any) || {
+            lat: homePoints.reduce((sum, point) => sum + point.lat, 0) / homePoints.length,
+            lng: homePoints.reduce((sum, point) => sum + point.lng, 0) / homePoints.length,
+          }
+        : {
+            lat: homePoints.reduce((sum, point) => sum + point.lat, 0) / homePoints.length,
+            lng: homePoints.reduce((sum, point) => sum + point.lng, 0) / homePoints.length,
+          };
+
+      const splitterAsset = markAssetForLiveSync(
+        withAssetEditedMetadata(
+          {
+            ...(existingSplitter || {}),
+            id: splitterId,
+            name: splitterBox,
+            label: splitterBox,
+            assetType: "distribution-point",
+            type: "distribution-point",
+            jointType: "Splitter Box",
+            dpType: "SB",
+            splitterBox,
+            source: existingSplitter ? (existingSplitter as any).source : "address-sheet-import",
+            lat: centre.lat,
+            lng: centre.lng,
+            geometry: {
+              type: "Point",
+              coordinates: [centre.lat, centre.lng],
+            },
+            dpDetails: {
+              ...((existingSplitter as any)?.dpDetails || {}),
+              closureType: ((existingSplitter as any)?.dpDetails?.closureType || "CBT") as any,
+              connectionsToHomes: matchedHomes.length,
+              connectedHomes: matchedHomes.length,
+              buildStatus: getDpOperationalStatus(existingSplitter || {}, "Planned"),
+              addressSheetAssignment: {
+                source: "address-sheet",
+                splitterBox,
+                homeCount: matchedHomes.length,
+                updatedAt: now,
+              },
+            },
+            properties: {
+              ...((existingSplitter as any)?.properties || {}),
+              splitterBox,
+              addressSheetAssignment: {
+                source: "address-sheet",
+                splitterBox,
+                homeCount: matchedHomes.length,
+                updatedAt: now,
+              },
+            },
+          } as SavedMapAsset,
+          existingSplitter ? "updated" : "created",
+          reason,
+        ),
+        !existingSplitter,
+      );
+
+      splitterById.set(splitterId, splitterAsset);
+
+      matchedHomes.forEach((home, index) => {
+        const homeCoord = getAssetLatLng(home as any);
+        if (!homeCoord) {
+          skippedHomes += 1;
+          return;
+        }
+
+        const matchingRow = groupRows.find((row) => String(row.homeAsset?.id || "") === String(home.id)) || groupRows[index];
+        const dropTypeText = String(matchingRow?.dropType || "").toLowerCase();
+        const homeConnectionKey = getHomeConnectionKey(home as any) || String(home.id || "");
+        getHomeDropKeys(home as any).forEach((key) => affectedHomeDropKeys.add(key));
+
+        const stampedHome = markAssetForLiveSync(
+          withAssetEditedMetadata(
+            {
+              ...(home as any),
+              connectedDpId: splitterId,
+              connectedDP: splitterId,
+              dpId: splitterId,
+              connection: "connected",
+              connectionMode: "address-sheet",
+              splitterBox,
+              assignedSplitterBox: splitterBox,
+              addressSheetAssignment: {
+                source: "address-sheet",
+                splitterBox,
+                dropType: matchingRow?.dropType || "",
+                rowNumber: matchingRow?.rowNumber,
+                updatedAt: now,
+              },
+              properties: {
+                ...((home as any).properties || {}),
+                connectedDpId: splitterId,
+                connectedDP: splitterId,
+                dpId: splitterId,
+                connection: "connected",
+                connectionMode: "address-sheet",
+                splitterBox,
+                assignedSplitterBox: splitterBox,
+                addressSheetAssignment: {
+                  source: "address-sheet",
+                  splitterBox,
+                  dropType: matchingRow?.dropType || "",
+                  rowNumber: matchingRow?.rowNumber,
+                  updatedAt: now,
+                },
+              },
+            } as SavedMapAsset,
+            "updated",
+            reason,
+          ),
+          false,
+        );
+
+        updatedHomeById.set(String(home.id), stampedHome);
+
+        const dropId = `drop_${splitterId}_${safeId(homeConnectionKey)}`;
+        const dropAsset = markAssetForLiveSync(
+          {
+            id: dropId,
+            name: `${splitterBox} Drop → ${(home as any).address || (home as any).name || homeConnectionKey}`,
+            label: `${splitterBox} Drop`,
+            assetType: "cable",
+            type: "cable",
+            cableType: "Drop" as any,
+            fibreCount: "1F" as any,
+            installMethod: (dropTypeText.includes("oh") || dropTypeText.includes("overhead") ? "OH" : "Underground") as any,
+            fromAssetId: splitterId,
+            toAssetId: String(home.id || homeConnectionKey),
+            fromType: "distribution-point",
+            toType: "home",
+            dpId: splitterId,
+            homeId: homeConnectionKey,
+            connectedHomeId: String(home.id || homeConnectionKey),
+            uprn: (home as any).uprn || (home as any).UPRN || (home as any).properties?.UPRN || (home as any).properties?.uprn,
+            splitterBox,
+            source: "address-sheet-import",
+            generationMode: "address-sheet-sb-home-drop",
+            connectionMode: "address-sheet",
+            status: "planned",
+            distanceM: Math.round(getDistanceMeters(centre, homeCoord) * 10) / 10,
+            route: [
+              [centre.lat, centre.lng],
+              [homeCoord.lat, homeCoord.lng],
+            ],
+            path: [
+              [centre.lat, centre.lng],
+              [homeCoord.lat, homeCoord.lng],
+            ],
+            points: [
+              [centre.lat, centre.lng],
+              [homeCoord.lat, homeCoord.lng],
+            ],
+            coordinates: [
+              [centre.lat, centre.lng],
+              [homeCoord.lat, homeCoord.lng],
+            ],
+            geometry: {
+              type: "LineString",
+              coordinates: [
+                [centre.lat, centre.lng],
+                [homeCoord.lat, homeCoord.lng],
+              ],
+            },
+            addressSheetAssignment: {
+              source: "address-sheet",
+              splitterBox,
+              dropType: matchingRow?.dropType || "",
+              rowNumber: matchingRow?.rowNumber,
+              updatedAt: now,
+            },
+          } as SavedMapAsset,
+          true,
+        );
+
+        newDropsById.set(dropId, dropAsset);
+      });
+    });
+
+    if (!splitterById.size || !updatedHomeById.size) {
+      alert("No SB/home/drop assignments could be created. Check that matched homes have coordinates.");
+      return;
+    }
+
+    setSavedJoints((prev) => {
+      const base = (prev ?? []).filter((asset: any) => {
+        if (!request.overwriteExistingDrops || !isDropCable(asset)) return true;
+        const dropKeys = getDropHomeKeys(asset);
+        return !dropKeys.some((key) => affectedHomeDropKeys.has(key));
+      });
+
+      const byId = new Map<string, SavedMapAsset>();
+      base.forEach((asset) => byId.set(String(asset.id), asset));
+      splitterById.forEach((asset, id) => byId.set(id, asset));
+      updatedHomeById.forEach((asset, id) => {
+        if (byId.has(id)) byId.set(id, asset);
+      });
+      newDropsById.forEach((asset, id) => byId.set(id, asset));
+
+      return Array.from(byId.values());
+    });
+
+    if (activeProjectId) {
+      const updatedProjectHomes = projectHomes.map((home) => {
+        const updated = updatedHomeById.get(String(home.id));
+        return updated || home;
+      });
+      setProjectHomes(updatedProjectHomes);
+      await saveProjectHomes(activeProjectId, updatedProjectHomes);
+    }
+
+    const auditTarget = splitterById.values().next().value || activeProjectArea || ({} as SavedMapAsset);
+    writeAssetAuditLog({
+      asset: auditTarget,
+      action: "updated",
+      reason,
+      comment: `Address sheet assigned ${updatedHomeById.size} home${updatedHomeById.size === 1 ? "" : "s"} to ${splitterById.size} splitter box${splitterById.size === 1 ? "" : "es"} and generated ${newDropsById.size} SB→home drop${newDropsById.size === 1 ? "" : "s"}.`,
+      before: {
+        matchedRows: rows.length,
+        overwriteExistingDrops: Boolean(request.overwriteExistingDrops),
+      },
+      after: {
+        splitterBoxes: splitterById.size,
+        homesUpdated: updatedHomeById.size,
+        dropsGenerated: newDropsById.size,
+        skippedHomes,
+      },
+    });
+
+    alert(
+      `Address sheet applied.\n\nSplitter boxes: ${splitterById.size}\nHomes assigned: ${updatedHomeById.size}\nDrops generated: ${newDropsById.size}${skippedHomes ? `\nSkipped homes without coordinates: ${skippedHomes}` : ""}`,
+    );
+  };
+
   // =====================================================
   // PROJECT WORKSPACE FULL SCREEN MODE
   // Keeps Leaflet mounted separately from the workspace shell.
@@ -5579,6 +5937,7 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         onBulkUpdateDpStatus={handleWorkspaceBulkDpStatusUpdate}
         onUpdateDpStatus={handleWorkspaceSingleDpStatusUpdate}
         onClearDpFibreAllocations={handleWorkspaceClearDpFibreAllocations}
+        onApplyAddressSheetAssignments={handleWorkspaceAddressSheetAssignments}
         onExport={handleExportGeoJson}
       />
     );
@@ -6262,25 +6621,7 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
             ) : null}
           </div>
         </details>
-
-        <details open style={drawerSection}>
-          <summary style={sectionSummary}>Area Asset Inspector</summary>
-          <div style={sectionBody}>
-            <AreaAssetInspector
-              assets={allMapAssets}
-              areaAsset={activeProjectArea}
-              networkStats={{
-                nodes: networkGraph.nodes.size,
-                edges: networkGraph.edges.size,
-                disconnected: disconnectedAssets.length,
-              }}
-              onZoomAsset={handleZoomToAsset}
-              onSelectAsset={handleEditAsset}
-            />
-          </div>
-        </details>
-
-        <details style={card}>
+<details style={card}>
           <summary style={sectionSummary}>Import / Export Saved Map</summary>
           <div style={sectionBody}>
             <input type="file" accept=".json" onChange={handleImportJson} />

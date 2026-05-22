@@ -147,6 +147,37 @@ function toNumber(value: any): number | null {
   return Number.isFinite(next) ? next : null;
 }
 
+
+function getSplitterPortsFromRatio(value: unknown): number | null {
+  const text = String(value ?? "").trim().toLowerCase();
+  if (!text || text === "—" || text === "-") return null;
+
+  // Supports values like "1:8", "1 to 8", "1/8", "8 way", "8-way".
+  const ratioMatch = text.match(/1\s*(?::|to|\/)\s*(\d+)/i);
+  if (ratioMatch) {
+    const ports = Number(ratioMatch[1]);
+    return Number.isFinite(ports) && ports > 0 ? ports : null;
+  }
+
+  const wayMatch = text.match(/(\d+)\s*-?\s*way/i);
+  if (wayMatch) {
+    const ports = Number(wayMatch[1]);
+    return Number.isFinite(ports) && ports > 0 ? ports : null;
+  }
+
+  const numeric = Number(text.replace(/[^0-9.]/g, ""));
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+}
+
+function readFirstNumber(asset: any, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = asset?.[key];
+    const parsed = toNumber(value);
+    if (parsed !== null) return parsed;
+  }
+  return null;
+}
+
 function formatDistanceMeters(value: any): string {
   const meters = toNumber(value);
   if (meters === null) return "—";
@@ -436,23 +467,36 @@ function buildDpIntelligence(
   const connectedHomesValue = read(item, ["homes", "connectedHomes", "homesConnected", "homeCount", "servedHomes"], null);
   const usedPortsValue = read(item, ["usedPorts", "portsUsed", "usedFibres", "portsInUse"], null);
   const capacityValue = read(item, ["capacity", "portCapacity", "ports", "totalPorts", "maxPorts"], null);
+  const afnDetails = item?.dpDetails?.afnDetails || item?.properties?.dpDetails?.afnDetails || item?.afnDetails || {};
 
   const inferredHomes = connectedHomesValue !== null ? connectedHomesValue : dropCables.length;
   const inferredUsedPorts = usedPortsValue !== null ? usedPortsValue : inferredHomes;
+  const usedNumber = toNumber(inferredUsedPorts);
+
+  const explicitSplitterRatio = read(afnDetails, ["splitterRatio", "ratio", "splitter"], null);
+  const splitterRatio = explicitSplitterRatio || (String(dpType).toLowerCase().includes("afn") ? "1:8" : "—");
+
+  const splitterPorts = getSplitterPortsFromRatio(splitterRatio);
+  const selectedInputFibres = Array.isArray(afnDetails.inputFibres)
+    ? afnDetails.inputFibres.length
+    : readFirstNumber(afnDetails, ["fibreCountUsed", "inputFibres", "splitterCount", "splitters", "numberOfSplitters"]);
+  const splitterDerivedCapacity =
+    splitterPorts !== null && selectedInputFibres !== null
+      ? splitterPorts * selectedInputFibres
+      : null;
 
   const inferredCapacity =
     capacityValue !== null
       ? capacityValue
-      : String(dpType).toLowerCase().includes("afn")
-        ? 16
-        : String(dpType).toLowerCase().includes("cbt")
-          ? 12
-          : "—";
+      : splitterDerivedCapacity !== null
+        ? splitterDerivedCapacity
+        : String(dpType).toLowerCase().includes("afn")
+          ? 16
+          : String(dpType).toLowerCase().includes("cbt")
+            ? 12
+            : "—";
 
   const capacityNumber = toNumber(inferredCapacity);
-  const usedNumber = toNumber(inferredUsedPorts);
-  const afnDetails = item?.dpDetails?.afnDetails || item?.properties?.dpDetails?.afnDetails || item?.afnDetails || {};
-  const selectedInputFibres = Array.isArray(afnDetails.inputFibres) ? afnDetails.inputFibres.length : toNumber(afnDetails.fibreCountUsed);
   const cableFibreTotal = throughCableAsset ? toNumber(read(throughCableAsset as any, ["fibreCount", "fiberCount", "coreCount", "size"], null)) : null;
   const capacityPercent = capacityNumber !== null && usedNumber !== null && capacityNumber > 0 ? Math.round((usedNumber / capacityNumber) * 100) : null;
   const capacityWarning =
@@ -473,7 +517,7 @@ function buildDpIntelligence(
     usedPorts: inferredUsedPorts,
     freePorts:
       capacityNumber !== null && usedNumber !== null
-        ? Math.max(capacityNumber - usedNumber, 0)
+        ? capacityNumber - usedNumber
         : read(item, ["freePorts", "portsFree"], "—"),
     status: read(item, ["status", "dpStatus", "serviceStatus", "buildStatus"], "OK"),
     throughCable: throughCableAsset ? getAssetName(throughCableAsset) : read(item, ["throughCable", "throughCableId", "parentCableId", "feedCable"], "-"),
@@ -482,7 +526,7 @@ function buildDpIntelligence(
       : read(item, ["fibres", "fibreRange", "allocatedInputFibres"], "-"),
     capacityPercent: capacityPercent !== null ? `${capacityPercent}%` : "—",
     capacityWarning,
-    splitterRatio: read(afnDetails, ["splitterRatio"], String(dpType).toLowerCase().includes("afn") ? "1:8" : "—"),
+    splitterRatio,
     inputFibres: selectedInputFibres ?? "—",
     passthroughFibres:
       cableFibreTotal !== null && selectedInputFibres !== null
