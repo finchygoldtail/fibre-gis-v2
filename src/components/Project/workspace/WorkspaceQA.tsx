@@ -1,10 +1,12 @@
 import React from "react";
+import DuplicateHomeResolutionPanel from "./DuplicateHomeResolutionPanel";
+import type { SavedMapAsset } from "../../map/types";
 
 type Props = {
   projectName: string;
   status?: string;
   stats: any;
-  projectAssets: any[];
+  projectAssets: SavedMapAsset[];
   projectArea?: any;
   auditIssues?: any[];
   disconnectedAssets?: any[];
@@ -15,6 +17,8 @@ type Props = {
   onOpenFibreTopology?: () => void;
   onExport?: () => void;
   onBackToMap?: () => void;
+  onSelectAsset?: (asset: SavedMapAsset) => void;
+  onOpenJointEditor?: (asset: SavedMapAsset) => void;
 };
 
 const panel: React.CSSProperties = { background: "#0f1b2d", border: "1px solid rgba(148, 163, 184, 0.18)", borderRadius: 10, padding: 16, minHeight: 190 };
@@ -38,9 +42,18 @@ function Tile({ label, value }: { label: string; value: React.ReactNode }) {
   return <div style={tile}><div style={{ color: "#94a3b8", fontSize: 12 }}>{label}</div><div style={{ marginTop: 6, fontSize: 24, fontWeight: 900 }}>{value}</div></div>;
 }
 
-export default function WorkspaceQA({ auditIssues, stats, onOpenQA }: Props) {
+export default function WorkspaceQA({ auditIssues, stats, projectAssets, onOpenQA, onSelectAsset, onOpenJointEditor, onResolveDuplicateHomes }: Props) {
   return <>
     <section style={panel}><h3 style={title}>QA Status</h3><Tile label="Total Issues" value={n(auditIssues?.length ?? stats?.issueCount)} /><button type="button" style={{ ...button, marginTop: 12, width: "100%" }} onClick={onOpenQA}>Open QA Tool</button></section>
     <section style={wide}><h3 style={title}>Latest Issues</h3>{(auditIssues || []).length === 0 ? <p style={{ color: "#94a3b8" }}>No QA issues found for this project area.</p> : (auditIssues || []).slice(0, 12).map((issue: any, index: number) => <div key={`${issue.assetId || "issue"}-${index}`} style={row}><span>{String(issue.assetName || issue.assetId || "Unknown asset")}</span><strong>{String(issue.severity || "issue").toUpperCase()}</strong></div>)}</section>
+    <DuplicateHomeResolutionPanel
+      projectAssets={projectAssets || []}
+      onSelectAsset={onSelectAsset}
+      onOpenAsset={(asset) => {
+        onSelectAsset?.(asset);
+        onOpenJointEditor?.(asset);
+      }}
+      onResolveDuplicateHomes={onResolveDuplicateHomes}
+    />
   </>;
 }

@@ -29,6 +29,10 @@ type WorkspaceOperationPanel =
   | "topology"
   | "qa"
   | "trace"
+  | "homesNotLive"
+  | "homesLive"
+  | "disconnected"
+  | "capacity"
   | "addAsset"
   | "report";
 
@@ -94,6 +98,13 @@ type ProjectWorkspaceProps = {
     assetIds: string[];
     note: string;
   }) => void;
+  onResolveDuplicateHomes?: (args: {
+    groupId: string;
+    canonicalHomeId: string;
+    duplicateHomeIds: string[];
+    note: string;
+  }) => void;
+  onApplyAddressSheetAssignments?: (request: any) => void | Promise<void>;
 };
 
 const tabs: { id: WorkspaceTab; label: string }[] = [
@@ -986,10 +997,16 @@ function StatCard({
   label,
   value,
   tone = "default",
+  onClick,
+  title,
+  active = false,
 }: {
   label: string;
   value: React.ReactNode;
   tone?: "default" | "good" | "warn" | "bad";
+  onClick?: () => void;
+  title?: string;
+  active?: boolean;
 }) {
   const toneColour =
     tone === "good"
@@ -999,11 +1016,24 @@ function StatCard({
         : tone === "bad"
           ? "#fb7185"
           : "#e5e7eb";
+  const clickable = typeof onClick === "function";
   return (
-    <div style={metricCard}>
+    <button
+      type="button"
+      style={{
+        ...metricCard,
+        textAlign: "left",
+        cursor: clickable ? "pointer" : "default",
+        border: active ? "1px solid #60a5fa" : (metricCard as any).border,
+        boxShadow: active ? "0 0 0 1px rgba(96,165,250,0.35) inset" : (metricCard as any).boxShadow,
+      }}
+      onClick={onClick}
+      title={title}
+      disabled={!clickable}
+    >
       <div style={metricLabel}>{label}</div>
       <div style={{ ...metricValue, color: toneColour }}>{value}</div>
-    </div>
+    </button>
   );
 }
 
@@ -1055,6 +1085,8 @@ export default function ProjectWorkspace({
   onBulkUpdateDpStatus,
   onUpdateDpStatus,
   onClearDpFibreAllocations,
+  onResolveDuplicateHomes,
+  onApplyAddressSheetAssignments,
 }: ProjectWorkspaceProps) {
   const [openreachLayers, setOpenreachLayers] =
     React.useState<OpenreachLayerVisibility>(defaultOpenreachLayers);
@@ -1318,8 +1350,8 @@ const homesLiveFromAssets =
     isLiveHomeAsset,
   ).length;
 
-const homesLive = Math.max(
-  fallbackHomesLive,
+const homesLive = Math.min(
+  homesPassed,
   homesLiveFromAssets,
 );
 
@@ -1401,6 +1433,70 @@ const homesLive = Math.max(
     [auditIssues],
   );
 
+  // =====================================================
+  // KPI DRILL-DOWN DATA
+  // These lists power the clickable KPI cards at the top of the workspace.
+  // They are derived from the same scoped workspace assets already used by
+  // the KPI engine, and do not create or change any storage path.
+  // =====================================================
+  const canonicalHomeAssets = useMemo(() => {
+    const homesByKey = new Map<string, SavedMapAsset>();
+
+    workspaceAssets.filter(isWorkspaceHomeAssetForLayerCount).forEach((asset) => {
+      const key = getWorkspaceLayerHomeKey(asset);
+      if (key && !homesByKey.has(key)) homesByKey.set(key, asset);
+    });
+
+    return Array.from(homesByKey.values());
+  }, [workspaceAssets]);
+
+  const homesLiveAssets = useMemo(
+    () =>
+      canonicalHomeAssets.filter(
+        (asset) => getWorkspaceHomeConnectionStatus(asset, workspaceAssets) === "live",
+      ),
+    [canonicalHomeAssets, workspaceAssets],
+  );
+
+  const homesNotLiveAssets = useMemo(
+    () =>
+      canonicalHomeAssets.filter(
+        (asset) => getWorkspaceHomeConnectionStatus(asset, workspaceAssets) !== "live",
+      ),
+    [canonicalHomeAssets, workspaceAssets],
+  );
+
+  const disconnectedWorkspaceAssets = useMemo(() => {
+    return disconnectedAssets
+      .map((node: any) => {
+        if (node?.asset) return node.asset as SavedMapAsset;
+        const rawId = String(node?.id || node?.assetId || node?.name || "").trim().toLowerCase();
+        if (!rawId) return null;
+        return (
+          workspaceAssets.find((asset) =>
+            getAssetIdentityKeys(asset).some((key) => key === rawId),
+          ) || null
+        );
+      })
+      .filter((asset): asset is SavedMapAsset => Boolean(asset));
+  }, [disconnectedAssets, workspaceAssets]);
+
+  const capacityRiskAssets = useMemo(
+    () =>
+      areaDistributionPoints
+        .map((asset) => ({ asset, capacity: getWorkspaceDpCapacityRisk(asset) }))
+        .filter(({ capacity }) => capacity.risk === "WARN" || capacity.risk === "FULL" || capacity.risk === "OVER"),
+    [areaDistributionPoints],
+  );
+
+  const openKpiDrilldown = (panel: WorkspaceOperationPanel, tab: WorkspaceTab) => {
+    setActiveTab(tab);
+    setActiveIssueSeverity(null);
+    setSelectedWorkspaceAsset(null);
+    setSearchTerm("");
+    setActiveOperationPanel(panel);
+  };
+
   const traceHighlightKinds = useMemo(() => {
     const highlights: Record<string, TraceHighlightKind> = {};
 
@@ -1435,6 +1531,31 @@ const homesLive = Math.max(
   const traceHighlightedAssetIds = useMemo(
     () => getTraceHighlightIdList(traceHighlightKinds),
     [traceHighlightKinds],
+  );
+
+
+  const kpiDrilldownHighlightedAssetIds = useMemo(() => {
+    const targets =
+      activeOperationPanel === "homesNotLive"
+        ? homesNotLiveAssets
+        : activeOperationPanel === "homesLive"
+          ? homesLiveAssets
+          : activeOperationPanel === "disconnected"
+            ? disconnectedWorkspaceAssets
+            : activeOperationPanel === "capacity"
+              ? capacityRiskAssets.map((row) => row.asset)
+              : [];
+
+    const ids = new Set<string>();
+    targets.forEach((asset) => {
+      getAssetIdentityKeys(asset).forEach((key) => ids.add(key));
+    });
+    return Array.from(ids);
+  }, [activeOperationPanel, homesNotLiveAssets, homesLiveAssets, disconnectedWorkspaceAssets, capacityRiskAssets]);
+
+  const workspaceHighlightedAssetIds = useMemo(
+    () => Array.from(new Set([...traceHighlightedAssetIds, ...kpiDrilldownHighlightedAssetIds])),
+    [traceHighlightedAssetIds, kpiDrilldownHighlightedAssetIds],
   );
 
   const openOperationPanel = (
@@ -1718,6 +1839,29 @@ const homesLive = Math.max(
   );
 
 
+  const workspaceProjectOptions = useMemo(() => {
+    const byId = new Map<string, SavedMapAsset>();
+
+    projectAreas.forEach((area) => {
+      if (area?.id) byId.set(area.id, area);
+    });
+
+    if (projectArea?.id && !byId.has(projectArea.id)) {
+      byId.set(projectArea.id, projectArea);
+    }
+
+    return Array.from(byId.values()).sort((a, b) =>
+      getProjectAreaLabel(a).localeCompare(getProjectAreaLabel(b), undefined, {
+        numeric: true,
+        sensitivity: "base",
+      }),
+    );
+  }, [projectAreas, projectArea]);
+
+  const activeWorkspaceProjectId =
+    activeProjectId || projectArea?.id || workspaceProjectOptions[0]?.id || "";
+
+
   const workspaceLayerCounts = useMemo(() => {
     const homesByKey = new Map<string, SavedMapAsset>();
     workspaceAssets.filter(isWorkspaceHomeAssetForLayerCount).forEach((asset) => {
@@ -1898,8 +2042,42 @@ const homesLive = Math.max(
           PROJECT TOP HEADER
       ===================================================== */}
       <header style={topHeader}>
-        <div style={{ minWidth: 260 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={projectHeaderBlock}>
+          <div style={projectSwitcherRow}>
+            <label style={projectSwitcherLabel} htmlFor="workspace-project-switcher">
+              Project Area
+            </label>
+            {workspaceProjectOptions.length > 1 && onSelectProject ? (
+              <select
+                id="workspace-project-switcher"
+                value={activeWorkspaceProjectId}
+                onChange={(event) => {
+                  const nextProjectId = event.target.value;
+                  if (!nextProjectId || nextProjectId === activeWorkspaceProjectId) return;
+                  setSelectedWorkspaceAsset(null);
+                  setSearchTerm("");
+                  setSearchFocused(false);
+                  setActiveOperationPanel("none");
+                  setActiveIssueSeverity(null);
+                  setManagerAreaPoints([]);
+                  setIsManagerAreaDrawing(false);
+                  onSelectProject(nextProjectId);
+                }}
+                style={projectSwitcherSelect}
+                title="Switch project area without going back to the main map"
+              >
+                {workspaceProjectOptions.map((area) => (
+                  <option key={area.id} value={area.id}>
+                    {getProjectAreaLabel(area)}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div style={projectSwitcherStatic}>{projectName}</div>
+            )}
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
             <h1 style={projectTitle}>{projectName}</h1>
             <span style={statusPill}>{status}</span>
             <span style={{ ...readinessPill, borderColor: readinessColour(operationalReadiness.state), color: readinessColour(operationalReadiness.state) }}>
@@ -1907,28 +2085,6 @@ const homesLive = Math.max(
             </span>
           </div>
           <div style={projectSubtitle}>Project Workspace</div>
-          {projectAreas.length > 1 ? (
-            <select
-              value={activeProjectId || projectArea?.id || ""}
-              onChange={(event) => {
-                const nextProjectId = event.target.value;
-                if (!nextProjectId) return;
-                setSelectedWorkspaceAsset(null);
-                setActiveOperationPanel("none");
-                setManagerAreaPoints([]);
-                setIsManagerAreaDrawing(false);
-                onSelectProject?.(nextProjectId);
-              }}
-              style={projectSwitcherSelect}
-              title="Switch project area"
-            >
-              {projectAreas.map((area) => (
-                <option key={area.id} value={area.id}>
-                  {getProjectAreaLabel(area)}
-                </option>
-              ))}
-            </select>
-          ) : null}
         </div>
 
         <div style={topMetrics}>
@@ -1961,11 +2117,17 @@ const homesLive = Math.max(
             label="Homes Live"
             value={formatNumber(rolloutKpis.homesLive)}
             tone="good"
+            active={activeOperationPanel === "homesLive"}
+            title="Click to show live homes"
+            onClick={() => openKpiDrilldown("homesLive", "build")}
           />
           <StatCard
             label="Homes Not Live"
             value={formatNumber(rolloutKpis.homesNotLive)}
             tone={rolloutKpis.homesNotLive > 0 ? "warn" : "good"}
+            active={activeOperationPanel === "homesNotLive"}
+            title="Click to show homes that are not live"
+            onClick={() => openKpiDrilldown("homesNotLive", "build")}
           />
           <StatCard
             label="DPs Live"
@@ -1991,21 +2153,33 @@ const homesLive = Math.max(
             label="Near Capacity"
             value={formatNumber(rolloutKpis.dpNearCapacity)}
             tone={rolloutKpis.dpNearCapacity > 0 ? "warn" : "good"}
+            active={activeOperationPanel === "capacity"}
+            title="Click to show capacity risk DPs"
+            onClick={() => openKpiDrilldown("capacity", "build")}
           />
           <StatCard
             label="Over Capacity"
             value={formatNumber(rolloutKpis.dpOverCapacity)}
             tone={rolloutKpis.dpOverCapacity > 0 ? "bad" : "good"}
+            active={activeOperationPanel === "capacity"}
+            title="Click to show capacity risk DPs"
+            onClick={() => openKpiDrilldown("capacity", "build")}
           />
           <StatCard
             label="QA Issues"
             value={formatNumber(rolloutKpis.qaIssues)}
             tone={rolloutKpis.qaIssues > 0 ? "bad" : "good"}
+            active={activeOperationPanel === "qa" || activeOperationPanel === "issues"}
+            title="Click to open QA issues"
+            onClick={() => openKpiDrilldown("qa", "qa")}
           />
           <StatCard
             label="Disconnected"
             value={formatNumber(rolloutKpis.disconnectedAssets)}
             tone={rolloutKpis.disconnectedAssets > 0 ? "warn" : "good"}
+            active={activeOperationPanel === "disconnected"}
+            title="Click to show disconnected assets"
+            onClick={() => openKpiDrilldown("disconnected", "topology")}
           />
           <StatCard
             label="Route Length"
@@ -2064,8 +2238,8 @@ const homesLive = Math.max(
                   onOpenFibreTopology?.();
                 },
               ],
-              ["Disconnected Assets", () => openOperationPanel("qa", "qa")],
-              ["Over Capacity", () => openOperationPanel("issues", "qa")],
+              ["Disconnected Assets", () => openKpiDrilldown("disconnected", "topology")],
+              ["Over Capacity", () => openKpiDrilldown("capacity", "build")],
             ]}
           />
 
@@ -2212,7 +2386,7 @@ const homesLive = Math.max(
                   selectedWorkspaceAsset?.id ??
                   null
                 }
-                traceHighlightedAssetIds={traceHighlightedAssetIds}
+                traceHighlightedAssetIds={workspaceHighlightedAssetIds}
                 traceHighlightKinds={traceHighlightKinds}
                 networkState={networkState}
                 managerAreaPoints={managerAreaPoints}
@@ -2327,6 +2501,8 @@ const homesLive = Math.max(
               areaDistributionPoints={areaDistributionPoints}
               onBulkUpdateDpStatus={onBulkUpdateDpStatus}
               onClearDpFibreAllocations={handleClearAreaDpFibreAllocations}
+              onResolveDuplicateHomes={onResolveDuplicateHomes}
+              onApplyAddressSheetAssignments={onApplyAddressSheetAssignments}
               onSelectAsset={(asset) => {
                 setSelectedWorkspaceAsset(asset);
                 setSearchTerm(getWorkspaceAssetTitle(asset));
@@ -2359,6 +2535,10 @@ const homesLive = Math.max(
                     {activeOperationPanel === "topology" && "Topology"}
                     {activeOperationPanel === "qa" && "QA Validation"}
                     {activeOperationPanel === "trace" && "Trace Fibre Route"}
+                    {activeOperationPanel === "homesNotLive" && "Homes Not Live"}
+                    {activeOperationPanel === "homesLive" && "Live Homes"}
+                    {activeOperationPanel === "disconnected" && "Disconnected Assets"}
+                    {activeOperationPanel === "capacity" && "Capacity Risks"}
                     {activeOperationPanel === "addAsset" && "Add New Asset"}
                     {activeOperationPanel === "report" && "Project Report"}
                   </h3>
@@ -2510,6 +2690,87 @@ const homesLive = Math.max(
                 </div>
               )}
 
+
+              {(activeOperationPanel === "homesNotLive" || activeOperationPanel === "homesLive") && (
+                <div style={operationStack}>
+                  <div style={emptyPanel}>
+                    {activeOperationPanel === "homesNotLive"
+                      ? `${homesNotLiveAssets.length.toLocaleString("en-GB")} home(s) are not live in this area. Click a row to highlight it on the workspace map.`
+                      : `${homesLiveAssets.length.toLocaleString("en-GB")} live home(s) found in this area. Click a row to highlight it on the workspace map.`}
+                  </div>
+                  <div style={operationList}>
+                    {(activeOperationPanel === "homesNotLive" ? homesNotLiveAssets : homesLiveAssets)
+                      .slice(0, 80)
+                      .map((asset) => (
+                        <AssetDrilldownButton
+                          key={asset.id}
+                          asset={asset}
+                          subtitle={getWorkspaceHomeConnectionStatus(asset, workspaceAssets).toUpperCase()}
+                          detail={String((asset as any).address || (asset as any).uprn || (asset as any).UPRN || (asset as any).homeId || asset.id)}
+                          onClick={() => {
+                            setSelectedWorkspaceAsset(asset);
+                            setSearchTerm(getWorkspaceAssetTitle(asset));
+                          }}
+                        />
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {activeOperationPanel === "disconnected" && (
+                <div style={operationStack}>
+                  <div style={emptyPanel}>
+                    {`${disconnectedWorkspaceAssets.length.toLocaleString("en-GB")} disconnected asset(s) found in this area. Click an asset to inspect it.`}
+                  </div>
+                  <div style={operationList}>
+                    {disconnectedWorkspaceAssets.length === 0 ? (
+                      <div style={emptyPanel}>No disconnected assets found.</div>
+                    ) : (
+                      disconnectedWorkspaceAssets.slice(0, 80).map((asset) => (
+                        <AssetDrilldownButton
+                          key={asset.id}
+                          asset={asset}
+                          subtitle={getWorkspaceAssetType(asset)}
+                          detail="Disconnected from current topology graph"
+                          onClick={() => {
+                            setSelectedWorkspaceAsset(asset);
+                            setSearchTerm(getWorkspaceAssetTitle(asset));
+                            setActiveTab("topology");
+                          }}
+                        />
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {activeOperationPanel === "capacity" && (
+                <div style={operationStack}>
+                  <div style={emptyPanel}>
+                    {`${capacityRiskAssets.length.toLocaleString("en-GB")} DP(s) are near, full, or over capacity.`}
+                  </div>
+                  <div style={operationList}>
+                    {capacityRiskAssets.length === 0 ? (
+                      <div style={emptyPanel}>No DP capacity risks found.</div>
+                    ) : (
+                      capacityRiskAssets.slice(0, 80).map(({ asset, capacity }) => (
+                        <AssetDrilldownButton
+                          key={asset.id}
+                          asset={asset}
+                          subtitle={`${capacity.risk} — ${capacity.percent}%`}
+                          detail={capacity.warning}
+                          onClick={() => {
+                            setSelectedWorkspaceAsset(asset);
+                            setSearchTerm(getWorkspaceAssetTitle(asset));
+                            setActiveTab("build");
+                          }}
+                        />
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+
               {activeOperationPanel === "topology" && (
                 <div style={operationGrid}>
                   <InfoRow
@@ -2604,6 +2865,35 @@ const homesLive = Math.max(
         </main>
       </div>
     </div>
+  );
+}
+
+function AssetDrilldownButton({
+  asset,
+  subtitle,
+  detail,
+  onClick,
+}: {
+  asset: SavedMapAsset;
+  subtitle?: React.ReactNode;
+  detail?: React.ReactNode;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      style={{
+        ...operationListItem,
+        textAlign: "left",
+        cursor: "pointer",
+      }}
+      onClick={onClick}
+    >
+      <strong>{getWorkspaceAssetTitle(asset)}</strong>
+      <span>{subtitle || getWorkspaceAssetType(asset)}</span>
+      {detail ? <small>{detail}</small> : null}
+      <small style={{ color: "#93c5fd" }}>Click to select and highlight on map</small>
+    </button>
   );
 }
 
@@ -2770,9 +3060,9 @@ const workspaceRoot: React.CSSProperties = {
 };
 
 const topHeader: React.CSSProperties = {
-  minHeight: 74,
+  minHeight: 82,
   display: "grid",
-  gridTemplateColumns: "minmax(220px, 0.42fr) minmax(0, 1fr) auto",
+  gridTemplateColumns: "minmax(300px, 340px) minmax(0, 1fr) auto",
   alignItems: "center",
   gap: 12,
   padding: "8px 14px 8px 16px",
@@ -2793,18 +3083,52 @@ const projectSubtitle: React.CSSProperties = {
   fontSize: 12,
 };
 
+const projectHeaderBlock: React.CSSProperties = {
+  minWidth: 300,
+  display: "flex",
+  flexDirection: "column",
+  gap: 5,
+};
+
+const projectSwitcherRow: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "78px minmax(0, 1fr)",
+  alignItems: "center",
+  gap: 8,
+};
+
+const projectSwitcherLabel: React.CSSProperties = {
+  color: "#93c5fd",
+  fontSize: 10,
+  fontWeight: 950,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+};
+
+const projectSwitcherStatic: React.CSSProperties = {
+  background: "rgba(15, 23, 42, 0.88)",
+  color: "#e5e7eb",
+  border: "1px solid rgba(59, 130, 246, 0.45)",
+  borderRadius: 8,
+  padding: "7px 10px",
+  fontWeight: 900,
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+};
+
 const projectSwitcherSelect: React.CSSProperties = {
-  marginTop: 6,
   width: "100%",
-  maxWidth: 240,
+  minWidth: 0,
   background: "#020617",
   color: "#e5e7eb",
-  border: "1px solid #334155",
+  border: "1px solid rgba(59, 130, 246, 0.75)",
   borderRadius: 8,
-  padding: "6px 9px",
-  fontWeight: 850,
+  padding: "7px 10px",
+  fontWeight: 900,
   outline: "none",
-  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
+  boxShadow: "0 0 0 1px rgba(37,99,235,0.16), inset 0 1px 0 rgba(255,255,255,0.04)",
+  cursor: "pointer",
 };
 const statusPill: React.CSSProperties = {
   background: "rgba(34,197,94,0.18)",

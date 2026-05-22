@@ -1,6 +1,8 @@
 import React from "react";
 import AreaBulkStatusPanel from "./AreaBulkStatusPanel";
 import LiveHomesControl from "./LiveHomesControl";
+import DuplicateHomeResolutionPanel from "./DuplicateHomeResolutionPanel";
+import AddressSheetImportPanel from "./AddressSheetImportPanel";
 import type { SavedMapAsset } from "../../map/types";
 
 type ManagerPoint = { lat: number; lng: number };
@@ -32,6 +34,8 @@ type Props = {
   onOpenFibreTopology?: () => void;
   onExport?: () => void;
   onBackToMap?: () => void;
+  onResolveDuplicateHomes?: (request: any) => void;
+  onApplyAddressSheetAssignments?: (request: any) => void | Promise<void>;
 };
 
 const panel: React.CSSProperties = { background: "#0f1b2d", border: "1px solid rgba(148, 163, 184, 0.18)", borderRadius: 10, padding: 16, minHeight: 190 };
@@ -72,6 +76,8 @@ export default function WorkspaceBuild({
   onSelectAsset,
   onOpenJointEditor,
   onBackToMap,
+  onResolveDuplicateHomes,
+  onApplyAddressSheetAssignments,
 }: Props) {
   const canonicalHomesPassed = Number(stats?.rolloutKpis?.homesPassed ?? stats?.homesPassed ?? 0);
   const canonicalHomesLive = Number(stats?.rolloutKpis?.homesLive ?? stats?.homesConnected ?? 0);
@@ -108,6 +114,29 @@ export default function WorkspaceBuild({
       <Row label="Live / Connected" value={n(canonicalHomesLive)} />
       <Row label="Remaining" value={n(remaining)} />
     </section>
+
+
+
+
+    <AddressSheetImportPanel
+      projectAssets={projectAssets}
+      onSelectAsset={onSelectAsset}
+      onOpenAsset={(asset) => {
+        onSelectAsset?.(asset);
+        onOpenJointEditor?.(asset);
+      }}
+      onApplyAssignments={onApplyAddressSheetAssignments}
+    />
+
+    <DuplicateHomeResolutionPanel
+      projectAssets={projectAssets}
+      onSelectAsset={onSelectAsset}
+      onOpenAsset={(asset) => {
+        onSelectAsset?.(asset);
+        onOpenJointEditor?.(asset);
+      }}
+      onResolveDuplicateHomes={onResolveDuplicateHomes}
+    />
 
     <LiveHomesControl
       projectAssets={projectAssets}
