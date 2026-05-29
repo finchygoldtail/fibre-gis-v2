@@ -10,6 +10,11 @@
 import React, { useMemo } from "react";
 import type { SavedMapAsset } from "../map/types";
 import { auditAreaAssets, type AuditIssue, type AuditSeverity } from "../../services/areaAudit";
+import {
+  buildSbFibreAllocation,
+  formatFibreList,
+  type SbFibreAllocation,
+} from "./workspace/sbFibreAllocation";
 
 // =====================================================
 // TYPES
@@ -1113,6 +1118,10 @@ export default function AssetIntelligencePanel({
     return buildDpIntelligence(asset, projectAssets || [], relatedAssets);
   }, [asset, projectAssets, relatedAssets]);
 
+  const sbFibreAllocation = useMemo(() => {
+    return buildSbFibreAllocation(asset, projectAssets || []);
+  }, [asset, projectAssets]);
+
   const jointInfo = useMemo(() => {
     return buildJointIntelligence(asset);
   }, [asset]);
@@ -1265,6 +1274,10 @@ export default function AssetIntelligencePanel({
         </PanelSection>
       )}
 
+      {sbFibreAllocation && (
+        <SbFibreAllocationPanel allocation={sbFibreAllocation} />
+      )}
+
       {(isPole(asset) || isChamber(asset) || isCabinet(asset)) && (
         <PanelSection title="Civil / Access Intelligence">
           <InfoRow label="Asset Type" value={read(item, ["assetType", "type", "jointType"])} />
@@ -1402,6 +1415,72 @@ function MiniWarningList({ warnings }: { warnings: string[] }) {
       ))}
       {warnings.length > 6 ? <div style={mutedText}>+{warnings.length - 6} more warning{warnings.length - 6 === 1 ? "" : "s"}</div> : null}
     </div>
+  );
+}
+
+function SbFibreAllocationPanel({ allocation }: { allocation: SbFibreAllocation }) {
+  return (
+    <PanelSection title="SB Fibre Allocation / Passthrough">
+      <InfoRow label="Source" value={allocation.chainPosition} />
+      <InfoRow label="Through Cable" value={allocation.throughCableName || "—"} />
+      <InfoRow label="Cable Capacity" value={allocation.fibreCapacity || "—"} />
+      <InfoRow label="Splitter Ratio" value={allocation.splitterRatio} />
+      <InfoRow label="Homes Served" value={allocation.connectedHomes} />
+      <InfoRow label="Used Here" value={formatFibreList(allocation.localFibres)} />
+      <InfoRow label="Passthrough Downstream" value={allocation.passthroughRows.length ? formatFibreList(allocation.passthroughRows.map((row) => row.fibre)) : "None"} />
+      <InfoRow label="Allocated Upstream" value={allocation.upstreamRows.length ? formatFibreList(allocation.upstreamRows.map((row) => row.fibre)) : "None"} />
+      <InfoRow label="True Spare" value={allocation.spareRows.length ? formatFibreList(allocation.spareRows.map((row) => row.fibre)) : "None"} />
+
+      {allocation.warnings.length ? (
+        <div style={miniWarningWrap}>
+          {allocation.warnings.map((warning) => (
+            <div key={warning} style={miniWarningRow}>⚠ {warning}</div>
+          ))}
+        </div>
+      ) : null}
+
+      <div style={sbFibreTable}>
+        <div style={sbFibreHeader}>Fibre</div>
+        <div style={sbFibreHeader}>Use</div>
+        <div style={sbFibreHeader}>Destination</div>
+
+        {allocation.rows.slice(0, 96).map((row) => {
+          const cellStyle =
+            row.role === "LOCAL"
+              ? sbFibreLocalCell
+              : row.role === "PASSTHROUGH"
+                ? sbFibrePassthroughCell
+                : row.role === "UPSTREAM"
+                  ? sbFibreUpstreamCell
+                  : sbFibreSpareCell;
+          const roleLabel =
+            row.role === "LOCAL"
+              ? "Used here"
+              : row.role === "PASSTHROUGH"
+                ? "Passthrough downstream"
+                : row.role === "UPSTREAM"
+                  ? "Allocated upstream"
+                  : "True spare";
+
+          return (
+            <React.Fragment key={`${row.fibre}-${row.role}-${row.destinationAssetId}`}>
+              <div style={cellStyle}>F{row.fibre}</div>
+              <div style={cellStyle}>{roleLabel}</div>
+              <div style={cellStyle}>
+                {row.destinationName}
+                {row.sourceAssetName ? (
+                  <div style={mutedText}>Source: {row.sourceAssetName}</div>
+                ) : null}
+              </div>
+            </React.Fragment>
+          );
+        })}
+
+        {allocation.rows.length > 96 ? (
+          <div style={sbFibreMoreCell}>+{allocation.rows.length - 96} more fibre rows hidden</div>
+        ) : null}
+      </div>
+    </PanelSection>
   );
 }
 
@@ -1827,6 +1906,68 @@ const categoryPill: React.CSSProperties = {
   background: "rgba(148,163,184,0.12)",
   border: "1px solid rgba(148,163,184,0.18)",
   color: "#cbd5e1",
+};
+
+
+
+const sbFibreTable: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "70px 110px 1fr",
+  gap: 0,
+  marginTop: 10,
+  overflow: "hidden",
+  borderRadius: 10,
+  border: "1px solid rgba(148, 163, 184, 0.16)",
+};
+
+const sbFibreHeader: React.CSSProperties = {
+  padding: "8px 9px",
+  background: "rgba(15, 23, 42, 0.92)",
+  color: "#93c5fd",
+  fontSize: 11,
+  fontWeight: 950,
+  textTransform: "uppercase",
+  borderBottom: "1px solid rgba(148, 163, 184, 0.14)",
+};
+
+const sbFibreCellBase: React.CSSProperties = {
+  padding: "8px 9px",
+  fontSize: 12,
+  fontWeight: 800,
+  borderBottom: "1px solid rgba(148, 163, 184, 0.10)",
+};
+
+const sbFibrePassthroughCell: React.CSSProperties = {
+  ...sbFibreCellBase,
+  color: "#bfdbfe",
+  background: "rgba(59, 130, 246, 0.08)",
+};
+
+const sbFibreLocalCell: React.CSSProperties = {
+  ...sbFibreCellBase,
+  color: "#bbf7d0",
+  background: "rgba(34, 197, 94, 0.10)",
+};
+
+const sbFibreUpstreamCell: React.CSSProperties = {
+  ...sbFibreCellBase,
+  color: "#fed7aa",
+  background: "rgba(249, 115, 22, 0.10)",
+};
+
+const sbFibreSpareCell: React.CSSProperties = {
+  ...sbFibreCellBase,
+  color: "#cbd5e1",
+  background: "rgba(100, 116, 139, 0.08)",
+};
+
+const sbFibreMoreCell: React.CSSProperties = {
+  gridColumn: "1 / -1",
+  padding: "9px 10px",
+  color: "#94a3b8",
+  fontSize: 12,
+  fontWeight: 800,
+  background: "rgba(15, 23, 42, 0.72)",
 };
 
 const actionRow: React.CSSProperties = {

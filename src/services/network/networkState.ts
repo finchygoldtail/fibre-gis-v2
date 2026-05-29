@@ -8,6 +8,7 @@
 import type {
   DpRoutingState,
   JointToDpFibreMatchState,
+  JointCableOccupancyState,
   NetworkAsset,
   NetworkState,
   NetworkStateSummary,
@@ -66,6 +67,46 @@ function uniqueSorted(values: unknown[]): number[] {
   ).sort((a, b) => a - b);
 }
 
+function normaliseCableRef(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[–—]/g, "-")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getOccupancyForMatch(args: {
+  match: NonNullable<JointToDpFibreMatchState["assignmentsByDpId"][string]>;
+  jointToDpMatches: JointToDpFibreMatchState;
+}): JointCableOccupancyState | null {
+  const { match, jointToDpMatches } = args;
+  const occupancies = Object.values(jointToDpMatches.cableOccupancyByCable || {});
+  if (!occupancies.length) return null;
+
+  const matchRefs = new Set(
+    [...(match.sourceCableRefs || []), ...(match.targetCableRefs || [])]
+      .map(normaliseCableRef)
+      .filter(Boolean),
+  );
+
+  const candidates = occupancies.filter((occupancy) => {
+    if (!occupancy.allocationsByDpId?.[match.dpId]) return false;
+    if (!matchRefs.size) return true;
+    return matchRefs.has(normaliseCableRef(occupancy.cableKey)) ||
+      matchRefs.has(normaliseCableRef(occupancy.cableName));
+  });
+
+  return (
+    candidates.sort(
+      (a, b) =>
+        b.highestAllocatedFibre - a.highestAllocatedFibre ||
+        b.allocatedFibres.length - a.allocatedFibres.length,
+    )[0] || null
+  );
+}
+
 function buildSummary(state: Omit<NetworkState, "summary" | "warnings" | "generatedAt">): NetworkStateSummary {
   const cableStates = Object.values(state.cableStates);
   const dpStates = Object.values(state.dpStates);
@@ -102,6 +143,20 @@ function enrichDpStatesWithJointMatches(args: {
     // renames DPs to their SB IDs. Existing splitter/direct/passthrough intent
     // is preserved, but empty/cleared allocations now inherit the joint fibres.
     const jointFibres = uniqueSorted(match.fibres);
+    const occupancy = getOccupancyForMatch({ match, jointToDpMatches });
+    const localMinFibre = jointFibres.length ? Math.min(...jointFibres) : null;
+    const localMaxFibre = jointFibres.length ? Math.max(...jointFibres) : null;
+    const jointAllocatedFibresOnCable = uniqueSorted(occupancy?.allocatedFibres || []);
+    const highestJointAllocatedFibre = occupancy?.highestAllocatedFibre ||
+      (jointAllocatedFibresOnCable.length ? Math.max(...jointAllocatedFibresOnCable) : 0);
+    const jointPassthroughFibres = localMinFibre !== null
+      ? jointAllocatedFibresOnCable.filter((fibre) => fibre < localMinFibre)
+      : [];
+    const jointAllocatedElsewhereFibres = localMaxFibre !== null
+      ? jointAllocatedFibresOnCable.filter(
+          (fibre) => fibre > localMaxFibre && !jointFibres.includes(fibre),
+        )
+      : [];
     const nextInputFibres = jointFibres;
     const isAfn = state.closureType.includes("AFN");
     const isMdu = state.closureType.includes("MDU");
@@ -136,6 +191,13 @@ function enrichDpStatesWithJointMatches(args: {
       consumedFibres: nextConsumedFibres,
       usedFibres: nextUsedFibres,
       jointMatchedFibres: jointFibres,
+      jointPassthroughFibres,
+      jointAllocatedElsewhereFibres,
+      jointTrueSpareFibres: [],
+      jointHighestAllocatedFibre: highestJointAllocatedFibre,
+      jointCableKey: occupancy?.cableKey,
+      jointCableName: occupancy?.cableName,
+      jointCableOccupancy: occupancy || undefined,
       jointMatchSource: match.source,
       jointMatch: match,
       warnings: Array.from(

@@ -10,6 +10,8 @@ import type {
   NetworkAsset,
   JointToDpFibreAssignment,
   JointToDpFibreMatchState,
+  JointCableOccupancyState,
+  JointCableOccupancyAllocation,
 } from "./types";
 import {
   extractFibreTrayContinuityLinks,
@@ -41,6 +43,82 @@ function uniqueSorted(values: unknown[]): number[] {
         .filter((value) => Number.isFinite(value) && value > 0),
     ),
   ).sort((a, b) => a - b);
+}
+
+
+function getAssignmentCableRefs(assignment: JointToDpFibreAssignment): string[] {
+  return Array.from(
+    new Set([
+      ...(assignment.sourceCableRefs || []),
+      ...(assignment.targetCableRefs || []),
+    ].map(normalizeCableName).filter(Boolean)),
+  );
+}
+
+function buildCableOccupancyByCable(
+  assignments: JointToDpFibreAssignment[],
+): Record<string, JointCableOccupancyState> {
+  const occupancy = new Map<string, JointCableOccupancyState>();
+
+  assignments.forEach((assignment) => {
+    const cableRefs = getAssignmentCableRefs(assignment);
+    if (!cableRefs.length || !assignment.fibres.length) return;
+
+    cableRefs.forEach((cableRef) => {
+      const cableKey = normalizeCableName(cableRef);
+      if (!cableKey) return;
+
+      const existing = occupancy.get(cableKey) || {
+        cableKey,
+        cableName: cableRef,
+        highestAllocatedFibre: 0,
+        allocatedFibres: [],
+        allocationsByDpId: {},
+        allocations: [],
+      };
+
+      const previous = existing.allocationsByDpId[assignment.dpId];
+      const nextFibres = uniqueSorted([
+        ...(previous?.fibres || []),
+        ...assignment.fibres,
+      ]);
+
+      const allocation: JointCableOccupancyAllocation = {
+        dpId: assignment.dpId,
+        dpName: assignment.dpName,
+        dpRef: assignment.dpRef,
+        jointId: assignment.jointId,
+        jointName: assignment.jointName,
+        fibres: nextFibres,
+        sourceCableRefs: assignment.sourceCableRefs,
+        targetCableRefs: assignment.targetCableRefs,
+        confidence: assignment.confidence,
+      };
+
+      existing.allocationsByDpId[assignment.dpId] = allocation;
+      existing.allocations = Object.values(existing.allocationsByDpId).sort((a, b) => {
+        const aMin = a.fibres.length ? Math.min(...a.fibres) : Number.MAX_SAFE_INTEGER;
+        const bMin = b.fibres.length ? Math.min(...b.fibres) : Number.MAX_SAFE_INTEGER;
+        return aMin - bMin || a.dpName.localeCompare(b.dpName);
+      });
+      existing.allocatedFibres = uniqueSorted(
+        existing.allocations.flatMap((item) => item.fibres),
+      );
+      existing.highestAllocatedFibre = existing.allocatedFibres.length
+        ? Math.max(...existing.allocatedFibres)
+        : 0;
+
+      occupancy.set(cableKey, existing);
+    });
+  });
+
+  return Array.from(occupancy.values()).reduce<Record<string, JointCableOccupancyState>>(
+    (map, state) => {
+      map[state.cableKey] = state;
+      return map;
+    },
+    {},
+  );
 }
 
 function safeJsonParse(value: unknown, fallback: any) {
@@ -155,9 +233,64 @@ function isDpAsset(asset: NetworkAsset): boolean {
 
 function getDpRefKeys(asset: NetworkAsset): string[] {
   const item = asset as any;
-  return [item.name, item.label, item.assetId, item.id]
-    .map(normaliseDpRef)
-    .filter(Boolean);
+  const rawValues = [item.name, item.label, item.assetId, item.id];
+  const keys = new Set<string>();
+
+  rawValues.forEach((value) => {
+    const fullKey = normaliseDpRef(value);
+    if (fullKey) keys.add(fullKey);
+
+    // Critical for Alistra SB naming:
+    // Map assets are commonly named like BD-BAS-AG1-SB11, while joint sheets
+    // reference endpoints as SB11 / SB11-SP1. Keep both the full asset key
+    // and the short extracted SB/CBT/AFN/DP/MDU reference in the registry.
+    const shortRef = extractDpRef(value);
+    if (shortRef) keys.add(shortRef);
+  });
+
+  return Array.from(keys).filter(Boolean);
+}
+
+
+function extractNetworkPrefix(value: unknown): string | null {
+  const raw = normalise(value);
+  if (!raw) return null;
+
+  const match = raw.match(/^(.*?)-(?:SB|CBT|AFN|DP|MDU)\s*[-_ ]?\s*\d+[A-Z]?\b/i);
+  if (match?.[1]) {
+    const prefix = normalise(match[1]).replace(/[^A-Z0-9]/g, "");
+    return prefix || null;
+  }
+
+  return null;
+}
+
+function dpMatchesJointScope(args: {
+  dp: NetworkAsset;
+  jointName?: unknown;
+  sourceCableName?: unknown;
+  targetCableName?: unknown;
+  endPoint?: unknown;
+}): boolean {
+  const item = args.dp as any;
+  const dpPrefix = extractNetworkPrefix(
+    item.name || item.label || item.assetId || item.id,
+  );
+
+  // If the DP has no full Alistra-style prefix, keep legacy behaviour.
+  if (!dpPrefix) return true;
+
+  const haystack = [
+    args.jointName,
+    args.sourceCableName,
+    args.targetCableName,
+    args.endPoint,
+  ]
+    .map((value) => normalise(value).replace(/[^A-Z0-9]/g, ""))
+    .filter(Boolean)
+    .join(" ");
+
+  return haystack.includes(dpPrefix);
 }
 
 function extractRows(asset: NetworkAsset): any[][] {
@@ -233,6 +366,53 @@ function isLikelyCableOrNetworkReference(value: unknown): boolean {
     /\b\d+\s*F\b/i.test(raw) ||
     /\bF\s*\d+\b/i.test(raw)
   );
+}
+
+function isCustomerDropOrPremiseReference(value: unknown): boolean {
+  const raw = normalise(value);
+  if (!raw) return false;
+
+  return (
+    /\b(DROP|UPRN|HOME|PREMISE|PROPERTY|CUSTOMER|SDU|MDU FLAT|FLAT)\b/i.test(raw) ||
+    raw.includes("→ UPRN") ||
+    raw.includes("-> UPRN")
+  );
+}
+
+function isValidDpContinuityEndpoint(value: unknown, dpRef: string): boolean {
+  const raw = normalise(value);
+  const cleaned = normaliseDpRef(raw);
+  if (!raw || !cleaned || !dpRef) return false;
+
+  // The joint input feed should reference the SB/AFN/CBT endpoint itself,
+  // often as SB11, SB11-SP1 or SB11 SPLITTER 1. Do not treat downstream
+  // customer drop labels like "BD-BAS-AG1-SB11 Drop → UPRN ..." as
+  // SB input fibres, otherwise every drop output becomes an input splitter fibre.
+  if (isCustomerDropOrPremiseReference(raw)) return false;
+
+  if (cleaned === dpRef) return true;
+
+  // Accept both short sheet refs and full Alistra refs:
+  //   SB11-SP1
+  //   SB11 SP1
+  //   BD-BAS-AG1-SB11-SP1
+  // After normalising, those become SB11SP1 or BDBASAG1SB11SP1.
+  // The earlier version only used startsWith(), so full asset-prefixed
+  // endpoints were rejected and assignmentKeys dropped to zero.
+  const endpointTokens = [
+    `${dpRef}SP`,
+    `${dpRef}SPLITTER`,
+    `${dpRef}PORT`,
+  ];
+
+  if (endpointTokens.some((token) => cleaned.includes(token))) return true;
+
+  // Also accept a full asset name that ends in the DP ref, e.g.
+  // BD-BAS-AG1-SB11, but do not accept drop/customer labels because those
+  // were already rejected above by isCustomerDropOrPremiseReference().
+  if (cleaned.endsWith(dpRef)) return true;
+
+  return false;
 }
 
 function isStandaloneEndpointRefCell(value: unknown, dpRef: string): boolean {
@@ -461,6 +641,16 @@ function scanRowsForEndpointRefs(args: {
       const extraction = strictFibresFromRow(row, columnIndex);
 
       matches.forEach((dp) => {
+        if (
+          !dpMatchesJointScope({
+            dp,
+            jointName,
+            endPoint: cell,
+          })
+        ) {
+          return;
+        }
+
         const dpId = getAssetId(dp);
         const dedupedFibres = extraction.fibres.filter((fibre) => {
           const key = `${jointId}:${dpRef}:${fibre}`;
@@ -524,6 +714,12 @@ export function buildJointToDpFibreMatchState(
       const dpRef = extractDpRef(link.endPoint);
       if (!dpRef) return;
 
+      // Only match real DP/SB input endpoints from the joint sheet.
+      // Customer/drop output rows can also contain "SB11" in the drop cable
+      // name, but those fibres are splitter outputs to homes, not incoming
+      // network fibres for SB11.
+      if (!isValidDpContinuityEndpoint(link.endPoint, dpRef)) return;
+
       const matches = dpRegistry.get(dpRef) || [];
       if (!matches.length) {
         unmatchedJointRefs.push(dpRef);
@@ -534,6 +730,18 @@ export function buildJointToDpFibreMatchState(
       const extraction = chooseContinuityFibres(link);
 
       matches.forEach((dp) => {
+        if (
+          !dpMatchesJointScope({
+            dp,
+            jointName,
+            sourceCableName: link.sourceCableName,
+            targetCableName: link.targetCableName,
+            endPoint: link.endPoint,
+          })
+        ) {
+          return;
+        }
+
         const dedupedFibres = extraction.fibres.filter((fibre) => {
           const key = `${jointId}:${dpRef}:${fibre}`;
           if (seenFibreKeys.has(key)) return false;
@@ -626,10 +834,15 @@ export function buildJointToDpFibreMatchState(
     return map;
   }, {});
 
+  const cableOccupancyByCable = buildCableOccupancyByCable(
+    Object.values(assignmentsByDpId),
+  );
+
   return {
     scannedJoints,
     scannedRows,
     assignmentsByDpId,
+    cableOccupancyByCable,
     unmatchedJointRefs: dedupedUnmatched,
     duplicateDpRefs: dedupedDuplicates,
     warnings: Array.from(

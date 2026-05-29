@@ -8,7 +8,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import type { DistributionPointDetails, SavedMapAsset } from "../map/types";
-import { buildDpRoutingState } from "../../services/network";
+import { buildDpRoutingState, buildNetworkState } from "../../services/network";
 
 type ConnectedHomeRow = {
   id: string;
@@ -83,6 +83,21 @@ function text(value: unknown): string {
 function normalise(value: unknown): string {
   return text(value).toLowerCase();
 }
+
+function normaliseRef(value: unknown): string {
+  return text(value)
+    .toUpperCase()
+    .replace(/[–—]/g, "-")
+    .replace(/[^A-Z0-9]/g, "");
+}
+
+function refsMatch(a: unknown, b: unknown): boolean {
+  const left = normaliseRef(a);
+  const right = normaliseRef(b);
+  if (!left || !right) return false;
+  return left === right || left.includes(right) || right.includes(left);
+}
+
 
 function uniqueSorted(values: number[]): number[] {
   return Array.from(new Set(values.map(Number).filter(Number.isFinite))).sort(
@@ -496,6 +511,30 @@ export default function DistributionPointEditor({
     [asset],
   );
 
+  const computedNetworkState = useMemo(
+    () => buildNetworkState(allAssets as any),
+    [allAssets],
+  );
+
+  const jointMatchedDpState = useMemo(() => {
+    if (!asset) return null;
+    const direct = computedNetworkState.dpStates?.[(asset as any).id];
+    if (direct) return direct;
+
+    const selectedKeys = [
+      (asset as any).id,
+      (asset as any).assetId,
+      (asset as any).name,
+      (asset as any).label,
+    ].filter(Boolean);
+
+    return (
+      Object.values(computedNetworkState.dpStates || {}).find((state: any) =>
+        selectedKeys.some((key) => refsMatch(state.assetId || state.assetName, key)),
+      ) || null
+    );
+  }, [asset, computedNetworkState]);
+
   const capacity = useMemo(
     () => getCapacity(asset, connectedHomes.length),
     [asset, connectedHomes.length],
@@ -515,10 +554,102 @@ export default function DistributionPointEditor({
   const incomingFibreCount = getFibreCountFromCable(throughCable);
   const allCableFibres = Array.from({ length: incomingFibreCount }, (_, index) => index + 1);
 
-  const inputFibres = uniqueSorted([...draftRouting.splitterFibres, ...draftRouting.directFibres]);
+  const jointMatchedFibres = uniqueSorted([
+    ...(((jointMatchedDpState as any)?.jointMatchedFibres || []) as number[]),
+    ...(((jointMatchedDpState as any)?.jointMatch?.fibres || []) as number[]),
+    
+  ]);
+
+  const hasJointMappedFibres = jointMatchedFibres.length > 0 && !editMode;
+  const displaySplitterFibres = hasJointMappedFibres
+    ? jointMatchedFibres
+    : draftRouting.splitterFibres;
+  const displayDirectFibres = hasJointMappedFibres
+    ? []
+    : draftRouting.directFibres;
+
+  const inputFibres = uniqueSorted([...displaySplitterFibres, ...displayDirectFibres]);
+
+  const throughCableRefs = [
+    throughCableId,
+    (throughCable as any)?.id,
+    (throughCable as any)?.assetId,
+    (throughCable as any)?.name,
+    (throughCable as any)?.cableId,
+    (throughCable as any)?.label,
+  ].filter(Boolean);
+
+  const networkJointPassthroughFibres = uniqueSorted(
+    (((jointMatchedDpState as any)?.jointPassthroughFibres || []) as number[]),
+  );
+  const networkJointAllocatedElsewhereFibres = uniqueSorted(
+    (((jointMatchedDpState as any)?.jointAllocatedElsewhereFibres || []) as number[]),
+  );
+  const networkHighestJointAllocatedFibre = Number(
+    (jointMatchedDpState as any)?.jointHighestAllocatedFibre || 0,
+  );
+
+  // Fallback for older network-state builds: infer cable occupancy from all
+  // joint assignments on the selected through cable. Newer builds provide the
+  // precomputed fields above from the AG/LMJ/CMJ upload source of truth.
+  const jointAssignmentsOnThroughCable = Object.values(
+    computedNetworkState.jointToDpMatches?.assignmentsByDpId || {},
+  ).filter((assignment: any) => {
+    const refs = [
+      ...(Array.isArray(assignment.sourceCableRefs) ? assignment.sourceCableRefs : []),
+      ...(Array.isArray(assignment.targetCableRefs) ? assignment.targetCableRefs : []),
+    ];
+
+    if (!refs.length || !throughCableRefs.length) return true;
+
+    return refs.some((ref: unknown) =>
+      throughCableRefs.some((cableRef) => refsMatch(ref, cableRef)),
+    );
+  });
+
+  const fallbackJointAllocatedFibresOnCable = uniqueSorted(
+    jointAssignmentsOnThroughCable.flatMap((assignment: any) =>
+      Array.isArray(assignment.fibres) ? assignment.fibres : [],
+    ),
+  );
+
+  const localMinFibre = jointMatchedFibres.length
+    ? Math.min(...jointMatchedFibres)
+    : null;
+  const localMaxFibre = jointMatchedFibres.length
+    ? Math.max(...jointMatchedFibres)
+    : null;
+  const highestJointAllocatedFibre = networkHighestJointAllocatedFibre ||
+    (fallbackJointAllocatedFibresOnCable.length
+      ? Math.max(...fallbackJointAllocatedFibresOnCable)
+      : null);
+
+  const jointPassthroughFibres = hasJointMappedFibres
+    ? networkJointPassthroughFibres.length
+      ? networkJointPassthroughFibres
+      : localMinFibre !== null
+        ? allCableFibres.filter((fibre) => fibre < localMinFibre)
+        : []
+    : [];
+
+  const jointAllocatedElsewhereFibres = hasJointMappedFibres
+    ? networkJointAllocatedElsewhereFibres.length
+      ? networkJointAllocatedElsewhereFibres
+      : localMaxFibre !== null
+        ? fallbackJointAllocatedFibresOnCable.filter(
+            (fibre) => fibre > localMaxFibre && !jointMatchedFibres.includes(fibre),
+          )
+        : []
+    : [];
+
+  const jointTrueSpareFibres =
+    hasJointMappedFibres && highestJointAllocatedFibre !== null
+      ? allCableFibres.filter((fibre) => fibre > highestJointAllocatedFibre)
+      : [];
+
   const explicitlyClassifiedFibres = uniqueSorted([
-    ...draftRouting.splitterFibres,
-    ...draftRouting.directFibres,
+    ...displaySplitterFibres,
+    ...displayDirectFibres,
     ...draftRouting.passthroughFibres,
     ...draftRouting.spareFibres,
   ]);
@@ -527,20 +658,25 @@ export default function DistributionPointEditor({
     (fibre) => !explicitlyClassifiedFibres.includes(fibre),
   );
 
-  const passthroughFibres = draftRouting.hasDownstreamCable
-    ? uniqueSorted([...draftRouting.passthroughFibres, ...autoUnclassifiedFibres])
-    : uniqueSorted(draftRouting.passthroughFibres);
+  const passthroughFibres = hasJointMappedFibres
+    ? jointPassthroughFibres
+    : draftRouting.hasDownstreamCable
+      ? uniqueSorted([...draftRouting.passthroughFibres, ...autoUnclassifiedFibres])
+      : uniqueSorted(draftRouting.passthroughFibres);
 
-  const spareFibres = draftRouting.hasDownstreamCable
-    ? uniqueSorted(draftRouting.spareFibres)
-    : uniqueSorted([...draftRouting.spareFibres, ...autoUnclassifiedFibres]);
+  const spareFibres = hasJointMappedFibres
+    ? jointTrueSpareFibres
+    : draftRouting.hasDownstreamCable
+      ? uniqueSorted(draftRouting.spareFibres)
+      : uniqueSorted([...draftRouting.spareFibres, ...autoUnclassifiedFibres]);
 
   const consumedFibreCount = inputFibres.length || Number(afnDetails.fibreCountUsed || mduDetails.totalReservedFibres || 0);
   const passthroughFibreCount = passthroughFibres.length;
   const spareEndOfLineFibreCount = spareFibres.length;
+  const allocatedElsewhereFibreCount = jointAllocatedElsewhereFibres.length;
   const portRoutes = buildPortRoutes({
-    splitterInputFibres: draftRouting.splitterFibres,
-    directFibres: draftRouting.directFibres,
+    splitterInputFibres: displaySplitterFibres,
+    directFibres: displayDirectFibres,
     splitterOutputsPerFibre,
     connectedHomes,
     dropCables,
@@ -748,8 +884,8 @@ export default function DistributionPointEditor({
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
             <Metric label="Incoming" value={`${incomingFibreCount}F`} colour="#38bdf8" />
             <Metric label="Used" value={consumedFibreCount} colour="#fbbf24" />
-            <Metric label={draftRouting.hasDownstreamCable ? "Passthrough" : "Spare / EOL"} value={`${draftRouting.hasDownstreamCable ? passthroughFibreCount : spareEndOfLineFibreCount}F`} colour="#4ade80" />
-            <Metric label="Network state" value={`${computedDpRoutingState?.usedFibres.length || 0}F`} colour="#a78bfa" />
+            <Metric label={hasJointMappedFibres ? "Passthrough" : draftRouting.hasDownstreamCable ? "Passthrough" : "Spare / EOL"} value={`${hasJointMappedFibres ? passthroughFibreCount : draftRouting.hasDownstreamCable ? passthroughFibreCount : spareEndOfLineFibreCount}F`} colour="#4ade80" />
+            <Metric label={hasJointMappedFibres ? "Allocated Elsewhere" : "Network state"} value={`${hasJointMappedFibres ? allocatedElsewhereFibreCount : computedDpRoutingState?.usedFibres.length || 0}F`} colour="#a78bfa" />
           </div>
 
           <div style={{ background: "rgba(15,23,42,0.72)", border: "1px solid rgba(148,163,184,0.12)", borderRadius: 12, padding: 12 }}>
@@ -764,7 +900,11 @@ export default function DistributionPointEditor({
                 width: "100%",
               }}
             >
-              {draftRouting.hasDownstreamCable ? "Passthrough cable continues" : "End of line / no downstream cable"}
+              {hasJointMappedFibres
+                ? "Joint mapping controls passthrough"
+                : draftRouting.hasDownstreamCable
+                  ? "Passthrough cable continues"
+                  : "End of line / no downstream cable"}
             </button>
           </div>
 
@@ -773,9 +913,10 @@ export default function DistributionPointEditor({
             <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6, maxHeight: 165, overflow: "auto", paddingRight: 4 }}>
               {allCableFibres.map((fibre) => {
                 const colour = getFibreColour(fibre);
-                const isSplitter = draftRouting.splitterFibres.includes(fibre);
-                const isDirect = draftRouting.directFibres.includes(fibre);
+                const isSplitter = displaySplitterFibres.includes(fibre);
+                const isDirect = displayDirectFibres.includes(fibre);
                 const isPassthrough = passthroughFibres.includes(fibre);
+                const isAllocatedElsewhere = jointAllocatedElsewhereFibres.includes(fibre);
                 const active = selectedFibre === fibre;
                 return (
                   <button
@@ -790,7 +931,9 @@ export default function DistributionPointEditor({
                           ? "rgba(56,189,248,0.18)"
                           : isPassthrough
                             ? "rgba(34,197,94,0.12)"
-                            : "rgba(2,6,23,0.72)",
+                            : isAllocatedElsewhere
+                              ? "rgba(251,146,60,0.14)"
+                              : "rgba(2,6,23,0.72)",
                       color: "#e5e7eb",
                       borderRadius: 9,
                       padding: "7px 6px",
@@ -802,7 +945,7 @@ export default function DistributionPointEditor({
                       <span style={{ width: 10, height: 10, borderRadius: 999, background: colour.colour, display: "inline-block" }} />
                       <strong>{fibre}</strong>
                     </div>
-                    <small style={{ color: "#94a3b8", fontSize: 10, lineHeight: 1.1 }}>{isSplitter ? "Splitter" : isDirect ? "Direct" : isPassthrough ? "Pass" : "Spare"}</small>
+                    <small style={{ color: "#94a3b8", fontSize: 10, lineHeight: 1.1 }}>{isSplitter ? "Splitter" : isDirect ? "Direct" : isPassthrough ? "Pass" : isAllocatedElsewhere ? "Upstream" : "Spare"}</small>
                   </button>
                 );
               })}
@@ -831,8 +974,8 @@ export default function DistributionPointEditor({
           <div style={{ position: "relative", minHeight: 520, background: "rgba(2,6,23,0.34)", border: "1px solid rgba(148,163,184,0.10)", borderRadius: 16, overflow: "hidden" }}>
             <FibreSpliceDiagram
               allCableFibres={allCableFibres}
-              splitterInputFibres={draftRouting.splitterFibres}
-              directFibres={draftRouting.directFibres}
+              splitterInputFibres={displaySplitterFibres}
+              directFibres={displayDirectFibres}
               passthroughFibres={passthroughFibres}
               spareFibres={spareFibres}
               hasDownstreamCable={draftRouting.hasDownstreamCable}
@@ -850,6 +993,7 @@ export default function DistributionPointEditor({
             <span style={{ ...legendPillStyle(), color: "#38bdf8" }}>Direct fibre to output</span>
             <span style={{ ...legendPillStyle(), color: "#4ade80" }}>Splitter outputs</span>
             <span style={{ ...legendPillStyle(), color: "#22c55e" }}>Passthrough fibres</span>
+            <span style={{ ...legendPillStyle(), color: "#fb923c" }}>Allocated upstream / elsewhere</span>
             <span style={{ ...legendPillStyle(), color: "#64748b" }}>Spare / EOL fibres</span>
             <span style={{ marginLeft: "auto" }}>Click fibres, splitter outputs, or ports to inspect</span>
           </div>
@@ -905,9 +1049,9 @@ export default function DistributionPointEditor({
               <small style={{ color: "#cbd5e1" }}>{inputFibres.join(", ") || "No fibres selected"}</small>
             </div>
             <div>
-              <div style={smallLabelStyle()}>{draftRouting.hasDownstreamCable ? "Passthrough" : "Spare at end of line"}</div>
-              <div style={{ fontSize: 26, fontWeight: 950, color: "#4ade80" }}>{draftRouting.hasDownstreamCable ? passthroughFibreCount : spareEndOfLineFibreCount}F</div>
-              <small style={{ color: "#cbd5e1" }}>{draftRouting.hasDownstreamCable ? "Continuing to next asset" : "Unused fibres stop at this DP"}</small>
+              <div style={smallLabelStyle()}>{hasJointMappedFibres ? "Passthrough downstream" : draftRouting.hasDownstreamCable ? "Passthrough" : "Spare at end of line"}</div>
+              <div style={{ fontSize: 26, fontWeight: 950, color: "#4ade80" }}>{hasJointMappedFibres ? passthroughFibreCount : draftRouting.hasDownstreamCable ? passthroughFibreCount : spareEndOfLineFibreCount}F</div>
+              <small style={{ color: "#cbd5e1" }}>{hasJointMappedFibres ? `${allocatedElsewhereFibreCount}F allocated upstream / elsewhere` : draftRouting.hasDownstreamCable ? "Continuing to next asset" : "Unused fibres stop at this DP"}</small>
             </div>
           </div>
         </section>
@@ -925,13 +1069,15 @@ export default function DistributionPointEditor({
                 <div style={{ marginTop: 8 }}>
                   <strong style={{ color: selectedFibreColour?.colour }}>Fibre {selectedFibre} · {selectedFibreColour?.name}</strong>
                   <div style={{ color: "#cbd5e1", marginTop: 4, fontSize: 12 }}>
-                    {draftRouting.directFibres.includes(selectedFibre)
-                      ? `Direct output fibre to Port ${draftRouting.directFibres.indexOf(selectedFibre) + 1}.`
-                      : draftRouting.splitterFibres.includes(selectedFibre)
+                    {displayDirectFibres.includes(selectedFibre)
+                      ? `Direct output fibre to Port ${displayDirectFibres.indexOf(selectedFibre) + 1}.`
+                      : displaySplitterFibres.includes(selectedFibre)
                         ? "Spliced into splitter input."
                         : passthroughFibres.includes(selectedFibre)
-                          ? "Passing through to downstream cable."
-                          : "Spare fibre at end of line."}
+                          ? "Passing through downstream according to uploaded joint mapping."
+                          : jointAllocatedElsewhereFibres.includes(selectedFibre)
+                            ? "Allocated upstream / elsewhere according to uploaded joint mapping."
+                            : "True spare fibre at end of line."}
                   </div>
                 </div>
               ) : null}

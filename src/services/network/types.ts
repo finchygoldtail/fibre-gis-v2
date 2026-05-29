@@ -45,10 +45,32 @@ export type JointToDpFibreAssignment = {
   warnings: string[];
 };
 
+export type JointCableOccupancyAllocation = {
+  dpId: string;
+  dpName: string;
+  dpRef: string;
+  jointId: string;
+  jointName: string;
+  fibres: number[];
+  sourceCableRefs: string[];
+  targetCableRefs: string[];
+  confidence: JointToDpFibreConfidence;
+};
+
+export type JointCableOccupancyState = {
+  cableKey: string;
+  cableName: string;
+  highestAllocatedFibre: number;
+  allocatedFibres: number[];
+  allocationsByDpId: Record<string, JointCableOccupancyAllocation>;
+  allocations: JointCableOccupancyAllocation[];
+};
+
 export type JointToDpFibreMatchState = {
   scannedJoints: number;
   scannedRows: number;
   assignmentsByDpId: Record<string, JointToDpFibreAssignment>;
+  cableOccupancyByCable?: Record<string, JointCableOccupancyState>;
   unmatchedJointRefs: string[];
   duplicateDpRefs: string[];
   warnings: string[];
@@ -72,6 +94,13 @@ export type DpRoutingState = {
   consumedFibres: number[];
   usedFibres: number[];
   jointMatchedFibres?: number[];
+  jointPassthroughFibres?: number[];
+  jointAllocatedElsewhereFibres?: number[];
+  jointTrueSpareFibres?: number[];
+  jointHighestAllocatedFibre?: number;
+  jointCableKey?: string;
+  jointCableName?: string;
+  jointCableOccupancy?: JointCableOccupancyState;
   jointMatchSource?: string;
   jointMatch?: JointToDpFibreAssignment;
   warnings: string[];

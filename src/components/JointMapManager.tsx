@@ -7,6 +7,7 @@
 // =====================================================
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { collection, getDocs } from "firebase/firestore";
 import {
   MapContainer,
   TileLayer,
@@ -22,7 +23,7 @@ import type { LatLngLiteral } from "leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet-rotate";
-import { auth } from "../firebase";
+import { auth, db } from "../firebase";
 import { useAppMode } from "../context/AppModeContext";
 import AppModeSwitch from "./AppModeSwitch";
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
@@ -1225,6 +1226,44 @@ function normalizeMapAsset(asset: SavedMapAsset): SavedMapAsset {
   return copy as SavedMapAsset;
 }
 
+
+async function loadJointMappingRowsForMapAsset(jointId: string): Promise<any[][]> {
+  const chunksRef = collection(
+    db,
+    "businesses",
+    "fibre-gis-v2",
+    "jointMappings",
+    jointId,
+    "chunks",
+  );
+
+  const snapshot = await getDocs(chunksRef);
+
+  return snapshot.docs
+    .map((chunkDoc) => {
+      const data = chunkDoc.data() as any;
+      let rows: any[][] = [];
+
+      try {
+        rows = typeof data.rowsJson === "string" ? JSON.parse(data.rowsJson) : [];
+      } catch {
+        rows = [];
+      }
+
+      return {
+        id: chunkDoc.id,
+        index:
+          typeof data.chunkIndex === "number"
+            ? data.chunkIndex
+            : Number(String(chunkDoc.id).replace("chunk_", "")),
+        rows,
+      };
+    })
+    .sort((a, b) => a.index - b.index || a.id.localeCompare(b.id))
+    .flatMap((chunk) => (Array.isArray(chunk.rows) ? chunk.rows : []));
+}
+
+
 export default function JointMapManager({
   currentJointName,
   currentJointType,
@@ -1456,6 +1495,63 @@ export default function JointMapManager({
     [normalizedSavedJoints],
   );
 
+  const [jointMappingRowsById, setJointMappingRowsById] = useState<
+    Record<string, any[][]>
+  >({});
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const jointsWithExternalRows = operationalSavedJoints.filter((asset: any) =>
+      Boolean(asset.mappingRowsRef || asset.mappingRowsCount || asset.mappingRowsSummary?.rowCount),
+    );
+
+    if (jointsWithExternalRows.length === 0) {
+      setJointMappingRowsById({});
+      return;
+    }
+
+    Promise.all(
+      jointsWithExternalRows.map(async (asset: any) => {
+        try {
+          const rows = await loadJointMappingRowsForMapAsset(asset.id);
+          return [asset.id, rows] as const;
+        } catch (err) {
+          console.warn("Failed to hydrate joint mapping rows for map asset", asset?.name || asset?.id, err);
+          return [asset.id, []] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      setJointMappingRowsById(Object.fromEntries(entries));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [operationalSavedJoints]);
+
+  const hydratedOperationalSavedJoints = useMemo(
+    () =>
+      operationalSavedJoints.map((asset: any) => {
+        const externalRows = jointMappingRowsById[asset.id];
+        if (!Array.isArray(externalRows) || externalRows.length === 0) {
+          return asset;
+        }
+
+        return {
+          ...asset,
+          mappingRows: externalRows,
+          mappingRowsCount: externalRows.length,
+          mappingRowsSummary: {
+            ...(asset.mappingRowsSummary || {}),
+            rowCount: externalRows.length,
+          },
+        } as SavedMapAsset;
+      }),
+    [operationalSavedJoints, jointMappingRowsById],
+  );
+
   const legacyOpenreachAssets = useMemo(
     () => normalizedSavedJoints.filter(isOpenreachReferenceAsset).map(normaliseOpenreachAsset),
     [normalizedSavedJoints],
@@ -1675,10 +1771,10 @@ export default function JointMapManager({
 
   const allMapAssets = useMemo(() => {
     const byId = new Map<string, SavedMapAsset>();
-    operationalSavedJoints.forEach((asset) => byId.set(asset.id, asset));
+    hydratedOperationalSavedJoints.forEach((asset) => byId.set(asset.id, asset));
     normalizedProjectHomes.forEach((asset) => byId.set(asset.id, asset));
     return Array.from(byId.values());
-  }, [operationalSavedJoints, normalizedProjectHomes]);
+  }, [hydratedOperationalSavedJoints, normalizedProjectHomes]);
 
   const currentEditingAsset = useMemo(
     () => allMapAssets.find((asset) => asset.id === editingAssetId) || null,
@@ -3072,7 +3168,14 @@ export default function JointMapManager({
                   ? "Home"
                   : jointType,
       notes: notes.trim(),
-      mappingRows: [],
+      mappingRows: assetType === "ag-joint" ? currentMappingRows : [],
+      mappingRowsCount: assetType === "ag-joint" ? currentMappingRows.length : undefined,
+      ...(assetType === "ag-joint" && currentMappingRows.length > 0
+        ? {
+            mappingRowsRef: false,
+            mappingRowsSummary: { rowCount: currentMappingRows.length },
+          }
+        : {}),
       ...(assetType === "distribution-point"
         ? {
             status: getDpOperationalStatus({ dpDetails: nextDpDetails }),
@@ -5650,6 +5753,11 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
             lng: homePoints.reduce((sum, point) => sum + point.lng, 0) / homePoints.length,
           };
 
+      const splitterRatio = String((existingSplitter as any)?.dpDetails?.splitterRatio || (existingSplitter as any)?.splitterRatio || "1:8");
+      const splitterPortsMatch = splitterRatio.match(/1\s*:\s*(\d+)/i);
+      const splitterPorts = splitterPortsMatch ? Number(splitterPortsMatch[1]) : 8;
+      const splitterCount = Math.max(1, Math.ceil(matchedHomes.length / (Number.isFinite(splitterPorts) && splitterPorts > 0 ? splitterPorts : 8)));
+
       const splitterAsset = markAssetForLiveSync(
         withAssetEditedMetadata(
           {
@@ -5674,6 +5782,10 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
               closureType: ((existingSplitter as any)?.dpDetails?.closureType || "CBT") as any,
               connectionsToHomes: matchedHomes.length,
               connectedHomes: matchedHomes.length,
+              splitterRatio,
+              splitterCount,
+              inputFibreCount: splitterCount,
+              inputFibresRequired: splitterCount,
               buildStatus: getDpOperationalStatus(existingSplitter || {}, "Planned"),
               addressSheetAssignment: {
                 source: "address-sheet",
@@ -5685,6 +5797,10 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
             properties: {
               ...((existingSplitter as any)?.properties || {}),
               splitterBox,
+              splitterRatio,
+              splitterCount,
+              inputFibreCount: splitterCount,
+              inputFibresRequired: splitterCount,
               addressSheetAssignment: {
                 source: "address-sheet",
                 splitterBox,
