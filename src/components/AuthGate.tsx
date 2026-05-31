@@ -3,6 +3,14 @@
 // PURPOSE: Authentication shell + providers
 // =====================================================
 
+/**
+ * Alistra GIS
+ * Copyright © 2026 Alistra GIS. All Rights Reserved.
+ *
+ * Unauthorized copying, modification, distribution,
+ * reverse engineering, resale, or commercial use is prohibited.
+ */
+
 import React, { useEffect, useState } from "react";
 import {
   createUserWithEmailAndPassword,
@@ -136,10 +144,10 @@ export default function AuthGate({ children }: Props) {
     <div style={screen}>
       <div style={card}>
         <img
-          src="/alistra-logo.png"
-          alt="Alistra GIS"
-          style={logo}
-        />
+  src="/Alistra GIS Logo.png"
+  alt="Alistra GIS"
+  style={logo}
+/>
 
         <h1 style={{ margin: "0 0 6px" }}>
           Alistra GIS
@@ -209,6 +217,12 @@ export default function AuthGate({ children }: Props) {
           </div>
         )}
       </div>
+
+      <div style={copyrightFooter}>
+        <div>Alistra GIS v1.0.0</div>
+        <div>© 2026 Alistra GIS. All Rights Reserved.</div>
+        <div>Confidential &amp; Proprietary Software</div>
+      </div>
     </div>
   );
 }
@@ -224,6 +238,7 @@ const screen: React.CSSProperties = {
   placeItems: "center",
   background: "#020617",
   color: "white",
+  position: "relative",
 };
 
 const card: React.CSSProperties = {
@@ -274,4 +289,17 @@ const errorText: React.CSSProperties = {
   color: "#fca5a5",
   fontSize: 13,
   marginTop: 10,
+};
+
+const copyrightFooter: React.CSSProperties = {
+  position: "fixed",
+  bottom: 12,
+  left: "50%",
+  transform: "translateX(-50%)",
+  textAlign: "center",
+  color: "#6b7280",
+  fontSize: 12,
+  lineHeight: 1.4,
+  pointerEvents: "none",
+  userSelect: "none",
 };
