@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { storage } from "../../../firebase";
 import type { DistributionPointDetails, SavedMapAsset } from "../types";
+import { buildNetworkState } from "../../../services/network";
 
 type ConnectedHome = {
   port: number;
@@ -35,6 +36,43 @@ type Props = {
 
 function safeFileName(name: string) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function text(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function normaliseRef(value: unknown): string {
+  return text(value)
+    .toUpperCase()
+    .replace(/[–—]/g, "-")
+    .replace(/[^A-Z0-9]/g, "");
+}
+
+function refsMatch(a: unknown, b: unknown): boolean {
+  const left = normaliseRef(a);
+  const right = normaliseRef(b);
+  if (!left || !right) return false;
+  return left === right || left.includes(right) || right.includes(left);
+}
+
+function uniqueSortedNumbers(values: unknown[]): number[] {
+  return Array.from(
+    new Set(values.map((value) => Number(value)).filter(Number.isFinite)),
+  ).sort((a, b) => a - b);
+}
+
+function getAssetIdentityKeys(asset: any): string[] {
+  return [
+    asset?.id,
+    asset?.assetId,
+    asset?.name,
+    asset?.jointName,
+    asset?.label,
+    asset?.dpId,
+  ]
+    .map((value) => text(value))
+    .filter(Boolean);
 }
 
 async function uploadAssetFile(assetFolder: string, file: File) {
@@ -76,7 +114,6 @@ export default function DistributionPointDetailsModal({
     return URL.createObjectURL(selectedImage);
   }, [selectedImage, details.image]);
 
-  if (!visible) return null;
 
   const update = (key: keyof DistributionPointDetails, value: any) => {
     onChange({ ...details, [key]: value });
@@ -97,11 +134,59 @@ export default function DistributionPointDetailsModal({
   const selectedCable = availableThroughCables.find(
     (cable) => cable.id === selectedCableId,
   );
-  const currentInputFibres = details.afnDetails?.inputFibres || [];
+  const currentInputFibres = uniqueSortedNumbers(
+    details.afnDetails?.inputFibres || [],
+  );
+
+  const activeDpId = editingAssetId || currentDpId;
+  const activeDpAsset = useMemo(() => {
+    const lookupKeys = [activeDpId, name].map(normaliseRef).filter(Boolean);
+
+    return (
+      [...allDistributionPoints, ...allAssets].find((asset: any) => {
+        const keys = getAssetIdentityKeys(asset).map(normaliseRef);
+        return keys.some((key) => lookupKeys.some((lookup) => refsMatch(key, lookup)));
+      }) || null
+    );
+  }, [activeDpId, allAssets, allDistributionPoints, name]);
+
+  const networkState = useMemo(
+    () => buildNetworkState(allAssets as any),
+    [allAssets],
+  );
+
+  const jointMatchedDpState = useMemo(() => {
+    const lookupKeys = [
+      activeDpId,
+      name,
+      ...(activeDpAsset ? getAssetIdentityKeys(activeDpAsset as any) : []),
+    ].filter(Boolean);
+
+    const direct = activeDpId
+      ? (networkState.dpStates || {})[activeDpId]
+      : null;
+    if (direct) return direct as any;
+
+    return (
+      Object.values(networkState.dpStates || {}).find((state: any) =>
+        lookupKeys.some((key) => refsMatch(state.assetId || state.assetName, key)),
+      ) || null
+    ) as any;
+  }, [activeDpAsset, activeDpId, name, networkState]);
+
+  const jointMappedInputFibres = uniqueSortedNumbers([
+    ...(((jointMatchedDpState as any)?.jointMatchedFibres || []) as any[]),
+    ...(((jointMatchedDpState as any)?.jointMatch?.fibres || []) as any[]),
+  ]);
+
+  const hasJointMappedFibres = jointMappedInputFibres.length > 0;
+  const effectiveInputFibres = hasJointMappedFibres
+    ? jointMappedInputFibres
+    : currentInputFibres;
 
   const capacity =
     details.closureType === "AFN"
-      ? currentInputFibres.length * 8
+      ? effectiveInputFibres.length * 8
       : Number(details.connectionsToHomes || 0);
   const used = connectedHomes.length;
   const available = Math.max(0, capacity - used);
@@ -114,10 +199,11 @@ export default function DistributionPointDetailsModal({
         : operationalCapacityPercent >= 80
           ? "Near capacity"
           : "Capacity OK";
-  const activeDpId = editingAssetId || currentDpId;
   const availableMoveTargets = allDistributionPoints.filter(
     (dp) => dp.id !== activeDpId,
   );
+
+  if (!visible) return null;
 
   function getCableFibreTotal(cable?: SavedMapAsset): number {
     const raw = String(cable?.fibreCount || "");
@@ -126,7 +212,7 @@ export default function DistributionPointDetailsModal({
   }
 
   const fibreTotal = getCableFibreTotal(selectedCable);
-  const selectedInputFibreCount = currentInputFibres.length;
+  const selectedInputFibreCount = effectiveInputFibres.length;
   const passthroughFibreCount = selectedCable ? Math.max(fibreTotal - selectedInputFibreCount, 0) : 0;
 
   const usedByOtherAfns = new Set<number>();
@@ -179,6 +265,7 @@ export default function DistributionPointDetailsModal({
   }
 
   function toggleFibre(fibre: number) {
+    if (hasJointMappedFibres) return;
     const selectedHere = currentInputFibres.includes(fibre);
 
     let nextFibres: number[];
@@ -186,7 +273,6 @@ export default function DistributionPointDetailsModal({
     if (selectedHere) {
       nextFibres = currentInputFibres.filter((item) => item !== fibre);
     } else {
-      if (currentInputFibres.length >= 4) return;
       if (usedByOtherAfns.has(fibre)) return;
       nextFibres = [...currentInputFibres, fibre].sort((a, b) => a - b);
     }
@@ -305,9 +391,9 @@ export default function DistributionPointDetailsModal({
           <div className="afn-panel">
             <strong>AFN loop-through splitter</strong>
             <span>
-              Select a through cable, then allocate up to 4 fibres from that
-              pole-to-pole spine. Fibres already used by other AFNs on the same
-              cable are disabled.
+              Select a through cable, then allocate the fibres feeding this
+              AFN. Each selected fibre gives 8 splitter outputs. Fibres already
+              used by other AFNs on the same cable are disabled.
             </span>
 
             <label>Through Cable</label>
@@ -343,15 +429,15 @@ export default function DistributionPointDetailsModal({
               <>
                 <div className="afn-grid-header">
                   <span>Input fibres</span>
-                  <em>{currentInputFibres.length}/4 selected</em>
+                  <em>{effectiveInputFibres.length} selected · {capacity || 0} outputs</em>
                 </div>
 
                 <div className="afn-fibre-buttons">
                   {Array.from({ length: fibreTotal }, (_, index) => {
                     const fibre = index + 1;
-                    const selectedHere = currentInputFibres.includes(fibre);
+                    const selectedHere = effectiveInputFibres.includes(fibre);
                     const usedElsewhere = usedByOtherAfns.has(fibre);
-                    const disabled = usedElsewhere && !selectedHere;
+                    const disabled = hasJointMappedFibres || (usedElsewhere && !selectedHere);
 
                     return (
                       <button
@@ -366,11 +452,13 @@ export default function DistributionPointDetailsModal({
                           .join(" ")
                           .trim()}
                         title={
-                          disabled
-                            ? "Already used by another AFN on this through cable"
-                            : selectedHere
-                              ? "Click to unallocate this fibre"
-                              : "Click to allocate this fibre"
+                          hasJointMappedFibres
+                            ? "Locked from uploaded joint continuity"
+                            : usedElsewhere && !selectedHere
+                              ? "Already used by another AFN on this through cable"
+                              : selectedHere
+                                ? "Click to unallocate this fibre"
+                                : "Click to allocate this fibre"
                         }
                         onClick={() => toggleFibre(fibre)}
                       >
@@ -387,9 +475,15 @@ export default function DistributionPointDetailsModal({
             )}
 
             <div className="afn-summary">
-              Fibres selected: {currentInputFibres.join(", ") || "none"}
+              Fibres selected: {effectiveInputFibres.join(", ") || "none"}
               <br />
               Splitter: 1:8 / 8 outputs
+              {hasJointMappedFibres ? (
+                <>
+                  <br />
+                  Source: uploaded joint continuity / CMJ-AG mapping
+                </>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -503,11 +597,16 @@ export default function DistributionPointDetailsModal({
           disabled={details.closureType === "AFN"}
           onChange={(e) => update("connectionsToHomes", Number(e.target.value))}
         >
-          {details.closureType === "AFN" ? <option value={0}>0</option> : null}
+          {details.closureType === "AFN" ? (
+            <option value={capacity}>{capacity} from selected AFN fibres</option>
+          ) : null}
           <option value={8}>8</option>
           <option value={16}>16</option>
           <option value={24}>24</option>
           <option value={32}>32</option>
+          <option value={48}>48</option>
+          <option value={64}>64</option>
+          <option value={80}>80</option>
         </select>
 
         <div className="afn-summary">

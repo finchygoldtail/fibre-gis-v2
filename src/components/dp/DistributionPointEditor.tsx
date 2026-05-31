@@ -232,6 +232,8 @@ function getFibreCountFromCable(
 }
 
 function isHome(asset: SavedMapAsset): boolean {
+  if (!asset || asset.geometry?.type === "LineString" || isDropCable(asset)) return false;
+
   const item = asset as any;
   const haystack = [
     item.assetType,
@@ -304,6 +306,42 @@ function homeKey(asset: any): string {
   ).toLowerCase();
 }
 
+function getHomeIdentityKey(asset: any, fallback = ""): string {
+  const explicit = text(
+    asset?.uprn ||
+      asset?.UPRN ||
+      asset?.properties?.UPRN ||
+      asset?.properties?.uprn ||
+      asset?.homeId ||
+      asset?.connectedHomeId ||
+      asset?.toHomeId ||
+      asset?.toAssetId ||
+      asset?.address ||
+      asset?.fullAddress ||
+      "",
+  );
+
+  if (explicit) return normaliseRef(explicit);
+
+  const nameText = text(asset?.name || asset?.label || asset?.cableName || "");
+  const uprnMatch =
+    nameText.match(/UPRN\s*([A-Z0-9]+)/i) ||
+    nameText.match(/→\s*UPRN\s*([A-Z0-9]+)/i);
+
+  if (uprnMatch?.[1]) return normaliseRef(uprnMatch[1]);
+
+  const raw = text(
+    asset?.fromHomeId ||
+      asset?.fromAssetId ||
+      asset?.id ||
+      asset?.assetId ||
+      nameText ||
+      fallback,
+  );
+
+  return normaliseRef(raw) || text(fallback).toLowerCase();
+}
+
 function cableName(asset: SavedMapAsset | null | undefined): string {
   const item = asset as any;
   return text(
@@ -344,17 +382,24 @@ function getConnectedHomes(
   allAssets: SavedMapAsset[],
 ): ConnectedHomeRow[] {
   const dpLookup = new Set(assetKeys(dp));
-  const homes = allAssets.filter(isHome);
   const drops = getDropCablesForDp(dp, allAssets);
-  const homeKeysFromDrops = new Set<string>();
+  const rowsByHomeKey = new Map<string, ConnectedHomeRow>();
 
-  drops.forEach((drop: any) => {
-    const key = homeKey(drop);
+  const addRow = (row: ConnectedHomeRow, key: string) => {
+    const safeKey = getHomeIdentityKey(row, key);
+    if (!safeKey || rowsByHomeKey.has(safeKey)) return;
+    rowsByHomeKey.set(safeKey, row);
+  };
+
+  const homeKeysFromDrops = new Set<string>();
+  drops.forEach((drop: any, index) => {
+    const key = getHomeIdentityKey(drop, `drop-${index}`);
     if (key) homeKeysFromDrops.add(key);
   });
 
-  return homes
-    .filter((home: any) => {
+  allAssets
+    .filter((candidate) => isHome(candidate))
+    .forEach((home: any, index) => {
       const directDpKeys = [
         home.dpId,
         home.connectedDpId,
@@ -364,43 +409,105 @@ function getConnectedHomes(
         .map((value) => text(value).toLowerCase())
         .filter(Boolean);
 
-      if (directDpKeys.some((key) => dpLookup.has(key))) return true;
+      const linkedDirectly = directDpKeys.some((key) => dpLookup.has(key));
+      const homeIdentity = getHomeIdentityKey(home, `home-${index}`);
+      const linkedByDrop = homeIdentity ? homeKeysFromDrops.has(homeIdentity) : false;
 
-      const keys = [
-        homeKey(home),
-        text(home.id).toLowerCase(),
-        text(home.assetId).toLowerCase(),
-      ].filter(Boolean);
-      return keys.some((key) => homeKeysFromDrops.has(key));
-    })
-    .map((home: any, index) => ({
-      id: text(home.id || home.assetId || home.uprn || home.UPRN || index),
-      name: text(
-        home.name ||
-          home.address ||
-          home.uprn ||
-          home.UPRN ||
-          home.id ||
-          `Home ${index + 1}`,
-      ),
-      status: text(
-        home.status ||
-          home.serviceStatus ||
-          home.connectionStatus ||
-          (home.connectedDpId ? "Connected" : "Planned"),
-      ),
-      port: home.port || home.dpPort || index + 1,
-      dpId: text(home.dpId || home.connectedDpId || home.connectedDP),
-    }));
+      if (!linkedDirectly && !linkedByDrop) return;
+
+      addRow(
+        {
+          id: text(home.id || home.assetId || home.uprn || home.UPRN || homeIdentity || index),
+          name: text(
+            home.name ||
+              home.address ||
+              home.fullAddress ||
+              home.uprn ||
+              home.UPRN ||
+              home.id ||
+              `Home ${rowsByHomeKey.size + 1}`,
+          ),
+          status: text(
+            home.status ||
+              home.serviceStatus ||
+              home.connectionStatus ||
+              (home.connectedDpId || home.dpId ? "Connected" : "Planned"),
+          ),
+          port: home.port || home.dpPort || rowsByHomeKey.size + 1,
+          dpId: text(home.dpId || home.connectedDpId || home.connectedDP),
+        },
+        homeIdentity,
+      );
+    });
+
+  // Some imported builds only have generated drop cables in the scoped workspace,
+  // not separate home point assets. In that case, use the drops as a safe fallback
+  // for served-home rows while still deduping by UPRN/home reference.
+  drops.forEach((drop: any, index) => {
+    const key = getHomeIdentityKey(drop, `drop-${index}`);
+    addRow(
+      {
+        id: text(
+          drop.homeId ||
+            drop.connectedHomeId ||
+            drop.toHomeId ||
+            drop.toAssetId ||
+            drop.uprn ||
+            drop.UPRN ||
+            key ||
+            index,
+        ),
+        name: text(
+          drop.homeName ||
+            drop.connectedHomeName ||
+            drop.address ||
+            drop.uprn ||
+            drop.UPRN ||
+            drop.name ||
+            `Home ${rowsByHomeKey.size + 1}`,
+        ),
+        status: text(drop.homeStatus || drop.customerStatus || drop.status || "Connected"),
+        port: drop.port || drop.dpPort || index + 1,
+        dpId: text(drop.dpId || drop.fromAssetId || drop.connectedDpId || drop.parentDpId),
+      },
+      key,
+    );
+  });
+
+  return Array.from(rowsByHomeKey.values()).sort(
+    (a, b) => Number(a.port || 0) - Number(b.port || 0),
+  );
 }
 
-function getCapacity(asset: SavedMapAsset | null, connectedHomeCount: number) {
+function getCapacity(
+  asset: SavedMapAsset | null,
+  connectedHomeCount: number,
+  splitterInputCount = 0,
+  splitterOutputsPerInput = 8,
+) {
   const item = asset as any;
   const details = getDpDetails(asset);
   const closure = getClosureType(asset);
-  const inputFibres = Array.isArray(details.afnDetails?.inputFibres)
-    ? details.afnDetails.inputFibres
-    : [];
+  const afnDetails = details.afnDetails || {};
+  const mduDetails = details.mduDetails || {};
+
+  const storedInputFibres = Array.isArray(afnDetails.inputFibres)
+    ? afnDetails.inputFibres
+    : Array.isArray(mduDetails.inputFibres)
+      ? mduDetails.inputFibres
+      : [];
+
+  const inputCount = Math.max(
+    splitterInputCount,
+    storedInputFibres.map(Number).filter(Number.isFinite).length,
+  );
+
+  const outputsPerInput =
+    Number.isFinite(splitterOutputsPerInput) && splitterOutputsPerInput > 0
+      ? splitterOutputsPerInput
+      : 8;
+
+  const splitterCapacity = inputCount > 0 ? inputCount * outputsPerInput : 0;
 
   const explicitCapacity = Number(
     item?.capacity ||
@@ -411,24 +518,23 @@ function getCapacity(asset: SavedMapAsset | null, connectedHomeCount: number) {
       0,
   );
 
-  const capacity =
+  const baseCapacity =
     Number.isFinite(explicitCapacity) && explicitCapacity > 0
       ? explicitCapacity
       : closure.includes("CBT")
         ? 12
         : closure.includes("AFN")
-          ? Math.max(inputFibres.length * 8, connectedHomeCount, 8)
+          ? 8
           : closure.includes("MDU")
-            ? Math.max(
-                Number(details.connectionsToHomes || 0),
-                connectedHomeCount,
-                1,
-              )
-            : Math.max(
-                Number(details.connectionsToHomes || 0),
-                connectedHomeCount,
-                0,
-              );
+            ? Math.max(Number(details.connectionsToHomes || 0), 1)
+            : Number(details.connectionsToHomes || 0);
+
+  const capacity = Math.max(
+    baseCapacity,
+    splitterCapacity,
+    connectedHomeCount,
+    closure.includes("AFN") && inputCount > 0 ? 8 : 0,
+  );
 
   const used = Math.max(
     connectedHomeCount,
@@ -637,10 +743,14 @@ function buildPortRoutes(args: {
     },
   );
 
+  // Keep the visual port map to the actual DP/SB output capacity.
+  // Do not let every generated drop cable inflate this to 72/80/etc.
+  // Served homes/drops are shown on the right, but the splitter view should
+  // only draw the ports produced by the selected fibres in this SB.
+  const designedOutputCount = directRoutes.length + splitterRoutes.length;
   const outputCount = Math.max(
-    directRoutes.length + splitterRoutes.length,
+    designedOutputCount,
     connectedHomes.length,
-    dropCables.length,
     1,
   );
   const routes = [...directRoutes, ...splitterRoutes];
@@ -729,11 +839,6 @@ export default function DistributionPointEditor({
     );
   }, [asset, computedNetworkState]);
 
-  const capacity = useMemo(
-    () => getCapacity(asset, connectedHomes.length),
-    [asset, connectedHomes.length],
-  );
-
   const siblingDps = useMemo(() => {
     if (!asset) return [];
 
@@ -798,7 +903,13 @@ export default function DistributionPointEditor({
       : closureType.includes("MDU")
         ? "MDU"
         : "CBT");
-  const splitterOutputsPerFibre = Number(afnDetails.splitterOutputs || 8);
+  const rawSplitterOutputs = Number(afnDetails.splitterOutputs || 8);
+  const splitterOutputsPerFibre =
+    splitterRatio === "1:8" || closureType.includes("AFN")
+      ? 8
+      : Number.isFinite(rawSplitterOutputs) && rawSplitterOutputs > 0
+        ? rawSplitterOutputs
+        : 8;
   const throughCableId =
     afnDetails.throughCableId ||
     mduDetails.throughCableId ||
@@ -832,6 +943,13 @@ export default function DistributionPointEditor({
     ...displaySplitterFibres,
     ...displayDirectFibres,
   ]);
+
+  const capacity = getCapacity(
+    asset,
+    connectedHomes.length,
+    displaySplitterFibres.length + displayDirectFibres.length,
+    splitterOutputsPerFibre,
+  );
 
   const throughCableRefs = [
     throughCableId,
@@ -2467,7 +2585,7 @@ function FibreSpliceDiagram({
           return (
             <path
               key={`splitter-${route.port}`}
-              d={`M 545 ${splitterY} C 610 ${splitterY}, 640 ${y}, 710 ${y}`}
+              d={`M 545 ${splitterY} C 600 ${splitterY}, 620 ${y}, 665 ${y}`}
               fill="none"
               stroke="#22c55e"
               strokeWidth={selectedPort === route.port ? 5 : 3}
@@ -2602,7 +2720,7 @@ function FibreSpliceDiagram({
         </span>
       </button>
 
-      <div style={{ position: "absolute", right: 18, top: 18, width: 340 }}>
+      <div style={{ position: "absolute", right: 20, top: 18, width: 292 }}>
         <div style={smallLabelStyle()}>Output Ports ({portRoutes.length})</div>
         <div style={{ display: "grid", gap: 7, marginTop: 10 }}>
           {portRoutes.slice(0, 8).map((route) => {
@@ -2614,7 +2732,7 @@ function FibreSpliceDiagram({
                 onClick={() => onSelectPort(route.port)}
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "90px 1fr",
+                  gridTemplateColumns: "78px 1fr",
                   alignItems: "center",
                   gap: 10,
                   background: active
@@ -2624,7 +2742,7 @@ function FibreSpliceDiagram({
                     ? "2px solid #38bdf8"
                     : "1px solid rgba(148,163,184,0.18)",
                   borderRadius: 10,
-                  padding: "9px 10px",
+                  padding: "9px 9px",
                   color: "#f8fafc",
                   cursor: "pointer",
                   textAlign: "left",
