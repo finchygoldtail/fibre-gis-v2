@@ -160,6 +160,59 @@ function getOperationalStatus(asset: SavedMapAsset | null): string {
   );
 }
 
+function getSbSortNumber(asset: SavedMapAsset | null | undefined): number | null {
+  const title = getAssetTitle(asset || null);
+  const match = title.match(/\bSB\s*0*(\d+)\b/i) || title.match(/SB0*(\d+)/i);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function getSbRunPrefix(asset: SavedMapAsset | null | undefined): string {
+  const title = getAssetTitle(asset || null).toUpperCase();
+  const match = title.match(/^(.*?)-?SB\s*0*\d+\b/i);
+  if (match?.[1]) return normaliseRef(match[1]);
+  return normaliseRef(title.replace(/SB\s*0*\d+.*$/i, ""));
+}
+
+function isNavigableDistributionPoint(asset: SavedMapAsset | null | undefined): boolean {
+  if (!asset) return false;
+  const title = getAssetTitle(asset).toUpperCase();
+  const closure = getClosureType(asset);
+  const item = asset as any;
+
+  // Navigation must only step between real DP / AFN / CBT / MDU assets.
+  // Drop cables include names like "SB01 Drop → UPRN", so a simple SB01
+  // name match incorrectly jumps into a drop cable. Exclude line/drop/home assets
+  // before checking SB naming.
+  if (isDropCable(asset) || isHome(asset)) return false;
+  if (asset.geometry?.type === "LineString") return false;
+
+  const haystack = [
+    title,
+    closure,
+    item?.assetType,
+    item?.type,
+    item?.dpType,
+    item?.distributionPointType,
+    item?.jointType,
+    item?.closureType,
+  ]
+    .map(text)
+    .join(" ")
+    .toUpperCase();
+
+  const looksLikeDp =
+    haystack.includes("AFN") ||
+    haystack.includes("CBT") ||
+    haystack.includes("MDU") ||
+    haystack.includes("DISTRIBUTION");
+
+  const hasSbName = /\bSB\s*0*\d+\b/i.test(title) || /SB0*\d+/i.test(title);
+
+  return looksLikeDp || hasSbName;
+}
+
 function getFibreCountFromCable(
   asset: SavedMapAsset | null | undefined,
 ): number {
@@ -607,20 +660,25 @@ function buildPortRoutes(args: {
 }
 
 export default function DistributionPointEditor({
-  asset,
+  asset: incomingAsset,
   allAssets = [],
   onClose,
   onOpenTopology,
   onSaveRouting,
 }: Props) {
+  const [asset, setEditorAsset] = useState<SavedMapAsset | null>(incomingAsset);
   const [selectedFibre, setSelectedFibre] = useState<number | null>(null);
   const [selectedPort, setSelectedPort] = useState<number | null>(null);
   const [activeFibreView, setActiveFibreView] =
     useState<FibreViewMode>("splitter");
   const [editMode, setEditMode] = useState(false);
   const [draftRouting, setDraftRouting] = useState<DraftRouting>(() =>
-    buildInitialDraft(asset),
+    buildInitialDraft(incomingAsset),
   );
+
+  useEffect(() => {
+    setEditorAsset(incomingAsset);
+  }, [incomingAsset?.id]);
 
   useEffect(() => {
     setDraftRouting(buildInitialDraft(asset));
@@ -675,6 +733,56 @@ export default function DistributionPointEditor({
     () => getCapacity(asset, connectedHomes.length),
     [asset, connectedHomes.length],
   );
+
+  const siblingDps = useMemo(() => {
+    if (!asset) return [];
+
+    const currentPrefix = getSbRunPrefix(asset);
+    const currentHasSbNumber = getSbSortNumber(asset) !== null;
+
+    return allAssets
+      .filter(isNavigableDistributionPoint)
+      .filter((candidate) => {
+        if (!currentHasSbNumber) return true;
+        const candidateNumber = getSbSortNumber(candidate);
+        if (candidateNumber === null) return false;
+        return getSbRunPrefix(candidate) === currentPrefix;
+      })
+      .sort((left, right) => {
+        const leftPrefix = getSbRunPrefix(left);
+        const rightPrefix = getSbRunPrefix(right);
+        if (leftPrefix !== rightPrefix) return leftPrefix.localeCompare(rightPrefix);
+
+        const leftNumber = getSbSortNumber(left);
+        const rightNumber = getSbSortNumber(right);
+        if (leftNumber !== null && rightNumber !== null) return leftNumber - rightNumber;
+
+        return getAssetTitle(left).localeCompare(getAssetTitle(right));
+      });
+  }, [allAssets, asset]);
+
+  const currentSiblingIndex = useMemo(() => {
+    if (!asset) return -1;
+    const currentKeys = new Set(assetKeys(asset));
+    return siblingDps.findIndex((candidate) =>
+      assetKeys(candidate).some((key) => currentKeys.has(key)),
+    );
+  }, [asset, siblingDps]);
+
+  const previousSiblingDp = currentSiblingIndex > 0 ? siblingDps[currentSiblingIndex - 1] : null;
+  const nextSiblingDp =
+    currentSiblingIndex >= 0 && currentSiblingIndex < siblingDps.length - 1
+      ? siblingDps[currentSiblingIndex + 1]
+      : null;
+
+  const navigateToSiblingDp = (nextAsset: SavedMapAsset | null) => {
+    if (!nextAsset) return;
+    setEditorAsset(nextAsset);
+    setSelectedFibre(null);
+    setSelectedPort(null);
+    setActiveFibreView("splitter");
+    setEditMode(false);
+  };
 
   if (!asset) return null;
 
@@ -1030,6 +1138,32 @@ export default function DistributionPointEditor({
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button
+            type="button"
+            disabled={!previousSiblingDp}
+            onClick={() => navigateToSiblingDp(previousSiblingDp)}
+            title={
+              previousSiblingDp
+                ? `Open ${getAssetTitle(previousSiblingDp)}`
+                : "No previous SB in this run"
+            }
+            style={buttonStyle("#132640", !previousSiblingDp)}
+          >
+            ← Previous SB
+          </button>
+          <button
+            type="button"
+            disabled={!nextSiblingDp}
+            onClick={() => navigateToSiblingDp(nextSiblingDp)}
+            title={
+              nextSiblingDp
+                ? `Open ${getAssetTitle(nextSiblingDp)}`
+                : "No next SB in this run"
+            }
+            style={buttonStyle("#132640", !nextSiblingDp)}
+          >
+            Next SB →
+          </button>
           {onOpenTopology ? (
             <button
               type="button"
