@@ -35,6 +35,7 @@ type Props = {
   onExport?: () => void;
   onBackToMap?: () => void;
   onResolveDuplicateHomes?: (request: any) => void;
+  onAutoSpreadStackedHomes?: () => void | Promise<void>;
   onApplyAddressSheetAssignments?: (request: any) => void | Promise<void>;
 };
 
@@ -77,6 +78,7 @@ export default function WorkspaceBuild({
   onOpenJointEditor,
   onBackToMap,
   onResolveDuplicateHomes,
+  onAutoSpreadStackedHomes,
   onApplyAddressSheetAssignments,
 }: Props) {
   const canonicalHomesPassed = Number(stats?.rolloutKpis?.homesPassed ?? stats?.homesPassed ?? 0);
@@ -137,6 +139,30 @@ export default function WorkspaceBuild({
       }}
       onResolveDuplicateHomes={onResolveDuplicateHomes}
     />
+
+    <section style={wide}>
+      <h3 style={title}>Stacked Home Tools</h3>
+      <p style={{ color: "#cbd5e1", marginTop: 0 }}>
+        Automatically spreads homes stacked within 1.75m. No homes are deleted,
+        UPRNs are preserved and the current project homes are saved back to the area.
+      </p>
+      <button
+        type="button"
+        style={{
+          ...button,
+          background: "#065f46",
+          borderColor: "rgba(52,211,153,0.35)",
+        }}
+        onClick={onAutoSpreadStackedHomes}
+        disabled={!onAutoSpreadStackedHomes}
+      >
+        Auto Spread All Stacked Homes
+      </button>
+      <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 8 }}>
+        Keeps the first home in each stack in place and moves the others into a small
+        2.5m circle so they can be selected and connected individually.
+      </div>
+    </section>
 
     <LiveHomesControl
       projectAssets={projectAssets}

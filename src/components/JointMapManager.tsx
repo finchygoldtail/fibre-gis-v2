@@ -1795,11 +1795,19 @@ export default function JointMapManager({
     let cancelled = false;
 
     const fetchProjectHomes = async () => {
-      if (!activeProjectId || !visibleLayers.homes) {
-        setProjectHomes([]);
-        setLoadedHomesProjectId(null);
-        return;
-      }
+      // PERFORMANCE GUARD:
+      // Never auto-load project homes on the global map.
+      // Global map must stay a lightweight network overview; homes are loaded
+      // only inside the selected Project Workspace or by an explicit import/load action.
+      const shouldLoadHomesForSelectedProject =
+  Boolean(activeProjectId) &&
+  (visibleLayers.homes || isProjectWorkspaceOpen);
+
+if (!shouldLoadHomesForSelectedProject) {
+  setProjectHomes([]);
+  setLoadedHomesProjectId(null);
+  return;
+}
 
       if (loadedHomesProjectId === activeProjectId) return;
 
@@ -1822,7 +1830,7 @@ export default function JointMapManager({
     return () => {
       cancelled = true;
     };
-  }, [activeProjectId, visibleLayers.homes, loadedHomesProjectId]);
+  }, [activeProjectId, isProjectWorkspaceOpen, visibleLayers.homes, loadedHomesProjectId]);
 
   const mapCenter = useMemo<[number, number]>(() => {
     if (pickedLocation) return [pickedLocation.lat, pickedLocation.lng];
@@ -5997,6 +6005,164 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
   // This prevents map pane/marker position errors while the
   // project workspace is loading or open.
   // =====================================================
+
+  const handleAutoSpreadStackedHomes = async () => {
+    if (!activeProjectId) {
+      alert("Select/open a project area before auto-spreading homes.");
+      return;
+    }
+
+    const getPointForHome = (asset: SavedMapAsset): { lat: number; lng: number } | null => {
+      const item = asset as any;
+
+      if (typeof item.lat === "number" && typeof item.lng === "number") {
+        return { lat: item.lat, lng: item.lng };
+      }
+
+      if (asset.geometry?.type === "Point" && Array.isArray(asset.geometry.coordinates)) {
+        const [lat, lng] = asset.geometry.coordinates as any[];
+        const nextLat = Number(lat);
+        const nextLng = Number(lng);
+        if (Number.isFinite(nextLat) && Number.isFinite(nextLng)) {
+          return { lat: nextLat, lng: nextLng };
+        }
+      }
+
+      return null;
+    };
+
+    const isSpreadHomeAsset = (asset: SavedMapAsset | null | undefined): boolean => {
+      if (!asset || asset.geometry?.type === "LineString" || isDropCable(asset)) return false;
+      const item = asset as any;
+      const text = [item.assetType, item.type, item.homeType, item.name, item.label]
+        .map((value) => String(value ?? "").toLowerCase())
+        .join(" ");
+
+      return Boolean(
+        item.uprn ||
+          item.UPRN ||
+          item.properties?.UPRN ||
+          item.properties?.uprn ||
+          item.homeId ||
+          text.includes("home") ||
+          text.includes("premise") ||
+          text.includes("property") ||
+          text.includes("sdu") ||
+          text.includes("flat"),
+      );
+    };
+
+    const projectHomeIds = new Set((projectHomes ?? []).map((home) => String(home.id)));
+    const areaHomes = (projectHomes.length ? projectHomes : visibleProjectAssets).filter(isSpreadHomeAsset);
+
+    if (areaHomes.length < 2) {
+      alert("No project homes are loaded to auto-spread.");
+      return;
+    }
+
+    const stackThresholdMeters = 1.75;
+    const spreadRadiusMeters = 2.5;
+    const processed = new Set<string>();
+    const movedById = new Map<string, SavedMapAsset>();
+    let stackCount = 0;
+
+    for (const seed of areaHomes) {
+      if (processed.has(seed.id)) continue;
+      const seedPoint = getPointForHome(seed);
+      if (!seedPoint) continue;
+
+      const group = areaHomes.filter((candidate) => {
+        if (processed.has(candidate.id)) return false;
+        const candidatePoint = getPointForHome(candidate);
+        if (!candidatePoint) return false;
+        return getDistanceMeters(seedPoint, candidatePoint) <= stackThresholdMeters;
+      });
+
+      if (group.length <= 1) {
+        processed.add(seed.id);
+        continue;
+      }
+
+      stackCount += 1;
+      group.forEach((home) => processed.add(home.id));
+
+      group.forEach((home, index) => {
+        // Keep the first/canonical home exactly where it is.
+        if (index === 0) return;
+
+        const angle = ((Math.PI * 2) / Math.max(group.length - 1, 1)) * (index - 1);
+        const latOffset = (Math.sin(angle) * spreadRadiusMeters) / 111_320;
+        const lngOffset =
+          (Math.cos(angle) * spreadRadiusMeters) /
+          (111_320 * Math.max(Math.cos((seedPoint.lat * Math.PI) / 180), 0.000001));
+
+        const nextLat = seedPoint.lat + latOffset;
+        const nextLng = seedPoint.lng + lngOffset;
+        const existing = home as any;
+
+        movedById.set(home.id, {
+          ...existing,
+          lat: nextLat,
+          lng: nextLng,
+          geometry: {
+            ...(existing.geometry || {}),
+            type: "Point",
+            coordinates: [nextLat, nextLng],
+          },
+          autoSpreadStackedHome: true,
+          autoSpreadAt: new Date().toISOString(),
+        } as SavedMapAsset);
+      });
+    }
+
+    if (movedById.size === 0) {
+      alert("No stacked homes were found within 1.75m.");
+      return;
+    }
+
+    const reason = `Auto-spread ${movedById.size} stacked home${movedById.size === 1 ? "" : "s"} across ${stackCount} group${stackCount === 1 ? "" : "s"}.`;
+
+    setSavedJoints((prev) =>
+      (prev ?? []).map((asset) => {
+        const moved = movedById.get(asset.id);
+        return moved ? markAssetForLiveSync(moved, false) : asset;
+      }),
+    );
+
+    if (projectHomes.length > 0) {
+      const updatedProjectHomes = projectHomes.map((home) => movedById.get(home.id) || home);
+      setProjectHomes(updatedProjectHomes);
+
+      try {
+        await saveProjectHomes(activeProjectId, updatedProjectHomes);
+      } catch (err) {
+        console.error("Failed to save auto-spread project homes", err);
+        alert("Homes moved on screen, but saving project homes failed. Check the console before refreshing.");
+        return;
+      }
+    } else if (projectHomeIds.size === 0) {
+      // No projectHomes state to save; this means homes are stored in the main map assets.
+      // setSavedJoints above will persist via the existing main chunk save path.
+    }
+
+    writeAssetAuditLog({
+      asset: activeProjectArea || (Array.from(movedById.values())[0] as SavedMapAsset),
+      action: "moved",
+      reason,
+      comment: "Auto-spread stacked homes within 1.75m into a small 2.5m circle. No homes were deleted and UPRNs were preserved.",
+      before: {
+        stackThresholdMeters,
+        spreadRadiusMeters,
+      },
+      after: {
+        stackCount,
+        movedHomes: movedById.size,
+      },
+    });
+
+    alert(`Auto-spread complete. ${movedById.size} home${movedById.size === 1 ? "" : "s"} moved across ${stackCount} stack${stackCount === 1 ? "" : "s"}.`);
+  };
+
   if (isProjectWorkspaceLoading && activeProjectArea) {
     return (
       <div style={projectWorkspaceLoadingOverlay}>
@@ -6077,6 +6243,7 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         onUpdateDpStatus={handleWorkspaceSingleDpStatusUpdate}
         onClearDpFibreAllocations={handleWorkspaceClearDpFibreAllocations}
         onApplyAddressSheetAssignments={handleWorkspaceAddressSheetAssignments}
+        onAutoSpreadStackedHomes={handleAutoSpreadStackedHomes}
         onExport={handleExportGeoJson}
       />
     );

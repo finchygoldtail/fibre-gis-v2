@@ -108,6 +108,7 @@ type ProjectWorkspaceProps = {
     duplicateHomeIds: string[];
     note: string;
   }) => void;
+  onAutoSpreadStackedHomes?: () => void | Promise<void>;
   onApplyAddressSheetAssignments?: (request: any) => void | Promise<void>;
 };
 
@@ -1090,6 +1091,7 @@ export default function ProjectWorkspace({
   onUpdateDpStatus,
   onClearDpFibreAllocations,
   onResolveDuplicateHomes,
+  onAutoSpreadStackedHomes,
   onApplyAddressSheetAssignments,
 }: ProjectWorkspaceProps) {
   const [openreachLayers, setOpenreachLayers] =
@@ -2506,6 +2508,7 @@ const homesLive = Math.min(
               onBulkUpdateDpStatus={onBulkUpdateDpStatus}
               onClearDpFibreAllocations={handleClearAreaDpFibreAllocations}
               onResolveDuplicateHomes={onResolveDuplicateHomes}
+              onAutoSpreadStackedHomes={onAutoSpreadStackedHomes}
               onApplyAddressSheetAssignments={onApplyAddressSheetAssignments}
               onSelectAsset={(asset) => {
                 setSelectedWorkspaceAsset(asset);
