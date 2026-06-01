@@ -47,8 +47,12 @@ export type AddressSheetMatchReport = {
 
 type XlsxModule = {
   read: (data: ArrayBuffer, options?: Record<string, unknown>) => any;
+  writeFile: (workbook: any, filename: string, options?: Record<string, unknown>) => void;
   utils: {
     sheet_to_json: (sheet: any, options?: Record<string, unknown>) => Record<string, unknown>[];
+    aoa_to_sheet: (rows: any[][]) => any;
+    book_new: () => any;
+    book_append_sheet: (workbook: any, sheet: any, name: string) => void;
   };
 };
 
@@ -384,4 +388,56 @@ export function addressSheetReportToCsv(report: AddressSheetMatchReport): string
   );
 
   return [headers.join(","), ...lines].join("\n");
+}
+
+
+// =====================================================
+// BLANK TEMPLATE DOWNLOAD
+// Customer-facing starter template for address sheet imports.
+// =====================================================
+
+export async function downloadAddressSheetTemplate() {
+  let XLSX: XlsxModule;
+
+  try {
+    XLSX = (await import("xlsx")) as XlsxModule;
+  } catch (err) {
+    throw new Error("The xlsx package is not installed. Run: npm install xlsx");
+  }
+
+  const columns = [
+    ["Ops Region", "Region / operating area.", "Yorkshire"],
+    ["Ops Cluster", "Build cluster or local programme name.", "Bradford"],
+    ["Fibrehood Name", "Project or fibrehood name.", "Baildon East"],
+    ["Fibrehood Code", "Customer fibrehood code.", "BD-BAE"],
+    ["AG Code", "AG area code used in Alistra GIS.", "BD-BAE-AG1"],
+    ["Splitter Box", "SB / CBT / AFN / DP name to assign this property to.", "BD-BAE-AG1-SB01"],
+    ["Premise Type", "SDU, MDU, commercial, post box, phone box, etc.", "SDU"],
+    ["UPRN", "Unique Property Reference Number. Used as the main home matching key.", "100012345678"],
+    ["Pole Chamber", "Pole or chamber reference if known.", "DP1234"],
+    ["Drop Type", "OH, UG or customer-specific wording.", "OH"],
+    ["Address", "Full address used as fallback matching when UPRN is missing.", "1 Example Street, Baildon"],
+    ["Notes", "Optional comments.", "Starter row"],
+  ];
+
+  const headers = columns.map((column) => column[0]);
+  const example = columns.map((column) => column[2]);
+  const guidanceRows = [
+    ["Template", "Alistra GIS Address Sheet Blank Template"],
+    ["Required columns", "Splitter Box, UPRN or Address"],
+    [],
+    ["Column", "Description", "Example"],
+    ...columns,
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  const dataSheet = XLSX.utils.aoa_to_sheet([headers, example]);
+  const guidanceSheet = XLSX.utils.aoa_to_sheet(guidanceRows);
+
+  dataSheet["!cols"] = headers.map(() => ({ wch: 24 }));
+  guidanceSheet["!cols"] = [{ wch: 24 }, { wch: 64 }, { wch: 32 }];
+
+  XLSX.utils.book_append_sheet(workbook, dataSheet, "Address Sheet Template");
+  XLSX.utils.book_append_sheet(workbook, guidanceSheet, "Guidance");
+  XLSX.writeFile(workbook, "Alistra_GIS_Address_Sheet_Template.xlsx");
 }

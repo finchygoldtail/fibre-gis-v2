@@ -133,3 +133,62 @@ export async function exportLmjExcelInPlace(
 
   XLSX.writeFile(wb, outputName, { bookType: ext === ".xlsm" ? "xlsm" : "xlsx" });
 }
+
+// =====================================================
+// BLANK TEMPLATE DOWNLOAD
+// Customer-facing starter template for LMJ imports.
+// =====================================================
+
+type TemplateColumn = {
+  key: string;
+  description: string;
+  required?: boolean;
+  example?: string | number;
+};
+
+function buildTemplateWorkbook(title: string, columns: TemplateColumn[]) {
+  const headers = columns.map((column) => column.key);
+  const example = columns.map((column) => column.example ?? "");
+  const guidanceRows = [
+    ["Template", title],
+    ["Required columns", columns.filter((column) => column.required).map((column) => column.key).join(", ")],
+    [],
+    ["Column", "Required", "Description", "Example"],
+    ...columns.map((column) => [
+      column.key,
+      column.required ? "Yes" : "No",
+      column.description,
+      column.example ?? "",
+    ]),
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  const dataSheet = XLSX.utils.aoa_to_sheet([headers, example]);
+  const guidanceSheet = XLSX.utils.aoa_to_sheet(guidanceRows);
+
+  dataSheet["!cols"] = headers.map(() => ({ wch: 24 }));
+  guidanceSheet["!cols"] = [{ wch: 30 }, { wch: 16 }, { wch: 62 }, { wch: 30 }];
+
+  XLSX.utils.book_append_sheet(workbook, dataSheet, "LMJ Template");
+  XLSX.utils.book_append_sheet(workbook, guidanceSheet, "Guidance");
+
+  return workbook;
+}
+
+export function downloadLmjJointTemplate() {
+  const columns: TemplateColumn[] = [
+    { key: "LMJ Name", required: true, description: "LMJ joint name as it appears on the map.", example: "BD-BAE-LMJ01" },
+    { key: "Joint Tray", required: true, description: "Tray number inside the LMJ.", example: 1 },
+    { key: "Splitter Fibre In", description: "Incoming splitter fibre number.", example: 1 },
+    { key: "1:4W Splitter", description: "Splitter identifier.", example: "SPL1" },
+    { key: "Splitter Fibre", description: "Splitter output fibre / port number.", example: 1 },
+    { key: "Cable ID", required: true, description: "Outgoing cable ID from the LMJ.", example: "ULW12-001" },
+    { key: "Output Fibre", required: true, description: "Outgoing fibre number in the cable.", example: 1 },
+    { key: "AG", description: "Associated AG / splitter-box reference.", example: "BD-BAE-AG1-SB01" },
+    { key: "Splitter Fibre Out", description: "Output fibre / tray number used for AG mapping.", example: 1 },
+    { key: "Status", description: "Spliced, passthrough, spare, direct or splitter.", example: "splitter" },
+    { key: "Notes", description: "Engineer notes or audit comments.", example: "LMJ starter template" },
+  ];
+
+  XLSX.writeFile(buildTemplateWorkbook("Alistra GIS LMJ Joint Blank Template", columns), "Alistra_GIS_LMJ_Joint_Template.xlsx");
+}

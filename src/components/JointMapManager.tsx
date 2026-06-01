@@ -6029,7 +6029,30 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         projectAreas={projectAreas}
         activeProjectId={activeProjectId}
         onSelectProject={handleSelectProject}
-        onBackToMap={() => setIsProjectWorkspaceOpen(false)}
+        onBackToMap={() => {
+  setIsProjectWorkspaceOpen(false);
+
+  window.setTimeout(() => {
+    if (!mapRef.current || activeProjectArea?.geometry?.type !== "Polygon") {
+      return;
+    }
+
+    const ring = activeProjectArea.geometry.coordinates?.[0] || [];
+    const bounds = L.latLngBounds(
+      ring
+        .map(([lat, lng]: [number, number]) => [lat, lng] as [number, number])
+        .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng)),
+    );
+
+    if (bounds.isValid()) {
+      mapRef.current.fitBounds(bounds, {
+        padding: [40, 40],
+        maxZoom: 18,
+        animate: false,
+      });
+    }
+  }, 150);
+}}
         onOpenTrace={() => {
           setIsProjectWorkspaceOpen(false);
           setIsPanelOpen(true);

@@ -86,6 +86,17 @@ export type DpRoutingState = {
   downstreamCableId?: string;
   hasDownstreamCable: boolean;
   capacity: number;
+  /**
+   * Number of unique customer premises currently served by this DP/SB.
+   * This is computed read-only from homes/drop records where available.
+   */
+  connectedHomes?: number;
+  /**
+   * For AFN/SB splitter logic, the number of 1:8 splitter input fibres
+   * required to serve the connected homes. Extra joint-matched fibres are
+   * treated as passthrough/branch fibres, not splitter inputs.
+   */
+  requiredSplitterFibres?: number;
   inputFibres: number[];
   splitterFibres: number[];
   directFibres: number[];

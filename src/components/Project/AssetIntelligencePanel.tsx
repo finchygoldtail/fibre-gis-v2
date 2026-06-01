@@ -482,19 +482,33 @@ function buildDpIntelligence(
   const splitterRatio = explicitSplitterRatio || (String(dpType).toLowerCase().includes("afn") ? "1:8" : "—");
 
   const splitterPorts = getSplitterPortsFromRatio(splitterRatio);
-  const selectedInputFibres = Array.isArray(afnDetails.inputFibres)
-    ? afnDetails.inputFibres.length
-    : readFirstNumber(afnDetails, ["fibreCountUsed", "inputFibres", "splitterCount", "splitters", "numberOfSplitters"]);
+  const isAfnDp = String(dpType).toLowerCase().includes("afn") || String(splitterRatio).includes("1:8");
+
+  // For AFN/SB assets, uploaded joint mappings can include shoot-off branch
+  // fibres that pass through the SB. Capacity shown in intelligence should be
+  // the local customer splitter capacity, not all branch/pass-through fibres.
+  const requiredSplitterInputs =
+    isAfnDp && splitterPorts
+      ? Math.ceil((toNumber(inferredHomes) || 0) / splitterPorts)
+      : null;
+
+  const selectedInputFibres =
+    requiredSplitterInputs !== null && requiredSplitterInputs > 0
+      ? requiredSplitterInputs
+      : Array.isArray(afnDetails.inputFibres)
+        ? afnDetails.inputFibres.length
+        : readFirstNumber(afnDetails, ["fibreCountUsed", "inputFibres", "splitterCount", "splitters", "numberOfSplitters"]);
+
   const splitterDerivedCapacity =
     splitterPorts !== null && selectedInputFibres !== null
       ? splitterPorts * selectedInputFibres
       : null;
 
   const inferredCapacity =
-    capacityValue !== null
-      ? capacityValue
-      : splitterDerivedCapacity !== null
-        ? splitterDerivedCapacity
+    splitterDerivedCapacity !== null
+      ? splitterDerivedCapacity
+      : capacityValue !== null
+        ? capacityValue
         : String(dpType).toLowerCase().includes("afn")
           ? 16
           : String(dpType).toLowerCase().includes("cbt")

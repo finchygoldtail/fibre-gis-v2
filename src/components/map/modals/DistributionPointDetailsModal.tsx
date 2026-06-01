@@ -177,17 +177,52 @@ export default function DistributionPointDetailsModal({
   const jointMappedInputFibres = uniqueSortedNumbers([
     ...(((jointMatchedDpState as any)?.jointMatchedFibres || []) as any[]),
     ...(((jointMatchedDpState as any)?.jointMatch?.fibres || []) as any[]),
+    ...(((jointMatchedDpState as any)?.inputFibres || []) as any[]),
+  ]);
+
+  const jointMappedSplitterFibres = uniqueSortedNumbers([
+    ...(((jointMatchedDpState as any)?.splitterFibres || []) as any[]),
+  ]);
+
+  const activeDpDetails =
+    ((activeDpAsset as any)?.dpDetails ||
+      (activeDpAsset as any)?.properties?.dpDetails ||
+      {}) as any;
+  const activeAfnDetails = activeDpDetails.afnDetails || {};
+  const storedInputFibres = uniqueSortedNumbers([
+    ...currentInputFibres,
+    ...((Array.isArray(activeAfnDetails.inputFibres)
+      ? activeAfnDetails.inputFibres
+      : []) as any[]),
+    ...((Array.isArray(activeAfnDetails.splitterFibres)
+      ? activeAfnDetails.splitterFibres
+      : []) as any[]),
   ]);
 
   const hasJointMappedFibres = jointMappedInputFibres.length > 0;
   const effectiveInputFibres = hasJointMappedFibres
     ? jointMappedInputFibres
-    : currentInputFibres;
+    : storedInputFibres;
 
-  const capacity =
-    details.closureType === "AFN"
-      ? effectiveInputFibres.length * 8
-      : Number(details.connectionsToHomes || 0);
+  // Capacity for AFN/SB must be based only on the local splitter inputs.
+  // Joint-matched shoot-off/pass-through fibres are part of the feed chain,
+  // but they are not customer splitter ports at this SB.
+  const effectiveSplitterFibres = hasJointMappedFibres
+    ? jointMappedSplitterFibres
+    : storedInputFibres;
+
+  const closureTypeText = normaliseRef(
+    details.closureType ||
+      activeDpDetails.closureType ||
+      activeDpDetails.networkArchitecture ||
+      (activeDpAsset as any)?.closureType ||
+      (activeDpAsset as any)?.dpType,
+  );
+  const isAfn = closureTypeText.includes("AFN");
+
+  const capacity = isAfn
+    ? effectiveSplitterFibres.length * 8
+    : Number(details.connectionsToHomes || activeDpDetails.connectionsToHomes || 0);
   const used = connectedHomes.length;
   const available = Math.max(0, capacity - used);
   const operationalCapacityPercent = capacity > 0 ? Math.round((used / capacity) * 100) : 0;
@@ -387,7 +422,7 @@ export default function DistributionPointDetailsModal({
           </div>
         ) : null}
 
-        {details.closureType === "AFN" ? (
+        {isAfn ? (
           <div className="afn-panel">
             <strong>AFN loop-through splitter</strong>
             <span>
@@ -590,14 +625,14 @@ export default function DistributionPointDetailsModal({
         <label>Connections to Homes</label>
         <select
           value={
-            details.closureType === "AFN"
+            isAfn
               ? capacity
               : details.connectionsToHomes || 8
           }
-          disabled={details.closureType === "AFN"}
+          disabled={isAfn}
           onChange={(e) => update("connectionsToHomes", Number(e.target.value))}
         >
-          {details.closureType === "AFN" ? (
+          {isAfn ? (
             <option value={capacity}>{capacity} from selected AFN fibres</option>
           ) : null}
           <option value={8}>8</option>

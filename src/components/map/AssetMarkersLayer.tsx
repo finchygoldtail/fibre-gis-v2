@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import type { SavedMapAsset } from "./types";
+import { buildNetworkState } from "../../services/network";
 
 type LayerVisibility = {
   agJoints: boolean;
@@ -529,30 +530,159 @@ function getDistributionPoints(allAssets: SavedMapAsset[]): SavedMapAsset[] {
     .sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
 }
 
-function getDpUsage(dp: SavedMapAsset, allAssets: SavedMapAsset[]) {
-  const dpId = String(dp.id || "");
+function normaliseAssetRef(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[–—]/g, "-")
+    .replace(/[^A-Z0-9]/g, "");
+}
 
-  const connectedHomes = allAssets.filter((asset: any) => {
-    if (asset?.assetType !== "home") return false;
+function refsMatch(a: unknown, b: unknown): boolean {
+  const left = normaliseAssetRef(a);
+  const right = normaliseAssetRef(b);
+  if (!left || !right) return false;
+  return left === right || left.includes(right) || right.includes(left);
+}
 
-    const connectedDpId = String(
-      asset?.connectedDpId ??
-        asset?.properties?.connectedDpId ??
-        "",
+function uniquePositiveNumbers(values: unknown[]): number[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0),
+    ),
+  ).sort((a, b) => a - b);
+}
+
+function getAssetIdentityValues(asset: any): string[] {
+  return [
+    asset?.id,
+    asset?.assetId,
+    asset?.name,
+    asset?.jointName,
+    asset?.label,
+    asset?.dpId,
+  ]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+}
+
+function getHomeUniqueKey(asset: any): string {
+  const raw =
+    asset?.uprn ||
+    asset?.UPRN ||
+    asset?.properties?.UPRN ||
+    asset?.properties?.uprn ||
+    asset?.homeId ||
+    asset?.id ||
+    asset?.assetId ||
+    asset?.name;
+
+  return String(raw ?? "").trim().toLowerCase();
+}
+
+function getConnectedDpReference(asset: any): string {
+  return String(
+    asset?.connectedDpId ??
+      asset?.dpId ??
+      asset?.assignedDpId ??
+      asset?.properties?.connectedDpId ??
+      asset?.properties?.dpId ??
+      asset?.properties?.assignedDpId ??
+      "",
+  ).trim();
+}
+
+function getDpUsage(
+  dp: SavedMapAsset,
+  allAssets: SavedMapAsset[],
+  networkState?: any,
+) {
+  const dpIdentityValues = getAssetIdentityValues(dp as any);
+  const dpDetails = ((dp as any).dpDetails || (dp as any).properties?.dpDetails || {}) as any;
+  const afnDetails = dpDetails.afnDetails || (dp as any).afnDetails || {};
+
+  const connectedHomeKeys = new Set<string>();
+
+  allAssets.forEach((asset: any) => {
+    if (asset?.assetType !== "home") return;
+
+    const connectedDpRef = getConnectedDpReference(asset);
+    if (!connectedDpRef) return;
+
+    const belongsToThisDp = dpIdentityValues.some((dpRef) =>
+      refsMatch(connectedDpRef, dpRef),
     );
 
-    return connectedDpId === dpId;
+    if (!belongsToThisDp) return;
+
+    const key = getHomeUniqueKey(asset);
+    if (key) connectedHomeKeys.add(key);
   });
 
-  const capacity =
+  const matchingDpState =
+    (dp.id ? networkState?.dpStates?.[dp.id] : null) ||
+    Object.values(networkState?.dpStates || {}).find((state: any) =>
+      dpIdentityValues.some((dpRef) =>
+        refsMatch(state?.assetId || state?.assetName || state?.dpName, dpRef),
+      ),
+    );
+
+  const networkInputFibres = uniquePositiveNumbers([
+    ...(((matchingDpState as any)?.jointMatchedFibres || []) as any[]),
+    ...(((matchingDpState as any)?.jointMatch?.fibres || []) as any[]),
+    ...(((matchingDpState as any)?.inputFibres || []) as any[]),
+  ]);
+
+  const networkSplitterFibres = uniquePositiveNumbers([
+    ...(((matchingDpState as any)?.splitterFibres || []) as any[]),
+  ]);
+
+  const storedInputFibres = uniquePositiveNumbers([
+    ...((Array.isArray(afnDetails.inputFibres) ? afnDetails.inputFibres : []) as any[]),
+    ...((Array.isArray(afnDetails.splitterFibres) ? afnDetails.splitterFibres : []) as any[]),
+    ...((Array.isArray(dpDetails.autoFibrePlan?.inputFibres)
+      ? dpDetails.autoFibrePlan.inputFibres
+      : []) as any[]),
+    ...((Array.isArray((dp as any).autoFibrePlan?.inputFibres)
+      ? (dp as any).autoFibrePlan.inputFibres
+      : []) as any[]),
+  ]);
+
+  const storedSplitterFibres = uniquePositiveNumbers([
+    ...((Array.isArray(afnDetails.splitterFibres) ? afnDetails.splitterFibres : []) as any[]),
+  ]);
+
+  const inputFibres = networkInputFibres.length ? networkInputFibres : storedInputFibres;
+  const splitterFibres = networkSplitterFibres.length ? networkSplitterFibres : storedSplitterFibres;
+
+  const closureType = String(
+    dpDetails.closureType ||
+      dpDetails.networkArchitecture ||
+      (dp as any).closureType ||
+      (dp as any).dpType ||
+      "",
+  ).toUpperCase();
+
+  const isAfn = closureType.includes("AFN");
+
+  const storedCapacity =
     Number((dp as any).capacity) ||
     Number((dp as any).dpCapacity) ||
     Number((dp as any).ports) ||
-    Number((dp as any).dpDetails?.capacity) ||
-    Number((dp as any).dpDetails?.ports) ||
-    16;
+    Number(dpDetails.capacity) ||
+    Number(dpDetails.ports) ||
+    0;
 
-  const used = connectedHomes.length;
+  // AFN/SB capacity is only local splitter inputs × 8.
+  // Do not use all joint-matched input fibres here, because shoot-off and
+  // downstream fibres pass through the SB and are not local customer ports.
+  const capacity = isAfn && splitterFibres.length
+    ? splitterFibres.length * 8
+    : storedCapacity || connectedHomeKeys.size || 16;
+
+  const used = connectedHomeKeys.size;
   const free = Math.max(0, capacity - used);
 
   return {
@@ -560,6 +690,7 @@ function getDpUsage(dp: SavedMapAsset, allAssets: SavedMapAsset[]) {
     used,
     free,
     overCapacity: used > capacity,
+    inputFibres,
   };
 }
 
@@ -795,6 +926,8 @@ export default function AssetMarkersLayer({
   }));
   const [positionMoveHomeId, setPositionMoveHomeId] = useState<string | null>(null);
 
+  const networkState = useMemo(() => buildNetworkState(assets as any), [assets]);
+
   useMapEvents({
     moveend: () => setMapView({ zoom: map.getZoom(), bounds: map.getBounds() }),
     zoomend: () => setMapView({ zoom: map.getZoom(), bounds: map.getBounds() }),
@@ -894,7 +1027,7 @@ export default function AssetMarkersLayer({
         : getIconForAsset(asset, assets);
     const distributionPoints = getDistributionPoints(assets);
     const connectedDp = asset.assetType === "home" ? getHomeConnectedDp(asset, assets) : null;
-    const dpUsage = asset.assetType === "distribution-point" ? getDpUsage(asset, assets) : null;
+    const dpUsage = asset.assetType === "distribution-point" ? getDpUsage(asset, assets, networkState) : null;
     const connectionMode = String((asset as any).connectionMode || "auto").toLowerCase() === "manual" ? "manual" : "auto";
 
     return (
@@ -954,7 +1087,7 @@ export default function AssetMarkersLayer({
                 <>
                   {infoRow("Build Status", asset.dpDetails?.buildStatus)}
                   {infoRow("DP Type", asset.dpDetails?.closureType)}
-                  {infoRow("Homes", asset.dpDetails?.connectionsToHomes)}
+                  {infoRow("Homes", dpUsage?.used ?? asset.dpDetails?.connectionsToHomes)}
                   {dpUsage ? (
                     <>
                       {infoRow("Capacity", dpUsage.capacity)}
@@ -971,7 +1104,7 @@ export default function AssetMarkersLayer({
                       <br />
                       Through cable: {asset.dpDetails.afnDetails?.throughCableId || "-"}
                       <br />
-                      Fibres: {asset.dpDetails.afnDetails?.inputFibres?.join(", ") || "-"}
+                      Fibres: {dpUsage?.inputFibres?.length ? dpUsage.inputFibres.join(", ") : asset.dpDetails.afnDetails?.inputFibres?.join(", ") || "-"}
                     </>
                   )}
 

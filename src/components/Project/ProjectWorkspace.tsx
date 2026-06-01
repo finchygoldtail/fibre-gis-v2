@@ -10,6 +10,10 @@ import { db } from "../../firebase";
 import { auditAreaAssets, type AuditIssue } from "../../services/areaAudit";
 import { buildTopologyTrace } from "../../services/topologyTraceService";
 import { buildNetworkState, isDistributionPointAsset } from "../../services/network";
+import { downloadAddressSheetTemplate } from "./workspace/addressSheetParser";
+import { downloadAgJointTemplate, downloadCmjJointTemplate } from "../../logic/exportAgExcel";
+import { downloadLmjJointTemplate } from "../../logic/exportLmjExcel";
+import { downloadStreetCabTemplate } from "../../logic/exportStreetCabExcel";
 
 // =====================================================
 // FILE: ProjectWorkspace.tsx
@@ -2858,6 +2862,50 @@ const homesLive = Math.min(
                   <button type="button" style={wideButton} onClick={onExport}>
                     Export Project Data
                   </button>
+
+                  <div style={{ ...emptyPanel, marginTop: 10 }}>
+                    Download blank customer templates for the standard Alistra GIS
+                    import workflow. These only create XLSX starter files and do
+                    not change project data, assets, homes, or Firestore storage.
+                  </div>
+
+                  <div style={templateButtonGrid}>
+                    <button
+                      type="button"
+                      style={wideButton}
+                      onClick={() => void downloadAddressSheetTemplate()}
+                    >
+                      Download Address Sheet Template
+                    </button>
+                    <button
+                      type="button"
+                      style={wideButton}
+                      onClick={downloadAgJointTemplate}
+                    >
+                      Download AG Joint Template
+                    </button>
+                    <button
+                      type="button"
+                      style={wideButton}
+                      onClick={downloadLmjJointTemplate}
+                    >
+                      Download LMJ Joint Template
+                    </button>
+                    <button
+                      type="button"
+                      style={wideButton}
+                      onClick={downloadCmjJointTemplate}
+                    >
+                      Download CMJ Joint Template
+                    </button>
+                    <button
+                      type="button"
+                      style={wideButton}
+                      onClick={downloadStreetCabTemplate}
+                    >
+                      Download Street Cab Template
+                    </button>
+                  </div>
                 </div>
               )}
             </section>
@@ -3013,6 +3061,12 @@ const closePanelButton: React.CSSProperties = {
 const operationGrid: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(2, minmax(220px, 1fr))",
+  gap: 10,
+};
+
+const templateButtonGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
   gap: 10,
 };
 

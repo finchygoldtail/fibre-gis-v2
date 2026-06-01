@@ -99,3 +99,77 @@ export async function exportAgExcelInPlace(
 
   XLSX.writeFile(wb, outputName, { bookType: ext === ".xlsm" ? "xlsm" : "xlsx" });
 }
+
+// =====================================================
+// BLANK TEMPLATE DOWNLOADS
+// These are customer-facing starter templates. They do not touch
+// existing in-place export behaviour above.
+// =====================================================
+
+type TemplateColumn = {
+  key: string;
+  description: string;
+  required?: boolean;
+  example?: string | number;
+};
+
+function buildTemplateWorkbook(title: string, sheetName: string, columns: TemplateColumn[]) {
+  const headers = columns.map((column) => column.key);
+  const example = columns.map((column) => column.example ?? "");
+  const guidanceRows = [
+    ["Template", title],
+    ["Required columns", columns.filter((column) => column.required).map((column) => column.key).join(", ")],
+    [],
+    ["Column", "Required", "Description", "Example"],
+    ...columns.map((column) => [
+      column.key,
+      column.required ? "Yes" : "No",
+      column.description,
+      column.example ?? "",
+    ]),
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  const dataSheet = XLSX.utils.aoa_to_sheet([headers, example]);
+  const guidanceSheet = XLSX.utils.aoa_to_sheet(guidanceRows);
+
+  dataSheet["!cols"] = headers.map(() => ({ wch: 24 }));
+  guidanceSheet["!cols"] = [{ wch: 28 }, { wch: 16 }, { wch: 58 }, { wch: 28 }];
+
+  XLSX.utils.book_append_sheet(workbook, dataSheet, sheetName);
+  XLSX.utils.book_append_sheet(workbook, guidanceSheet, "Guidance");
+
+  return workbook;
+}
+
+export function downloadAgJointTemplate() {
+  const columns: TemplateColumn[] = [
+    { key: "Joint Name", required: true, description: "AG joint / closure name as it appears on the map.", example: "BD-BAE-AG1" },
+    { key: "Tray", required: true, description: "Tray number in the AG joint.", example: 1 },
+    { key: "Fibre", required: true, description: "Global fibre number in the joint.", example: 1 },
+    { key: "Cable In", description: "Incoming cable reference.", example: "FC001" },
+    { key: "Fibre In", description: "Incoming fibre number.", example: 1 },
+    { key: "Cable Out", description: "Outgoing cable / branch / splitter reference.", example: "BD-BAE-AG1-SB01" },
+    { key: "Fibre Out", description: "Outgoing fibre number.", example: 1 },
+    { key: "Status", description: "Spliced, passthrough, spare, direct or splitter.", example: "passthrough" },
+    { key: "Notes", description: "Engineer notes or audit comments.", example: "Imported from customer template" },
+  ];
+
+  XLSX.writeFile(buildTemplateWorkbook("Alistra GIS AG Joint Blank Template", "AG Joint Template", columns), "Alistra_GIS_AG_Joint_Template.xlsx");
+}
+
+export function downloadCmjJointTemplate() {
+  const columns: TemplateColumn[] = [
+    { key: "Joint Name", required: true, description: "CMJ joint / closure name as it appears on the map.", example: "BD-BAE-CMJ01" },
+    { key: "Tray", required: true, description: "CMJ tray number.", example: 1 },
+    { key: "Fibre", required: true, description: "Global fibre number in the CMJ.", example: 1 },
+    { key: "Cable In", description: "Incoming feeder / link cable reference.", example: "FC001" },
+    { key: "Fibre In", description: "Incoming fibre number.", example: 1 },
+    { key: "Cable Out", description: "Outgoing cable or joint reference.", example: "BD-BAE-LMJ01" },
+    { key: "Fibre Out", description: "Outgoing fibre number.", example: 1 },
+    { key: "Splice Type", description: "Passthrough, split, direct, spare or other local wording.", example: "passthrough" },
+    { key: "Notes", description: "Engineer notes or audit comments.", example: "CMJ starter template" },
+  ];
+
+  XLSX.writeFile(buildTemplateWorkbook("Alistra GIS CMJ Joint Blank Template", "CMJ Joint Template", columns), "Alistra_GIS_CMJ_Joint_Template.xlsx");
+}

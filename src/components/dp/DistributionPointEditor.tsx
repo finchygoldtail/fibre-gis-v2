@@ -441,38 +441,43 @@ function getConnectedHomes(
     });
 
   // Some imported builds only have generated drop cables in the scoped workspace,
-  // not separate home point assets. In that case, use the drops as a safe fallback
-  // for served-home rows while still deduping by UPRN/home reference.
-  drops.forEach((drop: any, index) => {
-    const key = getHomeIdentityKey(drop, `drop-${index}`);
-    addRow(
-      {
-        id: text(
-          drop.homeId ||
-            drop.connectedHomeId ||
-            drop.toHomeId ||
-            drop.toAssetId ||
-            drop.uprn ||
-            drop.UPRN ||
-            key ||
-            index,
-        ),
-        name: text(
-          drop.homeName ||
-            drop.connectedHomeName ||
-            drop.address ||
-            drop.uprn ||
-            drop.UPRN ||
-            drop.name ||
-            `Home ${rowsByHomeKey.size + 1}`,
-        ),
-        status: text(drop.homeStatus || drop.customerStatus || drop.status || "Connected"),
-        port: drop.port || drop.dpPort || index + 1,
-        dpId: text(drop.dpId || drop.fromAssetId || drop.connectedDpId || drop.parentDpId),
-      },
-      key,
-    );
-  });
+  // not separate home point assets. In that case, use the drops as a safe fallback.
+  // IMPORTANT: if real home assets already linked to this DP, do NOT add every
+  // historic/generated drop as another served home. Re-running address-sheet/drop
+  // assignment can leave stale duplicate drop records, which was inflating SB09
+  // from 21 real homes to 41 “connected” outputs.
+  if (rowsByHomeKey.size === 0) {
+    drops.forEach((drop: any, index) => {
+      const key = getHomeIdentityKey(drop, `drop-${index}`);
+      addRow(
+        {
+          id: text(
+            drop.homeId ||
+              drop.connectedHomeId ||
+              drop.toHomeId ||
+              drop.toAssetId ||
+              drop.uprn ||
+              drop.UPRN ||
+              key ||
+              index,
+          ),
+          name: text(
+            drop.homeName ||
+              drop.connectedHomeName ||
+              drop.address ||
+              drop.uprn ||
+              drop.UPRN ||
+              drop.name ||
+              `Home ${rowsByHomeKey.size + 1}`,
+          ),
+          status: text(drop.homeStatus || drop.customerStatus || drop.status || "Connected"),
+          port: drop.port || drop.dpPort || index + 1,
+          dpId: text(drop.dpId || drop.fromAssetId || drop.connectedDpId || drop.parentDpId),
+        },
+        key,
+      );
+    });
+  }
 
   return Array.from(rowsByHomeKey.values()).sort(
     (a, b) => Number(a.port || 0) - Number(b.port || 0),
@@ -536,10 +541,12 @@ function getCapacity(
     closure.includes("AFN") && inputCount > 0 ? 8 : 0,
   );
 
-  const used = Math.max(
-    connectedHomeCount,
-    Number(details.connectedHomes || item?.connectedHomes || 0),
-  );
+  const storedConnectedHomes = Number(details.connectedHomes || item?.connectedHomes || 0);
+  const used = connectedHomeCount > 0
+    ? connectedHomeCount
+    : Number.isFinite(storedConnectedHomes)
+      ? storedConnectedHomes
+      : 0;
   const percent = capacity > 0 ? Math.round((used / capacity) * 100) : 0;
   const free = Math.max(capacity - used, 0);
   const state =
@@ -931,17 +938,41 @@ export default function DistributionPointEditor({
     ...(((jointMatchedDpState as any)?.jointMatch?.fibres || []) as number[]),
   ]);
 
+  const networkSplitterFibres = uniqueSorted(
+    ((jointMatchedDpState as any)?.splitterFibres || []) as number[],
+  );
+  const networkDirectFibres = uniqueSorted(
+    ((jointMatchedDpState as any)?.directFibres || []) as number[],
+  );
+  const networkPassthroughFibres = uniqueSorted(
+    [
+      ...(((jointMatchedDpState as any)?.passthroughFibres || []) as number[]),
+      ...(((jointMatchedDpState as any)?.jointPassthroughFibres || []) as number[]),
+    ] as number[],
+  );
+
   const hasJointMappedFibres = jointMatchedFibres.length > 0 && !editMode;
+
+  // IMPORTANT:
+  // Joint uploads tell us which fibres reach this SB, but they do not all feed
+  // the local splitter. The central network state splits joint-matched fibres
+  // into local splitter/direct fibres versus passthrough/branch fibres. The DP
+  // editor must display that interpreted state, otherwise shoot-off fibres such
+  // as ULW07/ULW08 appear as customer splitter inputs.
   const displaySplitterFibres = hasJointMappedFibres
-    ? jointMatchedFibres
+    ? networkSplitterFibres
     : draftRouting.splitterFibres;
   const displayDirectFibres = hasJointMappedFibres
-    ? []
+    ? networkDirectFibres
     : draftRouting.directFibres;
+  const displayPassthroughFibres = hasJointMappedFibres
+    ? networkPassthroughFibres
+    : draftRouting.passthroughFibres;
 
   const inputFibres = uniqueSorted([
     ...displaySplitterFibres,
     ...displayDirectFibres,
+    ...displayPassthroughFibres,
   ]);
 
   const capacity = getCapacity(
@@ -1012,11 +1043,7 @@ export default function DistributionPointEditor({
       : null);
 
   const jointPassthroughFibres = hasJointMappedFibres
-    ? networkJointPassthroughFibres.length
-      ? networkJointPassthroughFibres
-      : localMinFibre !== null
-        ? allCableFibres.filter((fibre) => fibre < localMinFibre)
-        : []
+    ? displayPassthroughFibres
     : [];
 
   const jointAllocatedElsewhereFibres = hasJointMappedFibres
@@ -1038,7 +1065,7 @@ export default function DistributionPointEditor({
   const explicitlyClassifiedFibres = uniqueSorted([
     ...displaySplitterFibres,
     ...displayDirectFibres,
-    ...draftRouting.passthroughFibres,
+    ...displayPassthroughFibres,
     ...draftRouting.spareFibres,
   ]);
 
@@ -1657,7 +1684,7 @@ export default function DistributionPointEditor({
               </h2>
             </div>
             <div style={{ color: "#94a3b8", fontSize: 13 }}>
-              {portRoutes.length} mapped output port(s)
+              {portRoutes.length} capacity output port(s)
             </div>
           </div>
 

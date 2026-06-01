@@ -77,3 +77,62 @@ export async function exportStreetCabExcelInPlace(
 
   XLSX.writeFile(wb, outputName, { bookType: ext === ".xlsm" ? "xlsm" : "xlsx" });
 }
+
+// =====================================================
+// BLANK TEMPLATE DOWNLOAD
+// Customer-facing starter template for street cabinet imports.
+// =====================================================
+
+type TemplateColumn = {
+  key: string;
+  description: string;
+  required?: boolean;
+  example?: string | number;
+};
+
+function buildTemplateWorkbook(title: string, columns: TemplateColumn[]) {
+  const headers = columns.map((column) => column.key);
+  const example = columns.map((column) => column.example ?? "");
+  const guidanceRows = [
+    ["Template", title],
+    ["Required columns", columns.filter((column) => column.required).map((column) => column.key).join(", ")],
+    [],
+    ["Column", "Required", "Description", "Example"],
+    ...columns.map((column) => [
+      column.key,
+      column.required ? "Yes" : "No",
+      column.description,
+      column.example ?? "",
+    ]),
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  const dataSheet = XLSX.utils.aoa_to_sheet([headers, example]);
+  const guidanceSheet = XLSX.utils.aoa_to_sheet(guidanceRows);
+
+  dataSheet["!cols"] = headers.map(() => ({ wch: 24 }));
+  guidanceSheet["!cols"] = [{ wch: 30 }, { wch: 16 }, { wch: 62 }, { wch: 30 }];
+
+  XLSX.utils.book_append_sheet(workbook, dataSheet, "Street Cab Template");
+  XLSX.utils.book_append_sheet(workbook, guidanceSheet, "Guidance");
+
+  return workbook;
+}
+
+export function downloadStreetCabTemplate() {
+  const columns: TemplateColumn[] = [
+    { key: "Street Cab Name", required: true, description: "Street cabinet name as it appears on the map.", example: "BD-BAE-FC001" },
+    { key: "OLT", description: "OLT reference.", example: "OLT1" },
+    { key: "LT", description: "Line terminal / card reference.", example: "LT1" },
+    { key: "PON", description: "PON reference.", example: "PON1" },
+    { key: "HD Splitter", description: "1:4 HD splitter reference.", example: "4WAY HD SPL1" },
+    { key: "Feeder Panel", description: "Feeder panel reference.", example: "144F PANEL A" },
+    { key: "Feeder Cable", description: "Feeder cable ID.", example: "FC001" },
+    { key: "Feeder Fibre", description: "Feeder fibre number.", example: 1 },
+    { key: "Output Cable", description: "Cable leaving the cabinet.", example: "BD-BAE-LMJ01" },
+    { key: "Output Fibre", description: "Output fibre number.", example: 1 },
+    { key: "Notes", description: "Engineer notes or audit comments.", example: "Street cab starter template" },
+  ];
+
+  XLSX.writeFile(buildTemplateWorkbook("Alistra GIS Street Cabinet Blank Template", columns), "Alistra_GIS_Street_Cab_Template.xlsx");
+}
