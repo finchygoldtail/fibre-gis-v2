@@ -62,6 +62,13 @@ type FibreViewMode =
   | "allocated"
   | "spare";
 
+type ParentFibreMapping = {
+  parentFibre: number;
+  localFibre: number;
+  parentAssetName?: string;
+  childAssetName?: string;
+};
+
 // =====================================================
 // INTERNATIONAL / IEC 12-FIBRE COLOUR CODE
 // Repeats every 12 fibres:
@@ -114,6 +121,110 @@ function uniqueSorted(values: number[]): number[] {
 function getFibreColour(fibreNumber: number): FibreColour {
   const index = Math.max(0, (Number(fibreNumber) - 1) % FIBRE_COLOURS.length);
   return FIBRE_COLOURS[index];
+}
+
+function buildParentFibreMappings(
+  parentFibres: number[],
+  localFibres: number[],
+): ParentFibreMapping[] {
+  const parents = uniqueSorted(parentFibres);
+  const locals = uniqueSorted(localFibres);
+
+  if (!parents.length || !locals.length) return [];
+
+  const count = Math.min(parents.length, locals.length);
+  const mappings = Array.from({ length: count }, (_, index) => ({
+    parentFibre: parents[index],
+    localFibre: locals[index],
+  })).filter((row) => row.parentFibre !== row.localFibre);
+
+  return mappings;
+}
+
+function parentFibreForLocalFibre(
+  mappings: ParentFibreMapping[],
+  localFibre: number,
+): number | null {
+  const match = mappings.find((row) => row.localFibre === localFibre);
+  return match ? match.parentFibre : null;
+}
+
+function formatLocalFibreWithParent(
+  localFibre: number,
+  mappings: ParentFibreMapping[],
+): string {
+  const parentFibre = parentFibreForLocalFibre(mappings, localFibre);
+  return parentFibre ? `F${parentFibre} → F${localFibre}` : `F${localFibre}`;
+}
+
+
+type AssetPoint = { lat: number; lng: number };
+
+function getAssetPoint(asset: SavedMapAsset | null | undefined): AssetPoint | null {
+  const item = asset as any;
+  if (!item) return null;
+  if (typeof item.lat === "number" && typeof item.lng === "number") {
+    return { lat: item.lat, lng: item.lng };
+  }
+  const coords = item.geometry?.coordinates;
+  if (item.geometry?.type === "Point" && Array.isArray(coords)) {
+    const lat = Number(coords[0]);
+    const lng = Number(coords[1]);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
+  }
+  return null;
+}
+
+function getCableLinePoints(asset: SavedMapAsset | null | undefined): AssetPoint[] {
+  const coords = (asset as any)?.geometry?.coordinates;
+  if ((asset as any)?.geometry?.type !== "LineString" || !Array.isArray(coords)) return [];
+  return coords
+    .map((coord: any) => ({ lat: Number(coord?.[0]), lng: Number(coord?.[1]) }))
+    .filter((point: AssetPoint) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+}
+
+function distanceMeters(a: AssetPoint, b: AssetPoint): number {
+  const radius = 6371000;
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * radius * Math.asin(Math.sqrt(h));
+}
+
+function findParentDpForBranchCable(
+  currentAsset: SavedMapAsset | null,
+  throughCable: SavedMapAsset | null | undefined,
+  allAssets: SavedMapAsset[],
+): SavedMapAsset | null {
+  if (!currentAsset || !throughCable) return null;
+  const line = getCableLinePoints(throughCable);
+  if (line.length < 2) return null;
+
+  const start = line[0];
+  const end = line[line.length - 1];
+
+  const candidates = allAssets
+    .filter((candidate) => candidate.id !== currentAsset.id)
+    .filter((candidate) => isNavigableDistributionPoint(candidate))
+    .map((candidate) => {
+      const point = getAssetPoint(candidate);
+      if (!point) return null;
+      const minEndpointDistance = Math.min(
+        distanceMeters(point, start),
+        distanceMeters(point, end),
+      );
+      return { candidate, minEndpointDistance };
+    })
+    .filter((item): item is { candidate: SavedMapAsset; minEndpointDistance: number } => Boolean(item))
+    .filter((item) => item.minEndpointDistance <= 28)
+    .sort((a, b) => a.minEndpointDistance - b.minEndpointDistance);
+
+  return candidates[0]?.candidate || null;
 }
 
 function getAssetTitle(asset: SavedMapAsset | null): string {
@@ -703,6 +814,7 @@ function buildPortRoutes(args: {
   splitterOutputsPerFibre: number;
   connectedHomes: ConnectedHomeRow[];
   dropCables: SavedMapAsset[];
+  parentFibreMappings?: ParentFibreMapping[];
 }): PortRoute[] {
   const {
     splitterInputFibres,
@@ -710,6 +822,7 @@ function buildPortRoutes(args: {
     splitterOutputsPerFibre,
     connectedHomes,
     dropCables,
+    parentFibreMappings = [],
   } = args;
 
   const directRoutes = directFibres.map((directFibre, index): PortRoute => {
@@ -718,7 +831,7 @@ function buildPortRoutes(args: {
       port: index + 1,
       routeType: "direct",
       fibre: directFibre,
-      fibreLabel: `Fibre ${directFibre} (${directColour.name})`,
+      fibreLabel: `${formatLocalFibreWithParent(directFibre, parentFibreMappings)} (${directColour.name})`,
       fibreColour: directColour.colour,
       fibreTextColour: directColour.textColour,
       home: connectedHomes[index],
@@ -739,7 +852,7 @@ function buildPortRoutes(args: {
             port: portIndex + 1,
             routeType: "splitter",
             fibre: splitterFibre,
-            fibreLabel: `Splitter output from fibre ${splitterFibre} (${splitterColour.name})`,
+            fibreLabel: `Splitter output from ${formatLocalFibreWithParent(splitterFibre, parentFibreMappings)} (${splitterColour.name})`,
             fibreColour: "#22c55e",
             fibreTextColour: "#ffffff",
             home: connectedHomes[portIndex],
@@ -933,6 +1046,10 @@ export default function DistributionPointEditor({
     (_, index) => index + 1,
   );
 
+  const branchParentDp = findParentDpForBranchCable(asset, throughCable, allAssets);
+  const branchParentName = branchParentDp ? getAssetTitle(branchParentDp) : "Parent SB";
+  const currentSbName = getAssetTitle(asset);
+
   const jointMatchedFibres = uniqueSorted([
     ...(((jointMatchedDpState as any)?.jointMatchedFibres || []) as number[]),
     ...(((jointMatchedDpState as any)?.jointMatch?.fibres || []) as number[]),
@@ -974,6 +1091,29 @@ export default function DistributionPointEditor({
     ...displayDirectFibres,
     ...displayPassthroughFibres,
   ]);
+
+  const locallyConsumedFibres = uniqueSorted([
+    ...displayDirectFibres,
+    ...displaySplitterFibres,
+  ]);
+
+  // Shoot-off SBs are fed from parent fibres on the upstream/main run, then
+  // renumbered onto the local branch cable. Example: parent F12/F13/F14 from
+  // SB04 becomes local F1/F2/F3 into SB01. Main-run SBs keep their normal
+  // numbering because parent and local fibres match, so no mapping is shown.
+  const parentFibreMappings = hasJointMappedFibres
+    ? buildParentFibreMappings(jointMatchedFibres, locallyConsumedFibres).map((row) => ({
+        ...row,
+        parentAssetName: branchParentName,
+        childAssetName: currentSbName,
+      }))
+    : [];
+
+  const usedFibresDisplayText = parentFibreMappings.length
+    ? parentFibreMappings
+        .map((row) => `F${row.parentFibre} → F${row.localFibre}`)
+        .join(", ")
+    : inputFibres.join(", " );
 
   const capacity = getCapacity(
     asset,
@@ -1100,6 +1240,7 @@ export default function DistributionPointEditor({
     splitterOutputsPerFibre,
     connectedHomes,
     dropCables,
+    parentFibreMappings,
   });
   const selectedRoute = selectedPort
     ? portRoutes.find((route) => route.port === selectedPort)
@@ -1496,6 +1637,45 @@ export default function DistributionPointEditor({
             />
           </div>
 
+          {parentFibreMappings.length ? (
+            <div
+              style={{
+                background: "rgba(56,189,248,0.10)",
+                border: "1px solid rgba(56,189,248,0.28)",
+                borderRadius: 12,
+                padding: 12,
+              }}
+            >
+              <div style={{ ...smallLabelStyle(), color: "#7dd3fc" }}>
+                Parent SB → This SB fibre mapping
+              </div>
+              <div style={{ marginTop: 8, color: "#e0f2fe", fontWeight: 900 }}>
+                {branchParentName} → {currentSbName}: {parentFibreMappings.length} fibre{parentFibreMappings.length === 1 ? "" : "s"} needed
+              </div>
+              <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
+                {parentFibreMappings.map((row) => (
+                  <div
+                    key={`${row.parentFibre}-${row.localFibre}`}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      color: "#e0f2fe",
+                      fontWeight: 900,
+                    }}
+                  >
+                    <span>{row.parentAssetName || "Parent SB"} F{row.parentFibre}</span>
+                    <span>→</span>
+                    <span>{row.childAssetName || "This SB"} F{row.localFibre}</span>
+                  </div>
+                ))}
+              </div>
+              <small style={{ display: "block", marginTop: 8, color: "#94a3b8" }}>
+                Shoot-off branch: this shows the parent SB fibres feeding this SB. Only the number of fibres needed by this SB is reserved on the parent run.
+              </small>
+            </div>
+          ) : null}
+
           <div
             style={{
               background: "rgba(15,23,42,0.72)",
@@ -1708,6 +1888,7 @@ export default function DistributionPointEditor({
                 hasDownstreamCable={draftRouting.hasDownstreamCable}
                 splitterRatio={splitterRatio}
                 portRoutes={portRoutes.slice(0, 8)}
+                parentFibreMappings={parentFibreMappings}
                 selectedFibre={selectedFibre}
                 selectedPort={selectedPort}
                 onSelectFibre={(fibre) =>
@@ -1720,10 +1901,10 @@ export default function DistributionPointEditor({
             ) : activeFibreView === "used" ? (
               <FibreTraceGroupView
                 title="Fibre spliced to splitter"
-                subtitle={`Used locally in ${getAssetTitle(asset)} from ${cableName(throughCable)}`}
+                subtitle={parentFibreMappings.length ? `${branchParentName} → ${currentSbName}: ${parentFibreMappings.length} fibre${parentFibreMappings.length === 1 ? "" : "s"} needed (${parentFibreMappings.map((row) => `F${row.parentFibre} → F${row.localFibre}`).join(", ")})` : `Used locally in ${getAssetTitle(asset)} from ${cableName(throughCable)}`}
                 fibres={displaySplitterFibres}
                 routeLabel="Local splitter input"
-                routeDescription="This fibre is consumed in this DP and feeds the local splitter."
+                routeDescription={parentFibreMappings.length ? "This local branch fibre is fed from the matching parent fibre on the upstream/main run." : "This fibre is consumed in this DP and feeds the local splitter."}
                 selectedFibre={selectedFibre}
                 onSelectFibre={(fibre) =>
                   setSelectedFibre(selectedFibre === fibre ? null : fibre)
@@ -1997,7 +2178,7 @@ export default function DistributionPointEditor({
                 {consumedFibreCount}F
               </div>
               <small style={{ color: "#cbd5e1" }}>
-                {inputFibres.join(", ") || "No fibres selected"}
+                {usedFibresDisplayText || "No fibres selected"}
               </small>
             </div>
             <div>
@@ -2061,9 +2242,9 @@ export default function DistributionPointEditor({
                   </strong>
                   <div style={{ color: "#cbd5e1", marginTop: 4, fontSize: 12 }}>
                     {displayDirectFibres.includes(selectedFibre)
-                      ? `Direct output fibre to Port ${displayDirectFibres.indexOf(selectedFibre) + 1}.`
+                      ? `${formatLocalFibreWithParent(selectedFibre, parentFibreMappings)} direct output fibre to Port ${displayDirectFibres.indexOf(selectedFibre) + 1}.`
                       : displaySplitterFibres.includes(selectedFibre)
-                        ? "Spliced into splitter input."
+                        ? `${formatLocalFibreWithParent(selectedFibre, parentFibreMappings)} spliced into splitter input.`
                         : passthroughFibres.includes(selectedFibre)
                           ? "Passing through downstream according to uploaded joint mapping."
                           : jointAllocatedElsewhereFibres.includes(
@@ -2439,6 +2620,7 @@ function FibreSpliceDiagram({
   hasDownstreamCable,
   splitterRatio,
   portRoutes,
+  parentFibreMappings = [],
   selectedFibre,
   selectedPort,
   onSelectFibre,
@@ -2452,6 +2634,7 @@ function FibreSpliceDiagram({
   hasDownstreamCable: boolean;
   splitterRatio: string;
   portRoutes: PortRoute[];
+  parentFibreMappings?: ParentFibreMapping[];
   selectedFibre: number | null;
   selectedPort: number | null;
   onSelectFibre: (fibre: number) => void;
@@ -2692,6 +2875,11 @@ function FibreSpliceDiagram({
                         ? `direct to Port ${directFibres.indexOf(fibre) + 1}`
                         : "to splitter"}
                     </small>
+                    {parentFibreForLocalFibre(parentFibreMappings, fibre) ? (
+                      <small style={{ display: "block", color: "#38bdf8" }}>
+                        Parent F{parentFibreForLocalFibre(parentFibreMappings, fibre)} → F{fibre}
+                      </small>
+                    ) : null}
                   </span>
                 </button>
               );

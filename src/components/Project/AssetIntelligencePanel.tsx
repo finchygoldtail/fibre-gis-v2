@@ -7,7 +7,7 @@
 //             No intelligence calculation logic changed.
 // =====================================================
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import type { SavedMapAsset } from "../map/types";
 import { auditAreaAssets, type AuditIssue, type AuditSeverity } from "../../services/areaAudit";
 import {
@@ -15,6 +15,16 @@ import {
   formatFibreList,
   type SbFibreAllocation,
 } from "./workspace/sbFibreAllocation";
+import AuditModal from "../audits/AuditModal";
+import AuditFormEngine from "../audits/AuditFormEngine";
+import AuditHistoryPanel from "../audits/AuditHistoryPanel";
+import AuditPaymentBlockerPanel from "../audits/AuditPaymentBlockerPanel";
+import {
+  chamberAuditTemplate,
+  jointAuditTemplate,
+  poleAuditTemplate,
+} from "../audits/auditTemplates";
+import { createAuditFormLog } from "../../services/auditService";
 
 // =====================================================
 // TYPES
@@ -555,6 +565,183 @@ function buildDpIntelligence(
 }
 
 
+// =====================================================
+// SB LOCAL BRANCH FIBRE DISPLAY GUARD
+// Some SBs are fed as a shoot-off from an upstream SB/joint mapping.
+// Example: upstream SB04 fibre 12 can become local branch cable fibre 1
+// into SB01.  The imported CMJ continuity still contains the upstream
+// fibre references, so the workspace intelligence table must prefer the
+// DP's saved local input fibres when they exist.
+// =====================================================
+function normaliseNumberList(value: unknown): number[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => Number(item))
+      .filter((item) => Number.isFinite(item) && item > 0)
+      .map((item) => Math.floor(item));
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(/[,;\s]+/)
+      .map((item) => Number(item.replace(/[^0-9.]/g, "")))
+      .filter((item) => Number.isFinite(item) && item > 0)
+      .map((item) => Math.floor(item));
+  }
+
+  return [];
+}
+
+function uniqueSortedNumbers(values: number[]): number[] {
+  return Array.from(new Set(values)).sort((a, b) => a - b);
+}
+
+function readLocalDpInputFibres(asset: SavedMapAsset | null): number[] {
+  const item = asset as any;
+  if (!item) return [];
+
+  const details = item.dpDetails || item.properties?.dpDetails || {};
+  const afnDetails = details.afnDetails || item.afnDetails || item.properties?.afnDetails || {};
+
+  return uniqueSortedNumbers([
+    ...normaliseNumberList(item.allocatedInputFibres),
+    ...normaliseNumberList(item.inputFibres),
+    ...normaliseNumberList(item.usedInputFibres),
+    ...normaliseNumberList(item.localInputFibres),
+    ...normaliseNumberList(details.allocatedInputFibres),
+    ...normaliseNumberList(details.inputFibres),
+    ...normaliseNumberList(details.usedInputFibres),
+    ...normaliseNumberList(afnDetails.allocatedInputFibres),
+    ...normaliseNumberList(afnDetails.inputFibres),
+    ...normaliseNumberList(afnDetails.usedInputFibres),
+  ]);
+}
+
+function readCableCapacity(asset: SavedMapAsset | null | undefined): number | null {
+  const item = asset as any;
+  if (!item) return null;
+
+  const raw = read(item, ["fibreCount", "fiberCount", "coreCount", "size", "capacity"], null);
+  const fromRaw = Number(String(raw ?? "").replace(/[^0-9.]/g, ""));
+  if (Number.isFinite(fromRaw) && fromRaw > 0) return Math.floor(fromRaw);
+
+  const coords = normaliseNumberList(item.fibres || item.fibreRange || item.allocatedInputFibres);
+  return coords.length ? Math.max(...coords) : null;
+}
+
+function findThroughCableAssetForDp(asset: SavedMapAsset | null, projectAssets: SavedMapAsset[]): SavedMapAsset | null {
+  const item = asset as any;
+  if (!item) return null;
+
+  const details = item.dpDetails || item.properties?.dpDetails || {};
+  const cableKeys = [
+    item.throughCableId,
+    item.throughCable,
+    item.parentCableId,
+    item.feedCable,
+    details.throughCableId,
+    details.throughCable,
+    details.parentCableId,
+    details.feedCable,
+    details.afnDetails?.throughCableId,
+    details.afnDetails?.throughCable,
+  ]
+    .map((value) => String(value ?? "").trim().toLowerCase())
+    .filter(Boolean);
+
+  if (!cableKeys.length) return null;
+
+  return projectAssets.find((candidate) => {
+    const cable = candidate as any;
+    const values = [
+      candidate.id,
+      cable.name,
+      cable.cableId,
+      cable.cableName,
+      cable.label,
+    ]
+      .map((value) => String(value ?? "").trim().toLowerCase())
+      .filter(Boolean);
+
+    return cableKeys.some((key) => values.includes(key));
+  }) || null;
+}
+
+function normaliseSbAllocationToLocalBranch(
+  asset: SavedMapAsset | null,
+  projectAssets: SavedMapAsset[],
+  allocation: SbFibreAllocation | null,
+): SbFibreAllocation | null {
+  if (!asset || !allocation) return allocation;
+  if (!isDp(asset)) return allocation;
+
+  const localInputFibres = readLocalDpInputFibres(asset);
+  if (!localInputFibres.length) return allocation;
+
+  const throughCableAsset = findThroughCableAssetForDp(asset, projectAssets);
+  const localCableCapacity = readCableCapacity(throughCableAsset) || allocation.fibreCapacity || Math.max(...localInputFibres);
+
+  // Only override when the saved DP inputs clearly describe local branch fibres.
+  // This prevents upstream CMJ/joint continuity rows from making a shoot-off SB
+  // display parent-cable fibres like 27, 28, 32 instead of local 1, 2, 3.
+  const existingLocalFibres = normaliseNumberList((allocation as any).localFibres);
+  const hasMismatch =
+    !existingLocalFibres.length ||
+    existingLocalFibres.some((fibre) => !localInputFibres.includes(fibre));
+
+  if (!hasMismatch) return allocation;
+
+  const existingLocalRows = Array.isArray((allocation as any).localRows)
+    ? (allocation as any).localRows
+    : Array.isArray((allocation as any).rows)
+      ? (allocation as any).rows.filter((row: any) => row?.role === "LOCAL")
+      : [];
+
+  const localRows = localInputFibres.map((fibre, index) => {
+    const sourceRow = existingLocalRows[index] || {};
+    return {
+      ...sourceRow,
+      fibre,
+      role: "LOCAL",
+      destinationName: sourceRow.destinationName || getAssetName(asset),
+      destinationAssetId: sourceRow.destinationAssetId || asset.id,
+      sourceAssetName: throughCableAsset ? getAssetName(throughCableAsset) : sourceRow.sourceAssetName,
+    };
+  });
+
+  const capacity = Number(localCableCapacity) || Math.max(...localInputFibres);
+  const rows = Array.from({ length: Math.max(capacity, Math.max(...localInputFibres)) }, (_, index) => {
+    const fibre = index + 1;
+    const localRow = localRows.find((row: any) => Number(row.fibre) === fibre);
+    if (localRow) return localRow;
+
+    return {
+      fibre,
+      role: "SPARE",
+      destinationName: "Spare on local branch cable",
+      destinationAssetId: asset.id,
+      sourceAssetName: throughCableAsset ? getAssetName(throughCableAsset) : undefined,
+    };
+  });
+
+  return {
+    ...(allocation as any),
+    fibreCapacity: capacity,
+    throughCableName: throughCableAsset ? getAssetName(throughCableAsset) : (allocation as any).throughCableName,
+    localFibres: localInputFibres,
+    localRows,
+    passthroughRows: [],
+    upstreamRows: [],
+    spareRows: rows.filter((row: any) => row.role === "SPARE"),
+    rows,
+    warnings: [
+      ...(((allocation as any).warnings || []) as string[]),
+      "Showing saved local branch input fibres for this SB. Upstream parent fibres are renumbered onto the shoot-off cable.",
+    ],
+  } as SbFibreAllocation;
+}
+
+
 function buildQaFlags(asset: SavedMapAsset | null): string[] {
   if (!asset) return [];
   const item = asset as any;
@@ -1065,7 +1252,17 @@ export default function AssetIntelligencePanel({
   onUpdateDpStatus,
 }: AssetIntelligencePanelProps) {
   const item = asset as any;
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [auditHistoryRefreshKey, setAuditHistoryRefreshKey] = useState(0);
   const canChangeDpStatus = isDp(asset) && Boolean(onUpdateDpStatus);
+
+  const selectedAuditTemplate = isPole(asset)
+    ? poleAuditTemplate
+    : isChamber(asset)
+      ? chamberAuditTemplate
+      : isJoint(asset)
+        ? jointAuditTemplate
+        : null;
 
   const applyDpStatus = (nextStatus: OperationalDpStatus) => {
     if (!asset || !onUpdateDpStatus) return;
@@ -1133,7 +1330,8 @@ export default function AssetIntelligencePanel({
   }, [asset, projectAssets, relatedAssets]);
 
   const sbFibreAllocation = useMemo(() => {
-    return buildSbFibreAllocation(asset, projectAssets || []);
+    const allocation = buildSbFibreAllocation(asset, projectAssets || []);
+    return normaliseSbAllocationToLocalBranch(asset, projectAssets || [], allocation);
   }, [asset, projectAssets]);
 
   const jointInfo = useMemo(() => {
@@ -1186,6 +1384,9 @@ export default function AssetIntelligencePanel({
           <button type="button" style={operationButton} onClick={() => onZoomAsset?.(asset)}>Zoom</button>
           <button type="button" style={operationButton} onClick={onOpenTopology}>Topology</button>
           <button type="button" style={operationButton} onClick={onOpenQA}>QA</button>
+          {selectedAuditTemplate ? (
+            <button type="button" style={liveOperationButton} onClick={() => setAuditOpen(true)}>Audit</button>
+          ) : null}
           {isJoint(asset) ? (
             <button type="button" style={operationButton} onClick={() => onOpenJointEditor?.(asset)}>Open Joint</button>
           ) : null}
@@ -1336,6 +1537,16 @@ export default function AssetIntelligencePanel({
         <InfoRow label="Notes" value={read(item, ["maintenanceNotes", "notes", "comment", "description"])} />
       </PanelSection>
 
+      <AuditPaymentBlockerPanel
+        assetId={asset.id}
+        refreshKey={auditHistoryRefreshKey}
+      />
+
+      <AuditHistoryPanel
+        assetId={asset.id}
+        refreshKey={auditHistoryRefreshKey}
+      />
+
       <PanelSection title="Operational QA">
         <div style={severityGrid}>
           <SeverityCard label="High" value={severityCounts.high} tone="high" />
@@ -1377,6 +1588,36 @@ export default function AssetIntelligencePanel({
         <button type="button" style={primaryButton} onClick={onOpenTopology}>Trace Topology</button>
         <button type="button" style={secondaryButton} onClick={onOpenQA}>Run QA</button>
       </div>
+
+      <AuditModal
+        open={auditOpen}
+        title={selectedAuditTemplate?.title || "Asset Audit"}
+        onClose={() => setAuditOpen(false)}
+      >
+        {selectedAuditTemplate ? (
+          <AuditFormEngine
+            template={selectedAuditTemplate}
+            assetId={asset.id}
+            assetName={getAssetName(asset)}
+            areaName={projectName}
+            onClose={() => setAuditOpen(false)}
+            onSave={async (audit) => {
+              await createAuditFormLog({
+                asset,
+                auditType: audit.auditType,
+                auditTitle: selectedAuditTemplate.title,
+                result: audit.result,
+                answers: audit.answers || {},
+                comments: audit.comments,
+                signature: audit.signature,
+                photos: audit.photos || [],
+              });
+              setAuditHistoryRefreshKey((current) => current + 1);
+              setAuditOpen(false);
+            }}
+          />
+        ) : null}
+      </AuditModal>
     </aside>
   );
 }

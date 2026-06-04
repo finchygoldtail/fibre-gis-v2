@@ -1,11 +1,278 @@
+import React, { useMemo, useState } from "react";
+import type { SavedMapAsset } from "../../map/types";
+import AssetExplorerFilters, {
+  DEFAULT_ASSET_EXPLORER_FILTERS,
+  type AssetExplorerFiltersState,
+} from "./AssetExplorerFilters";
+import AssetExplorerTable, { type AssetExplorerRow } from "./AssetExplorerTable";
 
-import React from "react";
+type Props = {
+  projectAssets: SavedMapAsset[];
+  selectedAssetId?: string | null;
+  onSelectAsset?: (asset: SavedMapAsset) => void;
+  onOpenAsset?: (asset: SavedMapAsset) => void;
+  onTraceAsset?: (asset: SavedMapAsset) => void;
+};
 
-export default function OperationalAssetExplorer() {
+function text(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function norm(value: unknown): string {
+  return text(value).toLowerCase();
+}
+
+function assetName(asset: SavedMapAsset): string {
+  const item = asset as any;
+  return text(item.name || item.jointName || item.label || item.cableId || item.assetId || item.id || "Unnamed asset");
+}
+
+function assetType(asset: SavedMapAsset): string {
+  const item = asset as any;
+  const raw = norm(item.assetType || item.type || item.jointType || item.cableType || "other");
+
+  if (raw.includes("distribution") || raw.includes("dp") || raw.includes("cbt") || raw.includes("afn") || raw.includes("mdu")) return "distribution-point";
+  if (raw.includes("joint") || raw.includes("cmj") || raw.includes("lmj") || raw.includes("mmj") || raw.includes("ag")) return "ag-joint";
+  if (raw.includes("street") || raw.includes("cab")) return "street-cab";
+  if (raw.includes("pole")) return "pole";
+  if (raw.includes("chamber")) return "chamber";
+  if (raw.includes("home") || raw.includes("premise") || raw.includes("property")) return "home";
+  if (raw.includes("area") || raw.includes("polygon") || asset.geometry?.type === "Polygon") return "area";
+  if (raw.includes("cable") || asset.geometry?.type === "LineString") return "cable";
+  return "other";
+}
+
+function prettyType(type: string): string {
+  if (type === "distribution-point") return "DP / SB";
+  if (type === "ag-joint") return "Joint";
+  if (type === "street-cab") return "Street cab";
+  return type.replace(/-/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function closureType(asset: SavedMapAsset): string {
+  const item = asset as any;
+  const raw = text(item.dpDetails?.closureType || item.dpDetails?.networkArchitecture || item.closureType || item.dpType || item.distributionPointType || item.jointType).toUpperCase();
+  if (raw.includes("MDU_SPLITTER")) return "MDU_SPLITTER";
+  if (raw.includes("MDU")) return "MDU";
+  if (raw.includes("AFN")) return "AFN";
+  if (raw.includes("CBT")) return "CBT";
+  return "";
+}
+
+function status(asset: SavedMapAsset): string {
+  const item = asset as any;
+  return text(item.status || item.buildStatus || item.serviceStatus || item.dpDetails?.buildStatus || item.properties?.status || "Unknown");
+}
+
+function numberList(values: unknown[]): number[] {
+  return Array.from(
+    new Set(
+      values
+        .flatMap((value) => (Array.isArray(value) ? value : [value]))
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0),
+    ),
+  ).sort((a, b) => a - b);
+}
+
+function countHomesForDp(dp: SavedMapAsset, allAssets: SavedMapAsset[]): number {
+  const item = dp as any;
+  const explicit = Number(item.connectedHomes || item.homesConnected || item.homeCount || item.dpDetails?.connectedHomes || item.dpDetails?.connectionsToHomes || 0);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+
+  const keys = [dp.id, item.assetId, item.name, item.jointName, item.label, item.dpId].map(norm).filter(Boolean);
+  const connectedHomes = new Set<string>();
+
+  allAssets.forEach((asset: any) => {
+    const homeText = [asset.assetType, asset.type, asset.homeType, asset.name, asset.label].map(norm).join(" ");
+    const isHome = asset.geometry?.type === "Point" && (asset.uprn || asset.UPRN || homeText.includes("home") || homeText.includes("premise") || homeText.includes("property"));
+    if (!isHome) return;
+
+    const dpRef = norm(asset.connectedDpId || asset.dpId || asset.assignedDpId || asset.properties?.connectedDpId || asset.properties?.dpId);
+    if (!dpRef || !keys.some((key) => key === dpRef || key.includes(dpRef) || dpRef.includes(key))) return;
+    connectedHomes.add(text(asset.uprn || asset.UPRN || asset.homeId || asset.id || asset.name));
+  });
+
+  return connectedHomes.size;
+}
+
+function getCapacity(asset: SavedMapAsset, used: number): number {
+  const item = asset as any;
+  const dpDetails = item.dpDetails || item.properties?.dpDetails || {};
+  const explicit = Number(item.capacity || item.dpCapacity || item.ports || dpDetails.capacity || dpDetails.ports || 0);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+
+  const fibres = numberList([
+    dpDetails.afnDetails?.inputFibres,
+    dpDetails.afnDetails?.splitterFibres,
+    item.afnDetails?.inputFibres,
+    item.splitterFibres,
+  ]);
+
+  const closure = closureType(asset);
+  if ((closure === "AFN" || closure === "MDU_SPLITTER") && fibres.length) return fibres.length * 8;
+  if (closure === "CBT") return Math.max(12, used);
+  return used;
+}
+
+function getRisk(used: number, capacity: number): AssetExplorerRow["risk"] {
+  if (!capacity) return "UNKNOWN";
+  if (used > capacity) return "OVER";
+  if (used === capacity) return "FULL";
+  if ((used / capacity) * 100 >= 80) return "WARN";
+  return "OK";
+}
+
+function getFibreSummary(asset: SavedMapAsset): string {
+  const item = asset as any;
+  const details = item.dpDetails || item.properties?.dpDetails || {};
+  const fibres = numberList([
+    details.afnDetails?.inputFibres,
+    details.afnDetails?.splitterFibres,
+    details.mduDetails?.inputFibres,
+    details.autoFibrePlan?.inputFibres,
+    item.inputFibres,
+    item.splitterFibres,
+  ]);
+
+  if (fibres.length) return `F${fibres.join(", F")}`;
+
+  const cableCount = text(item.fibreCount || item.fiberCount || item.coreCount || item.size);
+  if (cableCount) return cableCount;
+
+  const mappedRows = Array.isArray(item.mappingRows) ? item.mappingRows.length : Number(item.mappingRowsCount || 0);
+  if (mappedRows) return `${mappedRows} mapped rows`;
+
+  return "";
+}
+
+function getLocation(asset: SavedMapAsset): string {
+  const item = asset as any;
+  if (typeof item.lat === "number" && typeof item.lng === "number") return `${item.lat.toFixed(5)}, ${item.lng.toFixed(5)}`;
+  if (asset.geometry?.type === "Point" && Array.isArray(asset.geometry.coordinates)) {
+    const [lat, lng] = asset.geometry.coordinates as any[];
+    const nextLat = Number(lat);
+    const nextLng = Number(lng);
+    if (Number.isFinite(nextLat) && Number.isFinite(nextLng)) return `${nextLat.toFixed(5)}, ${nextLng.toFixed(5)}`;
+  }
+  return "";
+}
+
+function toRow(asset: SavedMapAsset, allAssets: SavedMapAsset[]): AssetExplorerRow {
+  const type = assetType(asset);
+  const used = type === "distribution-point" ? countHomesForDp(asset, allAssets) : 0;
+  const capacity = type === "distribution-point" ? getCapacity(asset, used) : 0;
+
+  return {
+    asset,
+    id: text(asset.id || (asset as any).assetId || assetName(asset)),
+    name: assetName(asset),
+    type: prettyType(type),
+    status: status(asset),
+    closureType: closureType(asset),
+    capacity,
+    used,
+    free: Math.max(0, capacity - used),
+    risk: type === "distribution-point" ? getRisk(used, capacity) : "UNKNOWN",
+    fibreSummary: getFibreSummary(asset),
+    location: getLocation(asset),
+  };
+}
+
+function matchesSearch(row: AssetExplorerRow, search: string): boolean {
+  const q = norm(search);
+  if (!q) return true;
+  const item = row.asset as any;
+  const haystack = [
+    row.id,
+    row.name,
+    row.type,
+    row.status,
+    row.closureType,
+    row.fibreSummary,
+    item.cableId,
+    item.jointName,
+    item.label,
+    item.assetId,
+    item.notes,
+  ]
+    .map(norm)
+    .join(" ");
+
+  return haystack.includes(q);
+}
+
+function matchesFilters(row: AssetExplorerRow, filters: AssetExplorerFiltersState): boolean {
+  if (!matchesSearch(row, filters.search)) return false;
+
+  if (filters.type !== "all") {
+    const type = assetType(row.asset);
+    if (filters.type === "other") {
+      if (type !== "other") return false;
+    } else if (type !== filters.type) {
+      return false;
+    }
+  }
+
+  if (filters.status !== "all") {
+    const rowStatus = row.status || "Unknown";
+    if (filters.status === "Unknown") {
+      if (rowStatus !== "Unknown") return false;
+    } else if (rowStatus !== filters.status) {
+      return false;
+    }
+  }
+
+  if (filters.showRiskOnly && !(row.risk === "WARN" || row.risk === "FULL" || row.risk === "OVER")) return false;
+
+  return true;
+}
+
+function sortRows(rows: AssetExplorerRow[], sort: AssetExplorerFiltersState["sort"]): AssetExplorerRow[] {
+  const next = [...rows];
+  const riskRank: Record<string, number> = { OVER: 0, FULL: 1, WARN: 2, UNKNOWN: 3, OK: 4 };
+
+  next.sort((a, b) => {
+    if (sort === "type") return `${a.type} ${a.name}`.localeCompare(`${b.type} ${b.name}`, undefined, { numeric: true });
+    if (sort === "status") return `${a.status} ${a.name}`.localeCompare(`${b.status} ${b.name}`, undefined, { numeric: true });
+    if (sort === "capacity") return b.used / Math.max(1, b.capacity) - a.used / Math.max(1, a.capacity);
+    if (sort === "risk") return (riskRank[a.risk] ?? 99) - (riskRank[b.risk] ?? 99) || a.name.localeCompare(b.name, undefined, { numeric: true });
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+  });
+
+  return next;
+}
+
+export default function OperationalAssetExplorer({ projectAssets, selectedAssetId, onSelectAsset, onOpenAsset, onTraceAsset }: Props) {
+  const [filters, setFilters] = useState<AssetExplorerFiltersState>(DEFAULT_ASSET_EXPLORER_FILTERS);
+
+  const allRows = useMemo(() => (projectAssets || []).map((asset) => toRow(asset, projectAssets || [])), [projectAssets]);
+  const filteredRows = useMemo(() => sortRows(allRows.filter((row) => matchesFilters(row, filters)), filters.sort), [allRows, filters]);
+
+  const riskCount = allRows.filter((row) => row.risk === "WARN" || row.risk === "FULL" || row.risk === "OVER").length;
+  const dpCount = allRows.filter((row) => assetType(row.asset) === "distribution-point").length;
+  const jointCount = allRows.filter((row) => assetType(row.asset) === "ag-joint").length;
+  const cableCount = allRows.filter((row) => assetType(row.asset) === "cable").length;
+
   return (
-    <div style={{ padding: 16, color: "#fff" }}>
-      <h2>Operational Asset Explorer</h2>
-      <p>Phase 7C.1 operational asset explorer loaded.</p>
-    </div>
+    <section style={{ gridColumn: "span 2", display: "grid", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
+        {[
+          ["Assets", allRows.length],
+          ["DPs / SBs", dpCount],
+          ["Joints", jointCount],
+          ["Cables", cableCount],
+          ["Risk", riskCount],
+        ].map(([label, value]) => (
+          <div key={String(label)} style={{ background: "#0f1b2d", border: "1px solid rgba(148,163,184,0.18)", borderRadius: 10, padding: 12 }}>
+            <div style={{ color: "#94a3b8", fontSize: 12 }}>{label}</div>
+            <div style={{ color: "#f8fafc", fontSize: 24, fontWeight: 900, marginTop: 5 }}>{Number(value).toLocaleString()}</div>
+          </div>
+        ))}
+      </div>
+
+      <AssetExplorerFilters value={filters} onChange={setFilters} totalCount={allRows.length} filteredCount={filteredRows.length} />
+      <AssetExplorerTable rows={filteredRows} selectedAssetId={selectedAssetId} onSelectAsset={onSelectAsset} onOpenAsset={onOpenAsset || onSelectAsset} onTraceAsset={onTraceAsset || onSelectAsset} />
+    </section>
   );
 }

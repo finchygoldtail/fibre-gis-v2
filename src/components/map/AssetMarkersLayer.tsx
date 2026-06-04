@@ -694,6 +694,123 @@ function getDpUsage(
   };
 }
 
+type ParentSbPopupSummary = {
+  parentName: string;
+  childName: string;
+  fibresNeeded: number;
+  parentFibres: number[];
+  localFibres: number[];
+  mappingRows: { parent: number; local: number }[];
+};
+
+function getAssetDisplayName(asset: SavedMapAsset | null | undefined): string {
+  const item = asset as any;
+  return String(item?.name || item?.jointName || item?.label || item?.assetId || item?.id || "SB");
+}
+
+function findAssetByReferences(assets: SavedMapAsset[], references: unknown[]): SavedMapAsset | null {
+  const refs = references.map(normaliseAssetRef).filter(Boolean);
+  if (!refs.length) return null;
+
+  return (
+    assets.find((asset) =>
+      getAssetIdentityValues(asset).some((identity) =>
+        refs.some((reference) => refsMatch(identity, reference)),
+      ),
+    ) || null
+  );
+}
+
+function buildParentSbPopupSummary(
+  dp: SavedMapAsset,
+  allAssets: SavedMapAsset[],
+): ParentSbPopupSummary | null {
+  const dpDetails = ((dp as any).dpDetails || (dp as any).properties?.dpDetails || {}) as any;
+  const afnDetails = dpDetails.afnDetails || (dp as any).afnDetails || {};
+  const throughCableId = String(afnDetails.throughCableId || "").trim();
+  if (!throughCableId) return null;
+
+  const branchCable =
+    allAssets.find((asset) => refsMatch(asset.id, throughCableId)) || null;
+  if (!branchCable) return null;
+
+  const branch = branchCable as any;
+  const allDps = allAssets.filter((asset) => asset.assetType === "distribution-point");
+  const childIds = getAssetIdentityValues(dp);
+  const endpointRefs = [
+    branch.fromAssetId,
+    branch.fromId,
+    branch.sourceAssetId,
+    branch.sourceId,
+    branch.aEndAssetId,
+    branch.startAssetId,
+    branch.toAssetId,
+    branch.toId,
+    branch.targetAssetId,
+    branch.targetId,
+    branch.zEndAssetId,
+    branch.endAssetId,
+  ].filter(Boolean);
+
+  const explicitParent = findAssetByReferences(allDps, [
+    branch.parentDpId,
+    branch.parentAssetId,
+    branch.upstreamDpId,
+    branch.upstreamAssetId,
+    dpDetails.parentDpId,
+    dpDetails.parentAssetId,
+    dpDetails.upstreamDpId,
+    dpDetails.upstreamAssetId,
+  ]);
+
+  const endpointParent = allDps.find((candidate) => {
+    if (candidate.id === dp.id) return false;
+    const candidateIds = getAssetIdentityValues(candidate);
+    const matchesCandidate = endpointRefs.some((ref) =>
+      candidateIds.some((identity) => refsMatch(ref, identity)),
+    );
+    const matchesChild = endpointRefs.some((ref) =>
+      childIds.some((identity) => refsMatch(ref, identity)),
+    );
+    return matchesCandidate && matchesChild;
+  });
+
+  const parent = explicitParent || endpointParent || null;
+  if (!parent) return null;
+
+  const localFibres = uniquePositiveNumbers([
+    ...(Array.isArray(afnDetails.inputFibres) ? afnDetails.inputFibres : []),
+    ...(Array.isArray(afnDetails.splitterFibres) ? afnDetails.splitterFibres : []),
+    ...(Array.isArray(dpDetails.autoFibrePlan?.inputFibres)
+      ? dpDetails.autoFibrePlan.inputFibres
+      : []),
+  ]);
+
+  const parentFibres = uniquePositiveNumbers([
+    ...(Array.isArray(branch.allocatedInputFibres) ? branch.allocatedInputFibres : []),
+    ...(Array.isArray(branch.parentInputFibres) ? branch.parentInputFibres : []),
+    ...(Array.isArray(branch.upstreamInputFibres) ? branch.upstreamInputFibres : []),
+    ...(Array.isArray(branch.parentFibres) ? branch.parentFibres : []),
+    ...(Array.isArray(branch.reservationFibres) ? branch.reservationFibres : []),
+    ...(Array.isArray(branch.reservedFibres) ? branch.reservedFibres : []),
+  ]);
+
+  const fibresNeeded = Math.max(localFibres.length, parentFibres.length);
+  if (!fibresNeeded) return null;
+
+  return {
+    parentName: getAssetDisplayName(parent),
+    childName: getAssetDisplayName(dp),
+    fibresNeeded,
+    parentFibres,
+    localFibres,
+    mappingRows: Array.from(
+      { length: Math.min(parentFibres.length, localFibres.length) },
+      (_, index) => ({ parent: parentFibres[index], local: localFibres[index] }),
+    ),
+  };
+}
+
 function getIconForAsset(asset: SavedMapAsset, allAssets: SavedMapAsset[]) {
   if (asset.assetType === "distribution-point") {
     return createSquareIcon(getDistributionPointColor(asset), "#ffffff");
@@ -1028,6 +1145,7 @@ export default function AssetMarkersLayer({
     const distributionPoints = getDistributionPoints(assets);
     const connectedDp = asset.assetType === "home" ? getHomeConnectedDp(asset, assets) : null;
     const dpUsage = asset.assetType === "distribution-point" ? getDpUsage(asset, assets, networkState) : null;
+    const parentSbSummary = asset.assetType === "distribution-point" ? buildParentSbPopupSummary(asset, assets) : null;
     const connectionMode = String((asset as any).connectionMode || "auto").toLowerCase() === "manual" ? "manual" : "auto";
 
     return (
@@ -1102,6 +1220,20 @@ export default function AssetMarkersLayer({
                       <br />
                       <b>AFN Splitter</b>
                       <br />
+                      {parentSbSummary ? (
+                        <>
+                          Parent SB: {parentSbSummary.parentName} → {parentSbSummary.childName}
+                          <br />
+                          Fibres needed: {parentSbSummary.fibresNeeded}
+                          <br />
+                          Mapping: {parentSbSummary.mappingRows.length
+                            ? parentSbSummary.mappingRows
+                                .map((row) => `F${row.parent}→F${row.local}`)
+                                .join(", ")
+                            : `${parentSbSummary.parentFibres.join(", ") || "-"} → ${parentSbSummary.localFibres.join(", ") || "-"}`}
+                          <br />
+                        </>
+                      ) : null}
                       Through cable: {asset.dpDetails.afnDetails?.throughCableId || "-"}
                       <br />
                       Fibres: {dpUsage?.inputFibres?.length ? dpUsage.inputFibres.join(", ") : asset.dpDetails.afnDetails?.inputFibres?.join(", ") || "-"}

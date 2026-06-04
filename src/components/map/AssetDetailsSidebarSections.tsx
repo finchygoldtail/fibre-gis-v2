@@ -105,6 +105,217 @@ function isThroughCableOption(asset: SavedMapAsset): boolean {
   );
 }
 
+function getDpDisplayName(asset: SavedMapAsset | null | undefined): string {
+  const item = asset as any;
+  return String(
+    item?.name ||
+      item?.jointName ||
+      item?.label ||
+      item?.assetId ||
+      item?.id ||
+      "DP",
+  );
+}
+
+function normaliseDpLookup(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[–—]/g, "-")
+    .replace(/[^A-Z0-9]/g, "");
+}
+
+function refsLookLikeSameAsset(a: unknown, b: unknown): boolean {
+  const left = normaliseDpLookup(a);
+  const right = normaliseDpLookup(b);
+  if (!left || !right) return false;
+  return left === right || left.includes(right) || right.includes(left);
+}
+
+function assetIdentityValues(asset: any): string[] {
+  return [
+    asset?.id,
+    asset?.assetId,
+    asset?.name,
+    asset?.jointName,
+    asset?.label,
+    asset?.dpId,
+  ]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+}
+
+function findAssetByAnyReference(
+  assets: SavedMapAsset[],
+  references: unknown[],
+): SavedMapAsset | null {
+  const wanted = references.map(normaliseDpLookup).filter(Boolean);
+  if (!wanted.length) return null;
+
+  return (
+    assets.find((asset) =>
+      assetIdentityValues(asset).some((identity) =>
+        wanted.some((reference) => refsLookLikeSameAsset(identity, reference)),
+      ),
+    ) || null
+  );
+}
+
+function readPositiveFibres(values: unknown[]): number[] {
+  const fibres: number[] = [];
+
+  values.forEach((value) => {
+    if (Array.isArray(value)) {
+      value.forEach((entry) => {
+        const number = Number(entry);
+        if (Number.isFinite(number) && number > 0) fibres.push(Math.floor(number));
+      });
+      return;
+    }
+
+    if (typeof value === "string") {
+      value.split(/[,;\s]+/).forEach((entry) => {
+        const number = Number(entry.replace(/[^0-9]/g, ""));
+        if (Number.isFinite(number) && number > 0) fibres.push(Math.floor(number));
+      });
+      return;
+    }
+
+    const number = Number(value);
+    if (Number.isFinite(number) && number > 0) fibres.push(Math.floor(number));
+  });
+
+  return Array.from(new Set(fibres)).sort((a, b) => a - b);
+}
+
+type ParentSbReservationSummary = {
+  parentName: string;
+  childName: string;
+  branchCableName: string;
+  fibresNeeded: number;
+  parentFibres: number[];
+  localFibres: number[];
+  mappingRows: { parent: number; local: number }[];
+  isShootOff: boolean;
+};
+
+function buildParentSbReservationSummary(args: {
+  currentDpId?: string | null;
+  selectedCable?: SavedMapAsset | null;
+  selectedCableId?: string;
+  currentInputFibres: number[];
+  allDistributionPoints: SavedMapAsset[];
+  allAssets: SavedMapAsset[];
+}): ParentSbReservationSummary | null {
+  const {
+    currentDpId,
+    selectedCable,
+    selectedCableId,
+    currentInputFibres,
+    allDistributionPoints,
+    allAssets,
+  } = args;
+
+  const distributionPoints = allDistributionPoints.length
+    ? allDistributionPoints
+    : allAssets.filter((asset: any) => asset?.assetType === "distribution-point");
+
+  const child =
+    findAssetByAnyReference(distributionPoints, [currentDpId]) || null;
+  if (!child || !selectedCableId) return null;
+
+  const cable =
+    selectedCable ||
+    allAssets.find((asset) =>
+      refsLookLikeSameAsset(asset?.id, selectedCableId),
+    ) ||
+    null;
+
+  const cableData = cable as any;
+  const childIdentities = assetIdentityValues(child);
+
+  const endpointRefs = [
+    cableData?.fromAssetId,
+    cableData?.fromId,
+    cableData?.sourceAssetId,
+    cableData?.sourceId,
+    cableData?.aEndAssetId,
+    cableData?.startAssetId,
+    cableData?.toAssetId,
+    cableData?.toId,
+    cableData?.targetAssetId,
+    cableData?.targetId,
+    cableData?.zEndAssetId,
+    cableData?.endAssetId,
+  ].filter(Boolean);
+
+  const parentByEndpoint = distributionPoints.find((candidate) => {
+    if (candidate.id === child.id) return false;
+    const candidateIdentities = assetIdentityValues(candidate);
+    const endpointMatchesCandidate = endpointRefs.some((ref) =>
+      candidateIdentities.some((identity) => refsLookLikeSameAsset(ref, identity)),
+    );
+    const endpointMatchesChild = endpointRefs.some((ref) =>
+      childIdentities.some((identity) => refsLookLikeSameAsset(ref, identity)),
+    );
+    return endpointMatchesCandidate && endpointMatchesChild;
+  });
+
+  const explicitParent = findAssetByAnyReference(distributionPoints, [
+    cableData?.parentDpId,
+    cableData?.parentAssetId,
+    cableData?.upstreamDpId,
+    cableData?.upstreamAssetId,
+    (child as any)?.parentDpId,
+    (child as any)?.parentAssetId,
+    (child as any)?.dpDetails?.parentDpId,
+    (child as any)?.dpDetails?.parentAssetId,
+    (child as any)?.dpDetails?.upstreamDpId,
+    (child as any)?.dpDetails?.upstreamAssetId,
+  ]);
+
+  const parent = explicitParent || parentByEndpoint || null;
+
+  const localFibres = readPositiveFibres([
+    currentInputFibres,
+    (child as any)?.dpDetails?.afnDetails?.inputFibres,
+    (child as any)?.dpDetails?.mduDetails?.inputFibres,
+    (child as any)?.dpDetails?.autoFibrePlan?.inputFibres,
+  ]);
+
+  const parentFibres = readPositiveFibres([
+    cableData?.allocatedInputFibres,
+    cableData?.parentInputFibres,
+    cableData?.upstreamInputFibres,
+    cableData?.sourceFibres,
+    cableData?.sourceFibreNumbers,
+    cableData?.parentFibres,
+    cableData?.reservationFibres,
+    cableData?.reservedFibres,
+  ]);
+
+  const fibresNeeded = Math.max(localFibres.length, parentFibres.length);
+  if (!fibresNeeded) return null;
+
+  const mappingRows = Array.from({ length: Math.min(parentFibres.length, localFibres.length) }, (_, index) => ({
+    parent: parentFibres[index],
+    local: localFibres[index],
+  }));
+
+  return {
+    parentName: parent ? getDpDisplayName(parent) : "Parent SB",
+    childName: getDpDisplayName(child),
+    branchCableName: cable
+      ? normaliseCableLabel((cable as any).name || (cable as any).cableId || cable.id)
+      : normaliseCableLabel(selectedCableId),
+    fibresNeeded,
+    parentFibres,
+    localFibres,
+    mappingRows,
+    isShootOff: Boolean(parent && parent.id !== child.id),
+  };
+}
+
 const helpText: React.CSSProperties = {
   color: "#9ca3af",
   fontSize: "0.82rem",
@@ -318,9 +529,9 @@ export default function AssetDetailsSidebarSections({
     });
   }, [availableThroughCables, allAssets, currentDpId]);
 
-  const selectedCable = afnThroughCableOptions.find(
-    (cable) => cable.id === selectedCableId,
-  );
+  const selectedCable =
+    afnThroughCableOptions.find((cable) => cable.id === selectedCableId) ||
+    allAssets.find((asset) => asset.id === selectedCableId);
   const currentInputFibres =
     dpDetails.afnDetails?.inputFibres ||
     dpDetails.mduDetails?.inputFibres ||
@@ -432,6 +643,26 @@ export default function AssetDetailsSidebarSections({
     dpUsed,
     selectedCableId,
   ]);
+
+  const parentSbReservationSummary = useMemo(
+    () =>
+      buildParentSbReservationSummary({
+        currentDpId,
+        selectedCable,
+        selectedCableId,
+        currentInputFibres,
+        allDistributionPoints,
+        allAssets,
+      }),
+    [
+      allAssets,
+      allDistributionPoints,
+      currentDpId,
+      currentInputFibres,
+      selectedCable,
+      selectedCableId,
+    ],
+  );
 
   function applyAutoFibrePlan() {
     const allocation = suggestedFibreAllocation || undefined;
@@ -1092,6 +1323,91 @@ export default function AssetDetailsSidebarSections({
 
         {dpDetails.closureType === "AFN" ? (
           <>
+            {parentSbReservationSummary?.isShootOff ? (
+              <div
+                style={{
+                  marginTop: 10,
+                  marginBottom: 10,
+                  padding: 10,
+                  borderRadius: 10,
+                  background: "rgba(14,165,233,0.10)",
+                  border: "1px solid rgba(56,189,248,0.34)",
+                }}
+              >
+                <div
+                  style={{
+                    color: "#7dd3fc",
+                    fontSize: "0.72rem",
+                    fontWeight: 900,
+                    letterSpacing: "0.06em",
+                    textTransform: "uppercase",
+                    marginBottom: 6,
+                  }}
+                >
+                  Parent SB Reservation
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 8,
+                    color: "#e0f2fe",
+                    fontWeight: 900,
+                    fontSize: "0.92rem",
+                  }}
+                >
+                  <span>{parentSbReservationSummary.parentName}</span>
+                  <span style={{ color: "#38bdf8" }}>→</span>
+                  <span>{parentSbReservationSummary.childName}</span>
+                </div>
+
+                <div style={{ ...helpText, marginTop: 6, color: "#bae6fd" }}>
+                  {parentSbReservationSummary.fibresNeeded} fibre
+                  {parentSbReservationSummary.fibresNeeded === 1 ? "" : "s"} needed
+                  {parentSbReservationSummary.branchCableName
+                    ? ` on ${parentSbReservationSummary.branchCableName}`
+                    : ""}
+                </div>
+
+                {parentSbReservationSummary.mappingRows.length ? (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(78px, 1fr))",
+                      gap: 6,
+                      marginTop: 8,
+                    }}
+                  >
+                    {parentSbReservationSummary.mappingRows.map((row) => (
+                      <div
+                        key={`${row.parent}-${row.local}`}
+                        style={{
+                          background: "#020617",
+                          border: "1px solid rgba(125,211,252,0.24)",
+                          borderRadius: 8,
+                          padding: "6px 7px",
+                          textAlign: "center",
+                          color: "#f8fafc",
+                          fontWeight: 900,
+                          fontSize: "0.78rem",
+                        }}
+                      >
+                        F{row.parent} → F{row.local}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ ...helpText, marginTop: 8 }}>
+                    Parent fibres: {parentSbReservationSummary.parentFibres.join(", ") || "not set"}
+                    <br />
+                    Local fibres: {parentSbReservationSummary.localFibres.join(", ") || "not set"}
+                  </div>
+                )}
+              </div>
+            ) : null}
+
             <div style={helpText}>
               AFN uses selected input fibres from a through cable. Each selected
               fibre gives 8 outputs.
@@ -1116,46 +1432,62 @@ export default function AssetDetailsSidebarSections({
                 </option>
               ))}
             </select>
-            {selectedCableId ? (
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-                  gap: 5,
-                  marginTop: 8,
-                  maxHeight: 185,
-                  overflowY: "auto",
-                }}
-              >
-                {Array.from({ length: fibreTotal }, (_, index) => {
-                  const fibre = index + 1;
-                  const selectedHere = currentInputFibres.includes(fibre);
-                  const usedElsewhere = usedByOtherReservations.has(fibre);
-                  return (
-                    <button
+            <div
+              style={{
+                marginTop: 10,
+                padding: 10,
+                border: "1px solid #334155",
+                borderRadius: 10,
+                background: "#020617",
+              }}
+            >
+              <div style={{ fontWeight: 900, color: "#e5e7eb", marginBottom: 6 }}>
+                Fibre source
+              </div>
+
+              <div style={helpText}>
+                Joint mapping / CMJ continuity is the source of truth. Fibres are
+                displayed here for reference only and are no longer manually
+                selected from the DP sidebar.
+              </div>
+
+              {currentInputFibres.length ? (
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                    gap: 5,
+                    marginTop: 8,
+                  }}
+                >
+                  {currentInputFibres.map((fibre) => (
+                    <div
                       key={fibre}
-                      type="button"
-                      disabled={usedElsewhere && !selectedHere}
-                      onClick={() => toggleFibre(fibre)}
                       style={{
-                        ...secondaryButtonStyle,
-                        padding: "5px 4px",
-                        background: selectedHere
-                          ? "#2563eb"
-                          : usedElsewhere
-                            ? "#374151"
-                            : "#111827",
-                        opacity: usedElsewhere && !selectedHere ? 0.45 : 1,
+                        padding: "6px 4px",
+                        background: "#0f172a",
+                        border: "1px solid #2563eb",
+                        borderRadius: 8,
+                        color: "#bfdbfe",
+                        textAlign: "center",
+                        fontWeight: 900,
+                        fontSize: "0.82rem",
                       }}
                     >
                       F{fibre}
-                    </button>
-                  );
-                })}
-              </div>
-            ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ ...helpText, marginTop: 8 }}>
+                  No local splitter fibres are stored on this DP yet. Upload or
+                  rebuild from joint continuity to populate the routing view.
+                </div>
+              )}
+            </div>
+
             <div style={helpText}>
-              Fibres selected: {currentInputFibres.join(", ") || "none"}
+              Fibres shown: {currentInputFibres.join(", ") || "none"}
               <br />
               Splitter: 1:8 / {currentInputFibres.length * 8} outputs
             </div>

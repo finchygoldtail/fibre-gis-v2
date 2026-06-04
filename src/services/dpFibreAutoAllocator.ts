@@ -596,8 +596,17 @@ function getCableDemand(input: {
     );
     const demand = local + branchDemand;
     if (demand > 0) {
+      const parentDp = input.originDpId
+        ? input.allDistributionPoints.find(
+            (candidate) => String(candidate.id || "") === String(input.originDpId || ""),
+          )
+        : null;
+      const relationshipLabel = parentDp
+        ? `${getAssetName(parentDp)} → ${getAssetName(asset)}`
+        : getAssetName(asset);
+
       input.branchNotes.push(
-        `${getAssetName(asset)} reserves ${demand} fibre(s) on ${getAssetName(input.cable)}${branchDemand ? ` (${branchDemand} from downstream branches)` : ""}.`,
+        `${relationshipLabel}: ${demand} fibre(s) needed${branchDemand ? ` (${branchDemand} from downstream branches)` : ""}.`,
       );
       input.traceRows?.push({
         assetId: String(asset.id || ""),
@@ -608,8 +617,8 @@ function getCableDemand(input: {
         branchFibres: branchDemand,
         totalFibres: demand,
         note: branchDemand
-          ? `${branchDemand} fibre(s) are downstream branch demand; this does not reserve the full branch cable size.`
-          : "Local splitter/building demand only.",
+          ? `${relationshipLabel}: ${branchDemand} downstream branch fibre(s); this does not reserve the full branch cable size.`
+          : `${relationshipLabel}: local splitter/building demand only.`,
       });
     }
     total += demand;

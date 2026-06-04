@@ -298,18 +298,41 @@ function keysMatch(a: string, b: string): boolean {
 }
 
 function getDpCapacity(dp: any): number {
+  const details = getDpDetails(dp);
+
   const capacity =
     Number(dp?.capacity) ||
     Number(dp?.dpCapacity) ||
     Number(dp?.afnCapacity) ||
     Number(dp?.ports) ||
+
+    Number(details?.capacity) ||
+    Number(details?.dpCapacity) ||
+    Number(details?.afnCapacity) ||
+
     Number(dp?.properties?.capacity) ||
     Number(dp?.properties?.dpCapacity) ||
     Number(dp?.properties?.afnCapacity) ||
-    Number(dp?.properties?.ports) ||
-    16;
+    Number(dp?.properties?.ports);
 
-  return Math.max(0, capacity);
+  if (capacity > 0) {
+    return capacity;
+  }
+
+  const closureType = getDpClosureType(dp);
+
+  switch (closureType) {
+    case "AFN":
+      return 24;
+
+    case "MDU":
+    case "MDU_SPLITTER":
+      return 24;
+
+    case "CBT":
+    default:
+      return 12;
+  }
 }
 
 function getCableCapacity(asset: any): number {

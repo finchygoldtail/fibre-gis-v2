@@ -257,3 +257,39 @@ function sanitizeSnapshot(value: unknown) {
     return null;
   }
 }
+export type AuditFormResult = "Pass" | "Advisory" | "Fail";
+
+export type CreateAuditFormInput = {
+  projectId?: string | null;
+  asset: any;
+  auditType: string;
+  auditTitle: string;
+  result: AuditFormResult;
+  contractor?: string;
+  answers: Record<string, any>;
+  comments?: string;
+  signature?: string;
+  photos?: AuditAttachment[];
+};
+
+export async function createAuditFormLog(
+  input: CreateAuditFormInput,
+): Promise<AuditLog> {
+  return createAssetChangeLog({
+    projectId: input.projectId,
+    asset: input.asset,
+    action: "tested",
+    reason: `${input.auditTitle} completed: ${input.result}`,
+    comment: input.comments,
+    context: input.auditType,
+    after: {
+      auditType: input.auditType,
+      auditTitle: input.auditTitle,
+      result: input.result,
+      contractor: input.contractor?.trim() || "",
+      answers: input.answers,
+      signature: input.signature,
+    },
+    attachments: input.photos,
+  });
+}

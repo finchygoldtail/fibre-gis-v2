@@ -14,6 +14,13 @@ import { downloadAddressSheetTemplate } from "./workspace/addressSheetParser";
 import { downloadAgJointTemplate, downloadCmjJointTemplate } from "../../logic/exportAgExcel";
 import { downloadLmjJointTemplate } from "../../logic/exportLmjExcel";
 import { downloadStreetCabTemplate } from "../../logic/exportStreetCabExcel";
+import AuditModal from "../audits/AuditModal";
+import AuditFormEngine from "../audits/AuditFormEngine";
+import { walkOffAuditTemplate } from "../audits/auditTemplates";
+import { createAuditFormLog } from "../../services/auditService";
+import AuditCommercialDashboard from "../audits/AuditCommercialDashboard";
+import AuditPaymentBlockerPanel from "../audits/AuditPaymentBlockerPanel";
+import AuditHistoryPanel from "../audits/AuditHistoryPanel";
 
 // =====================================================
 // FILE: ProjectWorkspace.tsx
@@ -38,6 +45,7 @@ type WorkspaceOperationPanel =
   | "disconnected"
   | "capacity"
   | "addAsset"
+  | "handover"
   | "report";
 
 type WorkspaceTab =
@@ -49,6 +57,7 @@ type WorkspaceTab =
   | "assets"
   | "fibre"
   | "reports"
+  | "commercial"
   | "settings";
 
 type ProjectWorkspaceStats = {
@@ -121,6 +130,7 @@ const tabs: { id: WorkspaceTab; label: string }[] = [
   { id: "assets", label: "Assets" },
   { id: "fibre", label: "Fibre" },
   { id: "reports", label: "Reports" },
+  { id: "commercial", label: "Commercial" },
 ];
 
 const defaultWorkspaceLayers: WorkspaceLayerVisibility = {
@@ -1072,6 +1082,113 @@ function getTraceHighlightIdList(
   return Object.keys(highlights).filter(Boolean);
 }
 
+
+
+type QaIssueSeverity = "high" | "medium" | "low";
+type QaPanelViewMode = "navigator" | "list";
+
+type QaIssueCategoryGroup = {
+  key: string;
+  label: string;
+  issues: AuditIssue[];
+};
+
+function readAuditIssueText(issue: AuditIssue, keys: string[]): string {
+  const item = issue as any;
+  for (const key of keys) {
+    const value = item?.[key];
+    if (value !== undefined && value !== null && String(value).trim()) {
+      return String(value).trim();
+    }
+  }
+  return "";
+}
+
+function getAuditIssueAssetLabel(issue: AuditIssue): string {
+  return (
+    readAuditIssueText(issue, ["assetName", "assetLabel", "name", "label", "assetId", "id"]) ||
+    "Unknown asset"
+  );
+}
+
+function getAuditIssueDescription(issue: AuditIssue): string {
+  return (
+    readAuditIssueText(issue, ["issue", "message", "description", "title", "detail", "warning"]) ||
+    "QA issue"
+  );
+}
+
+function classifyAuditIssueCategory(issue: AuditIssue): { key: string; label: string } {
+  const explicitCategory = readAuditIssueText(issue, ["category", "type", "issueType"]);
+  const text = `${explicitCategory} ${getAuditIssueDescription(issue)} ${getAuditIssueAssetLabel(issue)}`.toLowerCase();
+
+  if (text.includes("capacity") || text.includes("over capacity") || text.includes("near capacity")) {
+    return { key: "capacity", label: "Capacity" };
+  }
+
+  if (text.includes("68") || text.includes("drop distance") || text.includes("too far") || text.includes("distance")) {
+    return { key: "drop-distance", label: "Drop Distance" };
+  }
+
+  if (text.includes("missing feed") || text.includes("unfed") || text.includes("not fed") || text.includes("feed")) {
+    return { key: "feed", label: "Feed / Fed State" };
+  }
+
+  if (text.includes("disconnected") || text.includes("orphan") || text.includes("isolated")) {
+    return { key: "disconnected", label: "Disconnected / Orphan" };
+  }
+
+  if (text.includes("topology") || text.includes("trace") || text.includes("upstream") || text.includes("downstream")) {
+    return { key: "topology", label: "Topology" };
+  }
+
+  if (text.includes("duplicate") || text.includes("stacked")) {
+    return { key: "duplicates", label: "Duplicates / Stacked" };
+  }
+
+  if (text.includes("fibre") || text.includes("fiber") || text.includes("splice") || text.includes("tray")) {
+    return { key: "fibre", label: "Fibre / Splicing" };
+  }
+
+  if (text.includes("name") || text.includes("naming") || text.includes("id")) {
+    return { key: "naming", label: "Naming / IDs" };
+  }
+
+  if (text.includes("metadata") || text.includes("missing") || text.includes("blank")) {
+    return { key: "metadata", label: "Missing Metadata" };
+  }
+
+  if (explicitCategory) {
+    const label = explicitCategory.replace(/[-_]/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+    return { key: explicitCategory.toLowerCase().replace(/\s+/g, "-"), label };
+  }
+
+  return { key: "other", label: "Other" };
+}
+
+function groupAuditIssuesByCategory(issues: AuditIssue[]): QaIssueCategoryGroup[] {
+  const groups = new Map<string, QaIssueCategoryGroup>();
+
+  issues.forEach((issue) => {
+    const category = classifyAuditIssueCategory(issue);
+    const current = groups.get(category.key) || {
+      key: category.key,
+      label: category.label,
+      issues: [],
+    };
+
+    current.issues.push(issue);
+    groups.set(category.key, current);
+  });
+
+  return Array.from(groups.values()).sort((a, b) => b.issues.length - a.issues.length || a.label.localeCompare(b.label));
+}
+
+function normaliseIssueSeverity(value: unknown): QaIssueSeverity | null {
+  const text = String(value || "").trim().toLowerCase();
+  if (text === "high" || text === "medium" || text === "low") return text;
+  return null;
+}
 export default function ProjectWorkspace({
   projectName,
   status = "Build Phase",
@@ -1179,7 +1296,13 @@ export default function ProjectWorkspace({
   const [activeOperationPanel, setActiveOperationPanel] =
     useState<WorkspaceOperationPanel>("none");
   const [activeIssueSeverity, setActiveIssueSeverity] =
-    useState<"high" | "medium" | "low" | null>(null);
+    useState<QaIssueSeverity | null>(null);
+  const [activeIssueCategory, setActiveIssueCategory] = useState<string | null>(null);
+  const [qaPanelViewMode, setQaPanelViewMode] = useState<QaPanelViewMode>("navigator");
+  const [issueNavigatorIndex, setIssueNavigatorIndex] = useState(0);
+  const [walkOffAuditOpen, setWalkOffAuditOpen] = useState(false);
+  const [walkOffStatus, setWalkOffStatus] = useState<"Pending" | "Approved" | "Review Required" | "Blocked">("Pending");
+  const [walkOffSavedAt, setWalkOffSavedAt] = useState<string>("");
 
   const auditIssues = useMemo(() => {
   const rawIssues = auditAreaAssets(workspaceAssets);
@@ -1432,12 +1555,51 @@ const homesLive = Math.min(
 
   const issueBuckets = useMemo(
     () => ({
-      high: auditIssues.filter((issue) => issue.severity === "high"),
-      medium: auditIssues.filter((issue) => issue.severity === "medium"),
-      low: auditIssues.filter((issue) => issue.severity === "low"),
+      high: auditIssues.filter((issue) => normaliseIssueSeverity(issue.severity) === "high"),
+      medium: auditIssues.filter((issue) => normaliseIssueSeverity(issue.severity) === "medium"),
+      low: auditIssues.filter((issue) => normaliseIssueSeverity(issue.severity) === "low"),
     }),
     [auditIssues],
   );
+
+  const selectedIssueSeverity = useMemo<QaIssueSeverity | null>(() => {
+    if (activeIssueSeverity) return activeIssueSeverity;
+    if (issueBuckets.high.length) return "high";
+    if (issueBuckets.medium.length) return "medium";
+    if (issueBuckets.low.length) return "low";
+    return null;
+  }, [activeIssueSeverity, issueBuckets.high.length, issueBuckets.medium.length, issueBuckets.low.length]);
+
+  const selectedSeverityIssues = useMemo(
+    () => (selectedIssueSeverity ? issueBuckets[selectedIssueSeverity] : auditIssues),
+    [auditIssues, issueBuckets, selectedIssueSeverity],
+  );
+
+  const qaIssueCategoryGroups = useMemo(
+    () => groupAuditIssuesByCategory(selectedSeverityIssues),
+    [selectedSeverityIssues],
+  );
+
+  const selectedIssueCategoryKey = useMemo(() => {
+    if (activeIssueCategory && qaIssueCategoryGroups.some((group) => group.key === activeIssueCategory)) {
+      return activeIssueCategory;
+    }
+    return qaIssueCategoryGroups[0]?.key ?? null;
+  }, [activeIssueCategory, qaIssueCategoryGroups]);
+
+  const selectedIssueCategoryGroup = useMemo(
+    () => qaIssueCategoryGroups.find((group) => group.key === selectedIssueCategoryKey) || null,
+    [qaIssueCategoryGroups, selectedIssueCategoryKey],
+  );
+
+  const selectedCategoryIssues = selectedIssueCategoryGroup?.issues || [];
+  const selectedNavigatorIssue = selectedCategoryIssues.length
+    ? selectedCategoryIssues[Math.min(issueNavigatorIndex, selectedCategoryIssues.length - 1)]
+    : null;
+
+  useEffect(() => {
+    setIssueNavigatorIndex(0);
+  }, [selectedIssueSeverity, selectedIssueCategoryKey]);
 
   // =====================================================
   // KPI DRILL-DOWN DATA
@@ -1585,8 +1747,10 @@ const homesLive = Math.min(
     setActiveOperationPanel("trace");
   };
 
-  const openIssueSeverity = (severity: "high" | "medium" | "low") => {
+  const openIssueSeverity = (severity: QaIssueSeverity) => {
     setActiveIssueSeverity(severity);
+    setActiveIssueCategory(null);
+    setIssueNavigatorIndex(0);
     setActiveTab("qa");
     setActiveOperationPanel("qa");
   };
@@ -1599,6 +1763,21 @@ const homesLive = Math.min(
     }
     setActiveTab("qa");
     setActiveOperationPanel("qa");
+  };
+
+  const openSelectedNavigatorIssue = () => {
+    if (!selectedNavigatorIssue) return;
+    handleAuditIssueSelect(selectedNavigatorIssue);
+  };
+
+  const moveNavigatorIssue = (direction: -1 | 1) => {
+    if (!selectedCategoryIssues.length) return;
+    setIssueNavigatorIndex((current) => {
+      const next = current + direction;
+      if (next < 0) return selectedCategoryIssues.length - 1;
+      if (next >= selectedCategoryIssues.length) return 0;
+      return next;
+    });
   };
 
   const handleGenerateReport = () => {
@@ -1866,6 +2045,96 @@ const homesLive = Math.min(
 
   const activeWorkspaceProjectId =
     activeProjectId || projectArea?.id || workspaceProjectOptions[0]?.id || "";
+
+  const walkOffSnapshot = useMemo(
+    () => ({
+      projectName,
+      status,
+      readinessState: operationalReadiness.state,
+      readinessScore: operationalReadiness.score,
+      readinessBlockers: operationalReadiness.blockers,
+      homesPassed: rolloutKpis.homesPassed,
+      homesLive: rolloutKpis.homesLive,
+      homesNotLive: rolloutKpis.homesNotLive,
+      rfsPercent: rolloutKpis.rfsPercent,
+      buildCompletionPercent: rolloutKpis.buildCompletionPercent,
+      dpTotal: rolloutKpis.dpTotal,
+      dpLive: rolloutKpis.dpLive,
+      dpBwip: rolloutKpis.dpBwip,
+      dpLnrfs: rolloutKpis.dpLnrfs,
+      dpUnserviceable: rolloutKpis.dpUnserviceable,
+      dpNearCapacity: rolloutKpis.dpNearCapacity,
+      dpOverCapacity: rolloutKpis.dpOverCapacity,
+      qaHigh: issueBuckets.high.length,
+      qaMedium: issueBuckets.medium.length,
+      qaLow: issueBuckets.low.length,
+      qaTotal: auditIssues.length,
+      disconnectedAssets: rolloutKpis.disconnectedAssets,
+      routeLengthMeters: rolloutKpis.routeLengthMeters,
+      assetTotals: {
+        totalAssets: workspaceAssets.length,
+        joints: displayStats.joints,
+        dps: displayStats.dps,
+        poles: displayStats.poles,
+        chambers: displayStats.chambers,
+        designCables: displayStats.designCables ?? displayStats.cables,
+        dropCables: displayStats.dropCables ?? 0,
+      },
+      capturedAt: new Date().toISOString(),
+    }),
+    [
+      projectName,
+      status,
+      operationalReadiness,
+      rolloutKpis,
+      issueBuckets.high.length,
+      issueBuckets.medium.length,
+      issueBuckets.low.length,
+      auditIssues.length,
+      workspaceAssets.length,
+      displayStats,
+    ],
+  );
+
+  const walkOffAreaAsset = useMemo(
+    () =>
+      ({
+        ...(projectArea || {}),
+        id: projectArea?.id || activeWorkspaceProjectId || `area-${projectName}`,
+        name: projectArea ? getProjectAreaLabel(projectArea) : projectName,
+        assetType: "area",
+        type: "area",
+        walkOffSnapshot,
+      }) as SavedMapAsset,
+    [projectArea, activeWorkspaceProjectId, projectName, walkOffSnapshot],
+  );
+
+  const handleSaveWalkOffAudit = async (audit: any) => {
+    await createAuditFormLog({
+      projectId: activeWorkspaceProjectId || activeProjectId || projectArea?.id || null,
+      asset: walkOffAreaAsset,
+      auditType: walkOffAuditTemplate.auditType,
+      auditTitle: walkOffAuditTemplate.title,
+      result: audit.result,
+      answers: {
+        ...(audit.answers || {}),
+        areaSnapshot: walkOffSnapshot,
+      },
+      comments: audit.comments,
+      signature: audit.signature,
+      photos: audit.photos,
+    });
+
+    setWalkOffStatus(
+      audit.result === "Pass"
+        ? "Approved"
+        : audit.result === "Advisory"
+          ? "Review Required"
+          : "Blocked",
+    );
+    setWalkOffSavedAt(new Date().toLocaleString("en-GB"));
+    setWalkOffAuditOpen(false);
+  };
 
 
   const workspaceLayerCounts = useMemo(() => {
@@ -2262,6 +2531,7 @@ const homesLive = Math.min(
               ],
               ["Assets", () => openOperationPanel("projectDetails", "assets")],
               ["Reports", () => openOperationPanel("report", "reports")],
+              ["Area Handover", () => openOperationPanel("handover", "overview")],
             ]}
           />
 
@@ -2482,6 +2752,67 @@ const homesLive = Math.min(
               />
             </section>
           ) : (
+            <>
+            {activeTab === "commercial" ? (
+              <section style={commercialPanel}>
+                <div style={commercialHeaderRow}>
+                  <div>
+                    <div style={operationKicker}>PHASE 9E COMMERCIAL</div>
+                    <h3 style={commercialTitle}>Commercial Dashboard</h3>
+                    <div style={commercialHint}>
+                      Failed audits, payment holds, advisory reviews and walk-off status for this project area.
+                    </div>
+                  </div>
+                  <span style={walkOffStatusPill(walkOffStatus)}>{walkOffStatus}</span>
+                </div>
+
+                <div style={commercialKpiGrid}>
+                  <InfoRow label="Walk-Off Status" value={walkOffStatus} highlight={walkOffStatus === "Approved"} />
+                  <InfoRow label="Readiness" value={`${operationalReadiness.score}% · ${operationalReadiness.state}`} highlight={operationalReadiness.score >= 85 && operationalReadiness.blockers.length === 0} />
+                  <InfoRow label="High QA" value={issueBuckets.high.length} highlight={issueBuckets.high.length === 0} />
+                  <InfoRow label="Medium QA" value={issueBuckets.medium.length} highlight={issueBuckets.medium.length === 0} />
+                  <InfoRow label="DP Over Capacity" value={rolloutKpis.dpOverCapacity} highlight={rolloutKpis.dpOverCapacity === 0} />
+                  <InfoRow label="Last Walk-Off" value={walkOffSavedAt || "Not completed"} highlight={Boolean(walkOffSavedAt)} />
+                </div>
+
+                <AuditCommercialDashboard
+                  projectAssets={workspaceAssets}
+                  refreshKey={walkOffSavedAt ? 1 : 0}
+                  onSelectAssetId={(assetId) => {
+                    const asset = workspaceAssets.find((candidate) =>
+                      getAssetIdentityKeys(candidate).includes(String(assetId).trim().toLowerCase()),
+                    );
+                    if (asset) {
+                      setSelectedWorkspaceAsset(asset);
+                      setSearchTerm(getWorkspaceAssetTitle(asset));
+                    }
+                  }}
+                />
+
+                {selectedWorkspaceAsset ? (
+                  <div style={commercialDetailGrid}>
+                    <div style={commercialDetailCard}>
+                      <div style={commercialDetailTitle}>Selected Asset Payment Status</div>
+                      <div style={commercialSelectedAssetName}>{getWorkspaceAssetTitle(selectedWorkspaceAsset)}</div>
+                      <AuditPaymentBlockerPanel
+                        assetId={selectedWorkspaceAsset.id}
+                        refreshKey={walkOffSavedAt ? 1 : 0}
+                      />
+                    </div>
+                    <div style={commercialDetailCard}>
+                      <AuditHistoryPanel
+                        assetId={selectedWorkspaceAsset.id}
+                        refreshKey={walkOffSavedAt ? 1 : 0}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div style={commercialEmptyBox}>
+                    Select a blocker row to inspect asset payment status and audit history.
+                  </div>
+                )}
+              </section>
+            ) : (
             <WorkspaceTabContent
               activeTab={activeTab}
               projectName={projectName}
@@ -2527,6 +2858,54 @@ const homesLive = Math.min(
               onExport={onExport}
               onBackToMap={onBackToMap}
             />
+            )}
+
+            {activeTab === "overview" && (
+              <section style={areaHandoverPanel}>
+                <div style={areaHandoverHeader}>
+                  <div>
+                    <div style={operationKicker}>AREA HANDOVER</div>
+                    <h3 style={areaHandoverTitle}>Walk-Off / Commercial Sign-Off</h3>
+                    <div style={areaHandoverHint}>
+                      Formal area sign-off sits after build, QA, audit evidence and commercial checks.
+                    </div>
+                  </div>
+                  <span style={walkOffStatusPill(walkOffStatus)}>{walkOffStatus}</span>
+                </div>
+
+                <div style={areaHandoverGrid}>
+                  <InfoRow label="Readiness" value={`${operationalReadiness.score}% · ${operationalReadiness.state}`} highlight={operationalReadiness.score >= 85 && operationalReadiness.blockers.length === 0} />
+                  <InfoRow label="Hard Blockers" value={operationalReadiness.blockers.length || "None"} highlight={operationalReadiness.blockers.length === 0} />
+                  <InfoRow label="QA High / Medium" value={`${issueBuckets.high.length} / ${issueBuckets.medium.length}`} highlight={issueBuckets.high.length === 0} />
+                  <InfoRow label="Homes Live" value={`${formatNumber(rolloutKpis.homesLive)} / ${formatNumber(rolloutKpis.homesPassed)}`} highlight={rolloutKpis.homesPassed > 0 && rolloutKpis.homesLive >= rolloutKpis.homesPassed} />
+                  <InfoRow label="DPs Live" value={`${formatNumber(rolloutKpis.dpLive)} / ${formatNumber(rolloutKpis.dpTotal)}`} highlight={rolloutKpis.dpTotal > 0 && rolloutKpis.dpLive >= rolloutKpis.dpTotal} />
+                  <InfoRow label="Last Walk-Off" value={walkOffSavedAt || "Not completed"} highlight={Boolean(walkOffSavedAt)} />
+                </div>
+
+                {operationalReadiness.blockers.length ? (
+                  <div style={handoverBlockerBox}>
+                    <strong>Current blockers</strong>
+                    <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
+                      {operationalReadiness.blockers.slice(0, 4).map((blocker) => (
+                        <li key={blocker}>{blocker}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <div style={handoverGoodBox}>No hard readiness blockers detected. Area is ready for final walk-off review.</div>
+                )}
+
+                <div style={areaHandoverActions}>
+                  <button type="button" style={wideButton} onClick={() => setWalkOffAuditOpen(true)}>
+                    Launch Walk-Off Audit
+                  </button>
+                  <button type="button" style={wideButton} onClick={() => openOperationPanel("handover", "overview")}>
+                    View Handover Snapshot
+                  </button>
+                </div>
+              </section>
+            )}
+            </>
           )}
 
           {activeOperationPanel !== "none" && (
@@ -2547,6 +2926,7 @@ const homesLive = Math.min(
                     {activeOperationPanel === "disconnected" && "Disconnected Assets"}
                     {activeOperationPanel === "capacity" && "Capacity Risks"}
                     {activeOperationPanel === "addAsset" && "Add New Asset"}
+                    {activeOperationPanel === "handover" && "Area Handover"}
                     {activeOperationPanel === "report" && "Project Report"}
                   </h3>
                 </div>
@@ -2624,76 +3004,141 @@ const homesLive = Math.min(
               {(activeOperationPanel === "issues" ||
                 activeOperationPanel === "qa") && (
                 <div style={operationStack}>
-                  <div style={issueGrid}>
-                    <IssueCard
-                      label="High"
-                      value={issueBuckets.high.length}
-                      tone="#7f1d1d"
-                      active={activeIssueSeverity === "high"}
-                      onClick={() => openIssueSeverity("high")}
-                    />
-                    <IssueCard
-                      label="Medium"
-                      value={issueBuckets.medium.length}
-                      tone="#78350f"
-                      active={activeIssueSeverity === "medium"}
-                      onClick={() => openIssueSeverity("medium")}
-                    />
-                    <IssueCard
-                      label="Low"
-                      value={issueBuckets.low.length}
-                      tone="#1e3a8a"
-                      active={activeIssueSeverity === "low"}
-                      onClick={() => openIssueSeverity("low")}
-                    />
-                  </div>
-                  {activeIssueSeverity ? (
-                    <div style={emptyPanel}>
-                      Showing {activeIssueSeverity.toUpperCase()} issues only. Click another severity card to switch.
+                  <div style={qaStickyHeader}>
+                    <div style={issueGrid}>
+                      <IssueCard
+                        label="High"
+                        value={issueBuckets.high.length}
+                        tone="#7f1d1d"
+                        active={selectedIssueSeverity === "high"}
+                        onClick={() => openIssueSeverity("high")}
+                      />
+                      <IssueCard
+                        label="Medium"
+                        value={issueBuckets.medium.length}
+                        tone="#78350f"
+                        active={selectedIssueSeverity === "medium"}
+                        onClick={() => openIssueSeverity("medium")}
+                      />
+                      <IssueCard
+                        label="Low"
+                        value={issueBuckets.low.length}
+                        tone="#1e3a8a"
+                        active={selectedIssueSeverity === "low"}
+                        onClick={() => openIssueSeverity("low")}
+                      />
                     </div>
-                  ) : null}
-                  <div style={operationList}>
-                    {auditIssues.length === 0 ? (
-                      <div style={emptyPanel}>
-                        No QA issues found for this project area.
-                      </div>
-                    ) : (
-                      (activeIssueSeverity
-                        ? issueBuckets[activeIssueSeverity]
-                        : auditIssues
-                      )
-                        .slice(0, 30)
-                        .map((issue: AuditIssue, index: number) => {
-                          const matchedAsset = findWorkspaceAssetForIssue(issue, workspaceAssets);
 
-                          return (
+                    <div style={qaToolbar}>
+                      <div style={{ color: "#cbd5e1", fontWeight: 800 }}>
+                        {selectedIssueSeverity
+                          ? `${selectedIssueSeverity.toUpperCase()} issues — ${selectedSeverityIssues.length.toLocaleString("en-GB")}`
+                          : "No QA severity selected"}
+                      </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button
+                          type="button"
+                          style={{ ...qaModeButton, ...(qaPanelViewMode === "navigator" ? qaModeButtonActive : {}) }}
+                          onClick={() => setQaPanelViewMode("navigator")}
+                        >
+                          Navigator View
+                        </button>
+                        <button
+                          type="button"
+                          style={{ ...qaModeButton, ...(qaPanelViewMode === "list" ? qaModeButtonActive : {}) }}
+                          onClick={() => setQaPanelViewMode("list")}
+                        >
+                          List View
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {auditIssues.length === 0 ? (
+                    <div style={emptyPanel}>No QA issues found for this project area.</div>
+                  ) : (
+                    <>
+                      <div style={qaCategoryGrid}>
+                        {qaIssueCategoryGroups.length === 0 ? (
+                          <div style={emptyPanel}>No issues in this severity bucket.</div>
+                        ) : (
+                          qaIssueCategoryGroups.map((group) => (
                             <button
-                              key={`${issue.assetId}-${issue.issue}-${index}`}
+                              key={group.key}
                               type="button"
                               style={{
-                                ...operationListItem,
-                                textAlign: "left",
-                                cursor: matchedAsset ? "pointer" : "default",
+                                ...qaCategoryCard,
+                                ...(selectedIssueCategoryKey === group.key ? qaCategoryCardActive : {}),
                               }}
-                              onClick={() => handleAuditIssueSelect(issue)}
+                              onClick={() => {
+                                setActiveIssueCategory(group.key);
+                                setIssueNavigatorIndex(0);
+                                const firstIssue = group.issues[0];
+                                if (firstIssue) handleAuditIssueSelect(firstIssue);
+                              }}
                             >
-                              <strong>
-                                {issue.severity.toUpperCase()} — {issue.category}
-                              </strong>
-                              <span>
-                                {issue.assetName ||
-                                  issue.assetId ||
-                                  "Unknown asset"}
-                              </span>
-                              <small>{issue.issue}</small>
-                              <small style={{ color: matchedAsset ? "#93c5fd" : "#64748b" }}>
-                                {matchedAsset ? "Click to select asset and show it on the workspace map" : "Asset not found in current project scope"}
-                              </small>
+                              <span>{group.label}</span>
+                              <strong>{group.issues.length.toLocaleString("en-GB")}</strong>
                             </button>
-                          );
-                        })
-                    )}
-                  </div>
+                          ))
+                        )}
+                      </div>
+
+                      {qaPanelViewMode === "navigator" ? (
+                        <div style={qaNavigatorPanel}>
+                          {selectedNavigatorIssue ? (
+                            <>
+                              <div style={qaNavigatorTopline}>
+                                <span>
+                                  {selectedIssueCategoryGroup?.label || "QA Issue"} — Issue {Math.min(issueNavigatorIndex + 1, selectedCategoryIssues.length)} of {selectedCategoryIssues.length}
+                                </span>
+                                <span>{String(selectedNavigatorIssue.severity || selectedIssueSeverity || "issue").toUpperCase()}</span>
+                              </div>
+                              <div style={qaNavigatorAsset}>{getAuditIssueAssetLabel(selectedNavigatorIssue)}</div>
+                              <div style={qaNavigatorIssue}>{getAuditIssueDescription(selectedNavigatorIssue)}</div>
+                              <div style={qaNavigatorActions}>
+                                <button type="button" style={qaActionButton} onClick={() => moveNavigatorIssue(-1)}>
+                                  ◀ Previous
+                                </button>
+                                <button type="button" style={qaPrimaryButton} onClick={openSelectedNavigatorIssue}>
+                                  Zoom / Select Asset
+                                </button>
+                                <button type="button" style={qaActionButton} onClick={() => moveNavigatorIssue(1)}>
+                                  Next ▶
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <div style={emptyPanel}>Select a category to start reviewing issues.</div>
+                          )}
+                        </div>
+                      ) : (
+                        <div style={qaCompactList}>
+                          {selectedCategoryIssues.slice(0, 120).map((issue: AuditIssue, index: number) => {
+                            const matchedAsset = findWorkspaceAssetForIssue(issue, workspaceAssets);
+                            const category = classifyAuditIssueCategory(issue);
+
+                            return (
+                              <button
+                                key={`${issue.assetId}-${getAuditIssueDescription(issue)}-${index}`}
+                                type="button"
+                                style={{
+                                  ...qaCompactRow,
+                                  cursor: matchedAsset ? "pointer" : "default",
+                                }}
+                                onClick={() => handleAuditIssueSelect(issue)}
+                              >
+                                <strong>{String(issue.severity || selectedIssueSeverity || "issue").toUpperCase()}</strong>
+                                <span>{category.label}</span>
+                                <span>{getAuditIssueAssetLabel(issue)}</span>
+                                <small>{getAuditIssueDescription(issue)}</small>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               )}
 
@@ -2848,6 +3293,40 @@ const homesLive = Math.min(
                 </div>
               )}
 
+              {activeOperationPanel === "handover" && (
+                <div style={operationStack}>
+                  <div style={handoverSnapshotBox}>
+                    <div style={areaHandoverHeader}>
+                      <div>
+                        <div style={operationKicker}>WALK-OFF SNAPSHOT</div>
+                        <h3 style={areaHandoverTitle}>{projectName}</h3>
+                      </div>
+                      <span style={walkOffStatusPill(walkOffStatus)}>{walkOffStatus}</span>
+                    </div>
+                    <div style={operationGrid}>
+                      <InfoRow label="Readiness State" value={operationalReadiness.state} highlight={operationalReadiness.state === "Ready For Service" || operationalReadiness.state === "Live"} />
+                      <InfoRow label="Readiness Score" value={`${operationalReadiness.score}%`} highlight={operationalReadiness.score >= 85} />
+                      <InfoRow label="RFS" value={`${rolloutKpis.rfsPercent}%`} highlight={rolloutKpis.rfsPercent >= 95} />
+                      <InfoRow label="Build Complete" value={`${rolloutKpis.buildCompletionPercent}%`} highlight={rolloutKpis.buildCompletionPercent >= 95} />
+                      <InfoRow label="Homes Live" value={`${formatNumber(rolloutKpis.homesLive)} / ${formatNumber(rolloutKpis.homesPassed)}`} />
+                      <InfoRow label="DPs Live" value={`${formatNumber(rolloutKpis.dpLive)} / ${formatNumber(rolloutKpis.dpTotal)}`} />
+                      <InfoRow label="QA High" value={issueBuckets.high.length} highlight={issueBuckets.high.length === 0} />
+                      <InfoRow label="QA Medium" value={issueBuckets.medium.length} highlight={issueBuckets.medium.length === 0} />
+                      <InfoRow label="Disconnected" value={rolloutKpis.disconnectedAssets} highlight={rolloutKpis.disconnectedAssets === 0} />
+                      <InfoRow label="DP Over Capacity" value={rolloutKpis.dpOverCapacity} highlight={rolloutKpis.dpOverCapacity === 0} />
+                      <InfoRow label="Last Walk-Off" value={walkOffSavedAt || "Not completed"} highlight={Boolean(walkOffSavedAt)} />
+                    </div>
+                  </div>
+
+                  <button type="button" style={wideButton} onClick={() => setWalkOffAuditOpen(true)}>
+                    Launch Walk-Off Audit
+                  </button>
+                  <button type="button" style={wideButton} onClick={() => openOperationPanel("qa", "qa")}>
+                    Review QA Issues
+                  </button>
+                </div>
+              )}
+
               {activeOperationPanel === "report" && (
                 <div style={operationStack}>
                   <div style={emptyPanel}>
@@ -2915,6 +3394,33 @@ const homesLive = Math.min(
           )}
         </main>
       </div>
+
+      <AuditModal
+        title="Area Walk-Off Audit"
+        open={walkOffAuditOpen}
+        onClose={() => setWalkOffAuditOpen(false)}
+      >
+        <div style={handoverSnapshotBox}>
+          <div style={operationKicker}>AUTO-POPULATED AREA SNAPSHOT</div>
+          <div style={areaHandoverGrid}>
+            <InfoRow label="Project" value={projectName} />
+            <InfoRow label="Readiness" value={`${operationalReadiness.score}% · ${operationalReadiness.state}`} />
+            <InfoRow label="Homes Live" value={`${formatNumber(rolloutKpis.homesLive)} / ${formatNumber(rolloutKpis.homesPassed)}`} />
+            <InfoRow label="DPs Live" value={`${formatNumber(rolloutKpis.dpLive)} / ${formatNumber(rolloutKpis.dpTotal)}`} />
+            <InfoRow label="QA High / Medium" value={`${issueBuckets.high.length} / ${issueBuckets.medium.length}`} />
+            <InfoRow label="Disconnected" value={rolloutKpis.disconnectedAssets} />
+          </div>
+        </div>
+
+        <AuditFormEngine
+          template={walkOffAuditTemplate}
+          assetId={walkOffAreaAsset.id}
+          assetName={getWorkspaceAssetTitle(walkOffAreaAsset)}
+          areaName={projectName}
+          onSave={handleSaveWalkOffAudit}
+          onClose={() => setWalkOffAuditOpen(false)}
+        />
+      </AuditModal>
     </div>
   );
 }
@@ -3264,6 +3770,79 @@ const tabButton: React.CSSProperties = {
   cursor: "pointer",
   fontWeight: 700,
 };
+
+const commercialPanel: React.CSSProperties = {
+  border: "1px solid rgba(96,165,250,0.32)",
+  background: "#0f1b2d",
+  borderRadius: 12,
+  padding: 16,
+  marginTop: 14,
+  display: "grid",
+  gap: 14,
+};
+
+const commercialHeaderRow: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "flex-start",
+  gap: 12,
+};
+
+const commercialTitle: React.CSSProperties = {
+  margin: "4px 0 0",
+  color: "#f8fafc",
+  fontSize: 20,
+  fontWeight: 900,
+};
+
+const commercialHint: React.CSSProperties = {
+  color: "#94a3b8",
+  fontSize: 13,
+  marginTop: 6,
+};
+
+const commercialKpiGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+  gap: 10,
+};
+
+const commercialDetailGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+  gap: 12,
+};
+
+const commercialDetailCard: React.CSSProperties = {
+  background: "#0b1424",
+  border: "1px solid rgba(148,163,184,0.18)",
+  borderRadius: 12,
+  padding: 12,
+};
+
+const commercialDetailTitle: React.CSSProperties = {
+  color: "#cbd5e1",
+  fontSize: 12,
+  fontWeight: 900,
+  textTransform: "uppercase",
+  letterSpacing: 0.4,
+};
+
+const commercialSelectedAssetName: React.CSSProperties = {
+  color: "#f8fafc",
+  fontSize: 16,
+  fontWeight: 900,
+  marginTop: 6,
+};
+
+const commercialEmptyBox: React.CSSProperties = {
+  color: "#cbd5e1",
+  background: "#0b1424",
+  border: "1px solid rgba(148,163,184,0.18)",
+  borderRadius: 10,
+  padding: 14,
+};
+
 const activeTabButton: React.CSSProperties = {
   ...tabButton,
   background: "rgba(37, 99, 235, 0.22)",
@@ -3546,6 +4125,92 @@ const widePanel: React.CSSProperties = {
   ...summaryPanel,
   gridColumn: "span 1",
 };
+const areaHandoverPanel: React.CSSProperties = {
+  gridColumn: "1 / -1",
+  background: "linear-gradient(180deg, #0f1b2d 0%, #0b1626 100%)",
+  border: "1px solid rgba(96, 165, 250, 0.35)",
+  borderRadius: 14,
+  padding: 16,
+  boxShadow: "0 18px 44px rgba(0,0,0,0.18)",
+};
+
+const areaHandoverHeader: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "flex-start",
+  gap: 12,
+  marginBottom: 12,
+};
+
+const areaHandoverTitle: React.CSSProperties = {
+  margin: "4px 0 0",
+  color: "#f8fafc",
+  fontSize: 18,
+  fontWeight: 900,
+};
+
+const areaHandoverHint: React.CSSProperties = {
+  color: "#9ca3af",
+  fontSize: 12,
+  marginTop: 4,
+};
+
+const areaHandoverGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+  gap: 10,
+};
+
+const areaHandoverActions: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: 10,
+  marginTop: 12,
+};
+
+const handoverBlockerBox: React.CSSProperties = {
+  marginTop: 12,
+  padding: 12,
+  borderRadius: 10,
+  background: "rgba(127, 29, 29, 0.28)",
+  border: "1px solid rgba(248, 113, 113, 0.42)",
+  color: "#fecaca",
+  fontSize: 13,
+};
+
+const handoverGoodBox: React.CSSProperties = {
+  marginTop: 12,
+  padding: 12,
+  borderRadius: 10,
+  background: "rgba(22, 101, 52, 0.18)",
+  border: "1px solid rgba(74, 222, 128, 0.35)",
+  color: "#bbf7d0",
+  fontSize: 13,
+};
+
+const handoverSnapshotBox: React.CSSProperties = {
+  background: "#0b1424",
+  border: "1px solid rgba(148, 163, 184, 0.18)",
+  borderRadius: 12,
+  padding: 14,
+  marginBottom: 12,
+};
+
+function walkOffStatusPill(status: "Pending" | "Approved" | "Review Required" | "Blocked"): React.CSSProperties {
+  const good = status === "Approved";
+  const bad = status === "Blocked";
+  return {
+    borderRadius: 999,
+    padding: "5px 10px",
+    fontSize: 12,
+    fontWeight: 900,
+    whiteSpace: "nowrap",
+    color: good ? "#bbf7d0" : bad ? "#fecaca" : "#fde68a",
+    background: good ? "rgba(22,101,52,0.28)" : bad ? "rgba(127,29,29,0.32)" : "rgba(120,53,15,0.28)",
+    border: good ? "1px solid rgba(74,222,128,0.45)" : bad ? "1px solid rgba(248,113,113,0.45)" : "1px solid rgba(251,191,36,0.45)",
+  };
+}
+
 const panelTitle: React.CSSProperties = { margin: "0 0 14px", fontSize: 18 };
 const infoRow: React.CSSProperties = {
   display: "flex",
@@ -3587,6 +4252,144 @@ const issueCard: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
   justifyContent: "space-between",
+};
+
+const qaStickyHeader: React.CSSProperties = {
+  position: "sticky",
+  top: 0,
+  zIndex: 20,
+  display: "grid",
+  gap: 10,
+  background: "#0f1b2d",
+  paddingBottom: 10,
+};
+
+const qaToolbar: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 12,
+  background: "#111827",
+  border: "1px solid rgba(148, 163, 184, 0.16)",
+  borderRadius: 10,
+  padding: "10px 12px",
+};
+
+const qaModeButton: React.CSSProperties = {
+  border: "1px solid rgba(148, 163, 184, 0.22)",
+  background: "#020617",
+  color: "#cbd5e1",
+  borderRadius: 999,
+  padding: "7px 10px",
+  fontSize: 12,
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const qaModeButtonActive: React.CSSProperties = {
+  background: "#1d4ed8",
+  color: "#ffffff",
+  borderColor: "rgba(147, 197, 253, 0.65)",
+};
+
+const qaCategoryGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 8,
+};
+
+const qaCategoryCard: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 10,
+  background: "#111827",
+  border: "1px solid rgba(148, 163, 184, 0.16)",
+  borderRadius: 10,
+  color: "#e5e7eb",
+  padding: "10px 12px",
+  textAlign: "left",
+  cursor: "pointer",
+  fontWeight: 900,
+};
+
+const qaCategoryCardActive: React.CSSProperties = {
+  borderColor: "rgba(147, 197, 253, 0.85)",
+  boxShadow: "0 0 0 2px rgba(59, 130, 246, 0.25)",
+  background: "rgba(30, 58, 138, 0.6)",
+};
+
+const qaNavigatorPanel: React.CSSProperties = {
+  display: "grid",
+  gap: 10,
+  background: "#111827",
+  border: "1px solid rgba(148, 163, 184, 0.16)",
+  borderRadius: 12,
+  padding: 14,
+};
+
+const qaNavigatorTopline: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  color: "#93c5fd",
+  fontSize: 12,
+  fontWeight: 900,
+  letterSpacing: 0.2,
+};
+
+const qaNavigatorAsset: React.CSSProperties = {
+  color: "#f8fafc",
+  fontSize: 20,
+  fontWeight: 900,
+};
+
+const qaNavigatorIssue: React.CSSProperties = {
+  color: "#cbd5e1",
+  fontSize: 14,
+  lineHeight: 1.45,
+};
+
+const qaNavigatorActions: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  gap: 8,
+};
+
+const qaActionButton: React.CSSProperties = {
+  border: "1px solid rgba(148, 163, 184, 0.22)",
+  background: "#020617",
+  color: "#f8fafc",
+  borderRadius: 8,
+  padding: "10px 12px",
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const qaPrimaryButton: React.CSSProperties = {
+  ...qaActionButton,
+  background: "#1d4ed8",
+  borderColor: "rgba(147, 197, 253, 0.45)",
+};
+
+const qaCompactList: React.CSSProperties = {
+  display: "grid",
+  gap: 6,
+  maxHeight: 360,
+  overflow: "auto",
+};
+
+const qaCompactRow: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "90px 160px 220px 1fr",
+  alignItems: "center",
+  gap: 10,
+  background: "#111827",
+  border: "1px solid rgba(148, 163, 184, 0.16)",
+  borderRadius: 8,
+  padding: "8px 10px",
+  color: "#e5e7eb",
+  textAlign: "left",
 };
 const assetGrid: React.CSSProperties = {
   display: "grid",

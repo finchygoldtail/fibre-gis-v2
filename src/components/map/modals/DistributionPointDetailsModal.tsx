@@ -3,6 +3,7 @@ import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { storage } from "../../../firebase";
 import type { DistributionPointDetails, SavedMapAsset } from "../types";
 import { buildNetworkState } from "../../../services/network";
+import { buildDpRelationshipRouting } from "../../../services/dpRelationshipRouting";
 
 type ConnectedHome = {
   port: number;
@@ -75,6 +76,272 @@ function getAssetIdentityKeys(asset: any): string[] {
     .filter(Boolean);
 }
 
+function getAssetTitle(asset: any): string {
+  return text(
+    asset?.name ||
+      asset?.jointName ||
+      asset?.label ||
+      asset?.assetId ||
+      asset?.cableId ||
+      asset?.id ||
+      "Asset",
+  );
+}
+
+function getCableFibreTotalFromAsset(cable?: SavedMapAsset | null): number {
+  const haystack = [
+    (cable as any)?.fibreCount,
+    (cable as any)?.fiberCount,
+    (cable as any)?.coreCount,
+    (cable as any)?.size,
+    (cable as any)?.name,
+    (cable as any)?.cableId,
+  ]
+    .map(text)
+    .join(" ");
+  const match = haystack.match(/(288|144|96|48|36|24|12)\s*F?/i);
+  return match ? Number(match[1]) : 0;
+}
+
+function getPoint(asset: any): { lat: number; lng: number } | null {
+  if (typeof asset?.lat === "number" && typeof asset?.lng === "number") {
+    return { lat: asset.lat, lng: asset.lng };
+  }
+
+  const coords = asset?.geometry?.coordinates;
+  if (asset?.geometry?.type === "Point" && Array.isArray(coords)) {
+    const lat = Number(coords[0]);
+    const lng = Number(coords[1]);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
+  }
+
+  return null;
+}
+
+function getLinePoints(asset: any): { lat: number; lng: number }[] {
+  const coords = asset?.geometry?.coordinates;
+  if (asset?.geometry?.type !== "LineString" || !Array.isArray(coords)) return [];
+
+  return coords
+    .map((coord: any) => ({
+      lat: Number(coord?.[0]),
+      lng: Number(coord?.[1]),
+    }))
+    .filter((point: { lat: number; lng: number }) =>
+      Number.isFinite(point.lat) && Number.isFinite(point.lng),
+    );
+}
+
+function distanceMeters(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): number {
+  const radius = 6371000;
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+
+  return 2 * radius * Math.asin(Math.sqrt(h));
+}
+
+function isDistributionPointAsset(asset: any): boolean {
+  if (!asset || asset.geometry?.type === "LineString") return false;
+
+  const haystack = [
+    asset.assetType,
+    asset.type,
+    asset.jointType,
+    asset.dpType,
+    asset.distributionPointType,
+    asset.closureType,
+    asset.dpDetails?.closureType,
+    asset.name,
+    asset.label,
+  ]
+    .map(text)
+    .join(" ")
+    .toUpperCase();
+
+  return (
+    haystack.includes("DISTRIBUTION") ||
+    haystack.includes("AFN") ||
+    haystack.includes("CBT") ||
+    haystack.includes("MDU") ||
+    /\bSB\s*0*\d+\b/i.test(haystack) ||
+    /SB0*\d+/i.test(haystack)
+  );
+}
+
+function findAssetByAnyRef(
+  refs: unknown[],
+  assets: SavedMapAsset[],
+): SavedMapAsset | null {
+  const lookup = refs.map(normaliseRef).filter(Boolean);
+  if (!lookup.length) return null;
+
+  return (
+    assets.find((asset: any) => {
+      const keys = [
+        asset?.id,
+        asset?.assetId,
+        asset?.name,
+        asset?.jointName,
+        asset?.label,
+        asset?.cableId,
+      ].map(normaliseRef);
+
+      return keys.some((key) => lookup.some((ref) => refsMatch(key, ref)));
+    }) || null
+  );
+}
+
+type ParentSbReservationView = {
+  parentName: string;
+  childName: string;
+  requiredFibres: number;
+  branchCableName: string;
+  parentCableName?: string;
+  mappings: { parent: number; local: number }[];
+};
+
+function buildParentSbReservationView(args: {
+  childName: string;
+  activeDpAsset: SavedMapAsset | null;
+  selectedCable: SavedMapAsset | null;
+  allDistributionPoints: SavedMapAsset[];
+  allAssets: SavedMapAsset[];
+  localFibres: number[];
+  jointState: any;
+}): ParentSbReservationView | null {
+  const {
+    childName,
+    activeDpAsset,
+    selectedCable,
+    allDistributionPoints,
+    allAssets,
+    localFibres,
+    jointState,
+  } = args;
+
+  if (!selectedCable || !localFibres.length) return null;
+
+  const cableItem = selectedCable as any;
+  const cableFibreTotal = getCableFibreTotalFromAsset(selectedCable);
+
+  const explicitParentFibres = uniqueSortedNumbers([
+    ...((Array.isArray(cableItem.allocatedInputFibres)
+      ? cableItem.allocatedInputFibres
+      : []) as any[]),
+    ...((Array.isArray(cableItem.parentInputFibres)
+      ? cableItem.parentInputFibres
+      : []) as any[]),
+    ...((Array.isArray(cableItem.upstreamFibres)
+      ? cableItem.upstreamFibres
+      : []) as any[]),
+    ...((Array.isArray(jointState?.parentFibres)
+      ? jointState.parentFibres
+      : []) as any[]),
+    ...((Array.isArray(jointState?.upstreamFibres)
+      ? jointState.upstreamFibres
+      : []) as any[]),
+  ]);
+
+  const looksLikeBranchCable =
+    Boolean(cableItem.parentCableId || cableItem.parentCableName) ||
+    explicitParentFibres.length > 0 ||
+    (cableFibreTotal > 0 && cableFibreTotal <= 24);
+
+  // Main-run AFNs stay cable-first. Only shoot-off/branch cables get the SB→SB view.
+  if (!looksLikeBranchCable) return null;
+
+  const parentFibres =
+    explicitParentFibres.length >= localFibres.length
+      ? explicitParentFibres.slice(0, localFibres.length)
+      : [];
+
+  const childRefs = [
+    activeDpAsset?.id,
+    (activeDpAsset as any)?.assetId,
+    (activeDpAsset as any)?.name,
+    (activeDpAsset as any)?.jointName,
+    (activeDpAsset as any)?.label,
+    childName,
+  ];
+
+  const endpointParent = findAssetByAnyRef(
+    [
+      cableItem.fromAssetId,
+      cableItem.toAssetId,
+      cableItem.sourceAssetId,
+      cableItem.targetAssetId,
+      cableItem.aAssetId,
+      cableItem.bAssetId,
+      cableItem.startAssetId,
+      cableItem.endAssetId,
+      cableItem.fromDpId,
+      cableItem.toDpId,
+    ].filter((value) => {
+      const valueRef = normaliseRef(value);
+      return valueRef && !childRefs.some((childRef) => refsMatch(valueRef, childRef));
+    }),
+    [...allDistributionPoints, ...allAssets].filter(isDistributionPointAsset),
+  );
+
+  const line = getLinePoints(selectedCable);
+  const childPoint = getPoint(activeDpAsset);
+  const parentByGeometry =
+    !endpointParent && line.length && childPoint
+      ? [...allDistributionPoints, ...allAssets]
+          .filter(isDistributionPointAsset)
+          .filter((candidate) => {
+            const candidateTitle = getAssetTitle(candidate);
+            return !refsMatch(candidateTitle, childName) && !refsMatch((candidate as any).id, activeDpAsset?.id);
+          })
+          .map((candidate) => {
+            const point = getPoint(candidate);
+            if (!point) return null;
+            const distanceToStart = distanceMeters(point, line[0]);
+            const distanceToEnd = distanceMeters(point, line[line.length - 1]);
+            const childDistanceToStart = distanceMeters(childPoint, line[0]);
+            const childDistanceToEnd = distanceMeters(childPoint, line[line.length - 1]);
+            const candidateDistance = Math.min(distanceToStart, distanceToEnd);
+            const isOppositeEnd =
+              childDistanceToStart < childDistanceToEnd
+                ? distanceToEnd < distanceToStart
+                : distanceToStart < distanceToEnd;
+
+            return {
+              asset: candidate,
+              score: candidateDistance + (isOppositeEnd ? 0 : 1000),
+            };
+          })
+          .filter(Boolean)
+          .sort((a: any, b: any) => a.score - b.score)[0]?.asset || null
+      : null;
+
+  const parentAsset = endpointParent || parentByGeometry;
+  const parentName = parentAsset ? getAssetTitle(parentAsset) : text(cableItem.parentSbName || cableItem.parentDpName || "Parent SB");
+
+  const mappings =
+    parentFibres.length === localFibres.length
+      ? parentFibres.map((parent, index) => ({ parent, local: localFibres[index] }))
+      : [];
+
+  return {
+    parentName,
+    childName,
+    requiredFibres: localFibres.length,
+    branchCableName: getAssetTitle(selectedCable),
+    parentCableName: text(cableItem.parentCableName || cableItem.parentCableId || ""),
+    mappings,
+  };
+}
+
 async function uploadAssetFile(assetFolder: string, file: File) {
   const fileRef = ref(
     storage,
@@ -131,9 +398,18 @@ export default function DistributionPointDetailsModal({
   };
 
   const selectedCableId = details.afnDetails?.throughCableId || "";
-  const selectedCable = availableThroughCables.find(
-    (cable) => cable.id === selectedCableId,
-  );
+  const selectedCable =
+    ([...availableThroughCables, ...allAssets].find((cable: any) => {
+      if (!selectedCableId) return false;
+      const refs = [
+        cable?.id,
+        cable?.assetId,
+        cable?.name,
+        cable?.cableId,
+        cable?.label,
+      ];
+      return refs.some((ref) => refsMatch(ref, selectedCableId));
+    }) as SavedMapAsset | undefined) || undefined;
   const currentInputFibres = uniqueSortedNumbers(
     details.afnDetails?.inputFibres || [],
   );
@@ -236,6 +512,32 @@ export default function DistributionPointDetailsModal({
           : "Capacity OK";
   const availableMoveTargets = allDistributionPoints.filter(
     (dp) => dp.id !== activeDpId,
+  );
+
+  const parentSbReservationView = buildParentSbReservationView({
+    childName: name,
+    activeDpAsset: activeDpAsset as SavedMapAsset | null,
+    selectedCable: selectedCable || null,
+    allDistributionPoints,
+    allAssets,
+    localFibres: effectiveSplitterFibres.length
+      ? effectiveSplitterFibres
+      : effectiveInputFibres,
+    jointState: jointMatchedDpState,
+  });
+
+  const dpRelationshipRouting = useMemo(
+    () =>
+      buildDpRelationshipRouting({
+        currentDpId: activeDpId,
+        currentDpName: name,
+        currentDpDetails: details,
+        selectedCableId,
+        localFibres: effectiveSplitterFibres.length ? effectiveSplitterFibres : effectiveInputFibres,
+        allDistributionPoints,
+        allAssets,
+      }),
+    [activeDpId, allAssets, allDistributionPoints, details, effectiveInputFibres, effectiveSplitterFibres, name, selectedCableId],
   );
 
   if (!visible) return null;
@@ -426,12 +728,95 @@ export default function DistributionPointDetailsModal({
           <div className="afn-panel">
             <strong>AFN loop-through splitter</strong>
             <span>
-              Select a through cable, then allocate the fibres feeding this
-              AFN. Each selected fibre gives 8 splitter outputs. Fibres already
-              used by other AFNs on the same cable are disabled.
+              DP/SB routing is relationship-led. Choose which SB feeds which SB;
+              the cable underneath is only the supporting physical route.
             </span>
 
-            <label>Through Cable</label>
+            {dpRelationshipRouting ? (
+              <div className="parent-sb-reservation">
+                <div className="parent-sb-title">DP Relationship Routing</div>
+                <div className="parent-sb-path">
+                  {dpRelationshipRouting.selectedParent ? (
+                    <>
+                      <strong>{dpRelationshipRouting.selectedParent.name}</strong>
+                      <span>→</span>
+                      <strong>{dpRelationshipRouting.current.name}</strong>
+                    </>
+                  ) : dpRelationshipRouting.fedFrom.length ? (
+                    <>
+                      <strong>Fed from</strong>
+                      <span>→</span>
+                      <strong>{dpRelationshipRouting.fedFrom.map((node) => node.name).join(", ")}</strong>
+                    </>
+                  ) : (
+                    <strong>No parent SB detected yet</strong>
+                  )}
+                </div>
+                <div className="parent-sb-fibres">
+                  {dpRelationshipRouting.requiredFibres} fibre
+                  {dpRelationshipRouting.requiredFibres === 1 ? "" : "s"} needed
+                </div>
+                {dpRelationshipRouting.mapping.length ? (
+                  <div className="parent-sb-map">
+                    {dpRelationshipRouting.mapping.map((mapping) => (
+                      <span key={`${mapping.parentFibre}-${mapping.localFibre}`}>
+                        F{mapping.parentFibre} → F{mapping.localFibre}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {dpRelationshipRouting.mainDownstream.length || dpRelationshipRouting.branchDownstream.length ? (
+                  <div className="parent-sb-note">
+                    {dpRelationshipRouting.mainDownstream.length
+                      ? `Main downstream: ${dpRelationshipRouting.mainDownstream.map((node) => node.name).join(", ")}`
+                      : ""}
+                    {dpRelationshipRouting.mainDownstream.length && dpRelationshipRouting.branchDownstream.length ? " · " : ""}
+                    {dpRelationshipRouting.branchDownstream.length
+                      ? `Branch DPs: ${dpRelationshipRouting.branchDownstream.map((node) => `${node.name}${node.requiredFibres ? ` (${node.requiredFibres}F)` : ""}`).join(", ")}`
+                      : ""}
+                  </div>
+                ) : null}
+                {dpRelationshipRouting.selectedCableName ? (
+                  <div className="parent-sb-note">
+                    Supporting route cable: {dpRelationshipRouting.selectedCableName}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {parentSbReservationView ? (
+              <div className="parent-sb-reservation">
+                <div className="parent-sb-title">Parent SB Reservation</div>
+                <div className="parent-sb-path">
+                  <strong>{parentSbReservationView.parentName}</strong>
+                  <span>→</span>
+                  <strong>{parentSbReservationView.childName}</strong>
+                </div>
+                <div className="parent-sb-fibres">
+                  {parentSbReservationView.requiredFibres} fibre
+                  {parentSbReservationView.requiredFibres === 1 ? "" : "s"} needed
+                </div>
+
+                {parentSbReservationView.mappings.length ? (
+                  <div className="parent-sb-map">
+                    {parentSbReservationView.mappings.map((mapping) => (
+                      <span key={`${mapping.parent}-${mapping.local}`}>
+                        F{mapping.parent} → F{mapping.local}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+
+                <div className="parent-sb-note">
+                  Branch cable: {parentSbReservationView.branchCableName}
+                  {parentSbReservationView.parentCableName
+                    ? ` · Parent cable: ${parentSbReservationView.parentCableName}`
+                    : ""}
+                </div>
+              </div>
+            ) : null}
+
+            <label>Supporting Cable / Route</label>
             <select
               value={selectedCableId}
               onChange={(e) => {
@@ -452,7 +837,7 @@ export default function DistributionPointDetailsModal({
                 });
               }}
             >
-              <option value="">Select through cable</option>
+              <option value="">Select supporting cable</option>
               {availableThroughCables.map((cable) => (
                 <option key={cable.id} value={cable.id}>
                   {cable.name || cable.id} — {cable.fibreCount || "48F"}
@@ -461,64 +846,43 @@ export default function DistributionPointDetailsModal({
             </select>
 
             {selectedCableId ? (
-              <>
+              <div className="afn-readonly-fibres">
                 <div className="afn-grid-header">
-                  <span>Input fibres</span>
-                  <em>{effectiveInputFibres.length} selected · {capacity || 0} outputs</em>
+                  <span>Fibre source</span>
+                  <em>{effectiveInputFibres.length} shown · {capacity || 0} outputs</em>
                 </div>
 
-                <div className="afn-fibre-buttons">
-                  {Array.from({ length: fibreTotal }, (_, index) => {
-                    const fibre = index + 1;
-                    const selectedHere = effectiveInputFibres.includes(fibre);
-                    const usedElsewhere = usedByOtherAfns.has(fibre);
-                    const disabled = hasJointMappedFibres || (usedElsewhere && !selectedHere);
-
-                    return (
-                      <button
-                        key={fibre}
-                        type="button"
-                        disabled={disabled}
-                        className={[
-                          "afn-fibre",
-                          selectedHere ? "selected" : "",
-                          disabled ? "disabled" : "",
-                        ]
-                          .join(" ")
-                          .trim()}
-                        title={
-                          hasJointMappedFibres
-                            ? "Locked from uploaded joint continuity"
-                            : usedElsewhere && !selectedHere
-                              ? "Already used by another AFN on this through cable"
-                              : selectedHere
-                                ? "Click to unallocate this fibre"
-                                : "Click to allocate this fibre"
-                        }
-                        onClick={() => toggleFibre(fibre)}
-                      >
-                        F{fibre}
-                      </button>
-                    );
-                  })}
+                <div className="afn-summary">
+                  Joint mapping / CMJ continuity is the source of truth. Fibres
+                  are displayed here for reference only and are no longer manually
+                  selected from this DP modal.
                 </div>
-              </>
+
+                {effectiveInputFibres.length ? (
+                  <div className="afn-readonly-fibre-list">
+                    {effectiveInputFibres.map((fibre) => (
+                      <span key={fibre}>F{fibre}</span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="afn-summary">
+                    No local splitter fibres are stored on this DP yet. Upload or
+                    rebuild from joint continuity to populate the routing view.
+                  </div>
+                )}
+              </div>
             ) : (
               <div className="afn-summary">
-                Select a through cable to allocate fibres.
+                Select a supporting cable to view the joint-controlled fibre source.
               </div>
             )}
 
             <div className="afn-summary">
-              Fibres selected: {effectiveInputFibres.join(", ") || "none"}
+              Fibres shown: {effectiveInputFibres.join(", ") || "none"}
               <br />
               Splitter: 1:8 / 8 outputs
-              {hasJointMappedFibres ? (
-                <>
-                  <br />
-                  Source: uploaded joint continuity / CMJ-AG mapping
-                </>
-              ) : null}
+              <br />
+              Source: uploaded joint continuity / CMJ-AG mapping
             </div>
           </div>
         ) : null}
@@ -532,7 +896,7 @@ export default function DistributionPointDetailsModal({
               outputs.
             </span>
 
-            <label>Through Cable</label>
+            <label>Supporting Cable / Route</label>
 
             <select
               value={details.mduDetails?.throughCableId || ""}
@@ -552,7 +916,7 @@ export default function DistributionPointDetailsModal({
                 });
               }}
             >
-              <option value="">Select through cable</option>
+              <option value="">Select supporting cable</option>
 
               {availableThroughCables.map((cable) => (
                 <option key={cable.id} value={cable.id}>
@@ -647,7 +1011,7 @@ export default function DistributionPointDetailsModal({
         <div className="afn-summary">
           <strong>Operational fibre view</strong>
           <br />
-          Through cable: {selectedCable?.name || selectedCable?.id || details.mduDetails?.throughCableId || "not selected"}
+          Supporting route cable: {selectedCable?.name || selectedCable?.id || details.mduDetails?.throughCableId || "not selected"}
           <br />
           Input fibres consumed: {selectedInputFibreCount || details.mduDetails?.totalReservedFibres || 0}
           <br />
@@ -1010,6 +1374,57 @@ input, select {
   width: auto;
 }
 
+.parent-sb-reservation {
+  background: #071422;
+  border: 1px solid #2563eb;
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.parent-sb-title {
+  color: #93c5fd;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+.parent-sb-path {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #f8fafc;
+}
+.parent-sb-path span {
+  color: #60a5fa;
+  font-weight: 900;
+}
+.parent-sb-fibres {
+  color: #22c55e;
+  font-size: 1rem;
+  font-weight: 900;
+}
+.parent-sb-map {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.parent-sb-map span {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #bfdbfe;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+.parent-sb-note {
+  color: #94a3b8;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .afn-panel {
   background: #0f172a;
   border: 1px solid #334155;
@@ -1027,6 +1442,31 @@ input, select {
   color: #cbd5e1;
   font-size: 0.86rem;
 }
+
+.afn-readonly-fibres {
+  background: #020617;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.afn-readonly-fibre-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.afn-readonly-fibre-list span {
+  background: #0f172a;
+  color: #bfdbfe;
+  border: 1px solid #2563eb;
+  border-radius: 6px;
+  padding: 6px 8px;
+  text-align: center;
+  font-weight: 800;
+}
+
 .afn-fibre-buttons {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));

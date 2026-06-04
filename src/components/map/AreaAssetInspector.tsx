@@ -8,6 +8,10 @@ import React, { useMemo, useState } from "react";
 import type { SavedMapAsset } from "./types";
 import { auditAreaAssets, type AuditIssue, type AuditSeverity } from "../../services/areaAudit";
 import { exportToCSV } from "../../services/csvExport";
+import AuditModal from "../audits/AuditModal";
+import AuditFormEngine from "../audits/AuditFormEngine";
+import { walkOffAuditTemplate } from "../audits/auditTemplates";
+import { createAuditFormLog } from "../../services/auditService";
 
 type Props = {
   assets: SavedMapAsset[];
@@ -496,6 +500,8 @@ export default function AreaAssetInspector({
 }: Props) {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [walkOffOpen, setWalkOffOpen] = useState(false);
+  const [walkOffRefreshKey, setWalkOffRefreshKey] = useState(0);
 
   const polygon = useMemo(() => getAreaPolygon(areaAsset), [areaAsset]);
 
@@ -565,7 +571,9 @@ export default function AreaAssetInspector({
     const buildComplete = rows.filter((row) => isBuildCompleteStatus(row.status));
     const cables = rows.filter((row) => row.type === "cable");
     const joints = rows.filter((row) => row.type.includes("joint"));
-    const dps = rows.filter((row) => row.type.includes("distribution"));
+    const dps = rows.filter((row) => row.type.includes("distribution") || row.type === "dp");
+    const poles = rows.filter((row) => row.type.includes("pole"));
+    const chambers = rows.filter((row) => row.type.includes("chamber"));
     const dropCables = cables.filter((row) => isDropCable(row.asset));
     const overCapacityCables = cables.filter(isCableOverCapacity);
 
@@ -598,6 +606,8 @@ export default function AreaAssetInspector({
       cables: cables.length,
       joints: joints.length,
       dps: dps.length,
+      poles: poles.length,
+      chambers: chambers.length,
       dropCables: dropCables.length,
       overCapacityCables: overCapacityCables.length,
       orphanedAssets: orphanedAssets.length,
@@ -629,6 +639,55 @@ export default function AreaAssetInspector({
       { high: 0, medium: 0, low: 0 } as Record<AuditSeverity, number>,
     );
   }, [sortedAuditIssues]);
+
+  const walkOffMetrics = useMemo(() => {
+    const disconnected = networkStats?.disconnected ?? 0;
+
+    const blockers = [
+      severityCounts.high > 0,
+      severityCounts.medium > 0,
+      missingPiaCount > 0,
+      disconnected > 0,
+      operationsMetrics.overCapacityCables > 0,
+      operationsMetrics.orphanedAssets > 0,
+    ].filter(Boolean).length;
+
+    let readinessScore = 100;
+    readinessScore -= severityCounts.high * 20;
+    readinessScore -= severityCounts.medium * 5;
+    readinessScore -= missingPiaCount * 4;
+    readinessScore -= disconnected * 10;
+    readinessScore -= operationsMetrics.overCapacityCables * 15;
+    readinessScore -= operationsMetrics.orphanedAssets * 6;
+    readinessScore = Math.max(0, Math.min(100, Math.round(readinessScore)));
+
+    const ready =
+      Boolean(areaAsset) &&
+      rows.length > 0 &&
+      blockers === 0 &&
+      readinessScore >= 95;
+
+    return {
+      readinessScore,
+      ready,
+      blockers,
+      status: ready ? "Ready for Walk-Off" : "Not Ready",
+      disconnected,
+      highQaIssues: severityCounts.high,
+      mediumQaIssues: severityCounts.medium,
+      lowQaIssues: severityCounts.low,
+    };
+  }, [
+    areaAsset,
+    missingPiaCount,
+    networkStats?.disconnected,
+    operationsMetrics.orphanedAssets,
+    operationsMetrics.overCapacityCables,
+    rows.length,
+    severityCounts.high,
+    severityCounts.medium,
+    severityCounts.low,
+  ]);
 
   const auditIssueCounts = useMemo(() => {
     const counts = new Map<string, { count: number; severity: AuditSeverity; category: string }>();
@@ -722,6 +781,58 @@ export default function AreaAssetInspector({
     exportToCSV(csvRows, "network-operations-area-audit.csv");
   };
 
+  const handleSaveWalkOffAudit = async (audit: any) => {
+    if (!areaAsset) return;
+
+    const areaSnapshot = {
+      areaId: areaAsset.id || "",
+      areaName: areaAsset.name || "",
+      generatedAt: new Date().toISOString(),
+      homesPassed: operationsMetrics.homesPassed,
+      homesConnected: operationsMetrics.homesConnected,
+      rfsPercent: formatPercent(operationsMetrics.rfsPercent),
+      buildPercent: formatPercent(operationsMetrics.buildPercent),
+      assets: rows.length,
+      cables: operationsMetrics.cables,
+      joints: operationsMetrics.joints,
+      dps: operationsMetrics.dps,
+      poles: operationsMetrics.poles,
+      chambers: operationsMetrics.chambers,
+      dropCables: operationsMetrics.dropCables,
+      routeLengthMeters: Math.round(operationsMetrics.routeLength),
+      fibreUtilisation: formatPercent(operationsMetrics.fibreUtilisation),
+      highQaIssues: walkOffMetrics.highQaIssues,
+      mediumQaIssues: walkOffMetrics.mediumQaIssues,
+      lowQaIssues: walkOffMetrics.lowQaIssues,
+      missingPiaCount,
+      disconnected: walkOffMetrics.disconnected,
+      overCapacityCables: operationsMetrics.overCapacityCables,
+      orphanedAssets: operationsMetrics.orphanedAssets,
+      readinessScore: walkOffMetrics.readinessScore,
+      readinessStatus: walkOffMetrics.status,
+    };
+
+    await createAuditFormLog({
+      asset: {
+        ...areaAsset,
+        assetType: "area",
+      },
+      auditType: walkOffAuditTemplate.auditType,
+      auditTitle: walkOffAuditTemplate.title,
+      result: audit.result,
+      answers: {
+        ...audit.answers,
+        areaSnapshot,
+      },
+      comments: audit.comments,
+      signature: audit.signature,
+      photos: audit.photos,
+    });
+
+    setWalkOffRefreshKey((current) => current + 1);
+    setWalkOffOpen(false);
+  };
+
   return (
     <div style={card}>
       <div style={headerRow}>
@@ -800,6 +911,58 @@ export default function AreaAssetInspector({
           value={operationsMetrics.orphanedAssets}
           danger={operationsMetrics.orphanedAssets > 0}
         />
+      </div>
+
+      <div style={walkOffBox(walkOffMetrics.ready)}>
+        <div style={auditHeaderRow}>
+          <div>
+            <div style={qaDebugTitle}>Walk-Off Readiness</div>
+            <div style={hint}>
+              Uses the selected area's live operational metrics before handover sign-off.
+            </div>
+          </div>
+          <div style={walkOffScore(walkOffMetrics.ready)}>
+            {walkOffMetrics.readinessScore}%
+          </div>
+        </div>
+
+        <div style={walkOffStatusRow}>
+          <strong style={{ color: walkOffMetrics.ready ? "#86efac" : "#fbbf24" }}>
+            {walkOffMetrics.status}
+          </strong>
+          <span style={hint}>
+            {walkOffMetrics.ready
+              ? "No area blockers detected. Ready for final audit."
+              : "Resolve blockers before final commercial handover."}
+          </span>
+        </div>
+
+        <div style={walkOffGrid}>
+          <KpiCard label="Homes Passed" value={operationsMetrics.homesPassed} small />
+          <KpiCard label="Homes Connected" value={operationsMetrics.homesConnected} small />
+          <KpiCard label="Poles" value={operationsMetrics.poles} small />
+          <KpiCard label="Chambers" value={operationsMetrics.chambers} small />
+          <KpiCard label="Joints" value={operationsMetrics.joints} small />
+          <KpiCard label="DPs" value={operationsMetrics.dps} small />
+        </div>
+
+        <div style={walkOffBlockerGrid}>
+          <HealthCard label="High QA" value={walkOffMetrics.highQaIssues} danger={walkOffMetrics.highQaIssues > 0} />
+          <HealthCard label="Medium QA" value={walkOffMetrics.mediumQaIssues} danger={walkOffMetrics.mediumQaIssues > 0} />
+          <HealthCard label="Missing PIA" value={missingPiaCount} danger={missingPiaCount > 0} />
+          <HealthCard label="Disconnected" value={walkOffMetrics.disconnected} danger={walkOffMetrics.disconnected > 0} />
+          <HealthCard label="Over Capacity" value={operationsMetrics.overCapacityCables} danger={operationsMetrics.overCapacityCables > 0} />
+          <HealthCard label="Orphaned" value={operationsMetrics.orphanedAssets} danger={operationsMetrics.orphanedAssets > 0} />
+        </div>
+
+        <button
+          type="button"
+          style={walkOffButton}
+          disabled={!areaAsset}
+          onClick={() => setWalkOffOpen(true)}
+        >
+          Launch Walk-Off Audit
+        </button>
       </div>
 
       {networkStats && (
@@ -928,6 +1091,39 @@ export default function AreaAssetInspector({
           ))
         )}
       </div>
+
+      <AuditModal
+        title="Area Walk-Off Audit"
+        open={walkOffOpen}
+        onClose={() => setWalkOffOpen(false)}
+      >
+        <div style={walkOffSnapshotBox}>
+          <div style={qaDebugTitle}>Auto-Populated Area Snapshot</div>
+          <div style={walkOffGrid}>
+            <KpiCard label="Homes Passed" value={operationsMetrics.homesPassed} small />
+            <KpiCard label="Homes Connected" value={operationsMetrics.homesConnected} small />
+            <KpiCard label="Build" value={formatPercent(operationsMetrics.buildPercent)} small />
+            <KpiCard label="RFS" value={formatPercent(operationsMetrics.rfsPercent)} small />
+            <KpiCard label="High QA" value={walkOffMetrics.highQaIssues} small />
+            <KpiCard label="Medium QA" value={walkOffMetrics.mediumQaIssues} small />
+            <KpiCard label="Missing PIA" value={missingPiaCount} small />
+            <KpiCard label="Readiness" value={`${walkOffMetrics.readinessScore}%`} small />
+          </div>
+          <div style={hint}>
+            This snapshot is saved with the Walk-Off audit log. It does not write into mapAssets/main/chunks.
+          </div>
+        </div>
+
+        <AuditFormEngine
+          key={`${areaAsset?.id || "area"}-${walkOffRefreshKey}`}
+          template={walkOffAuditTemplate}
+          assetId={areaAsset?.id}
+          assetName={areaAsset?.name || "Selected Area"}
+          areaName={areaAsset?.name || "Selected Area"}
+          onSave={handleSaveWalkOffAudit}
+          onClose={() => setWalkOffOpen(false)}
+        />
+      </AuditModal>
     </div>
   );
 }
@@ -986,6 +1182,69 @@ function HealthCard({
     </div>
   );
 }
+
+const walkOffBox = (ready: boolean): React.CSSProperties => ({
+  marginTop: 10,
+  padding: 10,
+  borderRadius: 10,
+  background: ready ? "rgba(6,95,70,0.16)" : "rgba(120,53,15,0.22)",
+  border: ready ? "1px solid #047857" : "1px solid #92400e",
+});
+
+const walkOffScore = (ready: boolean): React.CSSProperties => ({
+  minWidth: 54,
+  textAlign: "center",
+  borderRadius: 10,
+  padding: "7px 9px",
+  background: ready ? "#065f46" : "#92400e",
+  color: ready ? "#bbf7d0" : "#fed7aa",
+  fontWeight: 900,
+});
+
+const walkOffStatusRow: React.CSSProperties = {
+  display: "grid",
+  gap: 3,
+  marginTop: 8,
+  padding: 9,
+  borderRadius: 8,
+  background: "rgba(2,6,23,0.36)",
+  border: "1px solid rgba(148,163,184,0.12)",
+};
+
+const walkOffGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  gap: 8,
+  marginTop: 8,
+};
+
+const walkOffBlockerGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 8,
+  marginTop: 8,
+};
+
+const walkOffButton: React.CSSProperties = {
+  width: "100%",
+  marginTop: 10,
+  background: "#2563eb",
+  color: "white",
+  padding: "0.55rem 0.75rem",
+  borderRadius: 8,
+  border: "none",
+  cursor: "pointer",
+  whiteSpace: "nowrap",
+  fontWeight: 900,
+};
+
+const walkOffSnapshotBox: React.CSSProperties = {
+  marginBottom: 12,
+  padding: 12,
+  borderRadius: 10,
+  background: "#020617",
+  border: "1px solid #334155",
+};
 
 const card: React.CSSProperties = {
   border: "1px solid #374151",

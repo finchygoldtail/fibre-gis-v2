@@ -1,10 +1,12 @@
 import React from "react";
+import OperationalAssetExplorer from "./OperationalAssetExplorer";
+import type { SavedMapAsset } from "../../map/types";
 
 type Props = {
   projectName: string;
   status?: string;
   stats: any;
-  projectAssets: any[];
+  projectAssets: SavedMapAsset[];
   projectArea?: any;
   auditIssues?: any[];
   disconnectedAssets?: any[];
@@ -15,32 +17,77 @@ type Props = {
   onOpenFibreTopology?: () => void;
   onExport?: () => void;
   onBackToMap?: () => void;
+  onSelectAsset?: (asset: SavedMapAsset) => void;
+  onOpenJointEditor?: (asset: SavedMapAsset) => void;
 };
 
-const panel: React.CSSProperties = { background: "#0f1b2d", border: "1px solid rgba(148, 163, 184, 0.18)", borderRadius: 10, padding: 16, minHeight: 190 };
-const wide: React.CSSProperties = { ...panel, gridColumn: "span 2" };
-const title: React.CSSProperties = { margin: "0 0 12px", fontSize: 15, fontWeight: 900, color: "#e5e7eb" };
-const row: React.CSSProperties = { display: "flex", justifyContent: "space-between", gap: 12, padding: "9px 0", borderBottom: "1px solid rgba(148,163,184,0.12)", color: "#cbd5e1" };
-const grid: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 };
-const tile: React.CSSProperties = { background: "#0b1424", border: "1px solid rgba(148,163,184,0.14)", borderRadius: 10, padding: 12 };
-const button: React.CSSProperties = { border: "1px solid rgba(148,163,184,0.22)", background: "#111827", color: "#f8fafc", borderRadius: 8, padding: "10px 12px", fontWeight: 800, cursor: "pointer" };
+const panel: React.CSSProperties = {
+  background: "#0f1b2d",
+  border: "1px solid rgba(148, 163, 184, 0.18)",
+  borderRadius: 10,
+  padding: 16,
+  minHeight: 120,
+};
 
-function n(value: any): string {
-  const num = Number(value ?? 0);
-  return Number.isFinite(num) ? num.toLocaleString() : "0";
+const title: React.CSSProperties = {
+  margin: "0 0 12px",
+  fontSize: 15,
+  fontWeight: 900,
+  color: "#e5e7eb",
+};
+
+const button: React.CSSProperties = {
+  border: "1px solid rgba(148,163,184,0.22)",
+  background: "#111827",
+  color: "#f8fafc",
+  borderRadius: 8,
+  padding: "10px 12px",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+function getAssetKind(asset: SavedMapAsset): string {
+  const item = asset as any;
+  return String(item.assetType || item.type || item.jointType || "").toLowerCase();
 }
 
-function Row({ label, value }: { label: string; value: React.ReactNode }) {
-  return <div style={row}><span>{label}</span><strong style={{ color: "#f8fafc" }}>{value}</strong></div>;
-}
+export default function WorkspaceAssets({
+  projectAssets,
+  stats,
+  onBackToMap,
+  onSelectAsset,
+  onOpenJointEditor,
+  onOpenTrace,
+}: Props) {
+  const openAsset = (asset: SavedMapAsset) => {
+    const kind = getAssetKind(asset);
+    if (kind.includes("joint") || kind.includes("cmj") || kind.includes("lmj") || kind.includes("mmj") || kind.includes("ag")) {
+      onOpenJointEditor?.(asset);
+      return;
+    }
+    onSelectAsset?.(asset);
+  };
 
-function Tile({ label, value }: { label: string; value: React.ReactNode }) {
-  return <div style={tile}><div style={{ color: "#94a3b8", fontSize: 12 }}>{label}</div><div style={{ marginTop: 6, fontSize: 24, fontWeight: 900 }}>{value}</div></div>;
-}
+  return (
+    <>
+      <section style={{ ...panel, gridColumn: "span 2" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <div>
+            <h3 style={title}>Asset Register</h3>
+            <div style={{ color: "#94a3b8", fontSize: 13 }}>
+              Operational asset search, risk filtering and quick actions. Counts: {Number(projectAssets?.length || 0).toLocaleString()} total · {Number(stats?.joints || 0).toLocaleString()} joints · {Number(stats?.dps || 0).toLocaleString()} DPs · {Number(stats?.cables || 0).toLocaleString()} cables.
+            </div>
+          </div>
+          <button type="button" style={button} onClick={onBackToMap}>Back To Map To Add Asset</button>
+        </div>
+      </section>
 
-export default function WorkspaceAssets({ projectAssets, stats, onBackToMap }: Props) {
-  return <>
-    <section style={wide}><h3 style={title}>Asset Register</h3><div style={grid}><Tile label="Total" value={n(projectAssets?.length)} /><Tile label="Joints" value={n(stats?.joints)} /><Tile label="DPs" value={n(stats?.dps)} /><Tile label="Cables" value={n(stats?.cables)} /><Tile label="Poles" value={n(stats?.poles)} /><Tile label="Chambers" value={n(stats?.chambers)} /></div></section>
-    <section style={wide}><h3 style={title}>Recent Assets</h3>{(projectAssets || []).slice(0, 12).map((asset: any) => <div key={asset.id} style={row}><span>{String(asset.name || asset.jointName || asset.cableId || asset.id)}</span><strong>{String(asset.assetType || asset.jointType || "asset")}</strong></div>)}<button type="button" style={{ ...button, marginTop: 12 }} onClick={onBackToMap}>Back To Map To Add Asset</button></section>
-  </>;
+      <OperationalAssetExplorer
+        projectAssets={projectAssets || []}
+        onSelectAsset={onSelectAsset}
+        onOpenAsset={openAsset}
+        onTraceAsset={() => onOpenTrace?.()}
+      />
+    </>
+  );
 }

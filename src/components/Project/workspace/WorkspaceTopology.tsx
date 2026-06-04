@@ -38,10 +38,42 @@ function Tile({ label, value }: { label: string; value: React.ReactNode }) {
   return <div style={tile}><div style={{ color: "#94a3b8", fontSize: 12 }}>{label}</div><div style={{ marginTop: 6, fontSize: 24, fontWeight: 900 }}>{value}</div></div>;
 }
 
-export default function WorkspaceTopology({ stats, networkGraph, disconnectedAssets, onOpenFibreTopology, onOpenTrace }: Props) {
+export default function WorkspaceTopology({ stats, networkGraph, disconnectedAssets = [], onOpenFibreTopology, onOpenTrace, onOpenPanel }: Props) {
+  const graphNodes = networkGraph?.nodes?.size ?? networkGraph?.nodes?.length ?? 0;
+  const graphLinks = networkGraph?.edges?.size ?? networkGraph?.edges?.length ?? 0;
+
   return <>
-    <section style={panel}><h3 style={title}>Topology Health</h3><Row label="Graph Nodes" value={n(networkGraph?.nodes?.size)} /><Row label="Graph Links" value={n(networkGraph?.edges?.size)} /><Row label="Disconnected Assets" value={n(disconnectedAssets?.length)} /></section>
-    <section style={panel}><h3 style={title}>Fibre Topology</h3><Row label="Mapped Joints" value={n(stats?.mappedJoints ?? stats?.joints)} /><Row label="Fibre Tray Rows" value={n(stats?.fibreTrayRows)} /><button type="button" style={{ ...button, marginTop: 12, width: "100%" }} onClick={onOpenFibreTopology}>Open Fibre Tray Topology</button></section>
-    <section style={wide}><h3 style={title}>Trace Tools</h3><p style={{ color: "#cbd5e1" }}>Select a cable, joint, DP, pole, chamber or street cabinet on the map to inspect its local network links.</p><button type="button" style={button} onClick={onOpenTrace}>Open Trace Tool</button></section>
+    <section style={panel}>
+      <h3 style={title}>Topology Health</h3>
+      <Row label="Graph Nodes" value={n(graphNodes)} />
+      <Row label="Graph Links" value={n(graphLinks)} />
+      <Row label="Disconnected Assets" value={n(disconnectedAssets.length)} />
+    </section>
+
+    <section style={panel}>
+      <h3 style={title}>Fibre Topology</h3>
+      <Row label="Mapped Joints" value={n(stats?.mappedJoints ?? stats?.joints)} />
+      <Row label="Fibre Tray Rows" value={n(stats?.fibreTrayRows)} />
+      <button type="button" style={{ ...button, marginTop: 12, width: "100%" }} onClick={onOpenFibreTopology}>
+        Open Fibre Tray Topology
+      </button>
+    </section>
+
+    <section style={wide}>
+      <h3 style={title}>Trace Workflow</h3>
+      <div style={grid}>
+        <Tile label="1. Select" value="Asset" />
+        <Tile label="2. Inspect" value="Links" />
+        <Tile label="3. Trace" value="Path" />
+        <Tile label="4. Resolve" value="Issue" />
+      </div>
+      <p style={{ color: "#cbd5e1", marginTop: 12 }}>
+        Select a cable, joint, DP, pole, chamber or street cabinet on the map, then open Trace to inspect upstream and downstream relationships.
+      </p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button type="button" style={button} onClick={onOpenTrace}>Open Trace Tool</button>
+        <button type="button" style={button} onClick={() => onOpenPanel?.("disconnected", "topology")}>Review Disconnected Assets</button>
+      </div>
+    </section>
   </>;
 }
