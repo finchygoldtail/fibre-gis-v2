@@ -1304,46 +1304,122 @@ export default function ProjectWorkspace({
   const [walkOffStatus, setWalkOffStatus] = useState<"Pending" | "Approved" | "Review Required" | "Blocked">("Pending");
   const [walkOffSavedAt, setWalkOffSavedAt] = useState<string>("");
 
+  // =====================================================
+  // QA AREA SCOPE GUARD
+  // The workspace map is already scoped to the selected project area, but
+  // generated drop/home metadata can still carry references from neighbouring
+  // build areas.  QA must never show BD-BAE issues while viewing Baildon South,
+  // or BD-BAS issues while viewing Baildon East.
+  //
+  // This guard only removes assets that clearly belong to another Baildon area.
+  // Assets without a known BD-BAS / BD-BAE / BD-BAW reference are kept so we do
+  // not hide valid legacy assets while the permanent areaId metadata is added.
+  // =====================================================
+  const qaWorkspaceAssets = useMemo(() => {
+    const projectText = [
+      projectName,
+      (projectArea as any)?.name,
+      (projectArea as any)?.label,
+      (projectArea as any)?.projectName,
+      (projectArea as any)?.areaName,
+      (projectArea as any)?.id,
+    ]
+      .map((value) => String(value || "").toUpperCase())
+      .join(" ");
+
+    const expectedPrefix =
+      projectText.includes("BD-BAS") || projectText.includes("BAILDON SOUTH")
+        ? "BD-BAS"
+        : projectText.includes("BD-BAE") || projectText.includes("BAILDON EAST")
+          ? "BD-BAE"
+          : projectText.includes("BD-BAW") || projectText.includes("BAILDON WEST")
+            ? "BD-BAW"
+            : "";
+
+    if (!expectedPrefix) return workspaceAssets;
+
+    const foreignPrefixes = ["BD-BAS", "BD-BAE", "BD-BAW"].filter(
+      (prefix) => prefix !== expectedPrefix,
+    );
+
+    return workspaceAssets.filter((asset: SavedMapAsset) => {
+      const item = asset as any;
+      const searchableText = [
+        item.id,
+        item.assetId,
+        item.name,
+        item.jointName,
+        item.label,
+        item.cableId,
+        item.cableName,
+        item.parentCableId,
+        item.throughCable,
+        item.throughCableId,
+        item.feedCable,
+        item.connectedDpId,
+        item.connectedDP,
+        item.dpId,
+        item.fromAssetId,
+        item.toAssetId,
+        item.homeId,
+        item.connectedHomeId,
+        item.splitterBox,
+        item.assignedSplitterBox,
+        item.properties?.connectedDpId,
+        item.properties?.connectedDP,
+        item.properties?.dpId,
+        item.properties?.splitterBox,
+        item.properties?.assignedSplitterBox,
+      ]
+        .map((value) => String(value || "").toUpperCase())
+        .join(" ");
+
+      if (!searchableText) return true;
+
+      return !foreignPrefixes.some((prefix) => searchableText.includes(prefix));
+    });
+  }, [projectArea, projectName, workspaceAssets]);
+
   const auditIssues = useMemo(() => {
-  const rawIssues = auditAreaAssets(workspaceAssets);
+    const rawIssues = auditAreaAssets(qaWorkspaceAssets);
 
-  return rawIssues.filter((issue) => {
-    const issueText = String(
-      (issue as any).message ||
-      (issue as any).title ||
-      (issue as any).reason ||
-      (issue as any).description ||
-      issue.issue ||
-      "",
-    ).toLowerCase();
+    return rawIssues.filter((issue) => {
+      const issueText = String(
+        (issue as any).message ||
+          (issue as any).title ||
+          (issue as any).reason ||
+          (issue as any).description ||
+          issue.issue ||
+          "",
+      ).toLowerCase();
 
-    const assetText = String(
-      issue.assetType ||
-      issue.assetName ||
-      "",
-    ).toLowerCase();
+      const assetText = String(
+        issue.assetType ||
+          issue.assetName ||
+          "",
+      ).toLowerCase();
 
-    const isHomeNameIssue =
-      (
-        issueText.includes("no name") ||
-        issueText.includes("missing name") ||
-        issueText.includes("unnamed")
-      ) &&
-      (
-        assetText.includes("home") ||
-        assetText.includes("premise") ||
-        assetText.includes("flat") ||
-        assetText.includes("mdu")
-      );
+      const isHomeNameIssue =
+        (
+          issueText.includes("no name") ||
+          issueText.includes("missing name") ||
+          issueText.includes("unnamed")
+        ) &&
+        (
+          assetText.includes("home") ||
+          assetText.includes("premise") ||
+          assetText.includes("flat") ||
+          assetText.includes("mdu")
+        );
 
-    // Ignore temporary unnamed-home QA issues
-    if (isHomeNameIssue) {
-      return false;
-    }
+      // Ignore temporary unnamed-home QA issues
+      if (isHomeNameIssue) {
+        return false;
+      }
 
-    return true;
-  });
-}, [workspaceAssets]);
+      return true;
+    });
+  }, [qaWorkspaceAssets]);
   const networkState = useMemo(
     () => buildNetworkState(workspaceAssets),
     [workspaceAssets],
