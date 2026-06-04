@@ -1,0 +1,190 @@
+import { useCallback, useMemo } from "react";
+
+import type { SavedMapAsset } from "../types";
+import type { LayerVisibility } from "../hooks/useLayerVisibility";
+import {
+  assetTouchesViewport,
+  shouldRenderOperationalAssetAtZoom,
+  shouldRenderOpenreachAssetAtZoom,
+} from "../utils/viewportFiltering";
+import { withAreaAssetIndex } from "../../../services/areaAssetIndex";
+import { filterAssetsForProjectArea } from "./projectAssetFilter";
+
+type UseProjectAreaViewArgs = {
+  allMapAssets: SavedMapAsset[];
+  openreachReferenceAssets: SavedMapAsset[];
+  activeProjectId: string | null;
+  mapBounds: unknown;
+  mapZoom: number;
+  visibleLayers: LayerVisibility;
+};
+
+export function isProjectAreaAsset(asset: SavedMapAsset): boolean {
+  const item = asset as any;
+  const assetType = String(item.assetType ?? "").toLowerCase();
+  const jointType = String(item.jointType ?? "").toLowerCase();
+  const geometryType = String(
+    item.geometryType ?? item.geometry?.type ?? "",
+  ).toLowerCase();
+
+  return (
+    geometryType === "polygon" &&
+    (assetType === "area" ||
+      assetType === "polygon" ||
+      assetType === "project-area" ||
+      jointType.includes("polygon area"))
+  );
+}
+
+function isHomeAsset(asset: SavedMapAsset): boolean {
+  const item = asset as any;
+  return (
+    item.assetType === "home" ||
+    item.jointType === "Home" ||
+    Boolean(item.uprn || item.UPRN || item.properties?.UPRN)
+  );
+}
+
+export function useProjectAreaView({
+  allMapAssets,
+  openreachReferenceAssets,
+  activeProjectId,
+  mapBounds,
+  mapZoom,
+  visibleLayers,
+}: UseProjectAreaViewArgs) {
+  const projectAreas = useMemo(
+    () => allMapAssets.filter(isProjectAreaAsset),
+    [allMapAssets],
+  );
+
+  const activeProjectArea = useMemo(
+    () => projectAreas.find((area) => area.id === activeProjectId) ?? null,
+    [activeProjectId, projectAreas],
+  );
+
+  const activeProjectAreaName = useMemo(() => {
+    const area = activeProjectArea as any;
+    return String(
+      area?.areaName ||
+        area?.projectAreaName ||
+        area?.name ||
+        area?.label ||
+        "",
+    ).trim();
+  }, [activeProjectArea]);
+
+  const stampHomesForActiveArea = useCallback(
+    (homes: SavedMapAsset[]): SavedMapAsset[] =>
+      (homes || []).map((home) =>
+        withAreaAssetIndex(
+          {
+            ...(home as any),
+            assetType: "home",
+            jointType: (home as any).jointType || "Home",
+          } as SavedMapAsset,
+          activeProjectId,
+          activeProjectAreaName,
+        ),
+      ),
+    [activeProjectAreaName, activeProjectId],
+  );
+
+  const visibleProjectAssets = useMemo(() => {
+    const nonAreaAssets = allMapAssets.filter(
+      (asset) => !isProjectAreaAsset(asset),
+    );
+
+    const homes = nonAreaAssets.filter(isHomeAsset);
+    const homeIds = new Set(homes.map((home) => home.id));
+    const nonHomes = nonAreaAssets.filter((asset) => !homeIds.has(asset.id));
+
+    return [
+      ...filterAssetsForProjectArea(nonHomes, activeProjectArea),
+      ...homes,
+    ];
+  }, [activeProjectArea, allMapAssets]);
+
+  const visibleProjectAreas = useMemo(
+    () => (activeProjectArea ? [activeProjectArea] : projectAreas),
+    [activeProjectArea, projectAreas],
+  );
+
+  const visibleOpenreachAssets = useMemo(
+    () => filterAssetsForProjectArea(openreachReferenceAssets, activeProjectArea),
+    [activeProjectArea, openreachReferenceAssets],
+  );
+
+  const renderProjectAssets = useMemo(
+    () =>
+      visibleProjectAssets.filter(
+        (asset) =>
+          assetTouchesViewport(asset, mapBounds as any) &&
+          shouldRenderOperationalAssetAtZoom(asset, mapZoom),
+      ),
+    [visibleProjectAssets, mapBounds, mapZoom],
+  );
+
+  const renderOpenreachAssets = useMemo(
+    () =>
+      visibleOpenreachAssets.filter(
+        (asset) =>
+          assetTouchesViewport(asset, mapBounds as any) &&
+          shouldRenderOpenreachAssetAtZoom(asset, mapZoom),
+      ),
+    [visibleOpenreachAssets, mapBounds, mapZoom],
+  );
+
+  const snapCandidateAssets = useMemo(() => {
+    const byId = new Map<string, SavedMapAsset>();
+
+    visibleProjectAssets.forEach((asset) => {
+      if (asset?.id) byId.set(asset.id, asset);
+    });
+
+    visibleOpenreachAssets.forEach((asset) => {
+      if (asset?.id) byId.set(asset.id, asset);
+    });
+
+    return Array.from(byId.values());
+  }, [visibleProjectAssets, visibleOpenreachAssets]);
+
+  const openreachLayerVisibility = useMemo(
+    () => ({
+      ducts: visibleLayers.orDucts !== false,
+      trenches: visibleLayers.orDucts !== false,
+      spans: visibleLayers.orDucts !== false,
+      chambers: visibleLayers.orChambers !== false,
+      poles: visibleLayers.orPoles !== false,
+      labels: visibleLayers.orLabels !== false,
+      newPoles: visibleLayers.newPoles !== false,
+      suggestedPoles: visibleLayers.suggestedPoles !== false,
+      suggestedChambers: visibleLayers.suggestedChambers !== false,
+      suggestedDucts: visibleLayers.suggestedDucts !== false,
+    }),
+    [
+      visibleLayers.orDucts,
+      visibleLayers.orChambers,
+      visibleLayers.orPoles,
+      visibleLayers.orLabels,
+      visibleLayers.newPoles,
+      visibleLayers.suggestedPoles,
+      visibleLayers.suggestedChambers,
+      visibleLayers.suggestedDucts,
+    ],
+  );
+
+  return {
+    projectAreas,
+    activeProjectArea,
+    activeProjectAreaName,
+    stampHomesForActiveArea,
+    visibleProjectAssets,
+    visibleProjectAreas,
+    visibleOpenreachAssets,
+    renderProjectAssets,
+    renderOpenreachAssets,
+    snapCandidateAssets,
+    openreachLayerVisibility,
+  };
+}
