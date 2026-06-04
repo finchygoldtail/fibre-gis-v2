@@ -2494,7 +2494,7 @@ if (!shouldLoadHomesForSelectedProject) {
 
 
   useEffect(() => {
-    if (!activeProjectArea) {
+    if (!activeProjectArea || !canManageNetworkDesign) {
       setIsProjectWorkspaceOpen(false);
       setIsProjectWorkspaceLoading(false);
       return;
@@ -2507,7 +2507,7 @@ if (!shouldLoadHomesForSelectedProject) {
     }, 650);
 
     return () => window.clearTimeout(timer);
-  }, [activeProjectArea?.id]);
+  }, [activeProjectArea?.id, canManageNetworkDesign]);
 
   const handleSelectProject = (projectId: string) => {
     activeProjectIdRef.current = projectId;
@@ -6258,7 +6258,7 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
     alert(`Auto-spread complete. ${movedById.size} home${movedById.size === 1 ? "" : "s"} moved across ${stackCount} stack${stackCount === 1 ? "" : "s"}.`);
   };
 
-  if (isProjectWorkspaceLoading && activeProjectArea) {
+  if (isProjectWorkspaceLoading && activeProjectArea && canManageNetworkDesign) {
     return (
       <div style={projectWorkspaceLoadingOverlay}>
         <div style={projectWorkspaceLoadingCard}>
@@ -6279,7 +6279,7 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
     );
   }
 
-  if (isProjectWorkspaceOpen && activeProjectArea) {
+  if (isProjectWorkspaceOpen && activeProjectArea && canManageNetworkDesign) {
     return (
       <ProjectWorkspace
         projectName={activeProjectArea.name || "Selected Project"}
@@ -6417,7 +6417,13 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         {activeProjectArea && canManageNetworkDesign && (
           <button
             type="button"
-            onClick={() => setIsProjectWorkspaceOpen(true)}
+            onClick={() => {
+              if (!canManageNetworkDesign) {
+                setIsProjectWorkspaceOpen(false);
+                return;
+              }
+              setIsProjectWorkspaceOpen(true);
+            }}
             style={{
               ...btnPrimary,
               width: "100%",
@@ -7785,8 +7791,10 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
           allAssets={allMapAssets}
           onClose={() => {
             setOpenDistributionPointAsset(null);
-            if (activeProjectArea) {
+            if (activeProjectArea && canManageNetworkDesign) {
               setIsProjectWorkspaceOpen(true);
+            } else {
+              setIsProjectWorkspaceOpen(false);
             }
           }}
           onSaveRouting={({ asset, nextDetails }) => {
