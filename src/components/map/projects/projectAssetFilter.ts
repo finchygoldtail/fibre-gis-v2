@@ -1,5 +1,6 @@
 import type { LatLngLiteral } from "leaflet";
 import type { SavedMapAsset } from "../../../types/mapAssets";
+import { isAssetAssignedToProjectArea } from "../../../services/areaAssetIndex";
 
 type PolygonAsset = SavedMapAsset & {
   geometry: {
@@ -127,18 +128,26 @@ export function filterAssetsForProjectArea(
   assets: SavedMapAsset[],
   activeProjectArea: SavedMapAsset | null | undefined
 ): SavedMapAsset[] {
-  if (!activeProjectArea || activeProjectArea.geometry?.type !== "Polygon") {
+  if (!activeProjectArea) {
     return assets;
+  }
+
+  const candidateAssets = assets.filter((asset) =>
+    isAssetAssignedToProjectArea(asset, activeProjectArea),
+  );
+
+  if (activeProjectArea.geometry?.type !== "Polygon") {
+    return candidateAssets;
   }
 
   const polygonAsset = activeProjectArea as PolygonAsset;
   const polygon = polygonAsset.geometry.coordinates[0];
 
-  if (!polygon?.length) return assets;
+  if (!polygon?.length) return candidateAssets;
 
   const bounds = getPolygonBounds(polygon);
 
-  return assets.filter((asset) => {
+  return candidateAssets.filter((asset) => {
     if (asset.assetType === "area") return false;
 
     if (asset.geometry?.type === "Point") {

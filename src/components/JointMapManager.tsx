@@ -112,6 +112,7 @@ import {
   normaliseOpenreachAsset,
   saveOrAssets,
 } from "../services/orAssetStorage";
+import { withAreaAssetIndex } from "../services/areaAssetIndex";
 export type SavedJoint = SavedMapAsset;
 export type { SavedMapAsset };
 
@@ -1652,9 +1653,17 @@ export default function JointMapManager({
       reason: "joint-map-manager-primary-save",
     });
 
-    // Split-storage mirroring is temporarily disabled during the storage
-    // integrity phase. Main chunks are the only authoritative save target.
-    // Re-enable this only after split buckets are proven stable and rules allow them.
+    // SAFE SPLIT MIRROR
+    // Main chunks still save first and remain the rollback/source of truth.
+    // Split buckets are updated only after main succeeds and are protected by
+    // the split-storage guards, so a tablet/slow-load empty state cannot wipe them.
+    const { saveSplitMapAssets } = await import(
+      "../services/mapAssetSplitStorage"
+    );
+
+    await saveSplitMapAssets(operationalSavedJoints, {
+      reason: "joint-map-manager-primary-save:split-mirror-after-main",
+    });
   } catch (err) {
     console.error("PRIMARY MAP SAVE FAILED", err);
   }
@@ -1664,8 +1673,11 @@ export default function JointMapManager({
   }, [operationalSavedJoints]);
 
   const normalizedProjectHomes = useMemo(
-    () => (projectHomes ?? []).map(normalizeMapAsset),
-    [projectHomes],
+    () =>
+      (projectHomes ?? []).map((home) =>
+        withAreaAssetIndex(normalizeMapAsset(home), activeProjectId),
+      ),
+    [projectHomes, activeProjectId],
   );
 
   const [contextMenu, setContextMenu] = useState<{
@@ -1703,7 +1715,13 @@ export default function JointMapManager({
     asset: SavedMapAsset,
     options?: { isNew?: boolean; message?: string },
   ): SavedMapAsset => {
-    const syncedAsset = markAssetForLiveSync(asset, options?.isNew ?? false);
+    const activeArea = activeProjectArea;
+    const areaIndexedAsset = withAreaAssetIndex(
+      asset,
+      activeProjectIdRef.current || (asset as any).areaId || (asset as any).projectAreaId,
+      (activeArea as any)?.name || (activeArea as any)?.label || (asset as any).areaName || (asset as any).projectAreaName,
+    );
+    const syncedAsset = markAssetForLiveSync(areaIndexedAsset, options?.isNew ?? false);
 
     setSavedJoints((prev) => {
       const exists = (prev ?? []).some((item) => item.id === syncedAsset.id);
@@ -1771,7 +1789,15 @@ export default function JointMapManager({
 
   const allMapAssets = useMemo(() => {
     const byId = new Map<string, SavedMapAsset>();
-    hydratedOperationalSavedJoints.forEach((asset) => byId.set(asset.id, asset));
+
+    // AREA GROUPING WITHOUT DUPLICATING DATA
+    // Existing assets are virtually indexed from their own metadata/name
+    // (for example BD-BAS => Baildon South, BD-BAE => Baildon East).
+    // This lets Baildon South/East/West work as grouped workspaces while the
+    // asset itself still lives once in the existing split bucket/main storage.
+    hydratedOperationalSavedJoints.forEach((asset) =>
+      byId.set(asset.id, withAreaAssetIndex(asset)),
+    );
     normalizedProjectHomes.forEach((asset) => byId.set(asset.id, asset));
     return Array.from(byId.values());
   }, [hydratedOperationalSavedJoints, normalizedProjectHomes]);
@@ -1907,14 +1933,27 @@ if (!shouldLoadHomesForSelectedProject) {
     [activeProjectId, projectAreas],
   );
 
-  const visibleProjectAssets = useMemo(
-    () =>
-      filterAssetsForProjectArea(
-        allMapAssets.filter((asset) => !isProjectAreaAsset(asset)),
-        activeProjectArea,
-      ),
-    [activeProjectArea, allMapAssets],
+  const visibleProjectAssets = useMemo(() => {
+  const nonAreaAssets = allMapAssets.filter(
+    (asset) => !isProjectAreaAsset(asset),
   );
+
+  const homes = nonAreaAssets.filter(
+    (asset: any) =>
+      asset.assetType === "home" ||
+      asset.jointType === "Home" ||
+      Boolean(asset.uprn || asset.UPRN || asset.properties?.UPRN),
+  );
+
+  const nonHomes = nonAreaAssets.filter(
+    (asset) => !homes.some((home) => home.id === asset.id),
+  );
+
+  return [
+    ...filterAssetsForProjectArea(nonHomes, activeProjectArea),
+    ...homes,
+  ];
+}, [activeProjectArea, allMapAssets]);
 
   const visibleProjectAreas = useMemo(
     () => (activeProjectArea ? [activeProjectArea] : projectAreas),
@@ -5016,7 +5055,13 @@ if (!shouldLoadHomesForSelectedProject) {
 
         const importedOrAssets = networkAssets
           .filter(isOpenreachReferenceAsset)
-          .map(normaliseOpenreachAsset);
+          .map((asset) =>
+            withAreaAssetIndex(
+              normaliseOpenreachAsset(asset),
+              activeProjectId,
+              (activeProjectArea as any)?.name || (activeProjectArea as any)?.label,
+            ),
+          );
         const designedNetworkAssets = networkAssets.filter(
           (asset) => !isOpenreachReferenceAsset(asset),
         );
@@ -5040,7 +5085,16 @@ if (!shouldLoadHomesForSelectedProject) {
             existingIds.add(id);
             return true;
           });
-          setSavedJoints((prev) => [...prev, ...dedupedNetworkAssets]);
+          setSavedJoints((prev) => [
+            ...prev,
+            ...dedupedNetworkAssets.map((asset) =>
+              withAreaAssetIndex(
+                asset,
+                activeProjectId,
+                (activeProjectArea as any)?.name || (activeProjectArea as any)?.label,
+              ),
+            ),
+          ]);
         }
 
         alert(
@@ -5255,7 +5309,13 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
 
       const importedOrAssets = importedAssets
         .filter(isOpenreachReferenceAsset)
-        .map(normaliseOpenreachAsset);
+        .map((asset) =>
+          withAreaAssetIndex(
+            normaliseOpenreachAsset(asset),
+            activeProjectId,
+            (activeProjectArea as any)?.name || (activeProjectArea as any)?.label,
+          ),
+        );
       const importedDesignedAssets = importedAssets.filter(
         (asset) => !isOpenreachReferenceAsset(asset),
       );
@@ -5267,7 +5327,15 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         setOrAssets(mergedOrAssets);
       }
 
-      setSavedJoints(importedDesignedAssets);
+      setSavedJoints(
+        importedDesignedAssets.map((asset) =>
+          withAreaAssetIndex(
+            asset,
+            activeProjectId,
+            (activeProjectArea as any)?.name || (activeProjectArea as any)?.label,
+          ),
+        ),
+      );
       alert(
         `Imported ${importedDesignedAssets.length} designed asset(s) and ${importedOrAssets.length} OR reference asset(s).`,
       );

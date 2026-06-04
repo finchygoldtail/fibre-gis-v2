@@ -1,6 +1,7 @@
 import { collection, doc, getDocs, setDoc } from "firebase/firestore";
 import { db } from "../../../firebase";
 import type { SavedMapAsset } from "../types";
+import { withAreaAssetIndex } from "../../../services/areaAssetIndex";
 
 const CHUNK_SIZE = 250;
 
@@ -46,12 +47,20 @@ export async function saveProjectHomes(
   projectId: string,
   homes: SavedMapAsset[]
 ): Promise<number> {
-  const cleanedHomes = homes.map((home) => ({
-    ...home,
-    assetType: "home",
-    projectId,
-    mappingRows: [],
-  }));
+  const cleanedHomes = homes.map((home) =>
+    withAreaAssetIndex(
+      {
+        ...home,
+        assetType: "home",
+        projectId,
+        areaId: (home as any).areaId || projectId,
+        projectAreaId: (home as any).projectAreaId || projectId,
+        mappingRows: [],
+      } as SavedMapAsset,
+      projectId,
+      (home as any).areaName || (home as any).projectAreaName,
+    ),
+  );
 
   const chunks: SavedMapAsset[][] = [];
   for (let i = 0; i < cleanedHomes.length; i += CHUNK_SIZE) {

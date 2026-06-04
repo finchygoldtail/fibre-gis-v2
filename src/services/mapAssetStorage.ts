@@ -11,6 +11,8 @@ import type { Firestore } from "firebase/firestore";
 import type { SavedMapAsset, SavedJoint } from "../components/JointMapManager";
 import { db, auth } from "../firebase";
 import { normalizeMapAssets } from "./mapAssetAdapter";
+import { withAreaAssetIndex } from "./areaAssetIndex";
+import { saveSplitMapAssets } from "./mapAssetSplitStorage";
 
 export const MAP_BUSINESS_ID = "fibre-gis-v2";
 export const MAP_SCHEMA_VERSION = 2;
@@ -336,7 +338,8 @@ function stripRuntimeCoordinateCaches(copy: any) {
  */
 export function cleanSavedJointsForFirebase(value: SavedJoint[]): any[] {
   return value.map((asset: any) => {
-    const copy: any = removeUndefinedDeep(JSON.parse(JSON.stringify(asset ?? {})));
+    const indexedAsset = withAreaAssetIndex(asset as SavedMapAsset);
+    const copy: any = removeUndefinedDeep(JSON.parse(JSON.stringify(indexedAsset ?? {})));
 
     if (copy.geometry?.coordinates !== undefined) {
       copy.geometryType = copy.geometry.type;
@@ -519,6 +522,31 @@ export async function saveMapAssetsToFirestore(
     );
   } catch (err) {
     console.warn("Map asset root summary write failed; chunks were written.", err);
+  }
+
+  // =====================================================
+  // SAFE SPLIT-BUCKET MIRROR
+  // Main chunks remain the authoritative source of truth. Once the main save
+  // has succeeded, mirror the same cleaned asset set into per-type buckets
+  // (distributionPoints, cables, joints, polygons, etc.) so Firestore can be
+  // browsed and area/category loading can be introduced safely.
+  //
+  // Important tablet/data-loss guard:
+  // - This never runs before the main save succeeds.
+  // - Empty/suspicious bucket drops are still blocked inside saveSplitMapAssets.
+  // - Mirror failure must not roll back or corrupt the authoritative main save.
+  // =====================================================
+  try {
+    await saveSplitMapAssets(cleaned as SavedMapAsset[], {
+      reason: options.reason
+        ? `${options.reason}:split-mirror-after-main`
+        : "split-mirror-after-main",
+    });
+  } catch (err) {
+    console.warn(
+      "Split map asset mirror failed; authoritative main chunks were saved.",
+      err,
+    );
   }
 
   return cleaned;
