@@ -45,7 +45,8 @@ export async function loadProjectHomes(projectId: string): Promise<SavedMapAsset
 
 export async function saveProjectHomes(
   projectId: string,
-  homes: SavedMapAsset[]
+  homes: SavedMapAsset[],
+  areaName?: string | null,
 ): Promise<number> {
   const cleanedHomes = homes.map((home) =>
     withAreaAssetIndex(
@@ -58,7 +59,7 @@ export async function saveProjectHomes(
         mappingRows: [],
       } as SavedMapAsset,
       projectId,
-      (home as any).areaName || (home as any).projectAreaName,
+      areaName || (home as any).areaName || (home as any).projectAreaName,
     ),
   );
 

@@ -1673,11 +1673,8 @@ export default function JointMapManager({
   }, [operationalSavedJoints]);
 
   const normalizedProjectHomes = useMemo(
-    () =>
-      (projectHomes ?? []).map((home) =>
-        withAreaAssetIndex(normalizeMapAsset(home), activeProjectId),
-      ),
-    [projectHomes, activeProjectId],
+    () => (projectHomes ?? []).map((home) => normalizeMapAsset(home)),
+    [projectHomes],
   );
 
   const [contextMenu, setContextMenu] = useState<{
@@ -1932,6 +1929,30 @@ if (!shouldLoadHomesForSelectedProject) {
     () => projectAreas.find((area) => area.id === activeProjectId) ?? null,
     [activeProjectId, projectAreas],
   );
+
+  const activeProjectAreaName = useMemo(() => {
+    const area = activeProjectArea as any;
+    return String(
+      area?.areaName ||
+        area?.projectAreaName ||
+        area?.name ||
+        area?.label ||
+        "",
+    ).trim();
+  }, [activeProjectArea]);
+
+  const stampHomesForActiveArea = (homes: SavedMapAsset[]): SavedMapAsset[] =>
+    (homes || []).map((home) =>
+      withAreaAssetIndex(
+        {
+          ...(home as any),
+          assetType: "home",
+          jointType: (home as any).jointType || "Home",
+        } as SavedMapAsset,
+        activeProjectId,
+        activeProjectAreaName,
+      ),
+    );
 
   const visibleProjectAssets = useMemo(() => {
   const nonAreaAssets = allMapAssets.filter(
@@ -2811,7 +2832,7 @@ if (!shouldLoadHomesForSelectedProject) {
       setProjectHomes(updatedProjectHomes);
 
       try {
-        await saveProjectHomes(activeProjectId, updatedProjectHomes);
+        await saveProjectHomes(activeProjectId, stampHomesForActiveArea(updatedProjectHomes), activeProjectAreaName);
       } catch (err) {
         console.error(
           "Failed to save project homes after survey cleanup delete",
@@ -2940,7 +2961,7 @@ if (!shouldLoadHomesForSelectedProject) {
       });
 
       setProjectHomes(updatedProjectHomes);
-      await saveProjectHomes(activeProjectId, updatedProjectHomes);
+      await saveProjectHomes(activeProjectId, stampHomesForActiveArea(updatedProjectHomes), activeProjectAreaName);
     }
 
     writeAssetAuditLog({
@@ -3252,8 +3273,11 @@ if (!shouldLoadHomesForSelectedProject) {
       },
     };
 
-    const savedRecord = markAssetForLiveSync(record, true);
-    setSavedJoints((prev) => [...prev, savedRecord]);
+    // IMPORTANT:
+    // New point assets must use the single save path so area metadata is stamped
+    // before the workspace/map filters run. Without this, assets named with
+    // BD-BAS / BD-BAE can be indexed inconsistently and appear to not add.
+    const savedRecord = saveMapAssetToState(record, { isNew: true });
     writeAssetAuditLog({
       asset: savedRecord,
       action: "created",
@@ -3290,8 +3314,7 @@ if (!shouldLoadHomesForSelectedProject) {
       },
     };
 
-    const savedAreaRecord = markAssetForLiveSync(areaRecord, true);
-    setSavedJoints((prev) => [...prev, savedAreaRecord]);
+    const savedAreaRecord = saveMapAssetToState(areaRecord, { isNew: true });
     writeAssetAuditLog({
       asset: savedAreaRecord,
       action: "created",
@@ -3534,7 +3557,7 @@ if (!shouldLoadHomesForSelectedProject) {
         });
 
         setProjectHomes(updatedProjectHomes);
-        await saveProjectHomes(activeProjectId, updatedProjectHomes);
+        await saveProjectHomes(activeProjectId, stampHomesForActiveArea(updatedProjectHomes), activeProjectAreaName);
       }
 
       if (autoDrops.length > 0) {
@@ -3738,7 +3761,7 @@ if (!shouldLoadHomesForSelectedProject) {
       });
 
       setProjectHomes(updatedProjectHomes);
-      await saveProjectHomes(activeProjectId, updatedProjectHomes);
+      await saveProjectHomes(activeProjectId, stampHomesForActiveArea(updatedProjectHomes), activeProjectAreaName);
     }
 
     if (editingAssetId === id) {
@@ -3975,7 +3998,7 @@ if (!shouldLoadHomesForSelectedProject) {
       );
       const mergedHomes = [...projectHomes, ...savedHomes];
 
-      await saveProjectHomes(activeProjectId, mergedHomes);
+      await saveProjectHomes(activeProjectId, stampHomesForActiveArea(mergedHomes), activeProjectAreaName);
       setProjectHomes(mergedHomes);
       setLoadedHomesProjectId(activeProjectId);
 
@@ -4087,7 +4110,7 @@ if (!shouldLoadHomesForSelectedProject) {
         );
         const mergedHomes = [...projectHomes, ...savedHomes];
 
-        await saveProjectHomes(projectIdForImport, mergedHomes);
+        await saveProjectHomes(projectIdForImport, stampHomesForActiveArea(mergedHomes), activeProjectAreaName);
         setProjectHomes(mergedHomes);
         setLoadedHomesProjectId(projectIdForImport);
 
@@ -4147,7 +4170,7 @@ if (!shouldLoadHomesForSelectedProject) {
         );
         const mergedHomes = [...projectHomes, ...savedHomes];
 
-        await saveProjectHomes(projectIdForImport, mergedHomes);
+        await saveProjectHomes(projectIdForImport, stampHomesForActiveArea(mergedHomes), activeProjectAreaName);
         setProjectHomes(mergedHomes);
         setLoadedHomesProjectId(projectIdForImport);
 
@@ -5046,7 +5069,7 @@ if (!shouldLoadHomesForSelectedProject) {
                 projectId: activeProjectId,
               })),
             ];
-            await saveProjectHomes(activeProjectId, mergedHomes);
+            await saveProjectHomes(activeProjectId, stampHomesForActiveArea(mergedHomes), activeProjectAreaName);
             setProjectHomes(mergedHomes);
             setLoadedHomesProjectId(activeProjectId);
             savedHomeCount = newHomes.length;
@@ -6041,7 +6064,7 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         return updated || home;
       });
       setProjectHomes(updatedProjectHomes);
-      await saveProjectHomes(activeProjectId, updatedProjectHomes);
+      await saveProjectHomes(activeProjectId, stampHomesForActiveArea(updatedProjectHomes), activeProjectAreaName);
     }
 
     const auditTarget = splitterById.values().next().value || activeProjectArea || ({} as SavedMapAsset);
@@ -6202,7 +6225,7 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
       setProjectHomes(updatedProjectHomes);
 
       try {
-        await saveProjectHomes(activeProjectId, updatedProjectHomes);
+        await saveProjectHomes(activeProjectId, stampHomesForActiveArea(updatedProjectHomes), activeProjectAreaName);
       } catch (err) {
         console.error("Failed to save auto-spread project homes", err);
         alert("Homes moved on screen, but saving project homes failed. Check the console before refreshing.");
@@ -7288,7 +7311,7 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
                 setProjectHomes(updatedProjectHomes);
 
                 if (activeProjectId) {
-                  void saveProjectHomes(activeProjectId, updatedProjectHomes).catch((err) => {
+                  void saveProjectHomes(activeProjectId, stampHomesForActiveArea(updatedProjectHomes), activeProjectAreaName).catch((err) => {
                     console.error("Failed to save moved home position", err);
                     alert(
                       "The home moved on screen, but saving the project homes failed. Check the console before refreshing.",

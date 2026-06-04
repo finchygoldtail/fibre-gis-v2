@@ -8,7 +8,8 @@ import {
   serverTimestamp,
   setDoc,
 } from "firebase/firestore";
-import { db } from "../../firebase";
+import { httpsCallable } from "firebase/functions";
+import { db, functions } from "../../firebase";
 import {
   ROLE_LABELS,
   ROLE_PERMISSIONS,
@@ -42,6 +43,7 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
   const [newUid, setNewUid] = useState("");
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [newRole, setNewRole] = useState<UserRole>("survey_user");
 
   const loadUsers = async () => {
@@ -167,25 +169,75 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
 
   const handleCreateOrUpdateUser = async () => {
     const uid = newUid.trim();
+    const cleanName = newName.trim();
+    const cleanEmail = newEmail.trim().toLowerCase();
+    const cleanPassword = newPassword.trim();
 
-    if (!uid) {
-      alert("Add the user's Firebase UID.");
-      return;
-    }
+    setSaveMessage("");
+    setSaveError("");
 
     try {
-      await saveUserRole(uid, {
-        name: newName.trim(),
-        email: newEmail.trim(),
-        role: newRole,
-      });
+      if (uid) {
+        await saveUserRole(uid, {
+          name: cleanName,
+          email: cleanEmail,
+          role: newRole,
+        });
+      } else {
+        if (!cleanName || !cleanEmail || !cleanPassword) {
+          alert("Add name, email and a temporary password.");
+          return;
+        }
+
+        if (cleanPassword.length < 6) {
+          alert("Temporary password must be at least 6 characters.");
+          return;
+        }
+
+        setIsSaving(true);
+
+        const createLoginUser = httpsCallable<
+          {
+            businessId: string;
+            name: string;
+            email: string;
+            password: string;
+            role: UserRole;
+          },
+          { success: boolean; uid: string }
+        >(functions, "createLoginUser");
+
+        const result = await createLoginUser({
+          businessId: BUSINESS_ID,
+          name: cleanName,
+          email: cleanEmail,
+          password: cleanPassword,
+          role: newRole,
+        });
+
+        const createdUid = result.data.uid;
+
+        await saveUserRole(createdUid, {
+          name: cleanName,
+          email: cleanEmail,
+          role: newRole,
+        });
+
+        setSaveMessage(`Created login for ${cleanEmail}.`);
+      }
 
       setNewUid("");
       setNewName("");
       setNewEmail("");
+      setNewPassword("");
       setNewRole("survey_user");
-    } catch {
-      // saveUserRole already sets a visible error message.
+    } catch (err) {
+      console.error("Failed to create/update login user", err);
+      setSaveError(
+        "User create/update failed. Check the browser console and Cloud Function logs.",
+      );
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -220,13 +272,13 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
       </div>
 
       <div style={cardStyle}>
-        <h4 style={sectionTitleStyle}>Add / Update User</h4>
+        <h4 style={sectionTitleStyle}>Create Login / Update User</h4>
 
-        <label style={labelStyle}>Firebase UID</label>
+        <label style={labelStyle}>Firebase UID optional - only use this to update an existing Auth user</label>
         <input
           value={newUid}
           onChange={(event) => setNewUid(event.target.value)}
-          placeholder="Paste UID"
+          placeholder="Leave blank to create a new login"
           style={inputStyle}
         />
 
@@ -243,6 +295,15 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
           value={newEmail}
           onChange={(event) => setNewEmail(event.target.value)}
           placeholder="engineer@example.com"
+          style={inputStyle}
+        />
+
+        <label style={labelStyle}>Temporary Password</label>
+        <input
+          value={newPassword}
+          onChange={(event) => setNewPassword(event.target.value)}
+          placeholder="Minimum 6 characters"
+          type="password"
           style={inputStyle}
         />
 
@@ -269,7 +330,7 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
             cursor: isSaving ? "not-allowed" : "pointer",
           }}
         >
-          {isSaving ? "Saving..." : "Save User Permissions"}
+          {isSaving ? "Saving..." : newUid.trim() ? "Save User Permissions" : "Create Login User"}
         </button>
 
         {saveMessage && <div style={successStyle}>{saveMessage}</div>}

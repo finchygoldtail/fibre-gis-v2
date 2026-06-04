@@ -839,8 +839,21 @@ export const FibreTrayEditor: React.FC = () => {
           return nextAsset as SavedJoint;
         });
 
+        // PERFORMANCE FIX:
+        // The mapping rows have already been saved to:
+        //   jointMappings/{jointId}/chunks
+        //
+        // Do NOT block the Excel upload by immediately rewriting the full
+        // mapAssets/main chunk set here. setSavedJoints updates the selected
+        // joint summary in memory and the existing debounced Firestore save
+        // effect will persist the small joint metadata change shortly after.
+        //
+        // This keeps the upload responsive and avoids making the operator wait
+        // for:
+        //   1) full mapAssets chunk save
+        //   2) split bucket mirror
+        //   3) workspace / QA recalculation
         setSavedJoints(updatedSavedJoints);
-        await saveSavedJointsToFirestoreNow(updatedSavedJoints);
       }
       setAssetType(
         selectedMapJoint?.assetType === "street-cab"

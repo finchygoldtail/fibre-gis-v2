@@ -13,7 +13,6 @@
 
 import React, { useEffect, useState } from "react";
 import {
-  createUserWithEmailAndPassword,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -25,16 +24,6 @@ import { auth, googleProvider } from "../firebase";
 import { AppModeProvider } from "../context/AppModeContext";
 import { UserRoleProvider } from "../context/UserRoleContext";
 
-const ALLOWED_EMAILS = [
-  "alistairlgrantham@gmail.com",
-  "benedict.almond@brsk.co.uk",
-  "adam.whittaker@brsk.co.uk",
-  "james.oliver@brsk.co.uk",
-  "alistair.grantham@brsk.co.uk",
-  "ben.almond@brsk.co.uk",
-  "maintenance1@alistragis.local",
-  "j.bowes866@gmail.com",
-];
 
 type Props = {
   children: React.ReactNode;
@@ -49,7 +38,6 @@ export default function AuthGate({ children }: Props) {
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState("");
 
-  const [isCreatingAccount, setIsCreatingAccount] = useState(false);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (nextUser) => {
@@ -60,22 +48,11 @@ export default function AuthGate({ children }: Props) {
     return () => unsub();
   }, []);
 
-  const isAllowedEmail = (value: string | null | undefined) =>
-    !!value && ALLOWED_EMAILS.includes(value.toLowerCase());
-
   const handleGoogleSignIn = async () => {
     setAuthError("");
 
     try {
-      const result = await signInWithPopup(auth, googleProvider);
-
-      if (!isAllowedEmail(result.user.email)) {
-        await auth.signOut();
-
-        setAuthError(
-          "This email is not allowed to access Alistra GIS.",
-        );
-      }
+      await signInWithPopup(auth, googleProvider);
     } catch (err: any) {
       setAuthError(err.message || "Google sign in failed.");
     }
@@ -84,27 +61,12 @@ export default function AuthGate({ children }: Props) {
   const handleEmailAuth = async () => {
     setAuthError("");
 
-    if (!isAllowedEmail(email)) {
-      setAuthError(
-        "This email is not allowed to access Alistra GIS.",
-      );
-      return;
-    }
-
     try {
-      if (isCreatingAccount) {
-        await createUserWithEmailAndPassword(
-          auth,
-          email,
-          password,
-        );
-      } else {
-        await signInWithEmailAndPassword(
-          auth,
-          email,
-          password,
-        );
-      }
+      await signInWithEmailAndPassword(
+        auth,
+        email.trim().toLowerCase(),
+        password,
+      );
     } catch (err: any) {
       setAuthError(err.message || "Authentication failed.");
     }
@@ -114,18 +76,6 @@ export default function AuthGate({ children }: Props) {
     return (
       <div style={screen}>
         Loading Fibre GIS Platform...
-      </div>
-    );
-  }
-
-  if (user && !isAllowedEmail(user.email)) {
-    void auth.signOut();
-
-    return (
-      <div style={screen}>
-        <div style={card}>
-          This account is not allowed to access Alistra GIS.
-        </div>
       </div>
     );
   }
@@ -186,21 +136,9 @@ export default function AuthGate({ children }: Props) {
           style={button}
           onClick={handleEmailAuth}
         >
-          {isCreatingAccount
-            ? "Create account"
-            : "Sign in"}
+          Sign in
         </button>
 
-        <button
-          style={secondaryButton}
-          onClick={() =>
-            setIsCreatingAccount((v) => !v)
-          }
-        >
-          {isCreatingAccount
-            ? "Already have an account?"
-            : "Create account instead"}
-        </button>
 
         <div style={divider}>or</div>
 

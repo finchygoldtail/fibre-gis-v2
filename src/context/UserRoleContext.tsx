@@ -143,14 +143,24 @@ function normalisePermissions(
 
 function buildFallbackProfileFromUser(user: User): AppUserProfile {
   const email = user.email?.toLowerCase() || "";
-  const role = ROLE_BY_EMAIL[email] || "survey_user";
+  const knownRole = ROLE_BY_EMAIL[email];
+
+  if (knownRole) {
+    return {
+      uid: user.uid,
+      name: user.displayName || user.email || "User",
+      email,
+      role: knownRole,
+      permissions: ROLE_PERMISSIONS[knownRole],
+    };
+  }
 
   return {
     uid: user.uid,
     name: user.displayName || user.email || "User",
     email,
-    role,
-    permissions: ROLE_PERMISSIONS[role],
+    role: "survey_user",
+    permissions: LOCKED_DOWN_PERMISSIONS,
   };
 }
 

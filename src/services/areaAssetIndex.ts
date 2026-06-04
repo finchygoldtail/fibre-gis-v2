@@ -36,7 +36,9 @@ export type AreaIndexedAsset = SavedMapAsset & {
   areaName?: string;
   projectAreaName?: string;
   areaCode?: string;
+  projectAreaCode?: string;
   areaSlug?: string;
+  areaStorageKey?: string;
   assetCategory?: AreaAssetCategory;
 };
 
@@ -340,6 +342,10 @@ export function withAreaAssetIndex<T extends SavedMapAsset>(
   const nextAreaId = explicitAreaId || slugify(nextAreaName);
   const nextAreaSlug = slugify(nextAreaName || nextAreaId);
   const nextAreaCode = inferredCode || inferAreaCodeFromText(nextAreaName);
+  const nextAreaStorageKey =
+    nextAreaSlug ||
+    slugify(inferAreaNameFromCode(nextAreaCode)) ||
+    slugify(nextAreaId);
 
   const category = inferAreaAssetCategory(asset);
 
@@ -358,8 +364,9 @@ export function withAreaAssetIndex<T extends SavedMapAsset>(
           projectAreaName: nextAreaName,
         }
       : {}),
-    ...(nextAreaCode ? { areaCode: nextAreaCode } : {}),
+    ...(nextAreaCode ? { areaCode: nextAreaCode, projectAreaCode: nextAreaCode } : {}),
     ...(nextAreaSlug ? { areaSlug: nextAreaSlug } : {}),
+    ...(nextAreaStorageKey ? { areaStorageKey: nextAreaStorageKey } : {}),
     assetCategory: category,
     properties: {
       ...((asset as any).properties || {}),
@@ -376,8 +383,9 @@ export function withAreaAssetIndex<T extends SavedMapAsset>(
             projectAreaName: nextAreaName,
           }
         : {}),
-      ...(nextAreaCode ? { areaCode: nextAreaCode } : {}),
+      ...(nextAreaCode ? { areaCode: nextAreaCode, projectAreaCode: nextAreaCode } : {}),
       ...(nextAreaSlug ? { areaSlug: nextAreaSlug } : {}),
+      ...(nextAreaStorageKey ? { areaStorageKey: nextAreaStorageKey } : {}),
       assetCategory: category,
     },
   } as T;
