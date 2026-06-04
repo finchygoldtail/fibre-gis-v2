@@ -25,6 +25,7 @@ import "leaflet/dist/leaflet.css";
 import "leaflet-rotate";
 import { auth, db } from "../firebase";
 import { useAppMode } from "../context/AppModeContext";
+import { useUserRole } from "../context/UserRoleContext";
 import AppModeSwitch from "./AppModeSwitch";
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
@@ -1276,6 +1277,9 @@ export default function JointMapManager({
   onOpenAutoNetwork,
 }: Props) {
   const { activeMode, requiresAuditReason } = useAppMode();
+  const { permissions, isSuperUser } = useUserRole();
+  const canManageNetworkDesign = isSuperUser || permissions.build;
+  const canUseSurveyTools = canManageNetworkDesign || permissions.survey;
   // =====================================================
   // 1) CORE MAP / PROJECT STATE
   // =====================================================
@@ -6410,7 +6414,7 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
 
         <UserMenu variant="sidebar" />
 
-        {activeProjectArea && (
+        {activeProjectArea && canManageNetworkDesign && (
           <button
             type="button"
             onClick={() => setIsProjectWorkspaceOpen(true)}
@@ -6425,7 +6429,7 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
           </button>
         )}
 
-        {activeProjectArea && (
+        {activeProjectArea && canManageNetworkDesign && (
           <button
             type="button"
             onClick={handleDeletePiaOverlayForActiveProject}
@@ -6442,8 +6446,9 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
             : "Whole network"}
         </div>
 
-        <details style={card}>
-          <summary style={sectionSummary}>Survey Cleanup</summary>
+        {canUseSurveyTools && (
+          <details style={card}>
+            <summary style={sectionSummary}>Survey Cleanup</summary>
           <div style={sectionBody}>
             <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.4 }}>
               Select wrong imported homes on the map and delete them in one
@@ -6515,8 +6520,10 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
             </div>
           </div>
         </details>
+        )}
 
-        <details style={card}>
+        {canUseSurveyTools && (
+          <details style={card}>
           <summary style={sectionSummary}>Home Reassignment</summary>
           <div style={sectionBody}>
             <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.4 }}>
@@ -6577,8 +6584,10 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
             </div>
           </div>
         </details>
+        )}
 
-        <details open={Boolean(editingAssetId)} style={card}>
+        {canUseSurveyTools && (
+          <details open={Boolean(editingAssetId)} style={card}>
           <summary style={sectionSummary}>
             {editingAssetId ? "Asset Details" : "Asset Editor"}
           </summary>
@@ -7018,7 +7027,10 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
             ) : null}
           </div>
         </details>
-<details style={card}>
+        )}
+
+        {canManageNetworkDesign && (
+          <details style={card}>
           <summary style={sectionSummary}>Import / Export Saved Map</summary>
           <div style={sectionBody}>
             <input type="file" accept=".json" onChange={handleImportJson} />
@@ -7075,6 +7087,7 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
             </div>
           </div>
         </details>
+        )}
       </div>
 
       <div

@@ -25,11 +25,7 @@ const normaliseRole = (value: unknown) => {
 export const createLoginUser = onCall(
   {
     region: "europe-west2",
-    cors: [
-      "http://localhost:5173",
-      "https://alistragis.com",
-      "https://www.alistragis.com",
-    ],
+    cors: true,
   },
   async (request) => {
     const callerUid = request.auth?.uid;
