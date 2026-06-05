@@ -1,448 +1,400 @@
 import * as XLSX from "xlsx";
+
 import type {
   ExchangeAsset,
   FeederPanel,
   HdSplitterPanel,
   Olt,
+  OltPanel,
+  PonPort,
 } from "../components/map/storage/exchangeStorage";
 
-type Row = any[];
-
-type EbclPanelInfo = {
-  col: number;
+type TemplateRow = {
+  exchange: string;
+  olt: string;
+  lt: number;
+  pon: number;
+  splitterPanel: number;
+  splitter: string;
+  splitterOut: number | null;
   ebcl: string;
-  panelName: string;
-  fibreCount: 144 | 288;
-  panelFibreStart: number;
-  panelFibreEnd: number;
+  ebclStrand: number | null;
+  meetMeLmj: string;
+  feeder: string;
+  feederStrand: number | null;
+  rawRow: number;
 };
 
-type ParsedFeederRow = {
-  ebcl: string;
-  panelName: string;
-  panelIndex: number;
-  panelFibreNumber: number;
-  feederFibreId: string;
-  text: string;
-  tube?: string;
-  cableRef?: string;
-  oltNumber: number;
-  ltNumber?: number;
-  ponNumber?: number;
-};
+type HeaderMap = Record<string, number>;
 
-const asText = (value: any) => String(value ?? "").trim();
+const REQUIRED_HEADERS = [
+  "Exchange",
+  "OLT",
+  "LT",
+  "PON",
+  "Splitter Panel",
+  "Splitter",
+  "Splitter Out",
+  "EBCL",
+  "Strand",
+  "Meet-me LMJ01",
+  "Feeder",
+];
 
-function safeId(value: string) {
-  return (
-    value
-      .toUpperCase()
-      .replace(/[^A-Z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "ITEM"
+const COLOUR_SEQUENCE = [
+  "Blue",
+  "Orange",
+  "Green",
+  "Brown",
+  "Slate",
+  "White",
+  "Red",
+  "Black",
+  "Yellow",
+  "Violet",
+  "Rose",
+  "Aqua",
+];
+
+function safeId(prefix: string, value: string | number) {
+  return `${prefix}-${String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")}`;
+}
+
+function clean(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function normaliseHeader(value: unknown): string {
+  return clean(value).toLowerCase().replace(/\s+/g, " ");
+}
+
+function parseNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const text = clean(value);
+  if (!text) return null;
+  const match = text.match(/\d+/);
+  return match ? Number(match[0]) : null;
+}
+
+function normaliseOlt(value: unknown): string {
+  const text = clean(value).toUpperCase().replace(/\s+/g, "");
+  const number = parseNumber(text);
+  return number ? `OLT${number}` : text;
+}
+
+function findHeaderRow(rows: unknown[][]): { headerMap: HeaderMap; headerRowIndex: number } {
+  for (let rowIndex = 0; rowIndex < Math.min(rows.length, 25); rowIndex += 1) {
+    const row = rows[rowIndex] ?? [];
+    const map: HeaderMap = {};
+    row.forEach((cell, index) => {
+      const header = normaliseHeader(cell);
+      if (!header) return;
+      map[header] = index;
+    });
+
+    const hasRequired = REQUIRED_HEADERS.every((header) => normaliseHeader(header) in map);
+    if (hasRequired) return { headerMap: map, headerRowIndex: rowIndex };
+  }
+
+  throw new Error(
+    `Could not find the exchange template headers. Expected: ${REQUIRED_HEADERS.join(", ")}.`
   );
 }
 
-function normaliseName(name: string) {
-  return name.toLowerCase().replace(/\s+/g, " ").trim();
+function value(row: unknown[], headerMap: HeaderMap, header: string): unknown {
+  return row[headerMap[normaliseHeader(header)]];
 }
 
-function findSheetName(workbook: XLSX.WorkBook, wanted: string) {
-  const exact = workbook.SheetNames.find(
-    (name) => normaliseName(name) === normaliseName(wanted)
-  );
-  if (exact) return exact;
-  return workbook.SheetNames.find((name) =>
-    normaliseName(name).includes(normaliseName(wanted))
-  );
-}
+function parseTemplateRows(sheetRows: unknown[][]): TemplateRow[] {
+  const { headerMap, headerRowIndex } = findHeaderRow(sheetRows);
+  const output: TemplateRow[] = [];
 
-function aoa(workbook: XLSX.WorkBook, sheetName?: string): Row[] {
-  if (!sheetName) return [];
-  const sheet = workbook.Sheets[sheetName];
-  if (!sheet) return [];
-  return XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" }) as Row[];
-}
+  for (let rowIndex = headerRowIndex + 1; rowIndex < sheetRows.length; rowIndex += 1) {
+    const row = sheetRows[rowIndex] ?? [];
+    const exchange = clean(value(row, headerMap, "Exchange"));
+    const olt = normaliseOlt(value(row, headerMap, "OLT"));
+    const lt = parseNumber(value(row, headerMap, "LT"));
+    const pon = parseNumber(value(row, headerMap, "PON"));
+    const splitterPanel = parseNumber(value(row, headerMap, "Splitter Panel"));
+    const splitter = clean(value(row, headerMap, "Splitter"));
+    const feeder = clean(value(row, headerMap, "Feeder"));
 
-function parseEbclHeader(header: string) {
-  const ebcl = header.match(/EBCL\s*-?\s*([0-9]+)/i)?.[1] ?? header.trim();
+    if (!exchange && !olt && !lt && !pon && !splitterPanel && !splitter && !feeder) continue;
+    if (!exchange || !olt || !lt || !pon || !splitterPanel || !splitter || !feeder) continue;
 
-  const fibreRanges = [...header.matchAll(/F\s*(\d+)\s*(?:-|>|to)\s*F?\s*(\d+)/gi)]
-    .map((m) => ({ start: Number(m[1]), end: Number(m[2]) }))
-    .filter((r) => Number.isFinite(r.start) && Number.isFinite(r.end));
-
-  const startsAt = header.match(/starts?\s+at\s+(\d+)\s+(?:to|-)\s+(\d+)/i);
-  const startsAtRange = startsAt
-    ? { start: Number(startsAt[1]), end: Number(startsAt[2]) }
-    : null;
-
-  const explicitCount = Number(header.match(/\((\d+)\s*f\)/i)?.[1]);
-
-  let panelFibreStart = startsAtRange?.start ?? 1;
-  let panelFibreEnd = startsAtRange?.end ?? 144;
-
-  if (!startsAtRange && fibreRanges.length) {
-    const min = Math.min(...fibreRanges.map((r) => r.start));
-    const max = Math.max(...fibreRanges.map((r) => r.end));
-    panelFibreStart = min >= 145 ? min : 1;
-    panelFibreEnd = max;
-  }
-
-  let fibreCount: 144 | 288 = 144;
-  if (
-    explicitCount === 288 ||
-    panelFibreEnd > 144 ||
-    /288\s*panel|288F|top\s+half|bottom\s+half|rest\s+of\s+the\s+288|after\s+EBCL/i.test(header)
-  ) {
-    fibreCount = 288;
-  }
-
-  panelFibreEnd = Math.min(panelFibreEnd, fibreCount);
-
-  return { ebcl, fibreCount, panelFibreStart, panelFibreEnd };
-}
-
-function parseOltRef(text: string) {
-  const cleaned = text.replace(/\s+/g, " ");
-  const oltNumberRaw = cleaned.match(/\bOLT\s*(\d+)\b/i)?.[1];
-  const ltNumberRaw = cleaned.match(/\bLT\s*(\d+)\b/i)?.[1];
-  const ponNumberRaw = cleaned.match(/\bPON\s*(\d+)\b/i)?.[1];
-
-  if (!ltNumberRaw || !ponNumberRaw) return null;
-
-  return {
-    oltNumber: Number(oltNumberRaw ?? 1),
-    ltNumber: Number(ltNumberRaw),
-    ponNumber: Number(ponNumberRaw),
-  };
-}
-
-function extractCableRef(text: string) {
-  const afterDistance = text.match(/^\s*\d+(?:\.\d+)?\s*m\s+([^\s(>]+)/i)?.[1];
-  if (afterDistance) return afterDistance.trim();
-
-  const firstCable = text.match(/\b([A-Z]{2,}[A-Z0-9-]*-FC\d+[A-Z0-9-]*)\b/i)?.[1];
-  if (firstCable) return firstCable.trim();
-
-  return undefined;
-}
-
-function ponPortId(oltNumber: number, ltNumber: number, ponNumber: number) {
-  return `OLT${oltNumber}-LT${ltNumber}-PON${ponNumber}`;
-}
-
-function splitterInputId(oltNumber: number, ltNumber: number, ponNumber: number) {
-  return `SP-IN-OLT${oltNumber}-LT${ltNumber}-PON${ponNumber}`;
-}
-
-function splitterOutputId(oltNumber: number, ltNumber: number, ponNumber: number, outputNumber: number) {
-  return `SP-OUT-OLT${oltNumber}-LT${ltNumber}-PON${ponNumber}-${outputNumber}`;
-}
-
-function feederFibreId(ebcl: string, fibreNumber: number) {
-  return `EBCL-${safeId(ebcl)}-F${String(fibreNumber).padStart(3, "0")}`;
-}
-
-function readEbclTracker(workbook: XLSX.WorkBook) {
-  const sheetName = findSheetName(workbook, "EBCL Tracker");
-  if (!sheetName) {
-    throw new Error(`No EBCL Tracker tab found. Tabs: ${workbook.SheetNames.join(", ")}`);
-  }
-
-  const rows = aoa(workbook, sheetName);
-  const headerRow = rows[0] ?? [];
-  const panels: EbclPanelInfo[] = [];
-
-  for (let col = 0; col < headerRow.length; col++) {
-    const header = asText(headerRow[col]);
-    if (!/EBCL/i.test(header)) continue;
-
-    const parsed = parseEbclHeader(header);
-    panels.push({
-      col,
-      ebcl: parsed.ebcl,
-      panelName: header,
-      fibreCount: parsed.fibreCount,
-      panelFibreStart: parsed.panelFibreStart,
-      panelFibreEnd: parsed.panelFibreEnd,
+    output.push({
+      exchange,
+      olt,
+      lt,
+      pon,
+      splitterPanel,
+      splitter,
+      splitterOut: parseNumber(value(row, headerMap, "Splitter Out")),
+      ebcl: clean(value(row, headerMap, "EBCL")),
+      ebclStrand: parseNumber(value(row, headerMap, "Strand")),
+      meetMeLmj: clean(value(row, headerMap, "Meet-me LMJ01")),
+      feeder,
+      feederStrand: parseNumber(row[headerMap[normaliseHeader("Feeder")] + 1]),
+      rawRow: rowIndex + 1,
     });
   }
 
-  if (!panels.length) {
-    throw new Error("EBCL Tracker tab was found, but no EBCL headers were detected on row 1.");
-  }
-
-  const parsedRows: ParsedFeederRow[] = [];
-
-  for (let panelIndex = 0; panelIndex < panels.length; panelIndex++) {
-    const panel = panels[panelIndex];
-
-    for (let r = 2; r < rows.length; r++) {
-      const trackerPort = Number(rows[r]?.[0]);
-      if (!Number.isFinite(trackerPort) || trackerPort < 1) continue;
-
-      const panelFibreNumber = panel.panelFibreStart + trackerPort - 1;
-      if (panelFibreNumber < panel.panelFibreStart || panelFibreNumber > panel.panelFibreEnd) continue;
-
-      const text = asText(rows[r]?.[panel.col]);
-      if (!text) continue;
-
-      const oltRef = parseOltRef(text);
-      const tube = asText(rows[r]?.[panel.col - 1]) || undefined;
-      const cableRef = extractCableRef(text);
-      const id = feederFibreId(panel.ebcl, panelFibreNumber);
-
-      parsedRows.push({
-        ebcl: panel.ebcl,
-        panelName: panel.panelName,
-        panelIndex,
-        panelFibreNumber,
-        feederFibreId: id,
-        text,
-        tube,
-        cableRef,
-        oltNumber: oltRef?.oltNumber ?? 1,
-        ltNumber: oltRef?.ltNumber,
-        ponNumber: oltRef?.ponNumber,
-      });
-    }
-  }
-
-  return { panels, parsedRows };
+  return output;
 }
 
-function readOltTabs(workbook: XLSX.WorkBook): Olt[] {
-  const oltSheetNames = workbook.SheetNames.filter((name) => /^\s*OLT\s*\d+/i.test(name))
-    .sort((a, b) => Number(a.match(/\d+/)?.[0] ?? 0) - Number(b.match(/\d+/)?.[0] ?? 0));
+function getAllTemplateRows(workbook: XLSX.WorkBook): TemplateRow[] {
+  const allRows: TemplateRow[] = [];
+  const seen = new Set<string>();
 
-  return oltSheetNames.map((sheetName) => {
-    const oltNumber = Number(sheetName.match(/\d+/)?.[0] ?? 1);
-    const rows = aoa(workbook, sheetName);
+  for (const sheetName of workbook.SheetNames) {
+    const worksheet = workbook.Sheets[sheetName];
+    if (!worksheet) continue;
 
-    let headerRowIndex = -1;
-    let ltCols: { col: number; ltNumber: number }[] = [];
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
+      header: 1,
+      raw: true,
+      defval: "",
+      blankrows: false,
+    });
 
-    for (let r = 0; r < Math.min(rows.length, 80); r++) {
-      const found: { col: number; ltNumber: number }[] = [];
-      for (let c = 0; c < rows[r].length; c++) {
-        const txt = asText(rows[r][c]);
-        const m = txt.match(/^LT\s*(\d+)$/i);
-        if (m) found.push({ col: c, ltNumber: Number(m[1]) });
-      }
-      if (found.length) {
-        headerRowIndex = r;
-        ltCols = found;
-        break;
-      }
+    let parsed: TemplateRow[] = [];
+    try {
+      parsed = parseTemplateRows(rows);
+    } catch {
+      continue;
     }
 
-    const panels = ltCols.map(({ col, ltNumber }) => ({
-      id: `OLT${oltNumber}-LT${ltNumber}`,
-      panelNumber: ltNumber,
-      ports: Array.from({ length: 16 }, (_, portIndex) => {
-        const portNumber = portIndex + 1;
-        let note = "";
+    for (const row of parsed) {
+      const key = [
+        row.exchange,
+        row.olt,
+        row.lt,
+        row.pon,
+        row.splitterPanel,
+        row.splitter,
+        row.splitterOut ?? "",
+        row.ebcl,
+        row.ebclStrand ?? "",
+        row.meetMeLmj,
+        row.feeder,
+        row.feederStrand ?? "",
+      ].join("|");
 
-        for (let r = headerRowIndex + 1; r < rows.length; r++) {
-          const portCell = Number(rows[r]?.[col]);
-          if (portCell === portNumber) {
-            note = asText(rows[r]?.[col + 1]);
-            break;
-          }
-        }
+      if (seen.has(key)) continue;
+      seen.add(key);
+      allRows.push(row);
+    }
+  }
 
-        const id = ponPortId(oltNumber, ltNumber, portNumber);
-        return {
-          id,
-          portNumber,
-          label: `OLT${oltNumber} LT${ltNumber} PON${portNumber}`,
-          notes: note && !/^EMPTY$/i.test(note) ? note : undefined,
-        };
-      }),
-    }));
+  return allRows;
+}
+
+function createOltPanel(oltName: string, panelNumber: number): OltPanel {
+  return {
+    id: safeId(`${safeId("olt", oltName)}-lt`, panelNumber),
+    panelNumber,
+    ports: Array.from({ length: 16 }, (_, index) => ({
+      id: safeId(`${safeId("olt", oltName)}-lt-${panelNumber}-pon`, index + 1),
+      portNumber: index + 1,
+      label: `${oltName} LT${panelNumber} PON${index + 1}`,
+    })),
+  };
+}
+
+function makePonRef(row: Pick<TemplateRow, "olt" | "lt" | "pon">) {
+  return `${row.olt} LT${row.lt} PON${row.pon}`;
+}
+
+function makeSplitterInputRef(panelNumber: number, inputNumber: number, splitter: string) {
+  return `SP Panel ${panelNumber} / Input ${inputNumber} / ${splitter}`;
+}
+
+function makeSplitterOutputRef(panelNumber: number, inputNumber: number, outputNumber: number | null, splitter: string) {
+  return `${makeSplitterInputRef(panelNumber, inputNumber, splitter)} / Out ${outputNumber ?? "NA"}`;
+}
+
+function makeFeederRef(feeder: string, strand: number | null) {
+  return strand ? `${feeder} fibre ${strand}` : feeder;
+}
+
+function notesForRow(row: TemplateRow) {
+  const notes = [
+    row.ebcl ? `EBCL ${row.ebcl}` : "",
+    row.ebclStrand ? `EBCL strand ${row.ebclStrand}` : "",
+    row.meetMeLmj ? `Meet-me ${row.meetMeLmj}` : "",
+    row.feederStrand ? `Feeder strand ${row.feederStrand}` : "",
+  ].filter(Boolean);
+
+  return notes.join(" | ");
+}
+
+function buildOlts(rows: TemplateRow[]): Olt[] {
+  const oltNumbers = Array.from(new Set(rows.map((row) => row.olt))).sort((a, b) => {
+    return (parseNumber(a) ?? 0) - (parseNumber(b) ?? 0) || a.localeCompare(b);
+  });
+
+  return oltNumbers.map((oltName) => {
+    const panelNumbers = Array.from(
+      new Set(rows.filter((row) => row.olt === oltName).map((row) => row.lt))
+    ).sort((a, b) => a - b);
+
+    const panels = panelNumbers.map((panelNumber) => createOltPanel(oltName, panelNumber));
+
+    for (const row of rows.filter((item) => item.olt === oltName)) {
+      const panel = panels.find((item) => item.panelNumber === row.lt);
+      const port = panel?.ports.find((item) => item.portNumber === row.pon);
+      if (!port) continue;
+
+      const inputNumber = getSplitterInputNumber(rows, row);
+      port.connectedCableId = makeSplitterInputRef(row.splitterPanel, inputNumber, row.splitter);
+      port.notes = notesForRow(row);
+    }
 
     return {
-      id: `OLT${oltNumber}`,
-      name: `OLT ${oltNumber}`,
+      id: safeId("olt", oltName),
+      name: oltName,
       panels,
     };
   });
 }
 
-function fallbackOltsFromTracker(parsedRows: ParsedFeederRow[]): Olt[] {
-  const maxLtByOlt = new Map<number, number>();
-  for (const row of parsedRows) {
-    if (!row.ltNumber) continue;
-    maxLtByOlt.set(row.oltNumber, Math.max(maxLtByOlt.get(row.oltNumber) ?? 0, row.ltNumber));
-  }
-
-  return [...maxLtByOlt.entries()].sort((a, b) => a[0] - b[0]).map(([oltNumber, maxLt]) => ({
-    id: `OLT${oltNumber}`,
-    name: `OLT ${oltNumber}`,
-    panels: Array.from({ length: Math.max(1, maxLt) }, (_, ltIndex) => ({
-      id: `OLT${oltNumber}-LT${ltIndex + 1}`,
-      panelNumber: ltIndex + 1,
-      ports: Array.from({ length: 16 }, (_, ponIndex) => ({
-        id: ponPortId(oltNumber, ltIndex + 1, ponIndex + 1),
-        portNumber: ponIndex + 1,
-        label: `OLT${oltNumber} LT${ltIndex + 1} PON${ponIndex + 1}`,
-      })),
-    })),
-  }));
+function getSplitterInputKey(row: TemplateRow) {
+  return `${row.splitterPanel}|${row.splitter}|${row.olt}|${row.lt}|${row.pon}`;
 }
 
-function buildLinkedSplitterPanels(parsedRows: ParsedFeederRow[]): HdSplitterPanel[] {
-  const groups = new Map<string, ParsedFeederRow[]>();
-  for (const row of parsedRows) {
-    if (!row.ltNumber || !row.ponNumber) continue;
-    const key = `${row.oltNumber}|${row.ltNumber}|${row.ponNumber}`;
-    groups.set(key, [...(groups.get(key) ?? []), row]);
-  }
+const splitterInputNumberCache = new Map<string, number>();
 
-  const sortedGroups = [...groups.entries()].sort((a, b) => {
-    const [ao, al, ap] = a[0].split("|").map(Number);
-    const [bo, bl, bp] = b[0].split("|").map(Number);
-    return ao - bo || al - bl || ap - bp;
-  });
+function getSplitterInputNumber(allRows: TemplateRow[], target: TemplateRow) {
+  if (!splitterInputNumberCache.has(getSplitterInputKey(target))) {
+    const keys = Array.from(
+      new Map(
+        allRows
+          .filter((row) => row.splitterPanel === target.splitterPanel && row.splitter === target.splitter)
+          .map((row) => [getSplitterInputKey(row), row] as const)
+      ).values()
+    ).sort((a, b) => a.lt - b.lt || a.pon - b.pon || a.olt.localeCompare(b.olt));
 
-  const inputs = sortedGroups.map(([key, rows], inputIndex) => {
-    const [oltNumber, ltNumber, ponNumber] = key.split("|").map(Number);
-    const sortedRows = rows.sort((a, b) => a.panelIndex - b.panelIndex || a.panelFibreNumber - b.panelFibreNumber);
-
-    return {
-      id: splitterInputId(oltNumber, ltNumber, ponNumber),
-      inputNumber: inputIndex + 1,
-      connectedPonPortId: ponPortId(oltNumber, ltNumber, ponNumber),
-      splitterRatio: "1:4" as const,
-      notes: `Detected from EBCL Tracker: OLT${oltNumber} LT${ltNumber} PON${ponNumber}`,
-      outputs: Array.from({ length: 4 }, (_, outputIndex) => {
-        const outputNumber = outputIndex + 1;
-        const linkedRow = sortedRows[outputIndex];
-        return {
-          id: splitterOutputId(oltNumber, ltNumber, ponNumber, outputNumber),
-          outputNumber,
-          connectedFeederFibreId: linkedRow?.feederFibreId,
-          notes: linkedRow ? `EBCL ${linkedRow.ebcl} F${linkedRow.panelFibreNumber}: ${linkedRow.text}` : undefined,
-        };
-      }),
-    };
-  });
-
-  const panels: HdSplitterPanel[] = [];
-  for (let i = 0; i < inputs.length; i += 32) {
-    panels.push({
-      id: `HD-SPLITTER-PANEL-${panels.length + 1}`,
-      name: `HD Splitter Panel ${panels.length + 1}`,
-      inputs: inputs.slice(i, i + 32).map((input, indexWithinPanel) => ({ ...input, inputNumber: indexWithinPanel + 1 })),
+    keys.forEach((row, index) => {
+      splitterInputNumberCache.set(getSplitterInputKey(row), index + 1);
     });
   }
 
-  return panels;
+  return splitterInputNumberCache.get(getSplitterInputKey(target)) ?? 1;
 }
 
-function decorateOltsWithSplitterRefs(olts: Olt[], splitterPanels: HdSplitterPanel[], parsedRows: ParsedFeederRow[]): Olt[] {
-  const inputByPonPortId = new Map<string, string>();
-  for (const panel of splitterPanels) {
-    for (const input of panel.inputs) {
-      if (input.connectedPonPortId) inputByPonPortId.set(input.connectedPonPortId, input.id);
-    }
-  }
+function buildSplitterPanels(rows: TemplateRow[]): HdSplitterPanel[] {
+  splitterInputNumberCache.clear();
 
-  const trackerNotes = new Map<string, string[]>();
-  for (const row of parsedRows) {
-    if (!row.ltNumber || !row.ponNumber) continue;
-    const key = ponPortId(row.oltNumber, row.ltNumber, row.ponNumber);
-    const notes = trackerNotes.get(key) ?? [];
-    if (notes.length < 20) notes.push(`EBCL ${row.ebcl} F${row.panelFibreNumber}: ${row.text}`);
-    trackerNotes.set(key, notes);
-  }
+  const panelNumbers = Array.from(new Set(rows.map((row) => row.splitterPanel))).sort((a, b) => a - b);
 
-  return olts.map((olt) => ({
-    ...olt,
-    panels: olt.panels.map((panel) => ({
-      ...panel,
-      ports: panel.ports.map((port) => {
-        const splitterInput = inputByPonPortId.get(port.id);
-        const notes = trackerNotes.get(port.id);
-        return {
-          ...port,
-          connectedCableId: splitterInput ?? port.connectedCableId,
-          notes: [port.notes, notes?.length ? `Detected feeder refs:\n${notes.join("\n")}` : ""]
-            .filter(Boolean)
-            .join("\n\n") || undefined,
-        };
-      }),
-    })),
-  }));
-}
+  return panelNumbers.map((panelNumber) => {
+    const panelRows = rows.filter((row) => row.splitterPanel === panelNumber);
+    const panelName = `HD Splitter Panel ${panelNumber}`;
 
-function buildFeederPanels(panels: EbclPanelInfo[], parsedRows: ParsedFeederRow[], splitterPanels: HdSplitterPanel[]): FeederPanel[] {
-  const rowsByPanel = new Map<number, ParsedFeederRow[]>();
-  parsedRows.forEach((row) => rowsByPanel.set(row.panelIndex, [...(rowsByPanel.get(row.panelIndex) ?? []), row]));
+    const inputs = Array.from({ length: 32 }, (_, index) => {
+      const inputNumber = index + 1;
+      const matchingInputRows = panelRows.filter((row) => getSplitterInputNumber(rows, row) === inputNumber);
+      const first = matchingInputRows[0];
 
-  const splitterOutputByFeederFibreId = new Map<string, string>();
-  for (const panel of splitterPanels) {
-    for (const input of panel.inputs) {
-      for (const output of input.outputs) {
-        if (output.connectedFeederFibreId) splitterOutputByFeederFibreId.set(output.connectedFeederFibreId, output.id);
-      }
-    }
-  }
+      return {
+        id: safeId(`splitter-panel-${panelNumber}-input`, inputNumber),
+        inputNumber,
+        splitterRatio: "1:4" as const,
+        connectedPonPortId: first ? makePonRef(first) : undefined,
+        notes: first ? `${first.splitter}${first.meetMeLmj ? ` | ${first.meetMeLmj}` : ""}` : undefined,
+        outputs: Array.from({ length: 4 }, (_, outputIndex) => {
+          const outputNumber = outputIndex + 1;
+          const outputRow = matchingInputRows.find((row) => row.splitterOut === outputNumber);
 
-  return panels.map((panel, index) => {
-    const rowByFibre = new Map<number, ParsedFeederRow>();
-    (rowsByPanel.get(index) ?? []).forEach((row) => rowByFibre.set(row.panelFibreNumber, row));
+          return {
+            id: safeId(`splitter-panel-${panelNumber}-input-${inputNumber}-out`, outputNumber),
+            outputNumber,
+            connectedFeederFibreId: outputRow ? makeFeederRef(outputRow.feeder, outputRow.feederStrand) : undefined,
+            notes: outputRow ? notesForRow(outputRow) : undefined,
+          };
+        }),
+      };
+    });
 
     return {
-      id: `EBCL-${safeId(panel.ebcl)}`,
-      name: `EBCL ${panel.ebcl} ${panel.fibreCount}F Feeder Panel`,
-      fibreCount: panel.fibreCount,
-      feederCableId: `EBCL ${panel.ebcl}`,
-      fibres: Array.from({ length: panel.fibreCount }, (_, fibreIndex) => {
-        const fibreNumber = fibreIndex + 1;
-        const row = rowByFibre.get(fibreNumber);
-        const id = feederFibreId(panel.ebcl, fibreNumber);
-        const detectedRef = row?.ltNumber && row.ponNumber ? `Detected: OLT${row.oltNumber} LT${row.ltNumber} PON${row.ponNumber}` : "";
-
-        return {
-          id,
-          fibreNumber,
-          connectedSplitterOutputId: splitterOutputByFeederFibreId.get(id),
-          connectedCableId: row?.cableRef ?? (row ? `EBCL ${panel.ebcl}` : undefined),
-          notes: row
-            ? [`EBCL ${row.ebcl} | ${row.text}`, detectedRef, row.tube ? `Tube: ${row.tube}` : ""]
-                .filter(Boolean)
-                .join("\n")
-            : undefined,
-        };
-      }),
+      id: safeId("splitter-panel", panelNumber),
+      name: panelName,
+      inputs,
     };
   });
 }
 
-export async function convertExchangeWorkbook(file: File, baseExchange: ExchangeAsset): Promise<ExchangeAsset> {
-  try {
-    const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: "array", cellDates: false, dense: false });
+function buildFeederPanels(rows: TemplateRow[]): FeederPanel[] {
+  const feederNames = Array.from(new Set(rows.map((row) => row.feeder).filter(Boolean))).sort((a, b) => a.localeCompare(b));
 
-    const { panels, parsedRows } = readEbclTracker(workbook);
-    const splitterPanels = buildLinkedSplitterPanels(parsedRows);
-    const feederPanels = buildFeederPanels(panels, parsedRows, splitterPanels);
-    const oltTabs = readOltTabs(workbook);
-    const olts = decorateOltsWithSplitterRefs(
-      oltTabs.length ? oltTabs : fallbackOltsFromTracker(parsedRows),
-      splitterPanels,
-      parsedRows
-    );
+  return feederNames.map((feederName) => {
+    const feederRows = rows.filter((row) => row.feeder === feederName);
+    const maxStrand = Math.max(1, ...feederRows.map((row) => row.feederStrand ?? 0));
+    const fibreCount: 144 | 288 = maxStrand > 144 ? 288 : 144;
+
+    const fibres = Array.from({ length: fibreCount }, (_, fibreIndex) => {
+      const fibreNumber = fibreIndex + 1;
+      const row = feederRows.find((item) => item.feederStrand === fibreNumber);
+      const inputNumber = row ? getSplitterInputNumber(rows, row) : null;
+      const colour = COLOUR_SEQUENCE[(fibreNumber - 1) % COLOUR_SEQUENCE.length];
+
+      return {
+        id: safeId(`${safeId("feeder", feederName)}-fibre`, fibreNumber),
+        fibreNumber,
+        connectedSplitterOutputId:
+          row && inputNumber
+            ? makeSplitterOutputRef(row.splitterPanel, inputNumber, row.splitterOut, row.splitter)
+            : undefined,
+        connectedCableId: row ? makeFeederRef(row.feeder, row.feederStrand) : undefined,
+        notes: row ? `${notesForRow(row)} | Colour ${colour}` : undefined,
+      };
+    });
 
     return {
-      ...baseExchange,
-      olts,
-      hdSplitterPanels: splitterPanels,
-      feederPanels,
-      updatedAt: Date.now(),
+      id: safeId("feeder-panel", feederName),
+      name: `${feederName} (${fibreCount}F)`,
+      fibreCount,
+      feederCableId: feederName,
+      fibres,
     };
-  } catch (error) {
-    console.error("convertExchangeWorkbook failed", error);
-    throw error;
-  }
+  });
+}
+
+function pickMainSheetRows(workbook: XLSX.WorkBook): TemplateRow[] {
+  const rows = getAllTemplateRows(workbook);
+  if (rows.length === 0) throw new Error("No usable exchange rows found in the workbook.");
+  return rows;
+}
+
+export async function convertExchangeWorkbook(file: File, existingExchange: ExchangeAsset): Promise<ExchangeAsset> {
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: "array" });
+  const rows = pickMainSheetRows(workbook);
+
+  const firstRow = rows[0];
+  const exchangeCode = firstRow?.exchange || existingExchange.code || existingExchange.name;
+
+  const olts = buildOlts(rows);
+  const hdSplitterPanels = buildSplitterPanels(rows);
+  const feederPanels = buildFeederPanels(rows);
+
+  return {
+    ...existingExchange,
+    name: existingExchange.name || exchangeCode,
+    code: exchangeCode,
+    notes: [
+      existingExchange.notes,
+      `Converted from exchange template: ${rows.length} rows, ${olts.length} OLT(s), ${hdSplitterPanels.length} splitter panel(s), ${feederPanels.length} feeder cable panel(s).`,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    olts,
+    hdSplitterPanels,
+    feederPanels,
+    updatedAt: Date.now(),
+  };
 }

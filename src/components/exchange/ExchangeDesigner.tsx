@@ -219,6 +219,10 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
     return panel && fibre ? { type: "feeder-fibre" as const, panel, fibre } : null;
   }, [selectedNode, olts, hdSplitterPanels, feederPanels]);
 
+  const selectedChain = useMemo(() => {
+    return buildSelectedExchangeChain(selectedDetails, olts, hdSplitterPanels, feederPanels);
+  }, [selectedDetails, olts, hdSplitterPanels, feederPanels]);
+
   const summary = useMemo(() => {
     const oltCount = olts.length;
     const oltCardCount = olts.reduce((total, olt) => total + olt.panels.length, 0);
@@ -520,7 +524,7 @@ const handleImportWorkbookFile = (file: File | null) => {
   setImportWorkbook(file);
   setImportFileName(file.name);
   setImportSummary(
-    `Loaded ${file.name}. Click Convert to build OLT, splitter and feeder data.`
+    `Loaded ${file.name}. Click Convert to build the exchange layout.`
   );
 };
 
@@ -660,10 +664,10 @@ const handleConvertImportedWorkbook = async () => {
             style={input}
           />
           <button onClick={handleConvertImportedWorkbook} style={btnPrimary} disabled={!importWorkbook}>
-            Convert EBCL / OLT Workbook
+            Convert Template
           </button>
           <div style={{ color: "#cbd5e1", fontSize: 12, lineHeight: 1.35 }}>
-            {importSummary || "Upload the Shipley-style workbook, then convert EBCL Tracker into feeder fibres, splitter inputs/outputs and OLT LT/PON links."}
+            {importSummary || "Upload the exchange template, then convert rows into OLT LT/PON ports, HD splitter inputs/outputs and feeder fibres."}
           </div>
         </div>
 
@@ -827,6 +831,7 @@ const handleConvertImportedWorkbook = async () => {
                         <div style={ponGrid}>
                           {ports.map((port) => {
                             const isSelected = selectedNode?.type === "pon" && selectedNode.portId === port.id;
+                            const isChainHighlighted = selectedChain.ponPortIds.has(port.id);
                             const isConnected = Boolean(port.connectedCableId);
                             return (
                               <button
@@ -841,6 +846,7 @@ const handleConvertImportedWorkbook = async () => {
                                 }
                                 style={{
                                   ...nodeButton,
+                                  ...(isChainHighlighted ? chainHighlightStyle : {}),
                                   ...(isSelected ? selectedNodeStyle : {}),
                                   background: isConnected ? "#0ea5e9" : "#111827",
                                 }}
@@ -917,6 +923,7 @@ const handleConvertImportedWorkbook = async () => {
 
                     const inputSelected =
                       selectedNode?.type === "splitter-input" && selectedNode.inputId === inputItem.id;
+                    const inputChainHighlighted = selectedChain.splitterInputIds.has(inputItem.id);
 
                     return (
                       <div key={inputItem.id} style={splitterTile}>
@@ -930,6 +937,7 @@ const handleConvertImportedWorkbook = async () => {
                           }
                           style={{
                             ...splitterInputNode,
+                            ...(inputChainHighlighted ? chainHighlightStyle : {}),
                             ...(inputSelected ? selectedNodeStyle : {}),
                             background: inputItem.connectedPonPortId ? "#7c3aed" : "#111827",
                           }}
@@ -943,6 +951,7 @@ const handleConvertImportedWorkbook = async () => {
                           {inputItem.outputs.map((output) => {
                             const outputSelected =
                               selectedNode?.type === "splitter-output" && selectedNode.outputId === output.id;
+                            const outputChainHighlighted = selectedChain.splitterOutputIds.has(output.id);
                             const isConnected = Boolean(output.connectedFeederFibreId);
 
                             return (
@@ -958,6 +967,7 @@ const handleConvertImportedWorkbook = async () => {
                                 }
                                 style={{
                                   ...outputNode,
+                                  ...(outputChainHighlighted ? chainHighlightStyle : {}),
                                   ...(outputSelected ? selectedNodeStyle : {}),
                                   background: isConnected ? "#059669" : "#1f2937",
                                 }}
@@ -1055,6 +1065,7 @@ const handleConvertImportedWorkbook = async () => {
                     .map((fibre) => {
                       const colour = getFibreColour(fibre.fibreNumber);
                       const isSelected = selectedNode?.type === "feeder-fibre" && selectedNode.fibreId === fibre.id;
+                      const isChainHighlighted = selectedChain.feederFibreIds.has(fibre.id);
                       const isConnected = Boolean(fibre.connectedSplitterOutputId || fibre.connectedCableId);
 
                       return (
@@ -1071,6 +1082,7 @@ const handleConvertImportedWorkbook = async () => {
                             ...fibreNode,
                             background: colour.background,
                             color: colour.text,
+                            ...(isChainHighlighted ? chainHighlightStyle : {}),
                             ...(isSelected ? selectedFibreStyle : {}),
                           }}
                           title={`Fibre ${fibre.fibreNumber} - ${colour.name}${
@@ -1114,6 +1126,141 @@ const handleConvertImportedWorkbook = async () => {
       </div>
     </div>
   );
+}
+
+type ExchangeChainHighlight = {
+  ponPortIds: Set<string>;
+  splitterInputIds: Set<string>;
+  splitterOutputIds: Set<string>;
+  feederFibreIds: Set<string>;
+};
+
+const emptyExchangeChain = (): ExchangeChainHighlight => ({
+  ponPortIds: new Set<string>(),
+  splitterInputIds: new Set<string>(),
+  splitterOutputIds: new Set<string>(),
+  feederFibreIds: new Set<string>(),
+});
+
+function sameRef(left?: string, right?: string) {
+  return Boolean(left && right && left.trim().toLowerCase() === right.trim().toLowerCase());
+}
+
+function splitterPanelNumber(panel: HdSplitterPanel, fallback: number) {
+  const match = panel.name?.match(/(?:panel\s*)?(\d+)/i);
+  return match ? Number(match[1]) : fallback;
+}
+
+function splitterNameFromInput(inputItem: HdSplitterPanel["inputs"][number]) {
+  return String(inputItem.notes ?? "").split("|")[0]?.trim() || "";
+}
+
+function splitterOutputRef(
+  panel: HdSplitterPanel,
+  panelFallbackNumber: number,
+  inputItem: HdSplitterPanel["inputs"][number],
+  output: HdSplitterPanel["inputs"][number]["outputs"][number]
+) {
+  const splitterName = splitterNameFromInput(inputItem);
+  return `SP Panel ${splitterPanelNumber(panel, panelFallbackNumber)} / Input ${inputItem.inputNumber} / ${splitterName} / Out ${output.outputNumber}`;
+}
+
+function buildSelectedExchangeChain(
+  selectedDetails: ReturnType<typeof useSelectionDetailsType> | null,
+  olts: Olt[],
+  hdSplitterPanels: HdSplitterPanel[],
+  feederPanels: FeederPanel[]
+): ExchangeChainHighlight {
+  const chain = emptyExchangeChain();
+  if (!selectedDetails) return chain;
+
+  const addPonByRef = (ponRef?: string) => {
+    for (const olt of olts) {
+      for (const panel of olt.panels) {
+        for (const port of panel.ports) {
+          if (sameRef(port.label, ponRef) || sameRef(port.connectedCableId, ponRef)) {
+            chain.ponPortIds.add(port.id);
+          }
+        }
+      }
+    }
+  };
+
+  const addFeederByRef = (feederRef?: string) => {
+    for (const panel of feederPanels) {
+      for (const fibre of panel.fibres) {
+        if (sameRef(fibre.connectedCableId, feederRef) || sameRef(fibre.connectedSplitterOutputId, feederRef)) {
+          chain.feederFibreIds.add(fibre.id);
+        }
+      }
+    }
+  };
+
+  const addSplitterInput = (panel: HdSplitterPanel, inputItem: HdSplitterPanel["inputs"][number]) => {
+    chain.splitterInputIds.add(inputItem.id);
+    addPonByRef(inputItem.connectedPonPortId);
+
+    for (const output of inputItem.outputs) {
+      if (output.connectedFeederFibreId) {
+        chain.splitterOutputIds.add(output.id);
+        addFeederByRef(output.connectedFeederFibreId);
+      }
+    }
+  };
+
+  const addSplitterOutput = (
+    panel: HdSplitterPanel,
+    panelFallbackNumber: number,
+    inputItem: HdSplitterPanel["inputs"][number],
+    output: HdSplitterPanel["inputs"][number]["outputs"][number]
+  ) => {
+    chain.splitterOutputIds.add(output.id);
+    addSplitterInput(panel, inputItem);
+    addFeederByRef(output.connectedFeederFibreId);
+    addFeederByRef(splitterOutputRef(panel, panelFallbackNumber, inputItem, output));
+  };
+
+  if (selectedDetails.type === "pon") {
+    chain.ponPortIds.add(selectedDetails.port.id);
+    const ponRef = selectedDetails.port.label;
+    const splitterInputRef = selectedDetails.port.connectedCableId;
+
+    hdSplitterPanels.forEach((panel) => {
+      panel.inputs.forEach((inputItem) => {
+        if (sameRef(inputItem.connectedPonPortId, ponRef) || sameRef(inputItem.connectedPonPortId, splitterInputRef)) {
+          addSplitterInput(panel, inputItem);
+        }
+      });
+    });
+  }
+
+  if (selectedDetails.type === "splitter-input") {
+    addSplitterInput(selectedDetails.panel, selectedDetails.inputItem);
+  }
+
+  if (selectedDetails.type === "splitter-output") {
+    const panelFallbackNumber = hdSplitterPanels.findIndex((panel) => panel.id === selectedDetails.panel.id) + 1 || 1;
+    addSplitterOutput(selectedDetails.panel, panelFallbackNumber, selectedDetails.inputItem, selectedDetails.output);
+  }
+
+  if (selectedDetails.type === "feeder-fibre") {
+    chain.feederFibreIds.add(selectedDetails.fibre.id);
+    const feederRef = selectedDetails.fibre.connectedCableId;
+    const splitterRef = selectedDetails.fibre.connectedSplitterOutputId;
+
+    hdSplitterPanels.forEach((panel, panelIndex) => {
+      panel.inputs.forEach((inputItem) => {
+        inputItem.outputs.forEach((output) => {
+          const outputRef = splitterOutputRef(panel, panelIndex + 1, inputItem, output);
+          if (sameRef(output.connectedFeederFibreId, feederRef) || sameRef(outputRef, splitterRef)) {
+            addSplitterOutput(panel, panelIndex + 1, inputItem, output);
+          }
+        });
+      });
+    });
+  }
+
+  return chain;
 }
 
 function SelectionPanel({
@@ -1510,6 +1657,11 @@ const nodeNumber: React.CSSProperties = {
 const nodeSmallLabel: React.CSSProperties = {
   fontSize: 10,
   color: "#cbd5e1",
+};
+
+const chainHighlightStyle: React.CSSProperties = {
+  outline: "3px solid #facc15",
+  boxShadow: "0 0 0 4px rgba(250, 204, 21, 0.28), 0 0 18px rgba(250, 204, 21, 0.55)",
 };
 
 const selectedNodeStyle: React.CSSProperties = {
