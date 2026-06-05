@@ -1237,6 +1237,13 @@ export default function ProjectWorkspace({
 }: ProjectWorkspaceProps) {
   const { isPhone, isTablet, isCompact } = useWorkspaceViewport();
 
+  // PHASE 38C — keep the Project Workspace as the desktop engineering view on mobile/tablet.
+  // Same principle as FibreTrayEditor, StreetCabDesigner and ExchangeDesigner:
+  // do not rebuild into mobile cards; scale the full workspace canvas and let users pan/scroll.
+  const workspaceCanvasScale = isPhone ? 0.56 : isTablet ? 0.78 : 1;
+  const useScaledWorkspaceCanvas = isPhone || isTablet;
+
+
   const [openreachLayers, setOpenreachLayers] =
     React.useState<OpenreachLayerVisibility>(defaultOpenreachLayers);
 
@@ -1263,6 +1270,11 @@ export default function ProjectWorkspace({
     { lat: number; lng: number }[]
   >([]);
   const [isManagerAreaDrawing, setIsManagerAreaDrawing] = useState(false);
+  const [mobileQuickPanel, setMobileQuickPanel] = useState<"none" | "dps" | "homes" | "qa" | "actions">("none");
+
+  useEffect(() => {
+    if (!isPhone && mobileQuickPanel !== "none") setMobileQuickPanel("none");
+  }, [isPhone, mobileQuickPanel]);
 
   const mappingAssetKey = useMemo(
     () =>
@@ -2433,139 +2445,174 @@ const homesLive = Math.min(
     setOpenreachLayers(defaultOpenreachLayers);
   };
 
+  const mobileDpRows = useMemo(
+    () =>
+      areaDistributionPoints
+        .map((asset) => ({
+          asset,
+          name: getWorkspaceAssetTitle(asset),
+          status: getOperationalDpStatus(asset),
+          capacity: getWorkspaceDpCapacityRisk(asset),
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [areaDistributionPoints],
+  );
+
+  const selectedAssetTypeText = String(
+    (fullSelectedWorkspaceAsset as any)?.assetType ||
+      (fullSelectedWorkspaceAsset as any)?.type ||
+      (fullSelectedWorkspaceAsset as any)?.jointType ||
+      "",
+  ).toLowerCase();
+
+  const selectedAssetCanOpenEditor = Boolean(
+    fullSelectedWorkspaceAsset &&
+      onOpenJointEditor &&
+      (selectedAssetTypeText.includes("joint") ||
+        selectedAssetTypeText.includes("cab") ||
+        selectedAssetTypeText.includes("exchange") ||
+        selectedAssetTypeText.includes("cmj") ||
+        selectedAssetTypeText.includes("lmj")),
+  );
+
+  const handleMobileOpenSelectedEditor = () => {
+    if (!fullSelectedWorkspaceAsset) return;
+
+    if (selectedAssetCanOpenEditor) {
+      onOpenJointEditor?.(fullSelectedWorkspaceAsset);
+      return;
+    }
+
+    if (isWorkspaceDistributionPointAsset(fullSelectedWorkspaceAsset)) {
+      setMobileQuickPanel("dps");
+      setActiveTab("build");
+      return;
+    }
+
+    setActiveTab("topology");
+    setActiveOperationPanel("trace");
+  };
+
+  const handleMobileDpStatusUpdate = (
+    asset: SavedMapAsset,
+    status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service",
+  ) => {
+    if (!onUpdateDpStatus) {
+      alert("DP status updates are not available for this user/session.");
+      return;
+    }
+
+    const note = window.prompt(
+      `Manager note required: set ${getWorkspaceAssetTitle(asset)} to ${status}?`,
+      `Mobile DP update: ${status}`,
+    );
+
+    if (note === null) return;
+    const trimmed = note.trim();
+    if (!trimmed) {
+      alert("A manager note is required before changing DP status.");
+      return;
+    }
+
+    const syncedAsset = syncWorkspaceDpStatus(asset, status);
+    setSelectedWorkspaceAsset(syncedAsset);
+    onUpdateDpStatus({ assetId: asset.id, status, note: trimmed });
+  };
+
+  const responsiveRoot: React.CSSProperties = {
+    ...workspaceRoot,
+  };
+
+  const scaledWorkspaceViewport: React.CSSProperties = {
+    ...workspaceRoot,
+    overflow: useScaledWorkspaceCanvas ? "auto" : "hidden",
+    WebkitOverflowScrolling: "touch",
+    touchAction: "pan-x pan-y",
+    background: (workspaceRoot as any).background,
+  };
+
+  const scaledWorkspaceCanvas: React.CSSProperties = useScaledWorkspaceCanvas
+    ? {
+        width: isPhone ? 1680 : 1440,
+        minHeight: isPhone ? 1180 : 980,
+        transform: `scale(${workspaceCanvasScale})`,
+        transformOrigin: "top left",
+      }
+    : {
+        width: "100%",
+        height: "100%",
+      };
+
   const responsiveTopHeader: React.CSSProperties = {
     ...topHeader,
-    ...(isTablet
-      ? {
-          gridTemplateColumns: "minmax(260px, 320px) minmax(0, 1fr)",
-          alignItems: "stretch",
-        }
-      : {}),
-    ...(isPhone
-      ? {
-          gridTemplateColumns: "1fr",
-          gap: 10,
-          padding: "10px",
-          minHeight: "auto",
-        }
-      : {}),
   };
 
   const responsiveProjectHeaderBlock: React.CSSProperties = {
     ...projectHeaderBlock,
-    ...(isPhone ? { minWidth: 0 } : {}),
   };
 
   const responsiveProjectTitle: React.CSSProperties = {
     ...projectTitle,
-    ...(isPhone ? { fontSize: 18, lineHeight: 1.12 } : {}),
   };
 
   const responsiveTopMetrics: React.CSSProperties = {
     ...topMetrics,
-    ...(isPhone
-      ? {
-          display: "grid",
-          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-          gap: 8,
-          overflowX: "visible",
-        }
-      : {}),
   };
 
   const responsiveHeaderActions: React.CSSProperties = {
     display: "flex",
     gap: 8,
-    ...(isPhone ? { width: "100%", justifyContent: "stretch" } : {}),
   };
 
   const responsiveHeaderButton: React.CSSProperties = {
     ...smallButton,
-    ...(isPhone ? { flex: 1, minHeight: 42 } : {}),
   };
 
   const responsiveTabBar: React.CSSProperties = {
     ...tabBar,
-    ...(isCompact
-      ? {
-          padding: "8px 10px",
-          overflowX: "auto",
-          minHeight: "auto",
-          scrollbarWidth: "thin",
-        }
-      : {}),
   };
 
   const responsiveWorkspaceBody: React.CSSProperties = {
     ...workspaceBody,
-    ...(isPhone ? { gridTemplateColumns: "1fr" } : {}),
   };
 
   const responsiveLeftRail: React.CSSProperties = {
     ...leftRail,
-    ...(isPhone ? { display: "none" } : {}),
   };
 
   const responsiveContentGrid: React.CSSProperties = {
     ...contentGrid,
-    ...(isTablet
-      ? {
-          gridTemplateColumns: "minmax(0, 1fr)",
-          padding: 12,
-          gap: 12,
-        }
-      : {}),
-    ...(isPhone
-      ? {
-          gridTemplateColumns: "minmax(0, 1fr)",
-          padding: 10,
-          gap: 10,
-        }
-      : {}),
   };
 
   const responsiveMapPanel: React.CSSProperties = {
     ...mapPanel,
-    ...(isCompact ? { gridRow: "auto", padding: isPhone ? 10 : 12 } : {}),
   };
 
   const responsiveMapToolbar: React.CSSProperties = {
     ...mapToolbar,
-    ...(isPhone ? { flexDirection: "column" } : {}),
   };
 
   const responsiveMapLiveWrap: React.CSSProperties = {
     ...mapLiveWrap,
-    ...(isTablet ? { height: 520 } : {}),
-    ...(isPhone ? { height: "62vh", minHeight: 420 } : {}),
   };
 
   const responsiveMapAssetInspector: React.CSSProperties = {
     ...mapAssetInspector,
-    ...(isPhone
-      ? {
-          left: 10,
-          right: 10,
-          top: "auto",
-          bottom: 10,
-          minWidth: 0,
-          maxWidth: "none",
-          padding: 10,
-        }
-      : {}),
   };
 
   const mobileWorkspaceTabs = [
-    { label: "Summary", action: () => { setActiveTab("overview"); setActiveOperationPanel("none"); } },
-    { label: "DPs", action: () => openOperationPanel("rfsBreakdown", "build") },
-    { label: "Homes", action: () => openKpiDrilldown("homesNotLive", "build") },
-    { label: "QA", action: () => openOperationPanel("qa", "qa") },
-    { label: "Blockers", action: () => openOperationPanel("issues", "qa") },
-    { label: "Map", action: () => { setActiveTab("assets"); setActiveOperationPanel("none"); } },
+    { label: "Summary", action: () => { setMobileQuickPanel("none"); setActiveTab("overview"); setActiveOperationPanel("none"); } },
+    { label: "DPs", action: () => { setMobileQuickPanel("dps"); openOperationPanel("rfsBreakdown", "build"); } },
+    { label: "Homes", action: () => { setMobileQuickPanel("homes"); openKpiDrilldown("homesNotLive", "build"); } },
+    { label: "Live", action: () => { setMobileQuickPanel("homes"); openKpiDrilldown("homesLive", "build"); } },
+    { label: "QA", action: () => { setMobileQuickPanel("qa"); openOperationPanel("qa", "qa"); } },
+    { label: "Map", action: () => { setMobileQuickPanel("none"); setActiveTab("assets"); setActiveOperationPanel("none"); } },
   ];
 
   return (
-    <div style={workspaceRoot}>
+    <div style={scaledWorkspaceViewport}>
+      <div style={scaledWorkspaceCanvas}>
+        <div style={responsiveRoot}>
       {/* =====================================================
           PROJECT TOP HEADER
       ===================================================== */}
@@ -2729,16 +2776,7 @@ const homesLive = Math.min(
           WORKSPACE TAB BAR
       ===================================================== */}
       <nav style={responsiveTabBar}>
-        {isPhone ? mobileWorkspaceTabs.map((tab) => (
-          <button
-            key={tab.label}
-            type="button"
-            onClick={tab.action}
-            style={tabButton}
-          >
-            {tab.label}
-          </button>
-        )) : tabs.map((tab) => (
+        {tabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
@@ -3658,6 +3696,93 @@ const homesLive = Math.min(
         </main>
       </div>
 
+      {false && isPhone && fullSelectedWorkspaceAsset && (
+        <div style={mobileSelectedActionBar}>
+          <div style={mobileSelectedSummary}>
+            <strong>{getWorkspaceAssetTitle(fullSelectedWorkspaceAsset)}</strong>
+            <span>{getWorkspaceAssetType(fullSelectedWorkspaceAsset)}</span>
+          </div>
+          <button type="button" style={mobileActionButton} onClick={handleMobileOpenSelectedEditor}>
+            Open
+          </button>
+          <button type="button" style={mobileActionButton} onClick={() => { setActiveTab("topology"); setActiveOperationPanel("trace"); }}>
+            Trace
+          </button>
+          <button type="button" style={mobileActionButton} onClick={() => openOperationPanel("qa", "qa")}>
+            QA
+          </button>
+          <button type="button" style={mobileCloseButton} onClick={() => setSelectedWorkspaceAsset(null)}>
+            ×
+          </button>
+        </div>
+      )}
+
+      {false && isPhone && mobileQuickPanel !== "none" && (
+        <div style={mobileQuickPanelWrap}>
+          <div style={mobileQuickPanelHeader}>
+            <strong>
+              {mobileQuickPanel === "dps" && "Mobile DP Operations"}
+              {mobileQuickPanel === "homes" && "Mobile Homes Dashboard"}
+              {mobileQuickPanel === "qa" && "Mobile QA"}
+              {mobileQuickPanel === "actions" && "Mobile Actions"}
+            </strong>
+            <button type="button" style={mobileCloseButton} onClick={() => setMobileQuickPanel("none")}>×</button>
+          </div>
+
+          {mobileQuickPanel === "dps" && (
+            <div style={mobileListPanel}>
+              {mobileDpRows.length ? mobileDpRows.slice(0, 80).map(({ asset, name, status, capacity }) => (
+                <div key={asset.id} style={mobileDpCard}>
+                  <button
+                    type="button"
+                    style={mobileDpMainButton}
+                    onClick={() => {
+                      setSelectedWorkspaceAsset(asset);
+                      setSearchTerm(name);
+                    }}
+                  >
+                    <strong>{name}</strong>
+                    <span>{status} · {capacity.warning} · {capacity.percent}%</span>
+                  </button>
+                  <div style={mobileStatusGrid}>
+                    <button type="button" style={mobileStatusButtonGood} onClick={() => handleMobileDpStatusUpdate(asset, "Live")}>Live</button>
+                    <button type="button" style={mobileStatusButtonWarn} onClick={() => handleMobileDpStatusUpdate(asset, "BWIP")}>BWIP</button>
+                    <button type="button" style={mobileStatusButtonWarn} onClick={() => handleMobileDpStatusUpdate(asset, "Live not ready for service")}>LNRFS</button>
+                    <button type="button" style={mobileStatusButtonBad} onClick={() => handleMobileDpStatusUpdate(asset, "Unserviceable")}>Unserviceable</button>
+                  </div>
+                </div>
+              )) : (
+                <div style={emptyPanel}>No DPs found in this project area.</div>
+              )}
+            </div>
+          )}
+
+          {mobileQuickPanel === "homes" && (
+            <div style={mobileHomesGrid}>
+              <InfoRow label="Homes Passed" value={formatNumber(rolloutKpis.homesPassed)} />
+              <InfoRow label="Homes Live" value={formatNumber(rolloutKpis.homesLive)} highlight />
+              <InfoRow label="Homes Not Live" value={formatNumber(rolloutKpis.homesNotLive)} />
+              <InfoRow label="Connected Homes Layer" value={formatNumber(workspaceLayerCounts.homesConnected)} />
+              <InfoRow label="Unconnected Homes Layer" value={formatNumber(workspaceLayerCounts.homesUnconnected)} />
+              <InfoRow label="Live Homes Layer" value={formatNumber(workspaceLayerCounts.homesLive)} highlight />
+              <button type="button" style={wideButton} onClick={() => openKpiDrilldown("homesLive", "build")}>Show Live Homes</button>
+              <button type="button" style={wideButton} onClick={() => openKpiDrilldown("homesNotLive", "build")}>Show Homes Not Live</button>
+            </div>
+          )}
+
+          {mobileQuickPanel === "qa" && (
+            <div style={mobileHomesGrid}>
+              <InfoRow label="High Issues" value={issueBuckets.high.length} />
+              <InfoRow label="Medium Issues" value={issueBuckets.medium.length} />
+              <InfoRow label="Low Issues" value={issueBuckets.low.length} />
+              <button type="button" style={wideButton} onClick={() => openIssueSeverity("high")}>Open High QA</button>
+              <button type="button" style={wideButton} onClick={() => openIssueSeverity("medium")}>Open Medium QA</button>
+              <button type="button" style={wideButton} onClick={() => setWalkOffAuditOpen(true)}>Launch Walk-Off Audit</button>
+            </div>
+          )}
+        </div>
+      )}
+
       <AuditModal
         title="Area Walk-Off Audit"
         open={walkOffAuditOpen}
@@ -3684,6 +3809,8 @@ const homesLive = Math.min(
           onClose={() => setWalkOffAuditOpen(false)}
         />
       </AuditModal>
+        </div>
+      </div>
     </div>
   );
 }
@@ -4675,4 +4802,145 @@ const quickAction: React.CSSProperties = {
   ...smallButton,
   minHeight: 54,
   background: "#111827",
+};
+
+
+const mobileSelectedActionBar: React.CSSProperties = {
+  position: "fixed",
+  left: 10,
+  right: 10,
+  bottom: 10,
+  zIndex: 8000,
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1fr) auto auto auto auto",
+  alignItems: "center",
+  gap: 8,
+  background: "rgba(7, 17, 31, 0.96)",
+  border: "1px solid rgba(147, 197, 253, 0.45)",
+  borderRadius: 16,
+  padding: 10,
+  boxShadow: "0 18px 44px rgba(0,0,0,0.45)",
+};
+
+const mobileSelectedSummary: React.CSSProperties = {
+  minWidth: 0,
+  display: "flex",
+  flexDirection: "column",
+  gap: 2,
+  color: "#f8fafc",
+  overflow: "hidden",
+};
+
+const mobileActionButton: React.CSSProperties = {
+  border: "1px solid rgba(148, 163, 184, 0.25)",
+  background: "#1d4ed8",
+  color: "#fff",
+  borderRadius: 12,
+  padding: "10px 11px",
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const mobileCloseButton: React.CSSProperties = {
+  border: "1px solid rgba(148, 163, 184, 0.25)",
+  background: "#020617",
+  color: "#f8fafc",
+  borderRadius: 12,
+  width: 38,
+  minWidth: 38,
+  height: 38,
+  fontSize: 22,
+  lineHeight: "20px",
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const mobileQuickPanelWrap: React.CSSProperties = {
+  position: "fixed",
+  left: 10,
+  right: 10,
+  bottom: 88,
+  zIndex: 7990,
+  maxHeight: "58vh",
+  overflow: "hidden",
+  display: "grid",
+  gridTemplateRows: "auto minmax(0, 1fr)",
+  background: "rgba(15, 27, 45, 0.98)",
+  border: "1px solid rgba(96, 165, 250, 0.42)",
+  borderRadius: 16,
+  boxShadow: "0 18px 44px rgba(0,0,0,0.42)",
+};
+
+const mobileQuickPanelHeader: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 10,
+  padding: "10px 12px",
+  borderBottom: "1px solid rgba(148, 163, 184, 0.16)",
+};
+
+const mobileListPanel: React.CSSProperties = {
+  overflow: "auto",
+  padding: 10,
+  display: "grid",
+  gap: 10,
+};
+
+const mobileDpCard: React.CSSProperties = {
+  background: "#111827",
+  border: "1px solid rgba(148, 163, 184, 0.16)",
+  borderRadius: 12,
+  padding: 10,
+  display: "grid",
+  gap: 8,
+};
+
+const mobileDpMainButton: React.CSSProperties = {
+  display: "grid",
+  gap: 3,
+  width: "100%",
+  border: "none",
+  background: "transparent",
+  color: "#f8fafc",
+  textAlign: "left",
+  padding: 0,
+  cursor: "pointer",
+};
+
+const mobileStatusGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 8,
+};
+
+const mobileStatusButtonBase: React.CSSProperties = {
+  border: "1px solid rgba(255,255,255,0.15)",
+  color: "#fff",
+  borderRadius: 10,
+  padding: "9px 8px",
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const mobileStatusButtonGood: React.CSSProperties = {
+  ...mobileStatusButtonBase,
+  background: "#166534",
+};
+
+const mobileStatusButtonWarn: React.CSSProperties = {
+  ...mobileStatusButtonBase,
+  background: "#92400e",
+};
+
+const mobileStatusButtonBad: React.CSSProperties = {
+  ...mobileStatusButtonBase,
+  background: "#991b1b",
+};
+
+const mobileHomesGrid: React.CSSProperties = {
+  overflow: "auto",
+  padding: 12,
+  display: "grid",
+  gap: 8,
 };

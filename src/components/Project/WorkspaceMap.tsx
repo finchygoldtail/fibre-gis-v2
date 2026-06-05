@@ -499,7 +499,13 @@ function getDpCapacityState(asset: SavedMapAsset): { colour: string; label: stri
   return { colour: "#22c55e", label: "Capacity OK", percent };
 }
 
-function getAssetMarkerIcon(asset: SavedMapAsset, selected: boolean, traceKind: string | null = null, homeStatus?: "unconnected" | "connected" | "live") {
+function getAssetMarkerIcon(
+  asset: SavedMapAsset,
+  selected: boolean,
+  traceKind: string | null = null,
+  homeStatus?: "unconnected" | "connected" | "live",
+  touchMode = false,
+) {
   const type = getAssetType(asset);
   const traceColour = getTraceColour(traceKind);
   const dpCapacityState = getDpCapacityState(asset);
@@ -525,11 +531,14 @@ function getAssetMarkerIcon(asset: SavedMapAsset, selected: boolean, traceKind: 
                   : "#ef4444"
               : "#c084fc";
 
+  const dotSize = touchMode ? (selected ? 28 : 22) : selected ? 18 : 14;
+  const hitSize = touchMode ? 44 : dotSize;
+
   return L.divIcon({
     className: "alistra-workspace-marker",
-    html: `<div style="width:${selected ? 18 : 14}px;height:${selected ? 18 : 14}px;border-radius:999px;background:${colour};border:2px solid #020617;box-shadow:0 0 0 2px rgba(255,255,255,0.25),0 0 14px ${colour},0 6px 14px rgba(0,0,0,0.45);"></div>`,
-    iconSize: [selected ? 18 : 14, selected ? 18 : 14],
-    iconAnchor: [selected ? 9 : 7, selected ? 9 : 7],
+    html: `<div style="width:${hitSize}px;height:${hitSize}px;display:grid;place-items:center;"><div style="width:${dotSize}px;height:${dotSize}px;border-radius:999px;background:${colour};border:2px solid #020617;box-shadow:0 0 0 2px rgba(255,255,255,0.25),0 0 14px ${colour},0 6px 14px rgba(0,0,0,0.45);"></div></div>`,
+    iconSize: [hitSize, hitSize],
+    iconAnchor: [hitSize / 2, hitSize / 2],
   });
 }
 
@@ -713,6 +722,22 @@ export default function WorkspaceMap({
 }: WorkspaceMapProps) {
   const [viewportBounds, setViewportBounds] = useState<WorkspaceBounds | null>(null);
   const [viewportZoom, setViewportZoom] = useState(15);
+  const [isTouchWorkspace, setIsTouchWorkspace] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const update = () => {
+      const coarsePointer = window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
+      setIsTouchWorkspace(coarsePointer || window.innerWidth < 768);
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+    };
+  }, []);
   const bounds = useMemo(() => getBoundsFromAssets(projectArea, assets), [projectArea, assets]);
   const visibleAssets = useMemo(
     () =>
@@ -781,7 +806,9 @@ export default function WorkspaceMap({
         zoom={15}
         maxZoom={22}
         style={{ height: "100%", width: "100%" }}
-        zoomControl
+        zoomControl={!isTouchWorkspace}
+        tap
+        touchZoom
       >
         <WorkspaceBaseLayers />
         <SafeMapLifecycle bounds={bounds} />
@@ -992,7 +1019,7 @@ export default function WorkspaceMap({
             <Marker
               key={`workspace-point-${asset.id}`}
               position={[point.lat, point.lng]}
-              icon={getAssetMarkerIcon(asset, selected, traceKind, homeStatus)}
+              icon={getAssetMarkerIcon(asset, selected, traceKind, homeStatus, isTouchWorkspace)}
               eventHandlers={{ click: (event) => selectWorkspaceAsset(asset, onAssetSelect, event) }}
             >
               <Popup>
@@ -1010,6 +1037,12 @@ export default function WorkspaceMap({
           );
         })}
       </MapContainer>
+
+      {isTouchWorkspace && visibleAssets.length > 0 && (
+        <div style={touchMapHint}>
+          Tap asset to select · pinch to zoom · drag to pan
+        </div>
+      )}
 
       {!visibleAssets.length && (
         <div style={emptyOverlay}>
@@ -1033,6 +1066,23 @@ const mapShell: React.CSSProperties = {
   overflow: "hidden",
   borderRadius: 12,
   background: "#020617",
+};
+
+const touchMapHint: React.CSSProperties = {
+  position: "absolute",
+  left: 10,
+  right: 10,
+  bottom: 10,
+  zIndex: 900,
+  background: "rgba(2, 6, 23, 0.78)",
+  border: "1px solid rgba(148, 163, 184, 0.22)",
+  color: "#e5e7eb",
+  borderRadius: 999,
+  padding: "8px 12px",
+  fontSize: 12,
+  fontWeight: 900,
+  textAlign: "center",
+  pointerEvents: "none",
 };
 
 const emptyOverlay: React.CSSProperties = {
