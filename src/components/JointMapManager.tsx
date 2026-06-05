@@ -103,6 +103,22 @@ import { useLayerCounts } from "./map/layers/useLayerCounts";
 import { useCableAllocationOptions } from "./map/cables/useCableAllocationOptions";
 import { useCableWorkflow } from "./map/cables/useCableWorkflow";
 import { useMapDrawingState, type BasemapType, type MapMode } from "./map/hooks/useMapDrawingState";
+import { useRoleMobileMode } from "./map/responsive/useRoleMobileMode";
+import { useDeviceLayout } from "./map/responsive/useDeviceLayout";
+import SurveyMobileControls from "./map/responsive/mobile/SurveyMobileControls";
+import MaintenanceMobileControls from "./map/responsive/mobile/MaintenanceMobileControls";
+import BuildMobileWorkspaceNotice from "./map/responsive/mobile/BuildMobileWorkspaceNotice";
+import FieldModeStatusPill from "./map/responsive/shared/FieldModeStatusPill";
+import FieldQuickActionDrawer from "./map/responsive/shared/FieldQuickActionDrawer";
+import FieldSelectedAssetCard from "./map/responsive/shared/FieldSelectedAssetCard";
+import FieldNavigationBar from "./map/responsive/shared/FieldNavigationBar";
+import AssetBottomSheet from "./map/responsive/mobile/AssetBottomSheet";
+import { useOfflineFieldMode } from "./map/responsive/offline/useOfflineFieldMode";
+import OfflineFieldModeBanner from "./map/responsive/offline/OfflineFieldModeBanner";
+import FieldPhotoCapturePanel from "./map/responsive/photos/FieldPhotoCapturePanel";
+import ResponsiveFieldPolish from "./map/responsive/shared/ResponsiveFieldPolish";
+import SurveyTabletControls from "./map/responsive/tablet/SurveyTabletControls";
+import MaintenanceTabletControls from "./map/responsive/tablet/MaintenanceTabletControls";
 import { markAssetForLiveSync, useAssetPersistence } from "./map/persistence/useAssetPersistence";
 import {
   createMapAssetsFromAnyGeoJson,
@@ -814,6 +830,35 @@ export default function JointMapManager({
 
   const { visibleLayers, setVisibleLayers } = useLayerVisibility();
 
+  const roleMobileMode = useRoleMobileMode({
+    isMobile,
+    activeMode,
+    permissions,
+    isSuperUser,
+  });
+  const { isTablet } = useDeviceLayout();
+  const isSurveyTabletMode =
+    isTablet &&
+    !isSuperUser &&
+    !permissions.build &&
+    (permissions.survey || activeMode === "survey");
+  const isMaintenanceTabletMode =
+    isTablet &&
+    !isSuperUser &&
+    !permissions.build &&
+    (permissions.maintenance || activeMode === "maintenance");
+  const [isFieldQuickDrawerOpen, setIsFieldQuickDrawerOpen] = useState(false);
+  const isFieldResponsiveMode =
+    roleMobileMode === "survey" ||
+    roleMobileMode === "maintenance" ||
+    isSurveyTabletMode ||
+    isMaintenanceTabletMode;
+  const fieldQuickRole =
+    roleMobileMode === "maintenance" || isMaintenanceTabletMode
+      ? "maintenance"
+      : "survey";
+  const [isFieldPhotoPanelOpen, setIsFieldPhotoPanelOpen] = useState(false);
+
   const normalizedSavedJoints = useMemo(
     () => (savedJoints ?? []).map(normalizeMapAsset),
     [savedJoints],
@@ -1053,6 +1098,12 @@ export default function JointMapManager({
     mapBounds,
     mapZoom,
     visibleLayers,
+  });
+
+  const offlineFieldMode = useOfflineFieldMode({
+    projectId: activeProjectId,
+    assets: visibleProjectAssets,
+    homes: projectHomes,
   });
 
   // =====================================================
@@ -3712,6 +3763,15 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
     );
   }
 
+  if (isProjectWorkspaceOpen && activeProjectArea && canManageNetworkDesign && isMobile) {
+    return (
+      <BuildMobileWorkspaceNotice
+        projectName={activeProjectArea.name || "Selected Project"}
+        onBackToMap={() => setIsProjectWorkspaceOpen(false)}
+      />
+    );
+  }
+
   if (isProjectWorkspaceOpen && activeProjectArea && canManageNetworkDesign) {
     return (
       <ProjectWorkspace
@@ -5167,7 +5227,7 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         />
       </div>
 
-      {!showMaintenancePanel && (
+      {!showMaintenancePanel && !(isFieldResponsiveMode && isMobile) && (
         <div
           style={{
             position: "absolute",
@@ -5181,7 +5241,207 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         </div>
       )}
 
-      {!showMaintenancePanel && (
+      <ResponsiveFieldPolish enabled={isFieldResponsiveMode} />
+
+      {!showMaintenancePanel && isFieldResponsiveMode && (
+        <OfflineFieldModeBanner
+          isOffline={offlineFieldMode.isOffline}
+          lastCachedAt={offlineFieldMode.lastCachedAt}
+          cachedAssetCount={offlineFieldMode.cachedAssetCount}
+          cachedHomeCount={offlineFieldMode.cachedHomeCount}
+          onCacheNow={() => {
+            const ok = offlineFieldMode.cacheFieldData();
+            alert(ok ? "Field data cached on this device." : "Could not cache field data on this device.");
+          }}
+          onClearCache={() => {
+            const ok = offlineFieldMode.clearCachedFieldData();
+            if (ok) alert("Field cache cleared from this device.");
+          }}
+        />
+      )}
+
+      {!showMaintenancePanel && isFieldResponsiveMode && currentEditingAsset && (
+        <button
+          type="button"
+          onClick={() => setIsFieldPhotoPanelOpen(true)}
+          style={{
+            position: "absolute",
+            right: 14,
+            bottom: isMobile ? 224 : 154,
+            zIndex: 1320,
+            border: "1px solid #60a5fa",
+            background: "#2563eb",
+            color: "#ffffff",
+            borderRadius: 999,
+            padding: "10px 13px",
+            fontWeight: 900,
+            boxShadow: "0 12px 24px rgba(15,23,42,0.35)",
+          }}
+        >
+          Photos
+        </button>
+      )}
+
+      {!showMaintenancePanel && isFieldResponsiveMode && (
+        <FieldPhotoCapturePanel
+          isOpen={isFieldPhotoPanelOpen}
+          assetName={currentEditingAsset?.name || null}
+          onClose={() => setIsFieldPhotoPanelOpen(false)}
+          onFilesSelected={(files) => {
+            if (!files.length) return;
+            console.log("Selected field photos", files);
+          }}
+        />
+      )}
+
+      {!showMaintenancePanel && isFieldResponsiveMode && (
+        <FieldNavigationBar
+          variant={isMobile ? "mobile" : "tablet"}
+          hasSelectedAsset={Boolean(currentEditingAsset)}
+          onGpsLocate={handleGpsLocate}
+          onZoomToSelected={() => {
+            if (currentEditingAsset) handleZoomToAsset(currentEditingAsset);
+          }}
+          onOpenLayers={() => setIsLayersOpen((prev) => !prev)}
+        />
+      )}
+
+      {!showMaintenancePanel && isFieldResponsiveMode && (
+        <FieldQuickActionDrawer
+          variant={isMobile ? "mobile" : "tablet"}
+          role={fieldQuickRole}
+          isOpen={isFieldQuickDrawerOpen}
+          currentAssetName={currentEditingAsset?.name || null}
+          mapMode={mapMode}
+          selectedMoveHomeCount={selectedMoveHomeIds.length}
+          selectedDeleteHomeCount={selectedSurveyDeleteHomeIds.length}
+          onToggle={() => setIsFieldQuickDrawerOpen((prev) => !prev)}
+          onClose={() => setIsFieldQuickDrawerOpen(false)}
+          onOpenPanel={() => setIsPanelOpen(true)}
+          onOpenLayers={() => setIsLayersOpen((prev) => !prev)}
+          onGpsLocate={handleGpsLocate}
+          onToggleMoveHomes={handleToggleMoveHomesMode}
+          onToggleDeleteHomes={handleToggleSurveyDeleteHomesMode}
+          onOpenMaintenance={() => {
+            if (currentEditingAsset) {
+              openMaintenanceHistory(currentEditingAsset);
+            } else {
+              setIsPanelOpen(true);
+            }
+          }}
+        />
+      )}
+
+      {!showMaintenancePanel && isFieldResponsiveMode && !isMobile && currentEditingAsset && (
+        <FieldSelectedAssetCard
+          variant={isMobile ? "mobile" : "tablet"}
+          role={fieldQuickRole}
+          asset={currentEditingAsset}
+          onOpenDetails={() => setIsPanelOpen(true)}
+          onClearSelection={resetEditor}
+          onOpenMaintenance={() => openMaintenanceHistory(currentEditingAsset)}
+        />
+      )}
+
+      {!showMaintenancePanel && isMobile && isFieldResponsiveMode && currentEditingAsset && (
+        <AssetBottomSheet
+          role={fieldQuickRole}
+          asset={currentEditingAsset}
+          mapMode={mapMode}
+          selectedMoveHomeCount={selectedMoveHomeIds.length}
+          selectedDeleteHomeCount={selectedSurveyDeleteHomeIds.length}
+          onOpenDetails={() => setIsPanelOpen(true)}
+          onOpenMaintenance={() => openMaintenanceHistory(currentEditingAsset)}
+          onClose={resetEditor}
+        />
+      )}
+
+      {!showMaintenancePanel && roleMobileMode === "survey" && (
+        <SurveyMobileControls
+          mapMode={mapMode}
+          selectedMoveHomeCount={selectedMoveHomeIds.length}
+          selectedDeleteHomeCount={selectedSurveyDeleteHomeIds.length}
+          onOpenPanel={() => setIsPanelOpen(true)}
+          onOpenLayers={() => setIsLayersOpen((prev) => !prev)}
+          onGpsLocate={handleGpsLocate}
+          onToggleMoveHomes={handleToggleMoveHomesMode}
+          onToggleDeleteHomes={handleToggleSurveyDeleteHomesMode}
+        />
+      )}
+
+      {!showMaintenancePanel && roleMobileMode === "maintenance" && (
+        <MaintenanceMobileControls
+          hasSelectedAsset={Boolean(currentEditingAsset)}
+          onOpenPanel={() => setIsPanelOpen(true)}
+          onOpenLayers={() => setIsLayersOpen((prev) => !prev)}
+          onGpsLocate={handleGpsLocate}
+          onOpenMaintenance={() => {
+            if (currentEditingAsset) {
+              openMaintenanceHistory(currentEditingAsset);
+            } else {
+              setIsPanelOpen(true);
+            }
+          }}
+        />
+      )}
+
+      {!showMaintenancePanel && isSurveyTabletMode && (
+        <SurveyTabletControls
+          mapMode={mapMode}
+          selectedMoveHomeCount={selectedMoveHomeIds.length}
+          selectedDeleteHomeCount={selectedSurveyDeleteHomeIds.length}
+          onOpenPanel={() => setIsPanelOpen(true)}
+          onOpenLayers={() => setIsLayersOpen((prev) => !prev)}
+          onGpsLocate={handleGpsLocate}
+          onToggleMoveHomes={handleToggleMoveHomesMode}
+          onToggleDeleteHomes={handleToggleSurveyDeleteHomesMode}
+        />
+      )}
+
+      {!showMaintenancePanel && isMaintenanceTabletMode && (
+        <MaintenanceTabletControls
+          hasSelectedAsset={Boolean(currentEditingAsset)}
+          onOpenPanel={() => setIsPanelOpen(true)}
+          onOpenLayers={() => setIsLayersOpen((prev) => !prev)}
+          onGpsLocate={handleGpsLocate}
+          onOpenMaintenance={() => {
+            if (currentEditingAsset) {
+              openMaintenanceHistory(currentEditingAsset);
+            } else {
+              setIsPanelOpen(true);
+            }
+          }}
+        />
+      )}
+
+
+      {!showMaintenancePanel && (roleMobileMode === "survey" || isSurveyTabletMode) &&
+        (mapMode === "move-homes" || mapMode === "survey-delete-homes") && (
+          <FieldModeStatusPill
+            variant={isMobile ? "mobile" : "tablet"}
+            tone="survey"
+            title={mapMode === "move-homes" ? "Move homes mode" : "Delete homes mode"}
+            detail={
+              mapMode === "move-homes"
+                ? `${selectedMoveHomeIds.length} home${selectedMoveHomeIds.length === 1 ? "" : "s"} selected`
+                : `${selectedSurveyDeleteHomeIds.length} home${selectedSurveyDeleteHomeIds.length === 1 ? "" : "s"} selected`
+            }
+            actionLabel="Exit"
+            onAction={() => {
+              if (mapMode === "move-homes") {
+                handleToggleMoveHomesMode();
+              } else {
+                handleToggleSurveyDeleteHomesMode();
+              }
+            }}
+          />
+        )}
+
+      {!showMaintenancePanel &&
+        roleMobileMode !== "survey" &&
+        roleMobileMode !== "maintenance" &&
+        !isSurveyTabletMode &&
+        !isMaintenanceTabletMode && (
         <>
           <button
             onClick={handleGpsLocate}
@@ -5216,6 +5476,19 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
 
 
       {openDistributionPointAsset && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 3000,
+            background: "#0f172a",
+            height: "100dvh",
+            maxHeight: "100dvh",
+            overflow: "auto",
+            WebkitOverflowScrolling: "touch",
+            boxSizing: "border-box",
+          }}
+        >
         <DistributionPointEditor
           asset={openDistributionPointAsset}
           allAssets={allMapAssets}
@@ -5244,6 +5517,7 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
             setOpenDistributionPointAsset(savedAsset);
           }}
         />
+        </div>
       )}
 
       {openStreetCabAsset && (
@@ -5256,7 +5530,7 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
             height: "100dvh",
             maxHeight: "100dvh",
             overflowY: "auto",
-            overflowX: "hidden",
+            overflowX: isMobile ? "auto" : "hidden",
             overscrollBehavior: "contain",
             paddingBottom: "96px",
             boxSizing: "border-box",
@@ -5285,7 +5559,7 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
             height: "100dvh",
             maxHeight: "100dvh",
             overflowY: "auto",
-            overflowX: "hidden",
+            overflowX: isMobile ? "auto" : "hidden",
             overscrollBehavior: "contain",
             paddingBottom: "96px",
             boxSizing: "border-box",

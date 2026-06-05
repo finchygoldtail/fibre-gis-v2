@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { convertExchangeWorkbook } from "../../utils/exchangeWorkbookConverter";
 
 import type {
@@ -122,6 +122,26 @@ function matchesSearch(values: unknown[], search: string) {
 }
 
 export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
+  const [isMobileDesigner, setIsMobileDesigner] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth < 760 : false,
+  );
+
+  useEffect(() => {
+    const update = () => setIsMobileDesigner(window.innerWidth < 760);
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+    };
+  }, []);
+
+  const mobileDesignerScale =
+    isMobileDesigner && typeof window !== "undefined"
+      ? Math.min(0.8, Math.max(0.48, window.innerWidth / 1500))
+      : 1;
+
   // =====================================================
   // 1) CORE STATE
   // =====================================================
@@ -563,9 +583,29 @@ const handleConvertImportedWorkbook = async () => {
   // =====================================================
 
   return (
-    <div style={layout}>
+    <div
+      style={{
+        ...layout,
+        display: layout.display,
+        gridTemplateColumns: "320px minmax(840px, 1fr) 340px",
+        width: isMobileDesigner ? 1500 : "100%",
+        minWidth: isMobileDesigner ? 1500 : undefined,
+        height: isMobileDesigner ? `${100 / mobileDesignerScale}dvh` : layout.height,
+        overflow: layout.overflow,
+        zoom: isMobileDesigner ? mobileDesignerScale : 1,
+        WebkitOverflowScrolling: "touch",
+      }}
+    >
       {/* LEFT */}
-      <div style={leftPanel}>
+      <div
+        style={{
+          ...leftPanel,
+          borderRight: leftPanel.borderRight,
+          borderBottom: "none",
+          maxHeight: undefined,
+          flex: undefined,
+        }}
+      >
         <button onClick={onClose} style={btnSecondary}>
           ← Back to Map
         </button>
@@ -685,7 +725,7 @@ const handleConvertImportedWorkbook = async () => {
       </div>
 
       {/* CENTRE */}
-      <div style={mainPanel}>
+      <div style={{ ...mainPanel, padding: mainPanel.padding, minHeight: mainPanel.minHeight, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
         <div style={pageHeader}>
           <div>
             <div style={{ color: "#cbd5e1", fontSize: 13 }}>Exchange Designer</div>
@@ -1050,7 +1090,7 @@ const handleConvertImportedWorkbook = async () => {
       </div>
 
       {/* RIGHT */}
-      <div style={rightPanel}>
+      <div style={{ ...rightPanel, borderLeft: rightPanel.borderLeft, borderTop: "none", maxHeight: undefined, flex: undefined }}>
         <SelectionPanel
           selectedDetails={selectedDetails}
           onClear={() => setSelectedNode(null)}

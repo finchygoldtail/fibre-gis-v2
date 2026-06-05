@@ -464,11 +464,29 @@ export const FibreTrayEditor: React.FC = () => {
 
   const [trayFilter, setTrayFilter] = useState<number | "all">("all");
   const trayContainerRef = useRef<HTMLDivElement | null>(null);
+  const [isMobileEditor, setIsMobileEditor] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth < 760 : false,
+  );
+
+  useEffect(() => {
+    const update = () => setIsMobileEditor(window.innerWidth < 760);
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+    };
+  }, []);
 
   const updateModel = (fn: (prev: FibreCell[]) => FibreCell[]) =>
     setModel((prev) => fn(prev.map((f) => ({ ...f }))));
 
   const cfg = JOINT_TYPES[jointType];
+  const mobileEditorScale =
+    isMobileEditor && typeof window !== "undefined"
+      ? Math.min(0.8, Math.max(0.48, window.innerWidth / 1500))
+      : 1;
   const saveSavedJointsToFirestoreNow = useCallback(
     async (nextSavedJoints: SavedJoint[]) => {
       const cleaned = await saveMapAssetsToFirestore(nextSavedJoints);
@@ -1277,11 +1295,15 @@ export const FibreTrayEditor: React.FC = () => {
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "320px 1fr 420px",
-        height: "100vh",
+        gridTemplateColumns: "320px minmax(760px, 1fr) 420px",
+        width: isMobileEditor ? 1500 : "100%",
+        minWidth: isMobileEditor ? 1500 : undefined,
+        height: isMobileEditor ? `${100 / mobileEditorScale}dvh` : "100vh",
         overflow: "hidden",
         background: "#111827",
         color: "white",
+        zoom: isMobileEditor ? mobileEditorScale : 1,
+        WebkitOverflowScrolling: "touch",
       }}
     >
       <ChangeReasonModal
@@ -1300,12 +1322,15 @@ export const FibreTrayEditor: React.FC = () => {
       <div
         style={{
           borderRight: "1px solid #374151",
+          borderBottom: "none",
           padding: "1rem",
           display: "flex",
           flexDirection: "column",
           gap: "1rem",
           overflowY: "auto",
           background: "#111827",
+          flex: undefined,
+          maxHeight: undefined,
         }}
       >
 
@@ -1598,7 +1623,14 @@ export const FibreTrayEditor: React.FC = () => {
 
       {/* MIDDLE + RIGHT */}
       {assetType === "street-cab" ? (
-        <div style={{ gridColumn: "2 / 4", minWidth: 0 }}>
+        <div
+          style={{
+            gridColumn: "2 / 4",
+            minWidth: 0,
+            overflowX: "auto",
+            WebkitOverflowScrolling: "touch",
+          }}
+        >
           <StreetCabEditor fileName={loadedFileName} rows={mappingRows} />
         </div>
       ) : (
@@ -1606,7 +1638,14 @@ export const FibreTrayEditor: React.FC = () => {
           {/* MIDDLE PANEL */}
           <div
             ref={trayContainerRef}
-            style={{ padding: "1rem", overflow: "auto", background: "#111827" }}
+            style={{
+              padding: "1rem",
+              overflow: "auto",
+              background: "#111827",
+              minHeight: undefined,
+              flex: undefined,
+              WebkitOverflowScrolling: "touch",
+            }}
           >
             {jointType === "LMJ (40 trays)" ? (
               <LMJTrayView
@@ -1617,7 +1656,7 @@ export const FibreTrayEditor: React.FC = () => {
                 onFibreClick={handleFibreClick}
               />
             ) : (
-              <svg width={svgWidth} height={svgHeight}>
+              <svg width={svgWidth} height={svgHeight} style={{ minWidth: svgWidth }}>
                 {visibleTrays.map((tray, visibleIndex) => {
                   const y = top + visibleIndex * (trayH + trayGap);
 
@@ -1700,9 +1739,12 @@ export const FibreTrayEditor: React.FC = () => {
           <div
             style={{
               borderLeft: "1px solid #374151",
+              borderTop: "none",
               padding: "1rem",
               overflow: "auto",
               background: "#111827",
+              minHeight: undefined,
+              WebkitOverflowScrolling: "touch",
             }}
           >
             {jointType === "LMJ (40 trays)" ? (

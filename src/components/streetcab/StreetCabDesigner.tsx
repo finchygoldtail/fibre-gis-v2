@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import type { SavedMapAsset } from "../map/types";
 import type {
@@ -508,6 +508,26 @@ export default function StreetCabDesigner({
   onClose,
   onSave,
 }: Props) {
+  const [isMobileDesigner, setIsMobileDesigner] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth < 760 : false,
+  );
+
+  useEffect(() => {
+    const update = () => setIsMobileDesigner(window.innerWidth < 760);
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+    };
+  }, []);
+
+  const mobileDesignerScale =
+    isMobileDesigner && typeof window !== "undefined"
+      ? Math.min(0.8, Math.max(0.45, window.innerWidth / 1700))
+      : 1;
+
   const initialStreetCab = asset.streetCabDetails as
     | (StreetCabDetails & {
         importMappingRows?: ImportMappingRow[];
@@ -1305,15 +1325,19 @@ export default function StreetCabDesigner({
   return (
     <div
       style={{
-        height: "100vh",
-        width: "100vw",
+        height: isMobileDesigner ? `${100 / mobileDesignerScale}dvh` : "100vh",
+        width: isMobileDesigner ? 1700 : "100vw",
+        minWidth: isMobileDesigner ? 1700 : undefined,
         display: "grid",
-        gridTemplateColumns: "280px 1fr 320px",
+        gridTemplateColumns: "280px minmax(1100px, 1fr) 320px",
         background: "#111827",
         color: "white",
+        overflow: "hidden",
+        zoom: isMobileDesigner ? mobileDesignerScale : 1,
+        WebkitOverflowScrolling: "touch",
       }}
     >
-      <div style={sidebar}>
+      <div style={{ ...sidebar, borderRight: sidebar.borderRight, borderBottom: "none", flex: undefined, maxHeight: undefined, overflowY: "auto" }}>
         <div
           style={{
             display: "flex",
@@ -1385,7 +1409,13 @@ export default function StreetCabDesigner({
       </div>
 
       <div
-        style={{ padding: 14, overflowY: "auto" }}
+        style={{
+          padding: 14,
+          overflowY: "auto",
+          overflowX: "auto",
+          minHeight: 0,
+          WebkitOverflowScrolling: "touch",
+        }}
         onDragOver={(e) => e.preventDefault()}
         onDrop={() => setDragStartPort(null)}
       >
@@ -1498,7 +1528,7 @@ export default function StreetCabDesigner({
         </div>
       </div>
 
-      <div style={sidebar}>
+      <div style={{ ...sidebar, borderRight: "none", borderLeft: "1px solid #374151", borderTop: "none", flex: undefined, maxHeight: undefined, overflowY: "auto" }}>
         <h3 style={{ marginTop: 0 }}>Selection</h3>
 
         {selectedPanel ? (
