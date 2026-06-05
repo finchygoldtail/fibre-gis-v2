@@ -1189,6 +1189,30 @@ function normaliseIssueSeverity(value: unknown): QaIssueSeverity | null {
   if (text === "high" || text === "medium" || text === "low") return text;
   return null;
 }
+function useWorkspaceViewport() {
+  const getWidth = () => (typeof window === "undefined" ? 1440 : window.innerWidth);
+  const [width, setWidth] = useState<number>(getWidth);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleResize = () => setWidth(window.innerWidth);
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    window.addEventListener("orientationchange", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("orientationchange", handleResize);
+    };
+  }, []);
+
+  return {
+    width,
+    isPhone: width < 768,
+    isTablet: width >= 768 && width < 1200,
+    isCompact: width < 1200,
+  };
+}
+
 export default function ProjectWorkspace({
   projectName,
   status = "Build Phase",
@@ -1211,6 +1235,8 @@ export default function ProjectWorkspace({
   onAutoSpreadStackedHomes,
   onApplyAddressSheetAssignments,
 }: ProjectWorkspaceProps) {
+  const { isPhone, isTablet, isCompact } = useWorkspaceViewport();
+
   const [openreachLayers, setOpenreachLayers] =
     React.useState<OpenreachLayerVisibility>(defaultOpenreachLayers);
 
@@ -2122,6 +2148,26 @@ const homesLive = Math.min(
   const activeWorkspaceProjectId =
     activeProjectId || projectArea?.id || workspaceProjectOptions[0]?.id || "";
 
+  const workspaceMapRemountKey = [
+    activeWorkspaceProjectId,
+    projectArea?.id || "",
+    projectName,
+    projectArea?.geometry?.type || "",
+    JSON.stringify(projectArea?.geometry?.coordinates || []),
+  ].join("|");
+
+  useEffect(() => {
+    setSelectedWorkspaceAsset(null);
+    setSearchTerm("");
+    setSearchFocused(false);
+    setActiveOperationPanel("none");
+    setActiveIssueSeverity(null);
+    setActiveIssueCategory(null);
+    setIssueNavigatorIndex(0);
+    setManagerAreaPoints([]);
+    setIsManagerAreaDrawing(false);
+  }, [activeWorkspaceProjectId, projectArea?.id, projectName]);
+
   const walkOffSnapshot = useMemo(
     () => ({
       projectName,
@@ -2387,13 +2433,144 @@ const homesLive = Math.min(
     setOpenreachLayers(defaultOpenreachLayers);
   };
 
+  const responsiveTopHeader: React.CSSProperties = {
+    ...topHeader,
+    ...(isTablet
+      ? {
+          gridTemplateColumns: "minmax(260px, 320px) minmax(0, 1fr)",
+          alignItems: "stretch",
+        }
+      : {}),
+    ...(isPhone
+      ? {
+          gridTemplateColumns: "1fr",
+          gap: 10,
+          padding: "10px",
+          minHeight: "auto",
+        }
+      : {}),
+  };
+
+  const responsiveProjectHeaderBlock: React.CSSProperties = {
+    ...projectHeaderBlock,
+    ...(isPhone ? { minWidth: 0 } : {}),
+  };
+
+  const responsiveProjectTitle: React.CSSProperties = {
+    ...projectTitle,
+    ...(isPhone ? { fontSize: 18, lineHeight: 1.12 } : {}),
+  };
+
+  const responsiveTopMetrics: React.CSSProperties = {
+    ...topMetrics,
+    ...(isPhone
+      ? {
+          display: "grid",
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          gap: 8,
+          overflowX: "visible",
+        }
+      : {}),
+  };
+
+  const responsiveHeaderActions: React.CSSProperties = {
+    display: "flex",
+    gap: 8,
+    ...(isPhone ? { width: "100%", justifyContent: "stretch" } : {}),
+  };
+
+  const responsiveHeaderButton: React.CSSProperties = {
+    ...smallButton,
+    ...(isPhone ? { flex: 1, minHeight: 42 } : {}),
+  };
+
+  const responsiveTabBar: React.CSSProperties = {
+    ...tabBar,
+    ...(isCompact
+      ? {
+          padding: "8px 10px",
+          overflowX: "auto",
+          minHeight: "auto",
+          scrollbarWidth: "thin",
+        }
+      : {}),
+  };
+
+  const responsiveWorkspaceBody: React.CSSProperties = {
+    ...workspaceBody,
+    ...(isPhone ? { gridTemplateColumns: "1fr" } : {}),
+  };
+
+  const responsiveLeftRail: React.CSSProperties = {
+    ...leftRail,
+    ...(isPhone ? { display: "none" } : {}),
+  };
+
+  const responsiveContentGrid: React.CSSProperties = {
+    ...contentGrid,
+    ...(isTablet
+      ? {
+          gridTemplateColumns: "minmax(0, 1fr)",
+          padding: 12,
+          gap: 12,
+        }
+      : {}),
+    ...(isPhone
+      ? {
+          gridTemplateColumns: "minmax(0, 1fr)",
+          padding: 10,
+          gap: 10,
+        }
+      : {}),
+  };
+
+  const responsiveMapPanel: React.CSSProperties = {
+    ...mapPanel,
+    ...(isCompact ? { gridRow: "auto", padding: isPhone ? 10 : 12 } : {}),
+  };
+
+  const responsiveMapToolbar: React.CSSProperties = {
+    ...mapToolbar,
+    ...(isPhone ? { flexDirection: "column" } : {}),
+  };
+
+  const responsiveMapLiveWrap: React.CSSProperties = {
+    ...mapLiveWrap,
+    ...(isTablet ? { height: 520 } : {}),
+    ...(isPhone ? { height: "62vh", minHeight: 420 } : {}),
+  };
+
+  const responsiveMapAssetInspector: React.CSSProperties = {
+    ...mapAssetInspector,
+    ...(isPhone
+      ? {
+          left: 10,
+          right: 10,
+          top: "auto",
+          bottom: 10,
+          minWidth: 0,
+          maxWidth: "none",
+          padding: 10,
+        }
+      : {}),
+  };
+
+  const mobileWorkspaceTabs = [
+    { label: "Summary", action: () => { setActiveTab("overview"); setActiveOperationPanel("none"); } },
+    { label: "DPs", action: () => openOperationPanel("rfsBreakdown", "build") },
+    { label: "Homes", action: () => openKpiDrilldown("homesNotLive", "build") },
+    { label: "QA", action: () => openOperationPanel("qa", "qa") },
+    { label: "Blockers", action: () => openOperationPanel("issues", "qa") },
+    { label: "Map", action: () => { setActiveTab("assets"); setActiveOperationPanel("none"); } },
+  ];
+
   return (
     <div style={workspaceRoot}>
       {/* =====================================================
           PROJECT TOP HEADER
       ===================================================== */}
-      <header style={topHeader}>
-        <div style={projectHeaderBlock}>
+      <header style={responsiveTopHeader}>
+        <div style={responsiveProjectHeaderBlock}>
           <div style={projectSwitcherRow}>
             <label style={projectSwitcherLabel} htmlFor="workspace-project-switcher">
               Project Area
@@ -2429,7 +2606,7 @@ const homesLive = Math.min(
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-            <h1 style={projectTitle}>{projectName}</h1>
+            <h1 style={responsiveProjectTitle}>{projectName}</h1>
             <span style={statusPill}>{status}</span>
             <span style={{ ...readinessPill, borderColor: readinessColour(operationalReadiness.state), color: readinessColour(operationalReadiness.state) }}>
               {operationalReadiness.state}
@@ -2438,7 +2615,7 @@ const homesLive = Math.min(
           <div style={projectSubtitle}>Project Workspace</div>
         </div>
 
-        <div style={topMetrics}>
+        <div style={responsiveTopMetrics}>
           <StatCard
             label="RFS"
             value={`${rolloutKpis.rfsPercent}%`}
@@ -2538,11 +2715,11 @@ const homesLive = Math.min(
           />
         </div>
 
-        <div style={{ display: "flex", gap: 8 }}>
-          <button type="button" style={smallButton} onClick={onExport}>
+        <div style={responsiveHeaderActions}>
+          <button type="button" style={responsiveHeaderButton} onClick={onExport}>
             Export
           </button>
-          <button type="button" style={smallButton} onClick={onBackToMap}>
+          <button type="button" style={responsiveHeaderButton} onClick={onBackToMap}>
             Back To Map
           </button>
         </div>
@@ -2551,8 +2728,17 @@ const homesLive = Math.min(
       {/* =====================================================
           WORKSPACE TAB BAR
       ===================================================== */}
-      <nav style={tabBar}>
-        {tabs.map((tab) => (
+      <nav style={responsiveTabBar}>
+        {isPhone ? mobileWorkspaceTabs.map((tab) => (
+          <button
+            key={tab.label}
+            type="button"
+            onClick={tab.action}
+            style={tabButton}
+          >
+            {tab.label}
+          </button>
+        )) : tabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
@@ -2564,11 +2750,11 @@ const homesLive = Math.min(
         ))}
       </nav>
 
-      <div style={workspaceBody}>
+      <div style={responsiveWorkspaceBody}>
         {/* =====================================================
             LEFT WORKFLOW NAV
         ===================================================== */}
-        <aside style={leftRail}>
+        <aside style={responsiveLeftRail}>
           <div style={brandBlock}>
             <div style={brandIcon}>⌁</div>
             <div>
@@ -2621,9 +2807,9 @@ const homesLive = Math.min(
         {/* =====================================================
             MAIN DASHBOARD CONTENT
         ===================================================== */}
-        <main style={contentGrid}>
-          <section style={mapPanel}>
-            <div style={mapToolbar}>
+        <main style={responsiveContentGrid}>
+          <section style={responsiveMapPanel}>
+            <div style={responsiveMapToolbar}>
               <div style={searchWrap}>
                 <input
                   type="search"
@@ -2727,8 +2913,9 @@ const homesLive = Math.min(
                 )}
               </div>
             </div>
-            <div style={mapLiveWrap}>
+            <div style={responsiveMapLiveWrap}>
               <WorkspaceMap
+                key={workspaceMapRemountKey}
                 openreachLayers={openreachLayers}
                 projectName={projectName}
                 projectArea={projectArea}
@@ -2771,7 +2958,7 @@ const homesLive = Math.min(
                 }}
               />
 
-              <div style={mapAssetInspector}>
+              <div style={responsiveMapAssetInspector}>
                 <div
                   style={{
                     color: "#93c5fd",
