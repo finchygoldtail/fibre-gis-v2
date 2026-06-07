@@ -1208,8 +1208,8 @@ function useWorkspaceViewport() {
   return {
     width,
     isPhone: width < 768,
-    isTablet: width >= 768 && width < 1200,
-    isCompact: width < 1200,
+    isTablet: width >= 768 && width <= 1280,
+    isCompact: width <= 1280,
   };
 }
 
@@ -1240,7 +1240,7 @@ export default function ProjectWorkspace({
   // PHASE 38C — keep the Project Workspace as the desktop engineering view on mobile/tablet.
   // Same principle as FibreTrayEditor, StreetCabDesigner and ExchangeDesigner:
   // do not rebuild into mobile cards; scale the full workspace canvas and let users pan/scroll.
-  const workspaceCanvasScale = isPhone ? 0.56 : isTablet ? 0.78 : 1;
+  const workspaceCanvasScale = isPhone ? 0.56 : isTablet ? 0.85 : 1;
   const useScaledWorkspaceCanvas = isPhone || isTablet;
 
 
@@ -2525,7 +2525,10 @@ const homesLive = Math.min(
 
   const scaledWorkspaceViewport: React.CSSProperties = {
     ...workspaceRoot,
-    overflow: useScaledWorkspaceCanvas ? "auto" : "hidden",
+    width: "100%",
+    height: "100%",
+    overflowX: useScaledWorkspaceCanvas ? "auto" : "hidden",
+    overflowY: useScaledWorkspaceCanvas ? "auto" : "hidden",
     WebkitOverflowScrolling: "touch",
     touchAction: "pan-x pan-y",
     background: (workspaceRoot as any).background,
@@ -2533,8 +2536,9 @@ const homesLive = Math.min(
 
   const scaledWorkspaceCanvas: React.CSSProperties = useScaledWorkspaceCanvas
     ? {
-        width: isPhone ? 1680 : 1440,
-        minHeight: isPhone ? 1180 : 980,
+        width: isPhone ? 1680 : 1400,
+        minWidth: isPhone ? 1680 : 1400,
+        minHeight: isPhone ? 1180 : 1100,
         transform: `scale(${workspaceCanvasScale})`,
         transformOrigin: "top left",
       }
