@@ -133,13 +133,16 @@ function getText(asset: any): string {
 }
 
 export function getAssetAreaId(asset: any): string {
+  // IMPORTANT:
+  // projectId is not the same thing as an area/polygon id.
+  // Imported homes are created with projectId before they are polygon-filtered.
+  // If projectId is treated as areaId here, those homes can be rejected before
+  // the geometry check runs, causing GeoJSON home imports to return 0 results.
   return cleanId(
     asset?.areaId ||
       asset?.projectAreaId ||
-      asset?.projectId ||
       asset?.properties?.areaId ||
       asset?.properties?.projectAreaId ||
-      asset?.properties?.projectId ||
       "",
   );
 }

@@ -2697,14 +2697,16 @@ export default function JointMapManager({
           createMapAssetsFromAnyGeoJson(geojson, {
             activeProjectId,
             markAssetForLiveSync,
+            activeProjectArea,
           });
 
         const networkAssets = activeProjectArea
           ? filterAssetsForProjectArea(rawNetworkAssets, activeProjectArea)
           : rawNetworkAssets;
-        const homeAssets = activeProjectArea
-          ? filterAssetsForProjectArea(rawHomeAssets, activeProjectArea)
-          : rawHomeAssets;
+        // Homes are now clipped to the active project polygon inside the importer.
+        // Do not run the generic asset-area index filter again here; imported homes
+        // may not yet have areaId/projectAreaId stamps until saveProjectHomes().
+        const homeAssets = rawHomeAssets;
 
         if (!networkAssets.length && !homeAssets.length) {
           alert(

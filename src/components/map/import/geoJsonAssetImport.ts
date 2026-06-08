@@ -10,6 +10,12 @@ type CreatePiaOverlayAssetsOptions = {
 type CreateMapAssetsFromAnyGeoJsonOptions = {
   activeProjectId: string | null;
   markAssetForLiveSync: MarkAssetForLiveSync;
+  /**
+   * Optional active project polygon. When present, home imports are clipped
+   * during conversion so large city-wide UPRN files do not create hundreds
+   * of thousands of in-memory home assets before filtering.
+   */
+  activeProjectArea?: SavedMapAsset | null;
 };
 
 const normalisePiaGeoJsonCoordinate = (
@@ -359,6 +365,91 @@ const convertGeoJsonPolygon = (coordinates: any): [number, number][][] => {
     .filter((ring: [number, number][]) => ring.length >= 3);
 };
 
+const DEFAULT_HOME_IMPORT_PADDING_METERS = 30;
+
+function metersToDegreesLat(meters: number): number {
+  return meters / 111_320;
+}
+
+function metersToDegreesLng(meters: number, latitude: number): number {
+  const safeCos = Math.max(Math.cos((latitude * Math.PI) / 180), 0.01);
+  return meters / (111_320 * safeCos);
+}
+
+function getLatLngPolygonBounds(points: [number, number][]) {
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  let minLng = Infinity;
+  let maxLng = -Infinity;
+
+  points.forEach(([lat, lng]) => {
+    minLat = Math.min(minLat, lat);
+    maxLat = Math.max(maxLat, lat);
+    minLng = Math.min(minLng, lng);
+    maxLng = Math.max(maxLng, lng);
+  });
+
+  const centreLat = (minLat + maxLat) / 2;
+  const latPad = metersToDegreesLat(DEFAULT_HOME_IMPORT_PADDING_METERS);
+  const lngPad = metersToDegreesLng(DEFAULT_HOME_IMPORT_PADDING_METERS, centreLat);
+
+  return {
+    minLat: minLat - latPad,
+    maxLat: maxLat + latPad,
+    minLng: minLng - lngPad,
+    maxLng: maxLng + lngPad,
+  };
+}
+
+function pointInLatLngBounds(point: [number, number], bounds: ReturnType<typeof getLatLngPolygonBounds>): boolean {
+  const [lat, lng] = point;
+  return lat >= bounds.minLat && lat <= bounds.maxLat && lng >= bounds.minLng && lng <= bounds.maxLng;
+}
+
+function pointInLatLngPolygon(point: [number, number], polygon: [number, number][]): boolean {
+  const [pointLat, pointLng] = point;
+  let inside = false;
+
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const [latI, lngI] = polygon[i];
+    const [latJ, lngJ] = polygon[j];
+
+    const intersects =
+      latI > pointLat !== latJ > pointLat &&
+      pointLng < ((lngJ - lngI) * (pointLat - latI)) / ((latJ - latI) || Number.EPSILON) + lngI;
+
+    if (intersects) inside = !inside;
+  }
+
+  return inside;
+}
+
+function getActiveProjectAreaPolygon(area?: SavedMapAsset | null): [number, number][] | null {
+  const geometry = (area as any)?.geometry;
+  if (geometry?.type !== "Polygon" || !Array.isArray(geometry.coordinates)) return null;
+
+  const ring = geometry.coordinates[0];
+  if (!Array.isArray(ring) || ring.length < 3) return null;
+
+  return ring
+    .map((coord: any) => {
+      if (!Array.isArray(coord) || coord.length < 2) return null;
+      const lat = Number(coord[0]);
+      const lng = Number(coord[1]);
+      return Number.isFinite(lat) && Number.isFinite(lng) ? ([lat, lng] as [number, number]) : null;
+    })
+    .filter(Boolean) as [number, number][];
+}
+
+function homePointTouchesActiveProjectArea(
+  point: [number, number],
+  polygon: [number, number][] | null,
+  bounds: ReturnType<typeof getLatLngPolygonBounds> | null,
+): boolean {
+  if (!polygon || !bounds) return true;
+  return pointInLatLngBounds(point, bounds) && pointInLatLngPolygon(point, polygon);
+}
+
 const buildImportedAssetBase = (
   feature: any,
   index: number,
@@ -400,7 +491,7 @@ export const createMapAssetsFromAnyGeoJson = (
   geojson: any,
   options: CreateMapAssetsFromAnyGeoJsonOptions,
 ) => {
-  const { activeProjectId, markAssetForLiveSync } = options;
+  const { activeProjectId, markAssetForLiveSync, activeProjectArea } = options;
   if (!geojson?.features || !Array.isArray(geojson.features)) {
     throw new Error("Invalid GeoJSON FeatureCollection");
   }
@@ -408,6 +499,10 @@ export const createMapAssetsFromAnyGeoJson = (
   const networkAssets: SavedMapAsset[] = [];
   const homeAssets: SavedMapAsset[] = [];
   const counts: Record<string, number> = {};
+  const activeHomeImportPolygon = getActiveProjectAreaPolygon(activeProjectArea);
+  const activeHomeImportBounds = activeHomeImportPolygon
+    ? getLatLngPolygonBounds(activeHomeImportPolygon)
+    : null;
 
   geojson.features.forEach((feature: any, index: number) => {
     const geometryType = String(feature?.geometry?.type || "");
@@ -419,6 +514,13 @@ export const createMapAssetsFromAnyGeoJson = (
       if (geometryType !== "Point") return;
       const point = convertGeoJsonPoint(feature.geometry.coordinates);
       if (!point) return;
+
+      // Critical performance guard: city-wide UPRN files can contain hundreds
+      // of thousands of homes. Clip them to the selected project polygon before
+      // creating SavedMapAsset objects, otherwise the browser can lock up.
+      if (!homePointTouchesActiveProjectArea(point, activeHomeImportPolygon, activeHomeImportBounds)) {
+        return;
+      }
 
       const rawUprn = readGeoJsonProp(props, [
         "UPRN",
