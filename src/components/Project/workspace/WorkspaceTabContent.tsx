@@ -31,6 +31,7 @@ type Props = {
   }) => void;
   onClearDpFibreAllocations?: () => void;
   onApplyAddressSheetAssignments?: (request: any) => void | Promise<void>;
+  onApplySbRouteAssignments?: (request: any) => void | Promise<void>;
   onSelectAsset?: (asset: any) => void;
   onOpenJointEditor?: (asset: any) => void;
   onOpenPanel?: (panel: string, tab?: string) => void;

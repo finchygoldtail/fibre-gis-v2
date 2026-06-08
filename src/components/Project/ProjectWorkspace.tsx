@@ -119,6 +119,7 @@ type ProjectWorkspaceProps = {
   }) => void;
   onAutoSpreadStackedHomes?: () => void | Promise<void>;
   onApplyAddressSheetAssignments?: (request: any) => void | Promise<void>;
+  onApplySbRouteAssignments?: (request: any) => void | Promise<void>;
 };
 
 const tabs: { id: WorkspaceTab; label: string }[] = [
@@ -1234,6 +1235,7 @@ export default function ProjectWorkspace({
   onResolveDuplicateHomes,
   onAutoSpreadStackedHomes,
   onApplyAddressSheetAssignments,
+  onApplySbRouteAssignments,
 }: ProjectWorkspaceProps) {
   const { isPhone, isTablet, isCompact } = useWorkspaceViewport();
 
@@ -3146,6 +3148,7 @@ const homesLive = Math.min(
               onResolveDuplicateHomes={onResolveDuplicateHomes}
               onAutoSpreadStackedHomes={onAutoSpreadStackedHomes}
               onApplyAddressSheetAssignments={onApplyAddressSheetAssignments}
+              onApplySbRouteAssignments={onApplySbRouteAssignments}
               onSelectAsset={(asset) => {
                 setSelectedWorkspaceAsset(asset);
                 setSearchTerm(getWorkspaceAssetTitle(asset));

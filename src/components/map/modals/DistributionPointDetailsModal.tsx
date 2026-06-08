@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { storage } from "../../../firebase";
 import type { DistributionPointDetails, SavedMapAsset } from "../types";
@@ -209,6 +209,99 @@ type ParentSbReservationView = {
   mappings: { parent: number; local: number }[];
 };
 
+type SbToSbFibreRoute = {
+  id: string;
+  fromSbId: string;
+  fromSbName: string;
+  toSbId: string;
+  toSbName: string;
+  parentFibres: number[];
+  localFibres: number[];
+  supportingCableId?: string;
+  supportingCableName?: string;
+  note?: string;
+};
+
+function parseFibreSelection(value: unknown): number[] {
+  const raw = text(value);
+  if (!raw) return [];
+
+  const fibres = new Set<number>();
+
+  raw
+    .split(/[,\n]+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .forEach((part) => {
+      const range = part.match(/^(\d+)\s*[-–—]\s*(\d+)$/);
+      if (range) {
+        const start = Number(range[1]);
+        const end = Number(range[2]);
+        if (Number.isFinite(start) && Number.isFinite(end)) {
+          const low = Math.min(start, end);
+          const high = Math.max(start, end);
+          for (let fibre = low; fibre <= high; fibre += 1) fibres.add(fibre);
+        }
+        return;
+      }
+
+      const single = Number(part.replace(/[^0-9]/g, ""));
+      if (Number.isFinite(single) && single > 0) fibres.add(single);
+    });
+
+  return Array.from(fibres).sort((a, b) => a - b);
+}
+
+function formatFibreSelection(values: unknown): string {
+  const fibres = uniqueSortedNumbers(Array.isArray(values) ? values : []);
+  return fibres.join(", ");
+}
+
+function getSbToSbRoutes(details: DistributionPointDetails): SbToSbFibreRoute[] {
+  const raw = (details as any)?.afnDetails?.sbToSbRoutes;
+  return Array.isArray(raw) ? raw : [];
+}
+
+function makeSbRouteId(fromSbId: string, toSbId: string): string {
+  return `${normaliseRef(fromSbId) || "FROM"}__${normaliseRef(toSbId) || "TO"}`;
+}
+
+function upsertSbToSbRoute(
+  details: DistributionPointDetails,
+  nextRoute: SbToSbFibreRoute,
+): DistributionPointDetails {
+  const existingRoutes = getSbToSbRoutes(details).filter(
+    (route) => route.id !== nextRoute.id,
+  );
+  const primaryInputFibres = nextRoute.localFibres.length
+    ? nextRoute.localFibres
+    : nextRoute.parentFibres;
+
+  return {
+    ...details,
+    closureType: "AFN",
+    connectionsToHomes: primaryInputFibres.length * 8,
+    afnDetails: {
+      ...(details.afnDetails || {}),
+      enabled: true,
+      relationshipLed: true,
+      relationshipMode: "sb_to_sb",
+      parentSbId: nextRoute.fromSbId,
+      parentSbName: nextRoute.fromSbName,
+      childSbId: nextRoute.toSbId,
+      childSbName: nextRoute.toSbName,
+      sbToSbRoutes: [...existingRoutes, nextRoute],
+      inputFibres: primaryInputFibres,
+      parentInputFibres: nextRoute.parentFibres,
+      localInputFibres: primaryInputFibres,
+      fibreCountUsed: primaryInputFibres.length,
+      splitterRatio: "1:8",
+      splitterOutputs: 8,
+      throughCableId: nextRoute.supportingCableId || details.afnDetails?.throughCableId,
+    },
+  } as DistributionPointDetails;
+}
+
 function buildParentSbReservationView(args: {
   childName: string;
   activeDpAsset: SavedMapAsset | null;
@@ -256,7 +349,7 @@ function buildParentSbReservationView(args: {
     explicitParentFibres.length > 0 ||
     (cableFibreTotal > 0 && cableFibreTotal <= 24);
 
-  // Main-run AFNs stay cable-first. Only shoot-off/branch cables get the SB→SB view.
+  // DP/SB routing is manual-authority. Cables are supporting route evidence only.
   if (!looksLikeBranchCable) return null;
 
   const parentFibres =
@@ -425,6 +518,85 @@ export default function DistributionPointDetailsModal({
       }) || null
     );
   }, [activeDpId, allAssets, allDistributionPoints, name]);
+
+  const sbRouteTargets = useMemo(
+    () =>
+      [...allDistributionPoints, ...allAssets]
+        .filter(isDistributionPointAsset)
+        .filter((asset, index, arr) => {
+          const id = normaliseRef((asset as any).id || getAssetTitle(asset));
+          return arr.findIndex((candidate: any) => normaliseRef(candidate?.id || getAssetTitle(candidate)) === id) === index;
+        })
+        .sort((a, b) => getAssetTitle(a).localeCompare(getAssetTitle(b))),
+    [allAssets, allDistributionPoints],
+  );
+
+  const storedSbRoutes = getSbToSbRoutes(details);
+  const primarySbRoute = storedSbRoutes[0];
+  const [manualFromSbId, setManualFromSbId] = useState<string>(
+    primarySbRoute?.fromSbId || "",
+  );
+  const [manualToSbId, setManualToSbId] = useState<string>(
+    primarySbRoute?.toSbId || activeDpId || "",
+  );
+  const [manualParentFibres, setManualParentFibres] = useState<string>(
+    formatFibreSelection(primarySbRoute?.parentFibres || (details as any)?.afnDetails?.parentInputFibres || []),
+  );
+  const [manualLocalFibres, setManualLocalFibres] = useState<string>(
+    formatFibreSelection(primarySbRoute?.localFibres || details.afnDetails?.inputFibres || []),
+  );
+  useEffect(() => {
+    const nextPrimaryRoute = getSbToSbRoutes(details)[0];
+    setManualFromSbId(nextPrimaryRoute?.fromSbId || "");
+    setManualToSbId(nextPrimaryRoute?.toSbId || activeDpId || "");
+    setManualParentFibres(formatFibreSelection(nextPrimaryRoute?.parentFibres || (details as any)?.afnDetails?.parentInputFibres || []));
+    setManualLocalFibres(formatFibreSelection(nextPrimaryRoute?.localFibres || details.afnDetails?.inputFibres || []));
+    setManualSbNote(nextPrimaryRoute?.note || "");
+  }, [activeDpId, details]);
+
+  const [manualSbNote, setManualSbNote] = useState<string>(primarySbRoute?.note || "");
+
+  const selectedManualFromSb = sbRouteTargets.find((dp: any) =>
+    refsMatch(dp.id || dp.assetId || getAssetTitle(dp), manualFromSbId),
+  );
+  const selectedManualToSb =
+    sbRouteTargets.find((dp: any) =>
+      refsMatch(dp.id || dp.assetId || getAssetTitle(dp), manualToSbId),
+    ) || activeDpAsset;
+
+  function applyManualSbRoute() {
+    const fromSb = selectedManualFromSb;
+    const toSb = selectedManualToSb;
+
+    if (!fromSb || !toSb) {
+      alert("Select both the from SB and the to SB before applying the route.");
+      return;
+    }
+
+    const parentFibres = parseFibreSelection(manualParentFibres);
+    const localFibres = parseFibreSelection(manualLocalFibres);
+
+    if (!parentFibres.length && !localFibres.length) {
+      alert("Enter the fibres used for this SB to SB route, for example 1-4 or 7, 8, 9.");
+      return;
+    }
+
+    const normalisedLocalFibres = localFibres.length ? localFibres : parentFibres;
+    const nextRoute: SbToSbFibreRoute = {
+      id: makeSbRouteId((fromSb as any).id || getAssetTitle(fromSb), (toSb as any).id || getAssetTitle(toSb)),
+      fromSbId: text((fromSb as any).id || (fromSb as any).assetId || getAssetTitle(fromSb)),
+      fromSbName: getAssetTitle(fromSb),
+      toSbId: text((toSb as any).id || (toSb as any).assetId || getAssetTitle(toSb)),
+      toSbName: getAssetTitle(toSb),
+      parentFibres,
+      localFibres: normalisedLocalFibres,
+      supportingCableId: selectedCableId || undefined,
+      supportingCableName: selectedCable ? getAssetTitle(selectedCable) : undefined,
+      note: manualSbNote.trim() || undefined,
+    };
+
+    onChange(upsertSbToSbRoute(details, nextRoute));
+  }
 
   const networkState = useMemo(
     () => buildNetworkState(allAssets as any),
@@ -728,9 +900,98 @@ export default function DistributionPointDetailsModal({
           <div className="afn-panel">
             <strong>AFN loop-through splitter</strong>
             <span>
-              DP/SB routing is relationship-led. Choose which SB feeds which SB;
+              DP/SB routing is manual-authority. Choose which SB feeds which SB;
               the cable underneath is only the supporting physical route.
             </span>
+
+            <div className="sb-route-builder">
+              <div className="parent-sb-title">Manual SB → SB Fibre Reservation</div>
+              <div className="sb-route-grid">
+                <label>
+                  From SB
+                  <select
+                    value={manualFromSbId}
+                    onChange={(e) => setManualFromSbId(e.target.value)}
+                  >
+                    <option value="">Select parent/source SB...</option>
+                    {sbRouteTargets
+                      .filter((dp: any) => !refsMatch(dp.id || getAssetTitle(dp), manualToSbId))
+                      .map((dp: any) => (
+                        <option key={dp.id || getAssetTitle(dp)} value={dp.id || getAssetTitle(dp)}>
+                          {getAssetTitle(dp)}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+
+                <label>
+                  To SB
+                  <select
+                    value={manualToSbId}
+                    onChange={(e) => setManualToSbId(e.target.value)}
+                  >
+                    <option value="">Select child/target SB...</option>
+                    {sbRouteTargets.map((dp: any) => (
+                      <option key={dp.id || getAssetTitle(dp)} value={dp.id || getAssetTitle(dp)}>
+                        {getAssetTitle(dp)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div className="sb-route-grid">
+                <label>
+                  Parent fibres
+                  <input
+                    value={manualParentFibres}
+                    onChange={(e) => setManualParentFibres(e.target.value)}
+                    placeholder="Example: 1-4 or 7, 8, 9"
+                  />
+                </label>
+
+                <label>
+                  Local fibres at target SB
+                  <input
+                    value={manualLocalFibres}
+                    onChange={(e) => setManualLocalFibres(e.target.value)}
+                    placeholder="Leave blank to use same fibres"
+                  />
+                </label>
+              </div>
+
+              <label>
+                Note
+                <input
+                  value={manualSbNote}
+                  onChange={(e) => setManualSbNote(e.target.value)}
+                  placeholder="Example: SB01 feeds SB04 on F1-F4"
+                />
+              </label>
+
+              <button type="button" className="sb-route-apply" onClick={applyManualSbRoute}>
+                Apply SB → SB Route
+              </button>
+
+              {storedSbRoutes.length ? (
+                <div className="sb-route-list">
+                  {storedSbRoutes.map((route) => (
+                    <div key={route.id} className="sb-route-item">
+                      <strong>{route.fromSbName} → {route.toSbName}</strong>
+                      <span>
+                        Parent fibres: {formatFibreSelection(route.parentFibres) || "—"}
+                        {" · "}
+                        Local fibres: {formatFibreSelection(route.localFibres) || "—"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="parent-sb-note">
+                  This directly reserves fibres from one SB to another. Cable detection and joint uploads cannot overwrite this route.
+                </div>
+              )}
+            </div>
 
             {dpRelationshipRouting ? (
               <div className="parent-sb-reservation">
@@ -1382,6 +1643,56 @@ input, select {
   display: flex;
   flex-direction: column;
   gap: 7px;
+}
+
+.sb-route-builder {
+  background: #06111f;
+  border: 1px solid #38bdf8;
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.sb-route-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.sb-route-builder label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: #cbd5e1;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+.sb-route-apply {
+  background: #2563eb;
+  color: white;
+  border: 0;
+  border-radius: 8px;
+  padding: 9px 10px;
+  cursor: pointer;
+  font-weight: 900;
+}
+.sb-route-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sb-route-item {
+  background: #020617;
+  border: 1px solid #1e40af;
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.sb-route-item span {
+  color: #bfdbfe;
+  font-size: 0.78rem;
 }
 .parent-sb-title {
   color: #93c5fd;

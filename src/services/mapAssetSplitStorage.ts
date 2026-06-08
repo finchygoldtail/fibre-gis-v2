@@ -328,15 +328,15 @@ async function getExistingBucketAssetCount(bucket: SplitBucket): Promise<number>
 async function deleteExtraChunks(bucket: SplitBucket, keepCount: number) {
   const snapshot = await getDocs(bucketChunksCollection(bucket));
 
-  await Promise.all(
-    snapshot.docs
-      .filter((chunkDoc) => {
-        const match = chunkDoc.id.match(/^chunk_(\d+)$/);
-        if (!match) return true;
-        return Number(match[1]) >= keepCount;
-      })
-      .map((chunkDoc) => deleteDoc(chunkDoc.ref)),
-  );
+  const chunksToDelete = snapshot.docs.filter((chunkDoc) => {
+    const match = chunkDoc.id.match(/^chunk_(\d+)$/);
+    if (!match) return true;
+    return Number(match[1]) >= keepCount;
+  });
+
+  for (const chunkDoc of chunksToDelete) {
+    await deleteDoc(chunkDoc.ref);
+  }
 }
 
 function shouldBlockBucketSave(
@@ -373,8 +373,7 @@ export async function saveSplitMapAssets(
     byBucket.get(getMapAssetSplitBucket(asset))?.push(asset);
   });
 
-  await Promise.all(
-    SPLIT_BUCKETS.map(async (bucket) => {
+  for (const bucket of SPLIT_BUCKETS) {
       const bucketAssets = byBucket.get(bucket) ?? [];
       const existingCount = await getExistingBucketAssetCount(bucket);
 
@@ -392,7 +391,7 @@ export async function saveSplitMapAssets(
             existingCount,
             nextCount: bucketAssets.length,
           });
-          return;
+          continue;
         }
       }
 
@@ -403,7 +402,7 @@ export async function saveSplitMapAssets(
         console.warn(
           `Skipped empty split bucket save for '${bucket}' to protect existing data.`,
         );
-        return;
+        continue;
       }
 
       const bucketDocRef = doc(
@@ -432,33 +431,31 @@ export async function saveSplitMapAssets(
 
       // Write replacement chunks first. Only delete excess old chunks after all
       // replacement chunks have succeeded.
-      await Promise.all(
-        chunks.map((chunkAssets, index) =>
-          setDoc(
-            doc(
-              db,
-              "businesses",
-              BUSINESS_ID,
-              "mapAssets",
-              bucket,
-              "chunks",
-              chunkId(index),
-            ),
-            {
-              bucket,
-              chunkId: chunkId(index),
-              order: index,
-              count: chunkAssets.length,
-              assets: chunkAssets,
-              updatedAt: serverTimestamp(),
-            },
+      for (let index = 0; index < chunks.length; index += 1) {
+        const chunkAssets = chunks[index];
+        await setDoc(
+          doc(
+            db,
+            "businesses",
+            BUSINESS_ID,
+            "mapAssets",
+            bucket,
+            "chunks",
+            chunkId(index),
           ),
-        ),
-      );
+          {
+            bucket,
+            chunkId: chunkId(index),
+            order: index,
+            count: chunkAssets.length,
+            assets: chunkAssets,
+            updatedAt: serverTimestamp(),
+          },
+        );
+      }
 
       await deleteExtraChunks(bucket, chunks.length);
-    }),
-  );
+  }
 }
 
 export async function loadSplitMapAssets(): Promise<SavedMapAsset[]> {

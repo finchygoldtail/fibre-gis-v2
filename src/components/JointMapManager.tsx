@@ -541,6 +541,57 @@ function getDpOperationalStatus(asset: any, fallback: string = "Planned"): strin
   );
 }
 
+
+function normaliseForSaveComparison(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => normaliseForSaveComparison(item));
+  }
+
+  if (value && typeof value === "object") {
+    const source = value as Record<string, unknown>;
+    const ignoredKeys = new Set([
+      "updatedAt",
+      "updatedByUid",
+      "updatedByEmail",
+      "lastEditedAt",
+      "lastEditedByUid",
+      "lastEditedByEmail",
+      "lastViewedAt",
+      "lastViewedBy",
+      "lastViewedByUid",
+      "lastViewedByEmail",
+      "lastViewedContext",
+      "syncRevision",
+      "importedAt",
+    ]);
+
+    return Object.keys(source)
+      .filter((key) => !ignoredKeys.has(key))
+      .sort()
+      .reduce<Record<string, unknown>>((acc, key) => {
+        const nextValue = source[key];
+        if (typeof nextValue === "undefined") return acc;
+        acc[key] = normaliseForSaveComparison(nextValue);
+        return acc;
+      }, {});
+  }
+
+  return value;
+}
+
+function stableAssetSignature(value: unknown): string {
+  try {
+    return JSON.stringify(normaliseForSaveComparison(value));
+  } catch {
+    return String(value ?? "");
+  }
+}
+
+function sameOperationalData(left: unknown, right: unknown): boolean {
+  return stableAssetSignature(left) === stableAssetSignature(right);
+}
+
+
 function syncDpOperationalStatusOnAsset<T extends Record<string, any>>(
   asset: T,
   statusValue?: unknown,
@@ -910,6 +961,58 @@ export default function JointMapManager({
   // - Empty arrays are never written, so an early blank render cannot wipe data.
   // =====================================================
   const splitStorageLastSavedSignatureRef = useRef("");
+  const splitStoragePendingSignatureRef = useRef("");
+  const splitStorageSaveInProgressRef = useRef(false);
+  const splitStorageLatestAssetsRef = useRef<any[]>([]);
+
+  const buildMapAssetSaveSignature = (assets: any[]) =>
+    assets
+      .map((asset: any) => `${asset.id}:${stableAssetSignature(asset)}`)
+      .sort()
+      .join("|");
+
+  const runPrimaryMapAssetSave = async () => {
+    if (splitStorageSaveInProgressRef.current) return;
+
+    splitStorageSaveInProgressRef.current = true;
+
+    try {
+      const { saveMapAssetsToFirestore } = await import(
+        "../services/mapAssetStorage"
+      );
+
+      // Drain the latest pending asset state serially. If another edit happens
+      // while Firestore is still writing, save the newest snapshot after the
+      // current save completes instead of queueing overlapping writes.
+      while (true) {
+        const assetsSnapshot = splitStorageLatestAssetsRef.current;
+        if (assetsSnapshot.length === 0) break;
+
+        const signatureSnapshot = buildMapAssetSaveSignature(assetsSnapshot);
+        if (!signatureSnapshot) break;
+        if (signatureSnapshot === splitStorageLastSavedSignatureRef.current) break;
+
+        splitStoragePendingSignatureRef.current = signatureSnapshot;
+
+        await saveMapAssetsToFirestore(assetsSnapshot, {
+          reason: "joint-map-manager-primary-save",
+        });
+
+        splitStorageLastSavedSignatureRef.current = signatureSnapshot;
+
+        const latestSignature = buildMapAssetSaveSignature(
+          splitStorageLatestAssetsRef.current
+        );
+
+        if (latestSignature === signatureSnapshot) break;
+      }
+    } catch (err) {
+      console.error("PRIMARY MAP SAVE FAILED", err);
+    } finally {
+      splitStoragePendingSignatureRef.current = "";
+      splitStorageSaveInProgressRef.current = false;
+    }
+  };
 
   // Split storage loading is deliberately disabled.
   // The authoritative live project state must come from mapAssets/main/chunks.
@@ -918,46 +1021,21 @@ export default function JointMapManager({
   useEffect(() => {
     if (operationalSavedJoints.length === 0) return;
 
-    const saveSignature = operationalSavedJoints
-      .map(
-        (asset: any) =>
-          `${asset.id}:${asset.updatedAt || asset.syncRevision || ""}`,
-      )
-      .sort()
-      .join("|");
+    splitStorageLatestAssetsRef.current = operationalSavedJoints;
+
+    const saveSignature = buildMapAssetSaveSignature(operationalSavedJoints);
 
     if (saveSignature === splitStorageLastSavedSignatureRef.current) return;
+    if (saveSignature === splitStoragePendingSignatureRef.current) return;
 
-    const timer = window.setTimeout(async () => {
-  splitStorageLastSavedSignatureRef.current = saveSignature;
+    splitStoragePendingSignatureRef.current = saveSignature;
 
-  try {
-    // MAIN AUTHORITATIVE SAVE
-    // This is the ONLY save path allowed to control persistence.
-    // It already safely flattens geometry and has destructive-save guards.
-    const { saveMapAssetsToFirestore } = await import(
-      "../services/mapAssetStorage"
-    );
-
-    await saveMapAssetsToFirestore(operationalSavedJoints, {
-      reason: "joint-map-manager-primary-save",
-    });
-
-    // SAFE SPLIT MIRROR
-    // Main chunks still save first and remain the rollback/source of truth.
-    // Split buckets are updated only after main succeeds and are protected by
-    // the split-storage guards, so a tablet/slow-load empty state cannot wipe them.
-    const { saveSplitMapAssets } = await import(
-      "../services/mapAssetSplitStorage"
-    );
-
-    await saveSplitMapAssets(operationalSavedJoints, {
-      reason: "joint-map-manager-primary-save:split-mirror-after-main",
-    });
-  } catch (err) {
-    console.error("PRIMARY MAP SAVE FAILED", err);
-  }
-}, 1500);
+    const timer = window.setTimeout(() => {
+      // MAIN AUTHORITATIVE SAVE ONLY.
+      // saveMapAssetsToFirestore already performs the safe split-bucket mirror
+      // after the main chunks succeed, so do not call saveSplitMapAssets here.
+      void runPrimaryMapAssetSave();
+    }, 5000);
 
     return () => window.clearTimeout(timer);
   }, [operationalSavedJoints]);
@@ -1285,17 +1363,29 @@ export default function JointMapManager({
         ),
     );
 
-    setSavedJoints((prev) =>
-      (prev ?? []).map((asset) => {
+    setSavedJoints((prev) => {
+      let changed = false;
+
+      const nextAssets = (prev ?? []).map((asset) => {
         const update = updatesById.get(String(asset.id || ""));
         if (!update) return asset;
 
-        return markAssetForLiveSync({
+        const nextAsset = {
           ...(asset as any),
           dpDetails: update.dpDetails,
-        } as SavedMapAsset);
-      }),
-    );
+          properties: {
+            ...((asset as any).properties || {}),
+            dpDetails: update.dpDetails,
+          },
+        } as SavedMapAsset;
+
+        if (sameOperationalData(asset, nextAsset)) return asset;
+        changed = true;
+        return markAssetForLiveSync(nextAsset);
+      });
+
+      return changed ? nextAssets : prev;
+    });
   };
 
   // =====================================================
@@ -3062,19 +3152,26 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
     const updatedById = new Map<string, SavedMapAsset>();
 
     beforeAssets.forEach((asset) => {
+      const rawNextAsset = syncDpOperationalStatusOnAsset(
+        asset as any,
+        args.status,
+      ) as SavedMapAsset;
+
+      if (sameOperationalData(asset, rawNextAsset)) return;
+
       const nextAsset = withAssetEditedMetadata(
-        markAssetForLiveSync(
-          syncDpOperationalStatusOnAsset(
-            asset as any,
-            args.status,
-          ) as SavedMapAsset,
-        ),
+        markAssetForLiveSync(rawNextAsset),
         "updated",
         reason,
       );
 
       updatedById.set(String(asset.id || ""), nextAsset);
     });
+
+    if (!updatedById.size) {
+      alert(`No DP status changes were needed; selected DPs already show ${args.status}.`);
+      return;
+    }
 
     setSavedJoints((prev) =>
       (prev ?? []).map((asset) => {
@@ -3144,14 +3241,42 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
     const updatedById = new Map<string, SavedMapAsset>();
 
     clearResult.assets.forEach((asset) => {
+      const item = asset as any;
+      const details = { ...(item.dpDetails || item.properties?.dpDetails || {}) } as any;
+      const nextAfnDetails = { ...(details.afnDetails || {}) } as any;
+      delete nextAfnDetails.sbToSbRoutes;
+      delete nextAfnDetails.inputFibres;
+      delete nextAfnDetails.splitterFibres;
+
+      const nextDetails = {
+        ...details,
+        afnDetails: nextAfnDetails,
+      } as DistributionPointDetails;
+
+      const rawNextAsset = {
+        ...item,
+        dpDetails: nextDetails,
+        properties: {
+          ...(item.properties || {}),
+          dpDetails: nextDetails,
+        },
+      } as SavedMapAsset;
+
+      if (sameOperationalData(asset, rawNextAsset)) return;
+
       const nextAsset = withAssetEditedMetadata(
-        markAssetForLiveSync(asset as SavedMapAsset),
+        markAssetForLiveSync(rawNextAsset),
         "updated",
         reason,
       );
 
       updatedById.set(String(asset.id || ""), nextAsset);
     });
+
+    if (!updatedById.size) {
+      alert("No DP fibre allocation changes were needed; selected DPs were already clear.");
+      return;
+    }
 
     setSavedJoints((prev) =>
       (prev ?? []).map((asset) => {
@@ -3184,6 +3309,204 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
 
     alert(
       `Cleared fibre allocations from ${clearResult.summary.clearedDpCount} DP${clearResult.summary.clearedDpCount === 1 ? "" : "s"} in this area. You can now run Rebuild Chain.`,
+    );
+  };
+
+
+
+
+  // =====================================================
+  // PROJECT WORKSPACE — BULK FAS SB ROUTE IMPORT
+  // Applies FAS-derived SB → SB fibre routes to all matching SB / DP assets.
+  // Manual SB routes are preserved; previous FAS-imported routes can be replaced.
+  // Cable is stored as supporting evidence only and is not the authority.
+  // =====================================================
+  const handleWorkspaceSbRouteAssignments = (request: {
+    routes: any[];
+    note: string;
+    replaceImportedRoutes?: boolean;
+  }) => {
+    const routes = Array.isArray(request.routes) ? request.routes : [];
+    if (!routes.length) {
+      alert("No FAS SB routes were supplied.");
+      return;
+    }
+
+    const reason = String(request.note || "").trim();
+    if (!reason) {
+      alert("An audit note is required before applying FAS SB routes.");
+      return;
+    }
+
+    const normaliseRef = (value: unknown) =>
+      String(value ?? "")
+        .trim()
+        .toUpperCase()
+        .replace(/[–—]/g, "-")
+        .replace(/-SP\s*\d+\b/i, "")
+        .replace(/[^A-Z0-9]/g, "");
+
+    const getTitle = (asset: any) =>
+      String(asset?.name || asset?.jointName || asset?.label || asset?.assetId || asset?.id || "");
+
+    const isDpAsset = (asset: SavedMapAsset | null | undefined) => {
+      if (!asset || asset.geometry?.type === "LineString") return false;
+      const item = asset as any;
+      const haystack = [
+        item.assetType,
+        item.type,
+        item.jointType,
+        item.dpType,
+        item.distributionPointType,
+        item.closureType,
+        item.name,
+        item.label,
+      ]
+        .map((value) => String(value ?? ""))
+        .join(" ")
+        .toUpperCase();
+
+      return (
+        haystack.includes("DISTRIBUTION") ||
+        haystack.includes("AFN") ||
+        haystack.includes("CBT") ||
+        haystack.includes("MDU") ||
+        /\bSB\s*\d+|SB\d+/.test(haystack)
+      );
+    };
+
+    const findDpForSbName = (sbName: string) => {
+      const wanted = normaliseRef(sbName);
+      if (!wanted) return null;
+
+      return (
+        (savedJoints ?? []).find((asset) => {
+          if (!isDpAsset(asset)) return false;
+          const item = asset as any;
+          const candidates = [asset.id, item.assetId, item.name, item.jointName, item.label, item.dpId]
+            .map(normaliseRef)
+            .filter(Boolean);
+
+          return candidates.some((candidate) => candidate === wanted || candidate.includes(wanted) || wanted.includes(candidate));
+        }) || null
+      );
+    };
+
+    const routeGroups = new Map<string, any[]>();
+    routes.forEach((route) => {
+      const toSbName = String(route?.toSbName || route?.toSb || "").trim();
+      if (!toSbName) return;
+      const child = findDpForSbName(toSbName);
+      if (!child?.id) return;
+      const current = routeGroups.get(String(child.id)) || [];
+      current.push(route);
+      routeGroups.set(String(child.id), current);
+    });
+
+    if (!routeGroups.size) {
+      alert("No matching SB assets were found for the uploaded FAS routes.");
+      return;
+    }
+
+    const updatedById = new Map<string, SavedMapAsset>();
+    const beforeAssets = (savedJoints ?? []).filter((asset) => routeGroups.has(String(asset.id || "")));
+
+    beforeAssets.forEach((beforeAsset) => {
+      const item = beforeAsset as any;
+      const details = {
+        ...(item.dpDetails || item.properties?.dpDetails || {}),
+      } as any;
+      const afnDetails = {
+        ...(details.afnDetails || {}),
+      } as any;
+
+      const existingRoutes = Array.isArray(afnDetails.sbToSbRoutes) ? afnDetails.sbToSbRoutes : [];
+      const preservedRoutes = request.replaceImportedRoutes === false
+        ? existingRoutes
+        : existingRoutes.filter((route: any) => route?.source !== "fas-import");
+
+      const importedRoutes = (routeGroups.get(String(beforeAsset.id || "")) || []).map((route) => ({
+        id:
+          route.id ||
+          `fas_${normaliseRef(route.fromSbName)}_${normaliseRef(route.toSbName)}_${normaliseRef(route.supportingCableName)}`,
+        fromSbId: findDpForSbName(route.fromSbName || "")?.id,
+        fromSbName: String(route.fromSbName || "").trim(),
+        toSbId: beforeAsset.id,
+        toSbName: String(route.toSbName || getTitle(beforeAsset)).trim(),
+        parentFibres: Array.isArray(route.parentFibres) ? route.parentFibres.map(Number).filter(Number.isFinite) : [],
+        localFibres: Array.isArray(route.localFibres) ? route.localFibres.map(Number).filter(Number.isFinite) : [],
+        supportingCableName: String(route.supportingCableName || "").trim() || undefined,
+        source: "fas-import",
+        note: route.note || reason,
+        importedAt: new Date().toISOString(),
+      }));
+
+      const nextAfnDetails = {
+        ...afnDetails,
+        enabled: true,
+        sbToSbRoutes: [...preservedRoutes, ...importedRoutes],
+        // Keep the local fibre list populated for capacity/splitter display only.
+        // Authority remains the SB → SB route records above.
+        inputFibres: Array.from(
+          new Set([
+            ...((Array.isArray(afnDetails.inputFibres) ? afnDetails.inputFibres : []) as any[]),
+            ...importedRoutes.flatMap((route: any) => route.localFibres || []),
+          ].map(Number).filter(Number.isFinite)),
+        ).sort((a, b) => a - b),
+      };
+
+      const nextDetails = {
+        ...details,
+        closureType: details.closureType || "AFN",
+        afnDetails: nextAfnDetails,
+      } as DistributionPointDetails;
+
+      const rawNextAsset = {
+        ...item,
+        dpDetails: nextDetails,
+        properties: {
+          ...(item.properties || {}),
+          dpDetails: nextDetails,
+        },
+      } as SavedMapAsset;
+
+      if (sameOperationalData(beforeAsset, rawNextAsset)) return;
+
+      const nextAsset = withAssetEditedMetadata(
+        markAssetForLiveSync(rawNextAsset),
+        "updated",
+        reason,
+      );
+
+      updatedById.set(String(beforeAsset.id || ""), nextAsset);
+    });
+
+    if (!updatedById.size) {
+      alert("No DP fibre changes were needed; the saved SB route data already matches.");
+      return;
+    }
+
+    setSavedJoints((prev) =>
+      (prev ?? []).map((asset) => updatedById.get(String(asset.id || "")) || asset),
+    );
+
+    beforeAssets.forEach((beforeAsset) => {
+      const afterAsset = updatedById.get(String(beforeAsset.id || ""));
+      if (!afterAsset) return;
+      writeAssetAuditLog({
+        asset: afterAsset,
+        action: "updated",
+        reason,
+        comment: "Imported FAS SB → SB fibre routes from Project Workspace Build tab.",
+        before: { dpDetails: (beforeAsset as any).dpDetails },
+        after: { dpDetails: (afterAsset as any).dpDetails },
+      });
+    });
+
+    const missing = routes.length - Array.from(routeGroups.values()).flat().length;
+    alert(
+      `Applied FAS SB routes to ${beforeAssets.length} SB${beforeAssets.length === 1 ? "" : "s"}.` +
+        (missing > 0 ? ` ${missing} route${missing === 1 ? "" : "s"} could not be matched to a saved SB.` : ""),
     );
   };
 
@@ -3831,6 +4154,7 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         onUpdateDpStatus={handleWorkspaceSingleDpStatusUpdate}
         onClearDpFibreAllocations={handleWorkspaceClearDpFibreAllocations}
         onApplyAddressSheetAssignments={handleWorkspaceAddressSheetAssignments}
+        onApplySbRouteAssignments={handleWorkspaceSbRouteAssignments}
         onAutoSpreadStackedHomes={handleAutoSpreadStackedHomes}
         onExport={handleExportGeoJson}
       />

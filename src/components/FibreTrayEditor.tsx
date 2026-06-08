@@ -304,6 +304,68 @@ function extractChain(row: any[]): string[] {
   return hops;
 }
 
+// =============================================================
+// Joint upload allocation guard
+// Uploaded joint sheets are allowed to feed fibre allocations only.
+// Cable references in those sheets must not become DP/route authority.
+// Cables remain map assets drawn/managed on the map, not spreadsheet-derived.
+// =============================================================
+function looksLikeCableReferenceCell(value: any): boolean {
+  const text = cleanCell(value).toUpperCase();
+  if (!text) return false;
+
+  const compact = text.replace(/[\s_-]+/g, "");
+
+  // Header / descriptor cells that explicitly describe cables.
+  if (/\b(CABLE|FEEDER|LINK CABLE|THROUGH CABLE|PARENT CABLE|CABLE ID|CABLEID)\b/i.test(text)) {
+    return true;
+  }
+
+  // Common cable naming patterns seen in uploaded patching sheets.
+  if (/\b\d{1,3}\s*F\b/i.test(text) && /\b(ULW|CABLE|FEEDER|LINK|FIBRE|FIBER)\b/i.test(text)) {
+    return true;
+  }
+
+  if (/\b(ULW|FEEDER|LINK)\s*\d{1,4}\b/i.test(text)) {
+    return true;
+  }
+
+  if (/^(?:\d{1,3}F)?(?:ULW|FC|LC|LINK|FEEDER)\d{1,5}$/i.test(compact)) {
+    return true;
+  }
+
+  return false;
+}
+
+function stripCableReferencesFromMappingRows(rows: any[][]): any[][] {
+  return rows.map((row) =>
+    Array.isArray(row)
+      ? row.map((cell, index) => {
+          // Keep the fibre number column intact. This is the allocation anchor.
+          if (index === 1) return cell;
+
+          return looksLikeCableReferenceCell(cell) ? "" : cell;
+        })
+      : row,
+  );
+}
+
+function countRemovedCableReferenceCells(rawRows: any[][], allocationRows: any[][]): number {
+  let removed = 0;
+
+  rawRows.forEach((row, rowIndex) => {
+    if (!Array.isArray(row)) return;
+    row.forEach((cell, cellIndex) => {
+      if (cellIndex === 1) return;
+      if (cleanCell(cell) && cleanCell(allocationRows?.[rowIndex]?.[cellIndex]) === "") {
+        removed += 1;
+      }
+    });
+  });
+
+  return removed;
+}
+
 function chainForSelectedSlot(model: FibreCell[], fibre: number): string {
   const cell = model.find((f) => f.globalNo === fibre);
   if (!cell || !cell.label.trim()) return "No continuity path found.";
@@ -816,7 +878,9 @@ export const FibreTrayEditor: React.FC = () => {
       setOriginalFile(file);
       setLoadedFileName(file.name);
 
-      const rows = await loadMappingFile(file);
+      const rawRows = await loadMappingFile(file);
+      const rows = stripCableReferencesFromMappingRows(rawRows);
+      const removedCableReferenceCount = countRemovedCableReferenceCells(rawRows, rows);
       const detectedAssetType = detectAssetTypeFromRows(rows);
       const detectedJointType = detectJointTypeFromRows(rows);
 
@@ -841,13 +905,19 @@ export const FibreTrayEditor: React.FC = () => {
             mappingRowsCount: rows.length,
             mappingRowsSummary: {
               rowCount: rows.length,
+              sourceMode: "fibre-allocation-only",
+              cableReferenceCellsIgnored: removedCableReferenceCount,
             },
+            jointUploadMode: "fibre-allocation-only",
+            cableReferencesIgnoredFromUpload: removedCableReferenceCount,
             importedFiles: [
               ...(asset.importedFiles || []),
               {
                 name: file.name,
                 importedAt: new Date().toISOString(),
                 rowCount: rows.length,
+                sourceMode: "fibre-allocation-only",
+                cableReferenceCellsIgnored: removedCableReferenceCount,
               },
             ],
           };

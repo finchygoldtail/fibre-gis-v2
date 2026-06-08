@@ -327,130 +327,81 @@ function makeNode(dp: SavedMapAsset, cable?: SavedMapAsset, requiredFibres?: num
 export function buildDpRelationshipRouting(input: BuildInput): DpRelationshipRouting | null {
   const allAssets = input.allAssets || [];
   const dps = (input.allDistributionPoints?.length ? input.allDistributionPoints : allAssets.filter(isDistributionPoint)) as SavedMapAsset[];
-  const cables = allAssets.filter((asset) => isCable(asset) && !isDropCable(asset));
   const current = findAssetByRefs(dps, [input.currentDpId, input.currentDpName]) || null;
   if (!current) return null;
 
-  const selectedCable = input.selectedCableId
-    ? cables.find((cable) => assetIdentities(cable).some((identity) => refsMatch(identity, input.selectedCableId))) || null
+  const details = input.currentDpDetails || (current as any).dpDetails || (current as any).properties?.dpDetails || {};
+  const routes = Array.isArray(details?.afnDetails?.sbToSbRoutes)
+    ? details.afnDetails.sbToSbRoutes
+    : [];
+
+  const currentRefs = assetIdentities(current).map(normaliseRef).filter(Boolean);
+  const routeMatchesCurrentTo = (route: any) => {
+    const refs = [route?.toSbId, route?.toSbName].map(normaliseRef).filter(Boolean);
+    return refs.length && refs.some((ref) => currentRefs.some((currentRef) => refsMatch(ref, currentRef)));
+  };
+  const routeMatchesCurrentFrom = (route: any) => {
+    const refs = [route?.fromSbId, route?.fromSbName].map(normaliseRef).filter(Boolean);
+    return refs.length && refs.some((ref) => currentRefs.some((currentRef) => refsMatch(ref, currentRef)));
+  };
+
+  const incomingRoutes = routes.filter(routeMatchesCurrentTo);
+  const outgoingRoutes = routes.filter(routeMatchesCurrentFrom);
+  const primaryRoute = incomingRoutes[0] || routes[0] || null;
+
+  const localFibres = primaryRoute
+    ? readFibres([primaryRoute.localFibres])
+    : readFibres([input.localFibres, details?.afnDetails?.inputFibres, details?.afnDetails?.splitterFibres, details?.mduDetails?.inputFibres]);
+  const parentFibres = primaryRoute ? readFibres([primaryRoute.parentFibres]) : [];
+  const mapping = mappingFrom(parentFibres, localFibres);
+
+  const supportCable = primaryRoute?.supportingCableId
+    ? allAssets.find((asset) => assetIdentities(asset).some((identity) => refsMatch(identity, primaryRoute.supportingCableId))) || null
     : null;
 
-  const details = input.currentDpDetails || (current as any).dpDetails || (current as any).properties?.dpDetails || {};
-  const localFibres = readFibres([
-    input.localFibres,
-    details?.afnDetails?.splitterFibres,
-    details?.afnDetails?.inputFibres,
-    details?.mduDetails?.inputFibres,
-    details?.autoFibrePlan?.inputFibres,
-  ]);
+  const fedFrom = incomingRoutes
+    .map((route: any) => {
+      const parent = findAssetByRefs(dps, [route.fromSbId, route.fromSbName]);
+      if (!parent) return null;
+      return makeNode(
+        parent,
+        supportCable || undefined,
+        Math.max(readFibres([route.parentFibres]).length, readFibres([route.localFibres]).length),
+        mappingFrom(readFibres([route.parentFibres]), readFibres([route.localFibres])),
+      );
+    })
+    .filter((node): node is DpRelationshipNode => Boolean(node));
 
-  const fedFrom: DpRelationshipNode[] = [];
-  const mainDownstream: DpRelationshipNode[] = [];
-  const branchDownstream: DpRelationshipNode[] = [];
+  const branchDownstream = outgoingRoutes
+    .map((route: any) => {
+      const child = findAssetByRefs(dps, [route.toSbId, route.toSbName]);
+      if (!child) return null;
+      return makeNode(
+        child,
+        supportCable || undefined,
+        Math.max(readFibres([route.parentFibres]).length, readFibres([route.localFibres]).length),
+        mappingFrom(readFibres([route.parentFibres]), readFibres([route.localFibres])),
+      );
+    })
+    .filter((node): node is DpRelationshipNode => Boolean(node));
 
-  const seen = new Set<string>();
-  const currentRefs = assetIdentities(current);
-
-  cables.forEach((cable) => {
-    const endpoints = getCableEndpoints(cable, dps);
-    if (!endpoints.some((dp) => refsMatch(dp.id, current.id) || assetIdentities(dp).some((identity) => currentRefs.some((ref) => refsMatch(identity, ref))))) return;
-
-    const other = endpoints.find((dp) => !refsMatch(dp.id, current.id) && !assetIdentities(dp).some((identity) => currentRefs.some((ref) => refsMatch(identity, ref))));
-    if (!other) return;
-
-    const cableAny = cable as any;
-    const explicitParent = findAssetByRefs(dps, [cableAny.parentDpId, cableAny.parentAssetId, cableAny.upstreamDpId, cableAny.upstreamAssetId]);
-    const explicitChild = findAssetByRefs(dps, [cableAny.childDpId, cableAny.childAssetId, cableAny.downstreamDpId, cableAny.downstreamAssetId]);
-
-    const currentIsExplicitParent = explicitParent && refsMatch(explicitParent.id, current.id);
-    const currentIsExplicitChild = explicitChild && refsMatch(explicitChild.id, current.id);
-    const otherIsExplicitParent = explicitParent && refsMatch(explicitParent.id, other.id);
-
-    const currentSb = parseSbNumber(assetName(current));
-    const otherSb = parseSbNumber(assetName(other));
-    const currentIsParentByOrder = currentSb !== null && otherSb !== null ? currentSb < otherSb : false;
-    const branch = isBranchCable(cableAny);
-
-    const parentFibres = readFibres([
-      cableAny.allocatedInputFibres,
-      cableAny.parentInputFibres,
-      cableAny.upstreamInputFibres,
-      cableAny.sourceFibres,
-      cableAny.sourceFibreNumbers,
-      cableAny.parentFibres,
-      cableAny.reservationFibres,
-      cableAny.reservedFibres,
-    ]);
-    const otherRequired = requiredFibreCount(other, parentFibres);
-    const currentRequired = requiredFibreCount(current, localFibres.length ? localFibres : parentFibres);
-
-    const otherNode = makeNode(other, cable, otherRequired, mappingFrom(parentFibres, readFibres([(other as any).dpDetails?.afnDetails?.inputFibres])));
-    const currentNode = makeNode(current, cable, currentRequired, mappingFrom(parentFibres, localFibres));
-
-    const key = `${cable.id}-${other.id}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-
-    if (currentIsExplicitParent || (!currentIsExplicitChild && !otherIsExplicitParent && currentIsParentByOrder)) {
-      if (branch) branchDownstream.push(otherNode);
-      else mainDownstream.push(otherNode);
-      return;
-    }
-
-    if (otherIsExplicitParent || currentIsExplicitChild || !currentIsParentByOrder) {
-      fedFrom.push(otherNode);
-      return;
-    }
-
-    mainDownstream.push(otherNode);
-  });
-
-  let selectedParent: DpRelationshipNode | undefined;
-  let selectedBranch: DpRelationshipNode | undefined;
-  let parentFibres: number[] = [];
-  let mapping: DpRelationshipMapping[] = [];
-  let isShootOff = false;
-
-  if (selectedCable) {
-    const selectedEndpoints = getCableEndpoints(selectedCable, dps);
-    const selectedOther = selectedEndpoints.find((dp) => !refsMatch(dp.id, current.id));
-    parentFibres = readFibres([
-      (selectedCable as any).allocatedInputFibres,
-      (selectedCable as any).parentInputFibres,
-      (selectedCable as any).upstreamInputFibres,
-      (selectedCable as any).sourceFibres,
-      (selectedCable as any).sourceFibreNumbers,
-      (selectedCable as any).parentFibres,
-      (selectedCable as any).reservationFibres,
-      (selectedCable as any).reservedFibres,
-    ]);
-    mapping = mappingFrom(parentFibres, localFibres);
-    isShootOff = isBranchCable(selectedCable as any) && Boolean(selectedOther);
-
-    if (selectedOther) {
-      const currentSb = parseSbNumber(assetName(current));
-      const otherSb = parseSbNumber(assetName(selectedOther));
-      const otherIsParent = otherSb !== null && currentSb !== null ? otherSb < currentSb : true;
-      if (otherIsParent || isShootOff) selectedParent = makeNode(selectedOther, selectedCable, Math.max(parentFibres.length, localFibres.length), mapping);
-      else selectedBranch = makeNode(selectedOther, selectedCable, Math.max(parentFibres.length, localFibres.length), mapping);
-    }
-  }
-
+  const selectedParent = fedFrom[0];
+  const selectedBranch = branchDownstream[0];
   const requiredFibres = Math.max(localFibres.length, parentFibres.length, requiredFibreCount(current, localFibres));
 
   return {
     current: makeNode(current, undefined, requiredFibres),
     fedFrom,
-    mainDownstream,
+    mainDownstream: [],
     branchDownstream,
     selectedParent,
     selectedBranch,
-    selectedCableId: selectedCable?.id || text(input.selectedCableId),
-    selectedCableName: selectedCable ? assetName(selectedCable) : text(input.selectedCableId),
+    selectedCableId: primaryRoute?.supportingCableId || "",
+    selectedCableName: primaryRoute?.supportingCableName || "",
     localFibres,
     parentFibres,
     mapping,
     requiredFibres,
-    isShootOff: isShootOff || Boolean(selectedParent && parentFibres.length),
+    isShootOff: Boolean(primaryRoute && parentFibres.length),
   };
 }

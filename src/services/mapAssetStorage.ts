@@ -251,26 +251,25 @@ async function writeMapAssetsSafetyBackup(existingAssets: any[]) {
     createdByEmail: auth.currentUser?.email || "unknown",
   });
 
-  await Promise.all(
-    backupChunks.map((chunkAssets, index) =>
-      setDoc(
-        doc(
-          db,
-          ...FIRESTORE_REF_PATH,
-          "mapAssetBackups",
-          backupId,
-          "chunks",
-          `chunk_${String(index).padStart(5, "0")}`,
-        ),
-        {
-          chunkIndex: index,
-          assetsJson: JSON.stringify(chunkAssets),
-          count: chunkAssets.length,
-          createdAt: serverTimestamp(),
-        },
+  for (let index = 0; index < backupChunks.length; index += 1) {
+    const chunkAssets = backupChunks[index];
+    await setDoc(
+      doc(
+        db,
+        ...FIRESTORE_REF_PATH,
+        "mapAssetBackups",
+        backupId,
+        "chunks",
+        `chunk_${String(index).padStart(5, "0")}`,
       ),
-    ),
-  );
+      {
+        chunkIndex: index,
+        assetsJson: JSON.stringify(chunkAssets),
+        count: chunkAssets.length,
+        createdAt: serverTimestamp(),
+      },
+    );
+  }
 }
 
 /**
@@ -446,37 +445,43 @@ export async function saveMapAssetsToFirestore(
     throw new Error("Refusing to save empty map asset chunks.");
   }
 
-  try {
-    await writeMapAssetsSafetyBackup(existingAssets);
-  } catch (err) {
-    // Backups are important, but they must never stop the authoritative
-    // chunk save. Some deployed rules do not yet include mapAssetBackups.
-    console.warn("Map asset safety backup failed; continuing primary chunk save.", err);
+  const shouldCreateSafetyBackup =
+    options.reason === "manual-backup" ||
+    options.reason === "admin-backup" ||
+    options.reason === "pre-destructive-save-backup";
+
+  if (shouldCreateSafetyBackup) {
+    try {
+      await writeMapAssetsSafetyBackup(existingAssets);
+    } catch (err) {
+      // Backups are important, but they must never stop the authoritative
+      // chunk save. Some deployed rules do not yet include mapAssetBackups.
+      console.warn("Map asset safety backup failed; continuing primary chunk save.", err);
+    }
   }
 
   // Write/overwrite replacement chunks first. Only after every new chunk has
   // succeeded do we delete old chunks beyond the new chunk count.
-  await Promise.all(
-    chunks.map((chunkAssets, index) =>
-      setDoc(doc(chunksRef, `chunk_${String(index).padStart(5, "0")}`), {
-        chunkIndex: index,
-        assetsJson: JSON.stringify(chunkAssets),
-        count: chunkAssets.length,
-        updatedAt: serverTimestamp(),
-      }),
-    ),
-  );
+  for (let index = 0; index < chunks.length; index += 1) {
+    const chunkAssets = chunks[index];
+    await setDoc(doc(chunksRef, `chunk_${String(index).padStart(5, "0")}`), {
+      chunkIndex: index,
+      assetsJson: JSON.stringify(chunkAssets),
+      count: chunkAssets.length,
+      updatedAt: serverTimestamp(),
+    });
+  }
 
   try {
     const existingChunkSnapshot = await getDocs(chunksRef);
-    await Promise.all(
-      existingChunkSnapshot.docs
-        .filter((chunkDoc) => {
-          const index = Number(chunkDoc.id.replace("chunk_", ""));
-          return Number.isFinite(index) && index >= chunks.length;
-        })
-        .map((chunkDoc) => deleteDoc(chunkDoc.ref)),
-    );
+    const chunksToDelete = existingChunkSnapshot.docs.filter((chunkDoc) => {
+      const index = Number(chunkDoc.id.replace("chunk_", ""));
+      return Number.isFinite(index) && index >= chunks.length;
+    });
+
+    for (const chunkDoc of chunksToDelete) {
+      await deleteDoc(chunkDoc.ref);
+    }
   } catch (err) {
     // If old chunk cleanup is blocked by rules, do not fail the save.
     // readCurrentChunkAssets uses the parent chunkCount to ignore stale extras.

@@ -3,6 +3,7 @@ import AreaBulkStatusPanel from "./AreaBulkStatusPanel";
 import LiveHomesControl from "./LiveHomesControl";
 import DuplicateHomeResolutionPanel from "./DuplicateHomeResolutionPanel";
 import AddressSheetImportPanel from "./AddressSheetImportPanel";
+import FasSbRouteImportPanel from "./FasSbRouteImportPanel";
 import type { SavedMapAsset } from "../../map/types";
 
 type ManagerPoint = { lat: number; lng: number };
@@ -18,9 +19,11 @@ type Props = {
   networkGraph?: any;
   managerAreaPoints?: ManagerPoint[];
   isManagerAreaDrawing?: boolean;
+  areaDistributionPoints?: SavedMapAsset[];
   onStartManagerAreaDrawing?: () => void;
   onStopManagerAreaDrawing?: () => void;
   onClearManagerAreaDrawing?: () => void;
+  onClearDpFibreAllocations?: () => void;
   onBulkUpdateDpStatus?: (args: {
     assetIds: string[];
     status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
@@ -37,6 +40,7 @@ type Props = {
   onResolveDuplicateHomes?: (request: any) => void;
   onAutoSpreadStackedHomes?: () => void | Promise<void>;
   onApplyAddressSheetAssignments?: (request: any) => void | Promise<void>;
+  onApplySbRouteAssignments?: (request: any) => void | Promise<void>;
 };
 
 const panel: React.CSSProperties = { background: "#0f1b2d", border: "1px solid rgba(148, 163, 184, 0.18)", borderRadius: 10, padding: 16, minHeight: 190 };
@@ -80,6 +84,7 @@ export default function WorkspaceBuild({
   onResolveDuplicateHomes,
   onAutoSpreadStackedHomes,
   onApplyAddressSheetAssignments,
+  onApplySbRouteAssignments,
 }: Props) {
   const canonicalHomesPassed = Number(stats?.rolloutKpis?.homesPassed ?? stats?.homesPassed ?? 0);
   const canonicalHomesLive = Number(stats?.rolloutKpis?.homesLive ?? stats?.homesConnected ?? 0);
@@ -119,6 +124,11 @@ export default function WorkspaceBuild({
 
 
 
+
+    <FasSbRouteImportPanel
+      projectAssets={projectAssets}
+      onApplySbRouteAssignments={onApplySbRouteAssignments}
+    />
 
     <AddressSheetImportPanel
       projectAssets={projectAssets}
