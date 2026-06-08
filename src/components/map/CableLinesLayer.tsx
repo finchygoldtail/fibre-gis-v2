@@ -889,9 +889,21 @@ export default function CableLinesLayer({
 
   const networkState = useMemo(() => buildNetworkState(assets as any), [assets]);
 
-  if (!cablesVisible) return null;
+  const allCableLayersVisible = cablesVisible || visibleLayers?.cables !== false;
 
-  const isLayerOn = (key: string) => visibleLayers[key] !== false;
+  const isLayerOn = (key: string) => visibleLayers?.[key] !== false;
+
+  const hasAnyIndividualCableLayerOn =
+    isLayerOn("feeders") ||
+    isLayerOn("links") ||
+    isLayerOn("dropCables") ||
+    isLayerOn("ulw96") ||
+    isLayerOn("ulw48") ||
+    isLayerOn("ulw36") ||
+    isLayerOn("ulw24") ||
+    isLayerOn("ulw12");
+
+  if (!allCableLayersVisible && !hasAnyIndividualCableLayerOn) return null;
 
   const cableAssets = assets.filter((asset) => {
     if (isOpenreachReferenceAsset(asset)) return false;
@@ -904,24 +916,31 @@ export default function CableLinesLayer({
       return false;
     }
 
+    if (allCableLayersVisible) return true;
+
     const cableType = String(asset.cableType || "").toLowerCase();
     const fibreCount = String(asset.fibreCount || "").toLowerCase();
     const isDropCable = isDropCableAsset(asset);
 
-    if (isDropCable && !isLayerOn("dropCables")) return false;
-    if (isDropCable) return true;
+    if (isDropCable) return isLayerOn("dropCables");
 
-    if (cableType.includes("feeder") && !isLayerOn("feeders")) return false;
-    if (cableType.includes("link") && !isLayerOn("links")) return false;
+    const matchesFeeder = cableType.includes("feeder");
+    const matchesLink = cableType.includes("link");
+    const matches96 = fibreCount.includes("96");
+    const matches48 = fibreCount.includes("48");
+    const matches36 = fibreCount.includes("36");
+    const matches24 = fibreCount.includes("24");
+    const matches12 = fibreCount.includes("12");
 
-    if (cableType.includes("ulw")) {
-      if (fibreCount.includes("48") && !isLayerOn("ulw48")) return false;
-      if (fibreCount.includes("36") && !isLayerOn("ulw36")) return false;
-      if (fibreCount.includes("24") && !isLayerOn("ulw24")) return false;
-      if (fibreCount.includes("12") && !isLayerOn("ulw12")) return false;
-    }
-
-    return true;
+    return (
+      (matchesFeeder && isLayerOn("feeders")) ||
+      (matchesLink && isLayerOn("links")) ||
+      (matches96 && isLayerOn("ulw96")) ||
+      (matches48 && isLayerOn("ulw48")) ||
+      (matches36 && isLayerOn("ulw36")) ||
+      (matches24 && isLayerOn("ulw24")) ||
+      (matches12 && isLayerOn("ulw12"))
+    );
   });
 
   const zoomToCable = (points: [number, number][]) => {

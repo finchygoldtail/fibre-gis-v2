@@ -93,6 +93,7 @@ const layerGroups: LayerGroup[] = [
       { label: "Feeders", key: "feeders" },
       { label: "Links", key: "links" },
       { label: "Drop Cables / UG Routes", key: "dropCables" },
+      { label: "96 ULW", key: "ulw96" },
       { label: "48 ULW", key: "ulw48" },
       { label: "36 ULW", key: "ulw36" },
       { label: "24 ULW", key: "ulw24" },
