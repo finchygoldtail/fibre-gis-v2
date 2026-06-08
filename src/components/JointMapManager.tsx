@@ -963,56 +963,6 @@ export default function JointMapManager({
   const splitStorageLastSavedSignatureRef = useRef("");
   const splitStoragePendingSignatureRef = useRef("");
   const splitStorageSaveInProgressRef = useRef(false);
-  const splitStorageLatestAssetsRef = useRef<any[]>([]);
-
-  const buildMapAssetSaveSignature = (assets: any[]) =>
-    assets
-      .map((asset: any) => `${asset.id}:${stableAssetSignature(asset)}`)
-      .sort()
-      .join("|");
-
-  const runPrimaryMapAssetSave = async () => {
-    if (splitStorageSaveInProgressRef.current) return;
-
-    splitStorageSaveInProgressRef.current = true;
-
-    try {
-      const { saveMapAssetsToFirestore } = await import(
-        "../services/mapAssetStorage"
-      );
-
-      // Drain the latest pending asset state serially. If another edit happens
-      // while Firestore is still writing, save the newest snapshot after the
-      // current save completes instead of queueing overlapping writes.
-      while (true) {
-        const assetsSnapshot = splitStorageLatestAssetsRef.current;
-        if (assetsSnapshot.length === 0) break;
-
-        const signatureSnapshot = buildMapAssetSaveSignature(assetsSnapshot);
-        if (!signatureSnapshot) break;
-        if (signatureSnapshot === splitStorageLastSavedSignatureRef.current) break;
-
-        splitStoragePendingSignatureRef.current = signatureSnapshot;
-
-        await saveMapAssetsToFirestore(assetsSnapshot, {
-          reason: "joint-map-manager-primary-save",
-        });
-
-        splitStorageLastSavedSignatureRef.current = signatureSnapshot;
-
-        const latestSignature = buildMapAssetSaveSignature(
-          splitStorageLatestAssetsRef.current
-        );
-
-        if (latestSignature === signatureSnapshot) break;
-      }
-    } catch (err) {
-      console.error("PRIMARY MAP SAVE FAILED", err);
-    } finally {
-      splitStoragePendingSignatureRef.current = "";
-      splitStorageSaveInProgressRef.current = false;
-    }
-  };
 
   // Split storage loading is deliberately disabled.
   // The authoritative live project state must come from mapAssets/main/chunks.
@@ -1021,20 +971,42 @@ export default function JointMapManager({
   useEffect(() => {
     if (operationalSavedJoints.length === 0) return;
 
-    splitStorageLatestAssetsRef.current = operationalSavedJoints;
-
-    const saveSignature = buildMapAssetSaveSignature(operationalSavedJoints);
+    const saveSignature = operationalSavedJoints
+      .map((asset: any) => `${asset.id}:${stableAssetSignature(asset)}`)
+      .sort()
+      .join("|");
 
     if (saveSignature === splitStorageLastSavedSignatureRef.current) return;
     if (saveSignature === splitStoragePendingSignatureRef.current) return;
 
     splitStoragePendingSignatureRef.current = saveSignature;
 
-    const timer = window.setTimeout(() => {
-      // MAIN AUTHORITATIVE SAVE ONLY.
-      // saveMapAssetsToFirestore already performs the safe split-bucket mirror
-      // after the main chunks succeed, so do not call saveSplitMapAssets here.
-      void runPrimaryMapAssetSave();
+    const timer = window.setTimeout(async () => {
+      if (splitStorageSaveInProgressRef.current) return;
+
+      splitStorageSaveInProgressRef.current = true;
+
+      try {
+        // MAIN AUTHORITATIVE SAVE ONLY.
+        // saveMapAssetsToFirestore already performs the safe split-bucket mirror
+        // after the main chunks succeed, so do not call saveSplitMapAssets here.
+        const { saveMapAssetsToFirestore } = await import(
+          "../services/mapAssetStorage"
+        );
+
+        await saveMapAssetsToFirestore(operationalSavedJoints, {
+          reason: "joint-map-manager-primary-save",
+        });
+
+        splitStorageLastSavedSignatureRef.current = saveSignature;
+      } catch (err) {
+        console.error("PRIMARY MAP SAVE FAILED", err);
+      } finally {
+        if (splitStoragePendingSignatureRef.current === saveSignature) {
+          splitStoragePendingSignatureRef.current = "";
+        }
+        splitStorageSaveInProgressRef.current = false;
+      }
     }, 5000);
 
     return () => window.clearTimeout(timer);
