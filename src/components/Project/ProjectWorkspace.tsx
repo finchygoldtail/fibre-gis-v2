@@ -1656,9 +1656,33 @@ export default function ProjectWorkspace({
   const networkGraph = networkState.graph;
 
   const disconnectedAssets = useMemo(
-    () => networkState.nodes.filter((node) => node.connectedTo.length === 0),
-    [networkState],
-  );
+  () =>
+    networkState.nodes.filter((node) => {
+      const asset: any = node.asset;
+
+      // Ignore AFN/SB DPs because they may be fed
+      // from a cable outside the current project area.
+      const text = [
+        asset?.closureType,
+        asset?.dpType,
+        asset?.jointType,
+        asset?.name,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      if (
+        text.includes("afn") ||
+        text.includes("sb") ||
+        text.includes("splitter")
+      ) {
+        return false;
+      }
+
+      return node.connectedTo.length === 0;
+    }),
+  [networkState],
+);
 
   const areaDistributionPoints = useMemo(
     () => workspaceAssets.filter((asset) => isDistributionPointAsset(asset)),
