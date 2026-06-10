@@ -482,14 +482,36 @@ function getDpCapacityState(asset: SavedMapAsset): { colour: string; label: stri
   const connectedHomes = Number(details.connectedHomes ?? details.connectionsToHomes ?? item.connectedHomes ?? item.homesConnected ?? item.homeCount ?? 0);
   const dropCount = Number(item.dropCableCount ?? item.drops ?? 0);
   const used = Math.max(Number.isFinite(connectedHomes) ? connectedHomes : 0, Number.isFinite(dropCount) ? dropCount : 0);
-  const rawCapacity = Number(item.capacity ?? item.dpCapacity ?? item.ports ?? details.capacity ?? details.connectionsToHomes ?? 0);
-  const capacity = Number.isFinite(rawCapacity) && rawCapacity > 0
-    ? rawCapacity
-    : closureText.includes("cbt")
-      ? 12
-      : closureText.includes("afn") || closureText.includes("mdu_splitter")
-        ? Math.max(16, used)
-        : Math.max(used, 0);
+  const afnDetails =
+  details.afnDetails ||
+  item.afnDetails ||
+  {};
+
+const inputFibres =
+  Number(afnDetails.fibresNeeded || 0) ||
+  Number(afnDetails.inputFibres?.length || 0);
+
+let capacity = 0;
+
+if (
+  closureText.includes("afn") ||
+  closureText.includes("sb") ||
+  closureText.includes("mdu_splitter")
+) {
+  capacity = inputFibres > 0
+    ? inputFibres * 8
+    : 24; // sensible fallback
+} else if (closureText.includes("cbt")) {
+  capacity = Number(details.capacity || item.capacity || 12);
+} else {
+  capacity = Number(
+    details.capacity ||
+    item.capacity ||
+    item.dpCapacity ||
+    item.ports ||
+    0
+  );
+}
 
   if (capacity <= 0) return { colour: "#94a3b8", label: "No capacity", percent: 0 };
   const percent = (used / capacity) * 100;
