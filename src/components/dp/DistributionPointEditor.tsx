@@ -1082,16 +1082,30 @@ export default function DistributionPointEditor({
       : Number.isFinite(rawSplitterOutputs) && rawSplitterOutputs > 0
         ? rawSplitterOutputs
         : 8;
+  const manualSbRoute = findStoredSbToSbRouteForAsset(details, asset);
+  const routedCableId =
+    manualSbRoute?.supportingCableId ||
+    manualSbRoute?.supportingCableName;
+
   const throughCableId =
     afnDetails.throughCableId ||
     mduDetails.throughCableId ||
     details.throughCableId ||
+    routedCableId ||
     "No through cable selected";
-  const throughCable = allAssets.find(
-    (candidate) =>
-      candidate.id === throughCableId ||
-      (candidate as any).assetId === throughCableId,
+
+  const throughCable = allAssets.find((candidate) =>
+    [
+      candidate.id,
+      (candidate as any).assetId,
+      (candidate as any).name,
+      (candidate as any).cableId,
+      (candidate as any).label,
+    ]
+      .filter(Boolean)
+      .some((ref) => refsMatch(ref, throughCableId)),
   );
+
   const incomingFibreCount = getFibreCountFromCable(throughCable);
   const allCableFibres = Array.from(
     { length: incomingFibreCount },
@@ -1101,8 +1115,6 @@ export default function DistributionPointEditor({
   const branchParentDp = findParentDpForBranchCable(asset, throughCable, allAssets);
   const branchParentName = branchParentDp ? getAssetTitle(branchParentDp) : "Parent SB";
   const currentSbName = getAssetTitle(asset);
-
-  const manualSbRoute = findStoredSbToSbRouteForAsset(details, asset);
   const manualSbParentFibres = uniqueSorted((manualSbRoute?.parentFibres || []) as number[]);
   const manualSbLocalFibres = uniqueSorted((manualSbRoute?.localFibres || []) as number[]);
   const storedSplitterFibres = uniqueSorted([

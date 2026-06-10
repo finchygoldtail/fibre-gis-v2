@@ -743,30 +743,19 @@ function addFibreAllocationIssues(assets: any[], issues: AuditIssue[]): void {
 
     if (!isPassthroughArchitecture(closureType)) continue;
 
-    if (!throughCableId) {
-      issues.push(
-        makeIssue(dp, `${closureType} has no through cable selected`, {
-          assetId: dpId,
-          severity: "medium",
-          category: "Fibre Allocation",
-        }),
-      );
+    // SB → SB routing can now define valid fibre routing without a legacy
+    // throughCableId. Also, workspace scoping can hide the physical cable while
+    // the SB route remains valid. Do not raise through-cable QA issues here.
+    // Only run cable-capacity / duplicate-reservation checks when the selected
+    // cable is actually present in this scoped area.
+    const cable = throughCableId ? cableById.get(throughCableId) : undefined;
+
+    if (!throughCableId || !cable) {
       continue;
     }
 
-    const cable = cableById.get(throughCableId);
-    const cableName = getCableDisplayName(cable || { id: throughCableId });
-    const cableCapacity = cable ? getCableCapacity(cable) : 0;
-
-    if (!cable) {
-      issues.push(
-        makeIssue(dp, `${closureType} through cable is missing from this area (${throughCableId})`, {
-          assetId: dpId,
-          severity: "high",
-          category: "Fibre Allocation",
-        }),
-      );
-    }
+    const cableName = getCableDisplayName(cable);
+    const cableCapacity = getCableCapacity(cable);
 
     if (requiredFibres > 0 && inputFibres.length === 0) {
       issues.push(
