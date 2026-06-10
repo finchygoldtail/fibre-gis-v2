@@ -945,72 +945,40 @@ export default function JointMapManager({
   });
 
   // =====================================================
-  // SPLIT MAP ASSET STORAGE MIGRATION
-  // Keeps the old master chunk path untouched, but also mirrors
-  // assets into safer per-type chunk buckets:
-  //   mapAssets/cables/chunks
-  //   mapAssets/polygons/chunks
-  //   mapAssets/streetCabs/chunks
-  // and the rest of the asset buckets.
-  //
-  // Load behaviour:
-  // - If split chunks already exist, they are preferred in this component.
-  // - If they do not exist yet, the existing parent/legacy load remains active.
-  // Save behaviour:
-  // - Once legacy/main assets are present, they are mirrored to split chunks.
-  // - Empty arrays are never written, so an early blank render cannot wipe data.
+  // SIMPLE MANUAL MAP SAVE
+  // Autosave has been removed to stop Firestore queued-write exhaustion.
+  // Map assets now save only when the user presses Save Map Now.
+  // Project homes still save separately through saveProjectHomes().
   // =====================================================
-  const splitStorageLastSavedSignatureRef = useRef("");
-  const splitStoragePendingSignatureRef = useRef("");
-  const splitStorageSaveInProgressRef = useRef(false);
+  const [isSavingMapNow, setIsSavingMapNow] = useState(false);
 
-  // Split storage loading is deliberately disabled.
-  // The authoritative live project state must come from mapAssets/main/chunks.
-  // Loading old split buckets here can overwrite freshly saved main chunks with stale data.
+  const handleSaveMapNow = async () => {
+    if (isSavingMapNow) return;
 
-  useEffect(() => {
-    if (operationalSavedJoints.length === 0) return;
+    if (!operationalSavedJoints.length) {
+      alert("No map assets to save yet.");
+      return;
+    }
 
-    const saveSignature = operationalSavedJoints
-      .map((asset: any) => `${asset.id}:${stableAssetSignature(asset)}`)
-      .sort()
-      .join("|");
+    setIsSavingMapNow(true);
 
-    if (saveSignature === splitStorageLastSavedSignatureRef.current) return;
-    if (saveSignature === splitStoragePendingSignatureRef.current) return;
+    try {
+      const { saveMapAssetsToFirestore } = await import(
+        "../services/mapAssetStorage"
+      );
 
-    splitStoragePendingSignatureRef.current = saveSignature;
+      await saveMapAssetsToFirestore(operationalSavedJoints, {
+        reason: "manual-save-map-now",
+      });
 
-    const timer = window.setTimeout(async () => {
-      if (splitStorageSaveInProgressRef.current) return;
-
-      splitStorageSaveInProgressRef.current = true;
-
-      try {
-        // MAIN AUTHORITATIVE SAVE ONLY.
-        // saveMapAssetsToFirestore already performs the safe split-bucket mirror
-        // after the main chunks succeed, so do not call saveSplitMapAssets here.
-        const { saveMapAssetsToFirestore } = await import(
-          "../services/mapAssetStorage"
-        );
-
-        await saveMapAssetsToFirestore(operationalSavedJoints, {
-          reason: "joint-map-manager-primary-save",
-        });
-
-        splitStorageLastSavedSignatureRef.current = saveSignature;
-      } catch (err) {
-        console.error("PRIMARY MAP SAVE FAILED", err);
-      } finally {
-        if (splitStoragePendingSignatureRef.current === saveSignature) {
-          splitStoragePendingSignatureRef.current = "";
-        }
-        splitStorageSaveInProgressRef.current = false;
-      }
-    }, 5000);
-
-    return () => window.clearTimeout(timer);
-  }, [operationalSavedJoints]);
+      alert(`Map saved. ${operationalSavedJoints.length} asset(s) written to Firestore.`);
+    } catch (err) {
+      console.error("MANUAL MAP SAVE FAILED", err);
+      alert("Map save failed. Check the console for details.");
+    } finally {
+      setIsSavingMapNow(false);
+    }
+  };
 
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean;
@@ -5741,6 +5709,19 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         !isSurveyTabletMode &&
         !isMaintenanceTabletMode && (
         <>
+          <button
+            onClick={handleSaveMapNow}
+            disabled={isSavingMapNow}
+            style={{
+              ...topMapButton,
+              right: isMobile ? 168 : isLayersOpen ? 512 : 168,
+              background: isSavingMapNow ? "#64748b" : "#16a34a",
+              cursor: isSavingMapNow ? "not-allowed" : "pointer",
+            }}
+          >
+            {isSavingMapNow ? "Saving..." : "Save Map"}
+          </button>
+
           <button
             onClick={handleGpsLocate}
             style={{

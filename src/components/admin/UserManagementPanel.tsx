@@ -83,12 +83,6 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
         console.warn("Could not load business user profiles", err);
       }
 
-      try {
-        await readUserCollection("root");
-      } catch (err) {
-        console.warn("Could not load root user profiles", err);
-      }
-
       setUsers(
         Array.from(profileDocs.values()).sort((a, b) =>
           (a.email || a.name || a.uid).localeCompare(b.email || b.name || b.uid),
@@ -217,13 +211,13 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
 
         const createdUid = result.data.uid;
 
-        await saveUserRole(createdUid, {
-          name: cleanName,
-          email: cleanEmail,
-          role: newRole,
-        });
-
+        // The callable Cloud Function already creates/updates both:
+        // businesses/{businessId}/users/{uid}
+        // users/{uid}
+        // Do not immediately write the same profile again from the browser,
+        // because Firestore rules may block client-side admin writes after a reset.
         setSaveMessage(`Created login for ${cleanEmail}.`);
+        await loadUsers();
       }
 
       setNewUid("");

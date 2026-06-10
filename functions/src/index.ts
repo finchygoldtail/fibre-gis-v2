@@ -9,7 +9,9 @@ setGlobalOptions({
   maxInstances: 10,
 });
 
-const normaliseRole = (value: unknown) => {
+type AppRole = "super_user" | "maintenance_user" | "build_user" | "survey_user";
+
+const normaliseRole = (value: unknown): AppRole => {
   if (
     value === "super_user" ||
     value === "maintenance_user" ||
@@ -20,6 +22,43 @@ const normaliseRole = (value: unknown) => {
   }
 
   return "survey_user";
+};
+
+const OWNER_EMAILS = new Set([
+  "alistairlgrantham@gmail.com",
+  "alistair.grantham@brsk.co.uk",
+]);
+
+const permissionsByRole: Record<AppRole, {
+  survey: boolean;
+  build: boolean;
+  maintenance: boolean;
+  manageUsers: boolean;
+}> = {
+  super_user: {
+    survey: true,
+    build: true,
+    maintenance: true,
+    manageUsers: true,
+  },
+  maintenance_user: {
+    survey: false,
+    build: false,
+    maintenance: true,
+    manageUsers: false,
+  },
+  build_user: {
+    survey: true,
+    build: true,
+    maintenance: false,
+    manageUsers: false,
+  },
+  survey_user: {
+    survey: true,
+    build: false,
+    maintenance: false,
+    manageUsers: false,
+  },
 };
 
 export const createLoginUser = onCall(
@@ -63,18 +102,56 @@ export const createLoginUser = onCall(
       );
     }
 
-    const callerDoc = await admin
-      .firestore()
-      .doc(`businesses/${businessId}/users/${callerUid}`)
-      .get();
+    const firestore = admin.firestore();
+    const callerRecord = await admin.auth().getUser(callerUid);
+    const callerEmail = String(callerRecord.email || "").trim().toLowerCase();
 
-    const callerRole = callerDoc.data()?.role;
+    const [callerDoc, rootCallerDoc, businessUsersSnapshot] = await Promise.all([
+      firestore.doc(`businesses/${businessId}/users/${callerUid}`).get(),
+      firestore.doc(`users/${callerUid}`).get(),
+      firestore.collection(`businesses/${businessId}/users`).limit(1).get(),
+    ]);
 
-    if (callerRole !== "super_user") {
+    const callerRole = normaliseRole(callerDoc.data()?.role);
+    const rootCallerRole = normaliseRole(rootCallerDoc.data()?.role);
+    const hasBusinessProfile = callerDoc.exists;
+    const hasRootProfile = rootCallerDoc.exists;
+
+    const isFirestoreSuperUser =
+      (hasBusinessProfile && callerRole === "super_user") ||
+      (hasRootProfile && rootCallerRole === "super_user");
+
+    const isBootstrapOwner =
+      OWNER_EMAILS.has(callerEmail) &&
+      (businessUsersSnapshot.empty || !hasBusinessProfile || !hasRootProfile);
+
+    if (!isFirestoreSuperUser && !isBootstrapOwner) {
       throw new HttpsError(
         "permission-denied",
         "Only Super Users can create logins.",
       );
+    }
+
+    if (isBootstrapOwner && !isFirestoreSuperUser) {
+      const ownerPayload = {
+        uid: callerUid,
+        name: callerRecord.displayName || callerEmail || "Super User",
+        email: callerEmail,
+        role: "super_user" as AppRole,
+        permissions: permissionsByRole.super_user,
+        active: true,
+        createdBy: callerUid,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        bootstrapOwner: true,
+      };
+
+      await Promise.all([
+        firestore
+          .doc(`businesses/${businessId}/users/${callerUid}`)
+          .set(ownerPayload, { merge: true }),
+        firestore.doc(`users/${callerUid}`).set(ownerPayload, { merge: true }),
+      ]);
     }
 
     let userRecord: admin.auth.UserRecord;
@@ -102,33 +179,6 @@ export const createLoginUser = onCall(
       }
     }
 
-    const permissionsByRole = {
-      super_user: {
-        survey: true,
-        build: true,
-        maintenance: true,
-        manageUsers: true,
-      },
-      maintenance_user: {
-        survey: false,
-        build: false,
-        maintenance: true,
-        manageUsers: false,
-      },
-      build_user: {
-        survey: true,
-        build: true,
-        maintenance: false,
-        manageUsers: false,
-      },
-      survey_user: {
-        survey: true,
-        build: false,
-        maintenance: false,
-        manageUsers: false,
-      },
-    };
-
     const payload = {
       uid: userRecord.uid,
       name,
@@ -142,14 +192,10 @@ export const createLoginUser = onCall(
     };
 
     await Promise.all([
-      admin
-        .firestore()
+      firestore
         .doc(`businesses/${businessId}/users/${userRecord.uid}`)
         .set(payload, { merge: true }),
-      admin
-        .firestore()
-        .doc(`users/${userRecord.uid}`)
-        .set(payload, { merge: true }),
+      firestore.doc(`users/${userRecord.uid}`).set(payload, { merge: true }),
     ]);
 
     return {

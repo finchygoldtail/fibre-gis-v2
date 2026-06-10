@@ -170,21 +170,23 @@ export async function createAssetActivityLog(args: {
   details?: Record<string, unknown>;
 }): Promise<AssetActivityLog> {
   const now = new Date().toISOString();
-  const log: AssetActivityLog = {
-    projectId: args.projectId,
-    assetId: args.asset?.id || "unknown",
-    assetName: args.asset?.name || args.asset?.id || "Unknown asset",
-    assetType: args.asset?.assetType || args.asset?.jointType || "unknown",
-    action: args.action,
-    timestamp: now,
-    user: getCurrentActivityUser(),
-    reason: args.reason,
-    comment: args.comment,
-    context: args.context,
-    before: sanitizeActivityValue(args.before),
-    after: sanitizeActivityValue(args.after),
-    details: sanitizeActivityDetails(args.details),
-  };
+ const log: AssetActivityLog = {
+  projectId: args.projectId,
+  assetId: args.asset?.id || "unknown",
+  assetName: args.asset?.name || args.asset?.id || "Unknown asset",
+  assetType: args.asset?.assetType || args.asset?.jointType || "unknown",
+  action: args.action,
+  timestamp: now,
+  user: getCurrentActivityUser(),
+
+  reason: args.reason ?? null,
+  comment: args.comment ?? null,
+  context: args.context ?? null,
+
+  before: sanitizeActivityValue(args.before),
+  after: sanitizeActivityValue(args.after),
+  details: sanitizeActivityDetails(args.details),
+};
 
   try {
     const ref = await addDoc(
