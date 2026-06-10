@@ -29,16 +29,64 @@ function assetName(asset: SavedMapAsset): string {
 
 function assetType(asset: SavedMapAsset): string {
   const item = asset as any;
-  const raw = norm(item.assetType || item.type || item.jointType || item.cableType || "other");
 
-  if (raw.includes("distribution") || raw.includes("dp") || raw.includes("cbt") || raw.includes("afn") || raw.includes("mdu")) return "distribution-point";
-  if (raw.includes("joint") || raw.includes("cmj") || raw.includes("lmj") || raw.includes("mmj") || raw.includes("ag")) return "ag-joint";
-  if (raw.includes("street") || raw.includes("cab")) return "street-cab";
+  const raw = norm(
+    item.assetType ||
+    item.type ||
+    item.jointType ||
+    item.cableType ||
+    "other"
+  );
+
+  // CABLES FIRST
+  if (
+    asset.geometry?.type === "LineString" ||
+    raw.includes("cable") ||
+    raw.includes("ulw") ||
+    raw.includes("fulw") ||
+    raw.includes("feeder") ||
+    raw.includes("link")
+  ) {
+    return "cable";
+  }
+
+  if (
+    raw.includes("distribution") ||
+    raw.includes("dp") ||
+    raw.includes("cbt") ||
+    raw.includes("afn") ||
+    raw.includes("mdu") ||
+    raw.includes("sb")
+  ) {
+    return "distribution-point";
+  }
+
+  if (
+    raw.includes("joint") ||
+    raw.includes("cmj") ||
+    raw.includes("lmj") ||
+    raw.includes("mmj") ||
+    raw.includes("ag")
+  ) {
+    return "ag-joint";
+  }
+
+  if (raw.includes("street-cab")) {
+    return "street-cab";
+  }
+
   if (raw.includes("pole")) return "pole";
   if (raw.includes("chamber")) return "chamber";
-  if (raw.includes("home") || raw.includes("premise") || raw.includes("property")) return "home";
-  if (raw.includes("area") || raw.includes("polygon") || asset.geometry?.type === "Polygon") return "area";
-  if (raw.includes("cable") || asset.geometry?.type === "LineString") return "cable";
+  if (raw.includes("home")) return "home";
+
+  if (
+    raw.includes("area") ||
+    raw.includes("polygon") ||
+    asset.geometry?.type === "Polygon"
+  ) {
+    return "area";
+  }
+
   return "other";
 }
 
