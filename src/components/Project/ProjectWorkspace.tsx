@@ -20,6 +20,7 @@ import {
 } from "../../logic/exportAgExcel";
 import { downloadLmjJointTemplate } from "../../logic/exportLmjExcel";
 import { downloadStreetCabTemplate } from "../../logic/exportStreetCabExcel";
+import { downloadExchangeTemplate } from "../../logic/exportExchangeExcel";
 import AuditModal from "../audits/AuditModal";
 import AuditFormEngine from "../audits/AuditFormEngine";
 import { walkOffAuditTemplate } from "../audits/auditTemplates";
@@ -4503,6 +4504,13 @@ export default function ProjectWorkspace({
                           onClick={downloadStreetCabTemplate}
                         >
                           Download Street Cab Template
+                        </button>
+                        <button
+                          type="button"
+                          style={wideButton}
+                          onClick={downloadExchangeTemplate}
+                        >
+                          Download Exchange Template
                         </button>
                       </div>
                     </div>
