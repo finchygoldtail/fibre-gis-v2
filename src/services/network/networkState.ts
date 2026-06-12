@@ -383,11 +383,22 @@ function enrichDpStatesWithJointMatches(args: {
     // is preserved, but empty/cleared allocations now inherit the joint fibres.
     const jointFibres = uniqueSorted(match.fibres);
     const occupancy = getOccupancyForMatch({ match, jointToDpMatches });
+
+    // IMPORTANT:
+    // occupancy.allocatedFibres is the whole cable/run allocation, so on a
+    // parent 144F run it can contain fibres for SB01, SB02, SB03, etc. Do not
+    // feed that whole list into one DP/SB state or every child SB inherits the
+    // parent cable usage and appears as 144F/135 used.
+    // Use only this DP/SB's local allocation, falling back to the matched fibres.
+    const localAllocation = occupancy?.allocationsByDpId?.[match.dpId];
+    const jointAllocatedFibresOnCable = uniqueSorted(
+      localAllocation?.fibres?.length ? localAllocation.fibres : jointFibres,
+    );
     const localMinFibre = jointFibres.length ? Math.min(...jointFibres) : null;
     const localMaxFibre = jointFibres.length ? Math.max(...jointFibres) : null;
-    const jointAllocatedFibresOnCable = uniqueSorted(occupancy?.allocatedFibres || []);
-    const highestJointAllocatedFibre = occupancy?.highestAllocatedFibre ||
-      (jointAllocatedFibresOnCable.length ? Math.max(...jointAllocatedFibresOnCable) : 0);
+    const highestJointAllocatedFibre = jointAllocatedFibresOnCable.length
+      ? Math.max(...jointAllocatedFibresOnCable)
+      : 0;
     const jointPassthroughFibres = localMinFibre !== null
       ? jointAllocatedFibresOnCable.filter((fibre) => fibre < localMinFibre)
       : [];
@@ -429,10 +440,12 @@ function enrichDpStatesWithJointMatches(args: {
         ? jointFibres
         : state.directFibres;
 
-    const nextPassthroughFibres = uniqueSorted([
-      ...state.passthroughFibres,
-      ...autoPassthroughFibres,
-    ]);
+    const nextPassthroughFibres = isAfn
+      ? uniqueSorted(autoPassthroughFibres)
+      : uniqueSorted([
+          ...state.passthroughFibres,
+          ...autoPassthroughFibres,
+        ]);
 
     const nextConsumedFibres = uniqueSorted([...nextSplitterFibres, ...nextDirectFibres]);
     const nextUsedFibres = uniqueSorted([

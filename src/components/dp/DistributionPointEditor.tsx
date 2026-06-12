@@ -369,6 +369,8 @@ function getFibreCountFromCable(
   asset: SavedMapAsset | null | undefined,
 ): number {
   const item = asset as any;
+  if (!item) return 0;
+
   const haystack = [
     item?.fibreCount,
     item?.fiberCount,
@@ -376,11 +378,18 @@ function getFibreCountFromCable(
     item?.size,
     item?.name,
     item?.cableId,
+    item?.cableName,
+    item?.label,
   ]
     .map(text)
+    .filter(Boolean)
     .join(" ");
-  const match = haystack.match(/(288|144|96|48|36|24|12)\s*F?/i);
-  return match ? Number(match[1]) : 144;
+
+  const match = haystack.match(/(288|144|96|48|36|24|12)\s*F?/i);
+
+  // Do not invent a 144F cable when the through-cable cannot be read.
+  // Showing Unknown is safer than making SB/DP fibre intake look wrong.
+  return match ? Number(match[1]) : 0;
 }
 
 function isHome(asset: SavedMapAsset): boolean {
@@ -1107,8 +1116,9 @@ export default function DistributionPointEditor({
   );
 
   const incomingFibreCount = getFibreCountFromCable(throughCable);
+  const incomingFibreCountLabel = incomingFibreCount > 0 ? `${incomingFibreCount}F` : "Unknown";
   const allCableFibres = Array.from(
-    { length: incomingFibreCount },
+    { length: Math.max(incomingFibreCount, 0) },
     (_, index) => index + 1,
   );
 
@@ -1833,7 +1843,7 @@ export default function DistributionPointEditor({
           >
             <Metric
               label="Incoming"
-              value={`${incomingFibreCount}F`}
+              value={incomingFibreCountLabel}
               colour="#38bdf8"
             />
             <Metric label="Used" value={consumedFibreCount} colour="#fbbf24" />
@@ -1852,7 +1862,13 @@ export default function DistributionPointEditor({
               label={
                 hasJointMappedFibres ? "Allocated Elsewhere" : "Network state"
               }
-              value={`${hasJointMappedFibres ? allocatedElsewhereFibreCount : computedDpRoutingState?.usedFibres.length || 0}F`}
+              value={
+                hasJointMappedFibres
+                  ? `${allocatedElsewhereFibreCount}F`
+                  : incomingFibreCount > 0
+                    ? incomingFibreCountLabel
+                    : `${computedDpRoutingState?.usedFibres.length || 0}F`
+              }
               colour="#a78bfa"
             />
           </div>

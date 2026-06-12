@@ -165,6 +165,16 @@ function toLine(asset: AnyAsset): LatLngLiteral[] {
 }
 
 function cableLength(asset: AnyAsset): number {
+  const explicit = Number(
+    asset?.routeLengthMeters ||
+      asset?.lengthMeters ||
+      asset?.distanceMeters ||
+      asset?.measuredLengthMeters ||
+      0,
+  );
+
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+
   return getPathDistanceMeters(toLine(asset));
 }
 
@@ -512,7 +522,9 @@ export function traceNetworkFromAsset(assets: AnyAsset[], startAssetId: string):
     .filter(Boolean) as AnyAsset[];
   const tracedCables = tracedAssets.filter(isCable);
   const tracedNodes = tracedAssets.filter((asset) => !isCable(asset));
-  const routeLengthMeters = tracedCables.reduce((sum, cable) => sum + cableLength(cable), 0);
+  const routeLengthMeters = Math.round(
+    tracedCables.reduce((sum, cable) => sum + cableLength(cable), 0),
+  );
 
   return {
     startAssetId,

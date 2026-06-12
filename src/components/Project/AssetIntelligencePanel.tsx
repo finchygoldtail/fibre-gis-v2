@@ -193,6 +193,28 @@ function readFirstNumber(asset: any, keys: string[]): number | null {
   return null;
 }
 
+function readCableFibreCount(asset: SavedMapAsset | null | undefined): number | null {
+  const item = asset as any;
+  if (!item) return null;
+
+  const haystack = [
+    item.fibreCount,
+    item.fiberCount,
+    item.coreCount,
+    item.size,
+    item.name,
+    item.cableId,
+    item.cableName,
+    item.label,
+  ]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
+
+  const match = haystack.match(/(288|144|96|48|36|24|12)\s*F?/i);
+  return match ? Number(match[1]) : null;
+}
+
 function formatDistanceMeters(value: any): string {
   const meters = toNumber(value);
   if (meters === null) return "—";
@@ -236,13 +258,17 @@ function haversineMeters(a: { lat: number; lng: number }, b: { lat: number; lng:
 function routeLength(asset: SavedMapAsset | null): number | null {
   const explicit = read(asset as any, ["routeLengthMeters", "lengthMeters", "distanceMeters", "measuredLengthMeters"], null);
   const explicitNumber = toNumber(explicit);
-  if (explicitNumber !== null) return explicitNumber;
+
+  // A few legacy cable records carry a stored length of 0 even though the
+  // LineString geometry is valid. Treat 0 as "missing" and calculate from the
+  // route points so Trace/Cable Intelligence does not show 0 m incorrectly.
+  if (explicitNumber !== null && explicitNumber > 0) return explicitNumber;
 
   const points = linePoints(asset);
   if (points.length < 2) return null;
   let total = 0;
   for (let index = 1; index < points.length; index += 1) total += haversineMeters(points[index - 1], points[index]);
-  return total;
+  return total > 0 ? total : null;
 }
 
 function cableName(asset: SavedMapAsset | null): string {
@@ -526,7 +552,7 @@ function buildDpIntelligence(
             : "—";
 
   const capacityNumber = toNumber(inferredCapacity);
-  const cableFibreTotal = throughCableAsset ? toNumber(read(throughCableAsset as any, ["fibreCount", "fiberCount", "coreCount", "size"], null)) : null;
+  const cableFibreTotal = readCableFibreCount(throughCableAsset);
   const capacityPercent = capacityNumber !== null && usedNumber !== null && capacityNumber > 0 ? Math.round((usedNumber / capacityNumber) * 100) : null;
   const capacityWarning =
     capacityNumber !== null && usedNumber !== null

@@ -195,7 +195,9 @@ export default function WorkspaceQA({ auditIssues = [], stats, projectAssets, on
         <Tile label="High" value={n(buckets.high.length)} />
         <Tile label="Medium" value={n(buckets.medium.length)} />
       </div>
-      <button type="button" style={{ ...button, marginTop: 12, width: "100%" }} onClick={onOpenQA}>Open QA Operation Panel</button>
+      <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 12 }}>
+        Use the navigator below to step through issues and zoom/select the asset.
+      </div>
     </section>
 
     <section style={wide}>

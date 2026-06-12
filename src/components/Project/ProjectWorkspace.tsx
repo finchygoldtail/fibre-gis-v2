@@ -1537,6 +1537,18 @@ export default function ProjectWorkspace({
   >("Pending");
   const [walkOffSavedAt, setWalkOffSavedAt] = useState<string>("");
 
+  const clearWorkspaceOperationState = () => {
+    setActiveOperationPanel("none");
+    setActiveIssueSeverity(null);
+    setActiveIssueCategory(null);
+    setIssueNavigatorIndex(0);
+  };
+
+  const handleWorkspaceTabChange = (tab: WorkspaceTab) => {
+    setActiveTab(tab);
+    clearWorkspaceOperationState();
+  };
+
   // =====================================================
   // QA AREA SCOPE GUARD
   // The workspace map is already scoped to the selected project area, but
@@ -3096,6 +3108,27 @@ export default function ProjectWorkspace({
     },
   ];
 
+  const shouldShowOperationPanel =
+    activeOperationPanel !== "none" &&
+    ((activeOperationPanel === "projectDetails" &&
+      (activeTab === "overview" || activeTab === "assets")) ||
+      (activeOperationPanel === "rfsBreakdown" &&
+        (activeTab === "overview" || activeTab === "build")) ||
+      ((activeOperationPanel === "issues" || activeOperationPanel === "qa") &&
+        activeTab === "qa") ||
+      ((activeOperationPanel === "topology" ||
+        activeOperationPanel === "trace" ||
+        activeOperationPanel === "disconnected") &&
+        activeTab === "topology") ||
+      ((activeOperationPanel === "homesNotLive" ||
+        activeOperationPanel === "homesLive" ||
+        activeOperationPanel === "capacity" ||
+        activeOperationPanel === "addAsset") &&
+        activeTab === "build") ||
+      (activeOperationPanel === "handover" &&
+        (activeTab === "overview" || activeTab === "reports")) ||
+      (activeOperationPanel === "report" && activeTab === "reports"));
+
   const mobileWorkspaceTabs = [
     {
       label: "Summary",
@@ -3350,7 +3383,7 @@ export default function ProjectWorkspace({
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => handleWorkspaceTabChange(tab.id)}
                 style={activeTab === tab.id ? activeTabButton : tabButton}
               >
                 {tab.label}
@@ -3758,7 +3791,7 @@ export default function ProjectWorkspace({
                       }
                       onOpenTrace={openInternalTraceTool}
                       onOpenQA={() => openOperationPanel("qa", "qa")}
-                      onOpenFibreTopology={openInternalTraceTool}
+                      onOpenFibreTopology={onOpenFibreTopology || openInternalTraceTool}
                       onExport={onExport}
                       onBackToMap={onBackToMap}
                     />
@@ -3865,7 +3898,7 @@ export default function ProjectWorkspace({
                 </>
               )}
 
-              {activeOperationPanel !== "none" && (
+              {shouldShowOperationPanel && (
                 <section style={operationDrawer}>
                   <div style={operationDrawerHeader}>
                     <div>
@@ -4335,7 +4368,10 @@ export default function ProjectWorkspace({
                       <button
                         type="button"
                         style={wideButton}
-                        onClick={onOpenFibreTopology}
+                        onClick={() => {
+                          if (onOpenFibreTopology) onOpenFibreTopology();
+                          else openInternalTraceTool();
+                        }}
                       >
                         Open Fibre Tray Topology
                       </button>

@@ -123,7 +123,6 @@ export function buildDpRoutingState(asset: NetworkAsset): DpRoutingState {
     item.fibreCount,
     item.fiberCount,
     afnDetails.fibreCount,
-    afnDetails.fibreCountUsed,
     details.capacity,
     closureType.includes("CBT") ? 12 : undefined,
   );

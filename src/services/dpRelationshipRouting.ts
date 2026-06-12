@@ -180,7 +180,7 @@ function distanceMeters(a: LatLng, b: LatLng): number {
 }
 
 function parseFibreTotal(asset: any): number {
-  const candidates = [asset?.fibreCount, asset?.fiberCount, asset?.size, asset?.cableSize, asset?.name, asset?.label];
+  const candidates = [asset?.fibreCount, asset?.fiberCount, asset?.coreCount, asset?.size, asset?.cableSize, asset?.name, asset?.cableId, asset?.cableName, asset?.label];
   for (const candidate of candidates) {
     const match = text(candidate).toUpperCase().match(/(288|144|96|48|36|24|12)\s*F?/);
     if (match) return Number(match[1]);

@@ -117,6 +117,27 @@ const removePill: React.CSSProperties = {
   border: "1px solid rgba(239,68,68,0.35)",
 };
 
+
+const compactPanel: React.CSSProperties = {
+  background: "#0f1b2d",
+  border: "1px solid rgba(148, 163, 184, 0.18)",
+  borderRadius: 10,
+  padding: 12,
+  gridColumn: "span 2",
+};
+
+const compactButton: React.CSSProperties = {
+  ...button,
+  width: "100%",
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 12,
+  padding: "12px 14px",
+  background: "#111827",
+};
+
+
 function n(value: number): string {
   return Number(value || 0).toLocaleString("en-GB");
 }
@@ -140,6 +161,8 @@ export default function DuplicateHomeResolutionPanel({
     () => buildDuplicateHomeSummary(projectAssets || []),
     [projectAssets],
   );
+
+  const [isOpen, setIsOpen] = useState(false);
 
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>(
     summary.groups[0]?.id || null,
@@ -185,9 +208,30 @@ export default function DuplicateHomeResolutionPanel({
     });
   };
 
+  if (!isOpen) {
+    return (
+      <section style={compactPanel}>
+        <button type="button" style={compactButton} onClick={() => setIsOpen(true)}>
+          <span>
+            <strong style={{ color: "#e5e7eb" }}>Duplicate Home Resolution</strong>
+            <span style={{ display: "block", marginTop: 4, color: "#94a3b8", fontSize: 12 }}>
+              {summary.duplicateGroups > 0
+                ? `${n(summary.duplicateGroups)} group${summary.duplicateGroups === 1 ? "" : "s"} · ${n(summary.duplicateAssets)} duplicate asset${summary.duplicateAssets === 1 ? "" : "s"} found`
+                : "No duplicate home groups found"}
+            </span>
+          </span>
+          <span style={{ color: "#93c5fd", fontWeight: 900 }}>Open</span>
+        </button>
+      </section>
+    );
+  }
+
   return (
     <section style={panel}>
-      <h3 style={title}>Duplicate Home Resolution</h3>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+        <h3 style={title}>Duplicate Home Resolution</h3>
+        <button type="button" style={button} onClick={() => setIsOpen(false)}>Close</button>
+      </div>
       <p style={{ ...muted, marginTop: -4 }}>
         Detects duplicate UPRNs, duplicated home IDs, repeated addresses and stacked homes. Resolution is routed through the existing audited map save path.
       </p>

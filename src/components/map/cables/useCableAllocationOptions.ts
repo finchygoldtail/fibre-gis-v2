@@ -25,6 +25,27 @@ function isDropCable(asset: SavedMapAsset): boolean {
   );
 }
 
+function getDesignedCableFibreNumber(asset: SavedMapAsset): number {
+  const item = asset as any;
+  const haystack = [
+    item.fibreCount,
+    item.fiberCount,
+    item.coreCount,
+    item.size,
+    item.cableSize,
+    item.name,
+    item.cableId,
+    item.label,
+  ]
+    .map((value) => String(value ?? ""))
+    .join(" ");
+
+  const match = haystack.match(
+    /(?:^|[^0-9])(288|144|96|48|36|24|12)\s*F?(?:[^0-9]|$)/i,
+  );
+  return match ? Number(match[1]) : 0;
+}
+
 export function useCableAllocationOptions({
   allMapAssets,
   activeProjectArea,
@@ -64,8 +85,7 @@ export function useCableAllocationOptions({
             notes,
             importedName,
           ].join(" ");
-          const fibreNumber =
-            Number(String(item.fibreCount || "").replace(/\D/g, "")) || 0;
+          const fibreNumber = getDesignedCableFibreNumber(asset);
 
           if (asset.id === editingAssetId) return false;
           if (asset.geometry?.type !== "LineString") return false;
@@ -73,7 +93,8 @@ export function useCableAllocationOptions({
           // Never show Openreach / PIA / suggested reference infrastructure
           // inside designed-network parent/through cable selectors.
           if (isOpenreachReferenceAsset(asset)) return false;
-          if (item.readOnly === true || item.isReferenceAsset === true) return false;
+          if (item.readOnly === true || item.isReferenceAsset === true)
+            return false;
           if (
             source.includes("openreach") ||
             source.includes("pia") ||
@@ -138,7 +159,9 @@ export function useCableAllocationOptions({
     [allMapAssets],
   );
 
-  const connectedHomesForSelectedDp = useMemo<ConnectedHomeForSelectedDp[]>(() => {
+  const connectedHomesForSelectedDp = useMemo<
+    ConnectedHomeForSelectedDp[]
+  >(() => {
     if (!editingAssetId) return [];
 
     const drops = allMapAssets.filter((asset) => {
