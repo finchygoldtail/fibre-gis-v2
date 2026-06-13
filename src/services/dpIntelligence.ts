@@ -6,6 +6,11 @@
 // =====================================================
 
 import type { SavedMapAsset } from "../components/map/types";
+import {
+  getCableFibreCount as getSharedCableFibreCount,
+  isSupportingCableAsset as isSharedSupportingCableAsset,
+  resolveDpThroughCable,
+} from "./dpCableRouting";
 
 export type DpCapacityRisk = "OK" | "WARN" | "FULL" | "OVER";
 
@@ -23,10 +28,6 @@ export type DpIntelligence = {
   capacityWarning: string;
   splitterRatio: string;
   splitterOutputs: number;
-  inputFibres: number[];
-  inputFibreCount: number;
-  passthroughFibres: number[];
-  passthroughFibreCount: number;
   incomingCable: SavedMapAsset | null;
   incomingCableId: string;
   incomingCableName: string;
@@ -181,74 +182,11 @@ export function isDropCableAsset(asset: SavedMapAsset | null | undefined): boole
 }
 
 export function isSupportingCableAsset(asset: SavedMapAsset | null | undefined): boolean {
-  if (!asset) return false;
-  const item = asset as any;
-  const haystack = [
-    item.source,
-    item.assetType,
-    item.type,
-    item.cableType,
-    item.routeType,
-    item.jointType,
-    item.name,
-    item.label,
-    item.cableId,
-    item.notes,
-    item.importedProperties?.Name,
-    item.importedProperties?.name,
-    item.importedProperties?.Description,
-    item.importedProperties?.description,
-  ]
-    .map(normalise)
-    .join(" ");
-
-  if (asset.geometry?.type !== "LineString") return false;
-  if (item.readOnly === true || item.isReferenceAsset === true) return false;
-  if (isDropCableAsset(asset)) return false;
-  if (
-    haystack.includes("openreach") ||
-    haystack.includes("pia") ||
-    haystack.includes("osp:") ||
-    haystack.includes("pol:") ||
-    haystack.includes("mp:") ||
-    haystack.includes("jc:") ||
-    haystack.includes("ch:") ||
-    haystack.includes("missing duct") ||
-    haystack.includes("suggested duct")
-  ) {
-    return false;
-  }
-
-  return (
-    haystack.includes("cable") ||
-    haystack.includes("ulw") ||
-    haystack.includes("feeder") ||
-    haystack.includes("link") ||
-    haystack.includes("distribution") ||
-    haystack.includes("spine") ||
-    getCableFibreCount(asset) > 0
-  );
+  return isSharedSupportingCableAsset(asset);
 }
 
 export function getCableFibreCount(asset: SavedMapAsset | null | undefined): number {
-  const item = asset as any;
-  if (!item) return 0;
-  const haystack = [
-    item.fibreCount,
-    item.fiberCount,
-    item.coreCount,
-    item.size,
-    item.cableSize,
-    item.name,
-    item.cableId,
-    item.cableName,
-    item.label,
-  ]
-    .map(text)
-    .filter(Boolean)
-    .join(" ");
-  const match = haystack.match(/(?:^|[^0-9])(288|144|96|48|36|24|12)\s*F?(?:[^0-9]|$)/i);
-  return match ? Number(match[1]) : 0;
+  return getSharedCableFibreCount(asset);
 }
 
 function getAssetIdentityKeys(asset: any): string[] {
@@ -464,34 +402,7 @@ function getThroughCableId(asset: SavedMapAsset | null | undefined): string {
 }
 
 export function findDpIncomingCable(dp: SavedMapAsset | null | undefined, allAssets: SavedMapAsset[] = []): SavedMapAsset | null {
-  if (!dp) return null;
-  const throughCableId = getThroughCableId(dp);
-  if (throughCableId) {
-    const explicit = allAssets.find((asset: any) =>
-      [asset?.id, asset?.assetId, asset?.name, asset?.cableId, asset?.cableName, asset?.label]
-        .filter(Boolean)
-        .some((ref) => refsMatch(ref, throughCableId)),
-    );
-    if (explicit && isSupportingCableAsset(explicit)) return explicit;
-  }
-
-  const point = getPoint(dp);
-  if (!point) return null;
-  const candidates = allAssets
-    .filter(isSupportingCableAsset)
-    .map((asset) => {
-      const line = getLine(asset);
-      if (line.length < 2) return null;
-      const startDistance = distanceMeters(point, line[0]);
-      const endDistance = distanceMeters(point, line[line.length - 1]);
-      const routeDistance = minDistanceToLine(point, line);
-      return { asset, score: Math.min(startDistance, endDistance, routeDistance) };
-    })
-    .filter((row): row is { asset: SavedMapAsset; score: number } => Boolean(row))
-    .filter((row) => row.score <= 40)
-    .sort((a, b) => a.score - b.score);
-
-  return candidates[0]?.asset || null;
+  return resolveDpThroughCable(dp, allAssets).cable;
 }
 
 function getExplicitCapacity(asset: SavedMapAsset | null | undefined): number {
@@ -580,10 +491,6 @@ export function getDpIntelligence(dp: SavedMapAsset | null | undefined, allAsset
     capacityWarning,
     splitterRatio: isAfn ? `1:${splitterOutputs}` : "—",
     splitterOutputs,
-    inputFibres,
-    inputFibreCount,
-    passthroughFibres,
-    passthroughFibreCount,
     incomingCable,
     incomingCableId: incomingCable ? getAssetId(incomingCable as any) : "",
     incomingCableName: incomingCable ? getAssetName(incomingCable as any) : "",

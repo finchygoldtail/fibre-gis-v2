@@ -450,8 +450,6 @@ type DpIntelligence = {
   capacityPercent: RowValue;
   capacityWarning: RowValue;
   splitterRatio: RowValue;
-  inputFibres: RowValue;
-  passthroughFibres: RowValue;
 };
 
 function isDropCable(asset: SavedMapAsset | null): boolean {
@@ -488,13 +486,11 @@ function buildDpIntelligence(
       status: intelligence.status,
       throughCable: intelligence.incomingCableName || "—",
       fibres: intelligence.incomingCableFibreCount
-        ? `${intelligence.inputFibreCount} used / ${intelligence.incomingCableFibreCount}`
+        ? `${intelligence.incomingCableFibreCount}F incoming`
         : "—",
       capacityPercent: `${intelligence.capacityPercent}%`,
       capacityWarning: intelligence.capacityWarning,
       splitterRatio: intelligence.splitterRatio,
-      inputFibres: intelligence.inputFibreCount,
-      passthroughFibres: intelligence.passthroughFibreCount,
     };
   }
 
@@ -513,8 +509,6 @@ function buildDpIntelligence(
     capacityPercent: "—",
     capacityWarning: "Capacity unknown",
     splitterRatio: "—",
-    inputFibres: "—",
-    passthroughFibres: "—",
   };
 }
 
@@ -1435,8 +1429,6 @@ export default function AssetIntelligencePanel({
           <InfoRow label="Capacity %" value={dpInfo.capacityPercent} />
           <InfoRow label="Capacity Warning" value={dpInfo.capacityWarning} />
           <InfoRow label="Splitter Ratio" value={dpInfo.splitterRatio} />
-          <InfoRow label="Input Fibres" value={dpInfo.inputFibres} />
-          <InfoRow label="Passthrough Fibres" value={dpInfo.passthroughFibres} />
           <InfoRow label="Service Status" value={dpInfo.status} />
           <InfoRow label="Through Cable" value={dpInfo.throughCable} />
           <InfoRow label="Fibres" value={dpInfo.fibres} />
