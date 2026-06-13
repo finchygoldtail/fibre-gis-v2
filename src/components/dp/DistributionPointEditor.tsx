@@ -385,7 +385,7 @@ function getFibreCountFromCable(
     .filter(Boolean)
     .join(" ");
 
-  const match = haystack.match(/(288|144|96|48|36|24|12)\s*F?/i);
+  const match = haystack.match(/(?:^|[^0-9])(288|144|96|48|36|24|12)\s*F?(?:[^0-9]|$)/i);
 
   // Do not invent a 144F cable when the through-cable cannot be read.
   // Showing Unknown is safer than making SB/DP fibre intake look wrong.
@@ -513,6 +513,146 @@ function cableName(asset: SavedMapAsset | null | undefined): string {
       item?.id ||
       "No cable connected",
   );
+}
+
+
+function isThroughCableCandidate(asset: SavedMapAsset | null | undefined): boolean {
+  if (!asset) return false;
+  if (asset.geometry?.type !== "LineString") return false;
+  if (isDropCable(asset)) return false;
+
+  const item = asset as any;
+  const haystack = [
+    item.assetType,
+    item.type,
+    item.cableType,
+    item.name,
+    item.label,
+    item.cableId,
+  ]
+    .map(normalise)
+    .join(" ");
+
+  return (
+    haystack.includes("cable") ||
+    haystack.includes("ulw") ||
+    haystack.includes("feeder") ||
+    haystack.includes("link") ||
+    haystack.includes("spine") ||
+    getFibreCountFromCable(asset) > 0
+  );
+}
+
+function findCableByReference(
+  allAssets: SavedMapAsset[],
+  reference: unknown,
+): SavedMapAsset | null {
+  if (!text(reference) || text(reference) === "No through cable selected") return null;
+
+  return (
+    allAssets.find((candidate) =>
+      isThroughCableCandidate(candidate) &&
+      [
+        candidate.id,
+        (candidate as any).assetId,
+        (candidate as any).name,
+        (candidate as any).cableId,
+        (candidate as any).cableName,
+        (candidate as any).label,
+      ]
+        .filter(Boolean)
+        .some((ref) => refsMatch(ref, reference)),
+    ) || null
+  );
+}
+
+function cableEndpointDistanceToPoint(
+  cable: SavedMapAsset | null | undefined,
+  point: AssetPoint | null,
+): number {
+  if (!cable || !point) return Number.POSITIVE_INFINITY;
+  const line = getCableLinePoints(cable);
+  if (line.length < 2) return Number.POSITIVE_INFINITY;
+
+  return Math.min(distanceMeters(point, line[0]), distanceMeters(point, line[line.length - 1]));
+}
+
+function findParentCableForBranchCable(
+  branchCable: SavedMapAsset | null | undefined,
+  allAssets: SavedMapAsset[],
+): SavedMapAsset | null {
+  const item = branchCable as any;
+  if (!branchCable) return null;
+
+  const parentRefs = [
+    item.parentCableId,
+    item.parentCableName,
+    item.parentCable,
+    item.upstreamCableId,
+    item.upstreamCableName,
+    item.sourceCableId,
+    item.sourceCableName,
+  ].filter(Boolean);
+
+  for (const ref of parentRefs) {
+    const parent = findCableByReference(allAssets, ref);
+    if (parent && parent.id !== branchCable.id) return parent;
+  }
+
+  return null;
+}
+
+function findBranchParentThroughCableForDp(
+  dp: SavedMapAsset | null,
+  allAssets: SavedMapAsset[],
+): SavedMapAsset | null {
+  const point = getAssetPoint(dp);
+  if (!dp || !point) return null;
+
+  const nearbyBranchCables = allAssets
+    .filter(isThroughCableCandidate)
+    .map((candidate) => ({
+      candidate,
+      endpointDistance: cableEndpointDistanceToPoint(candidate, point),
+      fibreCount: getFibreCountFromCable(candidate),
+      parentCable: findParentCableForBranchCable(candidate, allAssets),
+    }))
+    .filter((entry) => entry.parentCable && entry.endpointDistance <= 35)
+    // Prefer the small branch cable that actually terminates at this SB, then
+    // climb to its parent. This catches 12F/24F shoot-offs from a 96F spine.
+    .sort((a, b) => {
+      const aIsSmallBranch = a.fibreCount > 0 && a.fibreCount <= 24 ? 0 : 1;
+      const bIsSmallBranch = b.fibreCount > 0 && b.fibreCount <= 24 ? 0 : 1;
+      return aIsSmallBranch - bIsSmallBranch || a.endpointDistance - b.endpointDistance;
+    });
+
+  return nearbyBranchCables[0]?.parentCable || null;
+}
+
+function findNearestThroughCableForDp(
+  dp: SavedMapAsset | null,
+  allAssets: SavedMapAsset[],
+): SavedMapAsset | null {
+  const point = getAssetPoint(dp);
+  if (!dp || !point) return null;
+
+  const candidates = allAssets
+    .filter(isThroughCableCandidate)
+    .map((candidate) => ({
+      candidate,
+      endpointDistance: cableEndpointDistanceToPoint(candidate, point),
+      fibreCount: getFibreCountFromCable(candidate),
+    }))
+    .filter((entry) => entry.endpointDistance <= 28)
+    .sort((a, b) => {
+      // Prefer larger spine/feeder cables over drop-sized tails when both touch
+      // the same DP marker. This prevents a 12F branch from hiding the 96F
+      // parent when no explicit through-cable has been saved yet.
+      const fibreScore = b.fibreCount - a.fibreCount;
+      return fibreScore || a.endpointDistance - b.endpointDistance;
+    });
+
+  return candidates[0]?.candidate || null;
 }
 
 function getDropCablesForDp(
@@ -1096,24 +1236,34 @@ export default function DistributionPointEditor({
     manualSbRoute?.supportingCableId ||
     manualSbRoute?.supportingCableName;
 
-  const throughCableId =
+  const storedThroughCableId =
     afnDetails.throughCableId ||
     mduDetails.throughCableId ||
     details.throughCableId ||
     routedCableId ||
-    "No through cable selected";
+    "";
 
-  const throughCable = allAssets.find((candidate) =>
-    [
-      candidate.id,
-      (candidate as any).assetId,
-      (candidate as any).name,
-      (candidate as any).cableId,
-      (candidate as any).label,
-    ]
-      .filter(Boolean)
-      .some((ref) => refsMatch(ref, throughCableId)),
-  );
+  const storedThroughCable = findCableByReference(allAssets, storedThroughCableId);
+
+  const branchParentThroughCable = !storedThroughCable
+    ? findBranchParentThroughCableForDp(asset, allAssets)
+    : null;
+
+  const nearestThroughCable = !storedThroughCable && !branchParentThroughCable
+    ? findNearestThroughCableForDp(asset, allAssets)
+    : null;
+
+  const throughCable =
+    storedThroughCable || branchParentThroughCable || nearestThroughCable || null;
+
+  const throughCableId =
+    text(
+      (throughCable as any)?.id ||
+        (throughCable as any)?.assetId ||
+        (throughCable as any)?.name ||
+        (throughCable as any)?.cableId ||
+        storedThroughCableId,
+    ) || "No through cable selected";
 
   const incomingFibreCount = getFibreCountFromCable(throughCable);
   const incomingFibreCountLabel = incomingFibreCount > 0 ? `${incomingFibreCount}F` : "Unknown";
@@ -1553,6 +1703,7 @@ export default function DistributionPointEditor({
         ? details.powerReadings
         : [],
       afnDetails: {
+        ...(afnDetails || {}),
         enabled: true,
         throughCableId:
           throughCableId === "No through cable selected"
@@ -1560,7 +1711,6 @@ export default function DistributionPointEditor({
             : throughCableId,
         splitterRatio: "1:8",
         splitterOutputs: splitterOutputsPerFibre,
-        ...(afnDetails || {}),
         inputFibres: nextInputFibres,
         splitterFibres: draftRouting.splitterFibres,
         spliceFibres: nextSpliceFibres,

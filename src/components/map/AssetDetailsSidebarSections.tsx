@@ -326,6 +326,92 @@ function findSupportingCableForSbRoute(
   return matches[0]?.cable || null;
 }
 
+
+function findDpByAnyReference(
+  distributionPoints: SavedMapAsset[],
+  references: unknown[],
+): SavedMapAsset | null {
+  return findAssetByAnyReference(distributionPoints, references);
+}
+
+function findCableByAnyReference(
+  cables: SavedMapAsset[],
+  references: unknown[],
+): SavedMapAsset | null {
+  return findAssetByAnyReference(cables, references);
+}
+
+function inferSourceDpFromSupportingCable(
+  targetDp: SavedMapAsset | null,
+  supportCable: SavedMapAsset | null,
+  distributionPoints: SavedMapAsset[],
+): SavedMapAsset | null {
+  if (!targetDp || !supportCable) return null;
+
+  const cable = supportCable as any;
+  const targetRefs = assetIdentityValues(targetDp);
+
+  const endpointRefs = [
+    cable.fromAssetId,
+    cable.fromId,
+    cable.sourceAssetId,
+    cable.sourceId,
+    cable.aEndAssetId,
+    cable.aAssetId,
+    cable.startAssetId,
+    cable.toAssetId,
+    cable.toId,
+    cable.targetAssetId,
+    cable.targetId,
+    cable.zEndAssetId,
+    cable.bAssetId,
+    cable.endAssetId,
+  ].filter((value) => {
+    const valueRef = normaliseDpLookup(value);
+    return valueRef && !targetRefs.some((targetRef) => refsLookLikeSameAsset(valueRef, targetRef));
+  });
+
+  const byEndpoint = findDpByAnyReference(distributionPoints, endpointRefs);
+  if (byEndpoint) return byEndpoint;
+
+  const targetPoint = getAssetPointForRoute(targetDp);
+  const line = getCableEndpointPoints(supportCable);
+  if (!targetPoint || line.length < 2) return null;
+
+  const start = line[0];
+  const end = line[line.length - 1];
+  const targetNearStart = routeDistanceMeters(targetPoint, start) <= routeDistanceMeters(targetPoint, end);
+  const oppositePoint = targetNearStart ? end : start;
+
+  const scored = distributionPoints
+    .filter((dp) => !assetIdentityValues(dp).some((value) => targetRefs.some((targetRef) => refsLookLikeSameAsset(value, targetRef))))
+    .map((dp) => {
+      const point = getAssetPointForRoute(dp);
+      return point ? { dp, distance: routeDistanceMeters(point, oppositePoint) } : null;
+    })
+    .filter((item): item is { dp: SavedMapAsset; distance: number } => Boolean(item))
+    .sort((a, b) => a.distance - b.distance);
+
+  return scored[0]?.distance <= 60 ? scored[0].dp : null;
+}
+
+function stripUndefinedValues<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripUndefinedValues(item)).filter((item) => item !== undefined) as T;
+  }
+
+  if (value && typeof value === "object") {
+    const cleaned: Record<string, any> = {};
+    Object.entries(value as Record<string, any>).forEach(([key, entry]) => {
+      if (entry === undefined) return;
+      cleaned[key] = stripUndefinedValues(entry);
+    });
+    return cleaned as T;
+  }
+
+  return value;
+}
+
 function getDpStatusForSidebar(
   currentDp: SavedMapAsset | null,
   details: DistributionPointDetails,
@@ -833,15 +919,26 @@ export default function AssetDetailsSidebarSections({
   }, [currentDpId, dpDetails, optionalSupportingCables]);
 
   function applyManualSbRoute() {
-    const fromAsset = allDpOptions.find((asset) => asset.id === manualFromSbId) || null;
-    const toAsset = allDpOptions.find((asset) => asset.id === manualToSbId) || null;
-    let supportCable =
-      optionalSupportingCables.find((asset) => asset.id === manualSupportingCable) || null;
+    let supportCable = findCableByAnyReference(optionalSupportingCables, [manualSupportingCable]) || null;
+    const toAsset =
+      findDpByAnyReference(allDpOptions, [manualToSbId, currentDpId]) ||
+      currentDpAsset ||
+      null;
+    let fromAsset = findDpByAnyReference(allDpOptions, [manualFromSbId]) || null;
     const parentFibres = parseFibreListInput(manualParentFibres);
     const localFibres = parseFibreListInput(manualLocalFibres);
 
+    if (!fromAsset && toAsset && supportCable) {
+      fromAsset = inferSourceDpFromSupportingCable(
+        toAsset,
+        supportCable,
+        allDpOptions,
+      );
+      if (fromAsset?.id) setManualFromSbId(fromAsset.id);
+    }
+
     if (!fromAsset || !toAsset) {
-      alert("Select both the source SB and target SB before applying the route.");
+      alert("Select both the source SB and target SB before applying the route. If you select a supporting 96F/branch cable, the source SB will be auto-detected when possible.");
       return;
     }
 
@@ -877,7 +974,7 @@ export default function AssetDetailsSidebarSections({
 
     const existingRoutes = getStoredSbRoutes(dpDetails as any).filter((route) => route.id !== nextRoute.id);
 
-    onChangeDpDetails({
+    const nextDetails = stripUndefinedValues({
       ...dpDetails,
       closureType: "AFN",
       connectionsToHomes: localFibres.length * 8,
@@ -892,15 +989,18 @@ export default function AssetDetailsSidebarSections({
         fibreCountUsed: localFibres.length,
         // SB → SB route remains the authority. throughCableId is kept in sync
         // as supporting cable evidence so legacy QA does not flag a false issue.
-        throughCableId: supportCable?.id,
-        throughCableName: supportCable
-          ? normaliseCableLabel((supportCable as any).name || (supportCable as any).cableId || supportCable.id)
-          : undefined,
+        ...(supportCable?.id
+          ? {
+              throughCableId: supportCable.id,
+              throughCableName: normaliseCableLabel((supportCable as any).name || (supportCable as any).cableId || supportCable.id),
+            }
+          : {}),
         parentInputFibres: parentFibres,
         sbToSbRoutes: [nextRoute, ...existingRoutes],
       },
-      autoFibrePlan: undefined,
     } as DistributionPointDetails);
+
+    onChangeDpDetails(nextDetails);
   }
 
 

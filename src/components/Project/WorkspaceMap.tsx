@@ -28,6 +28,7 @@ import type { SavedMapAsset } from "../map/types";
 import OpenreachOverlayLayer, { type OpenreachLayerVisibility } from "../map/OpenreachOverlayLayer";
 import type { NetworkState } from "../../services/network";
 import { getDpIntelligence, isDpLikeAsset } from "../../services/dpIntelligence";
+import { getHomeConnectionStatus } from "../../services/homeIntelligence";
 
 // =====================================================
 // TYPES
@@ -356,67 +357,6 @@ function groupWorkspaceHomeStacks(homes: SavedMapAsset[]): WorkspaceHomeStack[] 
   }
 
   return stacks;
-}
-
-function normaliseHomeStatus(value: unknown): string {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "_")
-    .replace(/-/g, "_");
-}
-
-function isDropCableByHome(asset: SavedMapAsset, home: SavedMapAsset): boolean {
-  const item = asset as any;
-  const homeId = String((home as any).id || "");
-  const homeKeys = [
-    homeId,
-    String((home as any).uprn || ""),
-    String((home as any).UPRN || ""),
-    String((home as any).properties?.UPRN || ""),
-    String((home as any).properties?.uprn || ""),
-  ].filter(Boolean);
-
-  if (!homeKeys.length) return false;
-
-  const dropKeys = [
-    item.fromAssetId,
-    item.toAssetId,
-    item.homeId,
-    item.connectedHomeId,
-    item.toHomeId,
-    item.fromHomeId,
-    item.uprn,
-    item.UPRN,
-  ].map((value) => String(value || ""));
-
-  return isHomeDropCable(asset) && homeKeys.some((key) => dropKeys.includes(key));
-}
-
-function getWorkspaceHomeConnectionStatus(home: SavedMapAsset, allAssets: SavedMapAsset[]): "unconnected" | "connected" | "live" {
-  const item = home as any;
-  const ownStatus = normaliseHomeStatus(
-    item.customerStatus ||
-      item.homeStatus ||
-      item.status ||
-      item.buildStatus ||
-      item.serviceStatus ||
-      item.connectionStatus ||
-      item.properties?.status,
-  );
-
-  if (ownStatus === "live") return "live";
-
-  const metadataConnection = String(item.connection || item.properties?.connection || "").toLowerCase();
-  if (item.connectedDpId || item.properties?.connectedDpId || item.dpId || metadataConnection === "connected") {
-    return "connected";
-  }
-
-  const drop = allAssets.find((asset) => isDropCableByHome(asset, home));
-  if (!drop) return "unconnected";
-
-  const dropStatus = normaliseHomeStatus((drop as any).customerStatus || (drop as any).homeStatus || (drop as any).status);
-  return dropStatus === "live" ? "live" : "connected";
 }
 
 function isHomeAssetForWorkspace(asset: SavedMapAsset): boolean {
@@ -764,7 +704,7 @@ export default function WorkspaceMap({
         if (!isLayerVisibleForAsset(asset, visibleLayers)) return false;
 
         if (isHomeAssetForWorkspace(asset)) {
-          const homeStatus = getWorkspaceHomeConnectionStatus(asset, assets);
+          const homeStatus = getHomeConnectionStatus(asset, assets, isHomeDropCable);
           if (homeStatus === "live" && visibleLayers.homesLive === false) return false;
           if (homeStatus === "connected" && visibleLayers.homesConnected === false) return false;
           if (homeStatus === "unconnected" && visibleLayers.homesUnconnected === false) return false;
@@ -1004,7 +944,7 @@ export default function WorkspaceMap({
               <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6, maxHeight: 240, overflowY: "auto" }}>
                 {stack.assets.map((home) => {
                   const point = getPoint(home);
-                  const status = getWorkspaceHomeConnectionStatus(home, assets);
+                  const status = getHomeConnectionStatus(home, assets, isHomeDropCable);
 
                   return (
                     <div key={home.id} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: 8 }}>
@@ -1032,7 +972,7 @@ export default function WorkspaceMap({
           if (!point) return null;
           const selected = selectedAssetId === asset.id;
           const traceKind = getTraceKind(asset, traceHighlightedAssetIds, traceHighlightKinds);
-          const homeStatus = isHomeAssetForWorkspace(asset) ? getWorkspaceHomeConnectionStatus(asset, assets) : undefined;
+          const homeStatus = isHomeAssetForWorkspace(asset) ? getHomeConnectionStatus(asset, assets, isHomeDropCable) : undefined;
           const dpCapacityState = getDpCapacityState(asset, assets);
 
           return (

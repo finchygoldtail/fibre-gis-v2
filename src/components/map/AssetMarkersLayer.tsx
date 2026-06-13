@@ -613,6 +613,142 @@ function getConnectedDpReference(asset: any): string {
   ).trim();
 }
 
+function readPositiveNumber(...values: unknown[]): number {
+  for (const value of values) {
+    if (value === undefined || value === null || value === "") continue;
+
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+      return Math.floor(value);
+    }
+
+    const text = String(value).trim();
+    const match = text.match(/\d+/);
+    const parsed = match ? Number(match[0]) : Number(text);
+
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return Math.floor(parsed);
+    }
+  }
+
+  return 0;
+}
+
+function getSavedDpUsedPorts(dp: any, dpDetails: any, matchingDpState?: any): number {
+  const savedConnectedHomes = Array.isArray(dp?.connectedHomes)
+    ? dp.connectedHomes.length
+    : Array.isArray(dpDetails?.connectedHomes)
+      ? dpDetails.connectedHomes.length
+      : 0;
+
+  const savedConnectedHomeIds = Array.isArray(dp?.connectedHomeIds)
+    ? dp.connectedHomeIds.length
+    : Array.isArray(dpDetails?.connectedHomeIds)
+      ? dpDetails.connectedHomeIds.length
+      : 0;
+
+  return readPositiveNumber(
+    matchingDpState?.used,
+    matchingDpState?.usedPorts,
+    matchingDpState?.connectedHomes,
+    matchingDpState?.connectedHomeCount,
+    matchingDpState?.homeCount,
+    dp?.usedPorts,
+    dp?.usedPortCount,
+    dp?.portsUsed,
+    dp?.connectedHomesCount,
+    dp?.connectedHomeCount,
+    dp?.servedHomeCount,
+    dp?.homesServed,
+    dpDetails?.usedPorts,
+    dpDetails?.usedPortCount,
+    dpDetails?.portsUsed,
+    dpDetails?.connectedHomesCount,
+    dpDetails?.connectedHomeCount,
+    dpDetails?.servedHomeCount,
+    dpDetails?.homesServed,
+    dpDetails?.autoFibrePlan?.usedPorts,
+    dpDetails?.autoFibrePlan?.connectedHomes,
+    savedConnectedHomes,
+    savedConnectedHomeIds,
+  );
+}
+
+function getSavedDpCapacity(dp: any, dpDetails: any, matchingDpState?: any): number {
+  return readPositiveNumber(
+    matchingDpState?.capacity,
+    matchingDpState?.totalPorts,
+    matchingDpState?.ports,
+    dp?.capacity,
+    dp?.dpCapacity,
+    dp?.totalPorts,
+    dp?.ports,
+    dp?.connectionsToHomes,
+    dpDetails?.capacity,
+    dpDetails?.dpCapacity,
+    dpDetails?.totalPorts,
+    dpDetails?.ports,
+    dpDetails?.connectionsToHomes,
+    dpDetails?.autoFibrePlan?.capacity,
+  );
+}
+
+function getDropHomeReference(drop: any, dpIdentityValues: string[]): string {
+  const fromRefs = [
+    drop?.fromAssetId,
+    drop?.fromId,
+    drop?.fromHomeId,
+    drop?.fromAssetName,
+    drop?.sourceAssetId,
+    drop?.sourceId,
+  ];
+
+  const toRefs = [
+    drop?.toAssetId,
+    drop?.toId,
+    drop?.toHomeId,
+    drop?.toAssetName,
+    drop?.targetAssetId,
+    drop?.targetId,
+  ];
+
+  const fromIsDp = fromRefs.some((ref) =>
+    dpIdentityValues.some((dpRef) => refsMatch(ref, dpRef)),
+  );
+  const toIsDp = toRefs.some((ref) =>
+    dpIdentityValues.some((dpRef) => refsMatch(ref, dpRef)),
+  );
+
+  if (fromIsDp) {
+    return String(
+      drop?.toHomeId ||
+        drop?.toAssetId ||
+        drop?.toId ||
+        drop?.targetAssetId ||
+        drop?.targetId ||
+        drop?.homeId ||
+        drop?.connectedHomeId ||
+        drop?.id ||
+        "",
+    ).trim();
+  }
+
+  if (toIsDp) {
+    return String(
+      drop?.fromHomeId ||
+        drop?.fromAssetId ||
+        drop?.fromId ||
+        drop?.sourceAssetId ||
+        drop?.sourceId ||
+        drop?.homeId ||
+        drop?.connectedHomeId ||
+        drop?.id ||
+        "",
+    ).trim();
+  }
+
+  return "";
+}
+
 function getDpUsage(
   dp: SavedMapAsset,
   allAssets: SavedMapAsset[],
@@ -622,24 +758,6 @@ function getDpUsage(
   const dpDetails = ((dp as any).dpDetails || (dp as any).properties?.dpDetails || {}) as any;
   const afnDetails = dpDetails.afnDetails || (dp as any).afnDetails || {};
 
-  const connectedHomeKeys = new Set<string>();
-
-  allAssets.forEach((asset: any) => {
-    if (asset?.assetType !== "home") return;
-
-    const connectedDpRef = getConnectedDpReference(asset);
-    if (!connectedDpRef) return;
-
-    const belongsToThisDp = dpIdentityValues.some((dpRef) =>
-      refsMatch(connectedDpRef, dpRef),
-    );
-
-    if (!belongsToThisDp) return;
-
-    const key = getHomeUniqueKey(asset);
-    if (key) connectedHomeKeys.add(key);
-  });
-
   const matchingDpState =
     (dp.id ? networkState?.dpStates?.[dp.id] : null) ||
     Object.values(networkState?.dpStates || {}).find((state: any) =>
@@ -647,6 +765,33 @@ function getDpUsage(
         refsMatch(state?.assetId || state?.assetName || state?.dpName, dpRef),
       ),
     );
+
+  const connectedHomeKeys = new Set<string>();
+
+  allAssets.forEach((asset: any) => {
+    if (asset?.assetType === "home") {
+      const connectedDpRef = getConnectedDpReference(asset);
+      if (!connectedDpRef) return;
+
+      const belongsToThisDp = dpIdentityValues.some((dpRef) =>
+        refsMatch(connectedDpRef, dpRef),
+      );
+
+      if (!belongsToThisDp) return;
+
+      const key = getHomeUniqueKey(asset);
+      if (key) connectedHomeKeys.add(key);
+      return;
+    }
+
+    // The main map can be shown without all project homes loaded. In that case
+    // use the saved drop-cable endpoints as a fallback so the DP popup does not
+    // incorrectly show "0 used".
+    if (isDropCable(asset as SavedMapAsset)) {
+      const homeRef = getDropHomeReference(asset, dpIdentityValues);
+      if (homeRef) connectedHomeKeys.add(homeRef.toLowerCase());
+    }
+  });
 
   const manualSbRoute = getPrimaryManualSbRouteForDp(dp as any);
   const manualLocalFibres = uniquePositiveNumbers([
@@ -680,23 +825,19 @@ function getDpUsage(
   ).toUpperCase();
 
   const isAfn = closureType.includes("AFN");
+  const savedCapacity = getSavedDpCapacity(dp as any, dpDetails, matchingDpState);
+  const savedUsed = getSavedDpUsedPorts(dp as any, dpDetails, matchingDpState);
 
-  const storedCapacity =
-    Number((dp as any).capacity) ||
-    Number((dp as any).dpCapacity) ||
-    Number((dp as any).ports) ||
-    Number(dpDetails.capacity) ||
-    Number(dpDetails.ports) ||
-    0;
-
-  // AFN/SB capacity is only local splitter inputs × 8.
-  // Do not use all joint-matched input fibres here, because shoot-off and
-  // downstream fibres pass through the SB and are not local customer ports.
+  // AFN/SB capacity is local splitter inputs × 8 where the route is present.
+  // If the saved DP already has a capacity from the workspace intelligence,
+  // keep that as the fallback instead of dropping back to the old hard-coded 16.
   const capacity = isAfn && splitterFibres.length
     ? splitterFibres.length * 8
-    : storedCapacity || connectedHomeKeys.size || 16;
+    : savedCapacity || connectedHomeKeys.size || 16;
 
-  const used = connectedHomeKeys.size;
+  // Prefer actual loaded homes/drop endpoints. If the main map has not loaded
+  // homes for the project, fall back to the saved workspace/intelligence count.
+  const used = connectedHomeKeys.size || savedUsed;
   const free = Math.max(0, capacity - used);
 
   return {
