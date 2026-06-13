@@ -27,6 +27,7 @@ import "leaflet/dist/leaflet.css";
 import type { SavedMapAsset } from "../map/types";
 import OpenreachOverlayLayer, { type OpenreachLayerVisibility } from "../map/OpenreachOverlayLayer";
 import type { NetworkState } from "../../services/network";
+import { getDpIntelligence, isDpLikeAsset } from "../../services/dpIntelligence";
 
 // =====================================================
 // TYPES
@@ -471,54 +472,49 @@ function isOverhead(asset: SavedMapAsset): boolean {
 }
 
 
-function getDpCapacityState(asset: SavedMapAsset): { colour: string; label: string; percent: number } | null {
-  const item = asset as any;
-  const type = getAssetType(asset);
-  const isDp = type.includes("distribution") || type === "dp" || type.includes("afn") || type.includes("cbt") || type.includes("mdu");
-  if (!isDp) return null;
+function getDpCapacityState(
+  asset: SavedMapAsset,
+  allAssets: SavedMapAsset[] = [],
+): {
+  colour: string;
+  label: string;
+  percent: number;
+  connectedHomes: number;
+  capacity: number;
+  usedPorts: number;
+  freePorts: number;
+  capacityWarning: string;
+} | null {
+  if (!isDpLikeAsset(asset)) return null;
 
-  const details = item.dpDetails || item.properties?.dpDetails || {};
-  const closureText = String(details.closureType || item.closureType || item.dpType || item.jointType || "").toLowerCase();
-  const connectedHomes = Number(details.connectedHomes ?? details.connectionsToHomes ?? item.connectedHomes ?? item.homesConnected ?? item.homeCount ?? 0);
-  const dropCount = Number(item.dropCableCount ?? item.drops ?? 0);
-  const used = Math.max(Number.isFinite(connectedHomes) ? connectedHomes : 0, Number.isFinite(dropCount) ? dropCount : 0);
-  const afnDetails =
-  details.afnDetails ||
-  item.afnDetails ||
-  {};
+  const intelligence = getDpIntelligence(asset, allAssets);
+  const percent = intelligence.capacityPercent;
+  const baseState = {
+    percent,
+    connectedHomes: intelligence.connectedHomes,
+    capacity: intelligence.capacity,
+    usedPorts: intelligence.usedPorts,
+    freePorts: intelligence.freePorts,
+    capacityWarning: intelligence.capacityWarning,
+  };
 
-const inputFibres =
-  Number(afnDetails.fibresNeeded || 0) ||
-  Number(afnDetails.inputFibres?.length || 0);
+  if (intelligence.capacity <= 0) {
+    return { ...baseState, colour: "#94a3b8", label: "No capacity", percent: 0 };
+  }
 
-let capacity = 0;
+  if (intelligence.capacityRisk === "OVER") {
+    return { ...baseState, colour: "#a855f7", label: "Over capacity" };
+  }
 
-if (
-  closureText.includes("afn") ||
-  closureText.includes("sb") ||
-  closureText.includes("mdu_splitter")
-) {
-  capacity = inputFibres > 0
-    ? inputFibres * 8
-    : 24; // sensible fallback
-} else if (closureText.includes("cbt")) {
-  capacity = Number(details.capacity || item.capacity || 12);
-} else {
-  capacity = Number(
-    details.capacity ||
-    item.capacity ||
-    item.dpCapacity ||
-    item.ports ||
-    0
-  );
-}
+  if (intelligence.capacityRisk === "FULL") {
+    return { ...baseState, colour: "#ef4444", label: "Full" };
+  }
 
-  if (capacity <= 0) return { colour: "#94a3b8", label: "No capacity", percent: 0 };
-  const percent = (used / capacity) * 100;
-  if (used > capacity) return { colour: "#a855f7", label: "Over capacity", percent };
-  if (used === capacity) return { colour: "#ef4444", label: "Full", percent };
-  if (percent >= 80) return { colour: "#f59e0b", label: "Near capacity", percent };
-  return { colour: "#22c55e", label: "Capacity OK", percent };
+  if (intelligence.capacityRisk === "WARN") {
+    return { ...baseState, colour: "#f59e0b", label: "Near capacity" };
+  }
+
+  return { ...baseState, colour: "#22c55e", label: "Capacity OK" };
 }
 
 function getAssetMarkerIcon(
@@ -527,10 +523,11 @@ function getAssetMarkerIcon(
   traceKind: string | null = null,
   homeStatus?: "unconnected" | "connected" | "live",
   touchMode = false,
+  allAssets: SavedMapAsset[] = [],
 ) {
   const type = getAssetType(asset);
   const traceColour = getTraceColour(traceKind);
-  const dpCapacityState = getDpCapacityState(asset);
+  const dpCapacityState = getDpCapacityState(asset, allAssets);
   const colour = selected
     ? "#facc15"
     : traceColour
@@ -1036,22 +1033,33 @@ export default function WorkspaceMap({
           const selected = selectedAssetId === asset.id;
           const traceKind = getTraceKind(asset, traceHighlightedAssetIds, traceHighlightKinds);
           const homeStatus = isHomeAssetForWorkspace(asset) ? getWorkspaceHomeConnectionStatus(asset, assets) : undefined;
+          const dpCapacityState = getDpCapacityState(asset, assets);
 
           return (
             <Marker
               key={`workspace-point-${asset.id}`}
               position={[point.lat, point.lng]}
-              icon={getAssetMarkerIcon(asset, selected, traceKind, homeStatus, isTouchWorkspace)}
+              icon={getAssetMarkerIcon(asset, selected, traceKind, homeStatus, isTouchWorkspace, assets)}
               eventHandlers={{ click: (event) => selectWorkspaceAsset(asset, onAssetSelect, event) }}
             >
               <Popup>
                 <strong>{getAssetName(asset)}</strong>
                 <br />
                 {getAssetType(asset)}
-                {getDpCapacityState(asset) ? (
+                {dpCapacityState ? (
                   <>
                     <br />
-                    Capacity: {getDpCapacityState(asset)?.label} ({Math.round(getDpCapacityState(asset)?.percent || 0)}%)
+                    Connected Homes: {dpCapacityState.connectedHomes}
+                    <br />
+                    Capacity: {dpCapacityState.capacity}
+                    <br />
+                    Used Ports: {dpCapacityState.usedPorts}
+                    <br />
+                    Free Ports: {dpCapacityState.freePorts}
+                    <br />
+                    Capacity %: {Math.round(dpCapacityState.percent || 0)}%
+                    <br />
+                    Capacity Warning: {dpCapacityState.capacityWarning}
                   </>
                 ) : null}
               </Popup>

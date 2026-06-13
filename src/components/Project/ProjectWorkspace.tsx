@@ -13,6 +13,7 @@ import {
   buildNetworkState,
   isDistributionPointAsset,
 } from "../../services/network";
+import { getDpIntelligence } from "../../services/dpIntelligence";
 import { downloadAddressSheetTemplate } from "./workspace/addressSheetParser";
 import {
   downloadAgJointTemplate,
@@ -547,55 +548,21 @@ function getWorkspaceHomeConnectionStatus(
   return dropStatus === "live" ? "live" : "connected";
 }
 
-function getWorkspaceDpCapacityRisk(asset: SavedMapAsset): {
+function getWorkspaceDpCapacityRisk(
+  asset: SavedMapAsset,
+  allAssets: SavedMapAsset[] = [],
+): {
   risk: "OK" | "WARN" | "FULL" | "OVER";
   warning: string;
   percent: number;
 } {
-  const item = asset as any;
-  const details = item.dpDetails || item.properties?.dpDetails || {};
-  const closure = String(
-    details.closureType ||
-      details.networkArchitecture ||
-      item.closureType ||
-      item.dpType ||
-      item.jointType ||
-      "",
-  ).toLowerCase();
-  const connectedHomes = Number(
-    details.connectedHomes ??
-      details.connectionsToHomes ??
-      item.connectedHomes ??
-      item.homesConnected ??
-      item.homeCount ??
-      0,
-  );
-  const used = Number.isFinite(connectedHomes) ? connectedHomes : 0;
-  const rawCapacity = Number(
-    item.capacity ??
-      item.dpCapacity ??
-      item.ports ??
-      details.capacity ??
-      details.connectionsToHomes ??
-      0,
-  );
-  const capacity =
-    Number.isFinite(rawCapacity) && rawCapacity > 0
-      ? rawCapacity
-      : closure.includes("cbt")
-        ? 12
-        : closure.includes("afn") || closure.includes("mdu_splitter")
-          ? Math.max(16, used)
-          : Math.max(used, 0);
+  const intelligence = getDpIntelligence(asset, allAssets);
 
-  if (capacity <= 0)
-    return { risk: "WARN", warning: "No capacity set", percent: 0 };
-  const percent = Math.round((used / capacity) * 100);
-  if (used > capacity)
-    return { risk: "OVER", warning: "Over capacity", percent };
-  if (used === capacity) return { risk: "FULL", warning: "Full", percent };
-  if (percent >= 80) return { risk: "WARN", warning: "Near capacity", percent };
-  return { risk: "OK", warning: "Capacity OK", percent };
+  return {
+    risk: intelligence.capacityRisk,
+    warning: intelligence.capacityWarning,
+    percent: intelligence.capacityPercent,
+  };
 }
 
 type AreaReadinessState =
@@ -1831,7 +1798,9 @@ export default function ProjectWorkspace({
       { live: 0, bwip: 0, lnrfs: 0, unserviceable: 0, planned: 0 },
     );
 
-    const dpCapacityStates = dpAssets.map(getWorkspaceDpCapacityRisk);
+    const dpCapacityStates = dpAssets.map((asset) =>
+      getWorkspaceDpCapacityRisk(asset, workspaceAssets),
+    );
     const dpNearCapacity = dpCapacityStates.filter(
       (state) => state.risk === "WARN" || state.risk === "FULL",
     ).length;
@@ -1985,7 +1954,7 @@ export default function ProjectWorkspace({
     () =>
       canonicalHomeAssets.filter(
         (asset) =>
-          getWorkspaceHomeConnectionStatus(asset, workspaceAssets) === "live",
+          getWorkspaceHomeConnectionStatus(asset, workspaceAssets) !== "unconnected",
       ),
     [canonicalHomeAssets, workspaceAssets],
   );
@@ -1994,7 +1963,7 @@ export default function ProjectWorkspace({
     () =>
       canonicalHomeAssets.filter(
         (asset) =>
-          getWorkspaceHomeConnectionStatus(asset, workspaceAssets) !== "live",
+          getWorkspaceHomeConnectionStatus(asset, workspaceAssets) === "unconnected",
       ),
     [canonicalHomeAssets, workspaceAssets],
   );
@@ -2021,7 +1990,7 @@ export default function ProjectWorkspace({
       areaDistributionPoints
         .map((asset) => ({
           asset,
-          capacity: getWorkspaceDpCapacityRisk(asset),
+          capacity: getWorkspaceDpCapacityRisk(asset, workspaceAssets),
         }))
         .filter(
           ({ capacity }) =>
@@ -2029,7 +1998,7 @@ export default function ProjectWorkspace({
             capacity.risk === "FULL" ||
             capacity.risk === "OVER",
         ),
-    [areaDistributionPoints],
+    [areaDistributionPoints, workspaceAssets],
   );
 
   const openKpiDrilldown = (
@@ -2151,7 +2120,9 @@ export default function ProjectWorkspace({
     setActiveIssueCategory(null);
     setIssueNavigatorIndex(0);
     setActiveTab("qa");
-    setActiveOperationPanel("qa");
+    // QA now lives inside the QA tab itself. Do not open the old bottom
+    // operation drawer or the user sees duplicate High/Medium/Low panels.
+    setActiveOperationPanel("none");
   };
 
   const handleAuditIssueSelect = (issue: AuditIssue) => {
@@ -2161,7 +2132,8 @@ export default function ProjectWorkspace({
       setSearchTerm(getWorkspaceAssetTitle(matchedAsset));
     }
     setActiveTab("qa");
-    setActiveOperationPanel("qa");
+    // Keep QA review in the QA tab only; avoid duplicating the QA operation drawer.
+    setActiveOperationPanel("none");
   };
 
   const openSelectedNavigatorIssue = () => {
@@ -2891,7 +2863,7 @@ export default function ProjectWorkspace({
           asset,
           name: getWorkspaceAssetTitle(asset),
           status: getOperationalDpStatus(asset),
-          capacity: getWorkspaceDpCapacityRisk(asset),
+          capacity: getWorkspaceDpCapacityRisk(asset, workspaceAssets),
         }))
         .sort((a, b) => a.name.localeCompare(b.name)),
     [areaDistributionPoints],
@@ -3114,8 +3086,7 @@ export default function ProjectWorkspace({
       (activeTab === "overview" || activeTab === "assets")) ||
       (activeOperationPanel === "rfsBreakdown" &&
         (activeTab === "overview" || activeTab === "build")) ||
-      ((activeOperationPanel === "issues" || activeOperationPanel === "qa") &&
-        activeTab === "qa") ||
+      (activeOperationPanel === "issues" && activeTab === "qa") ||
       ((activeOperationPanel === "topology" ||
         activeOperationPanel === "trace" ||
         activeOperationPanel === "disconnected") &&
@@ -3629,7 +3600,10 @@ export default function ProjectWorkspace({
                     projectAssets={workspaceAssets}
                     onClose={() => setSelectedWorkspaceAsset(null)}
                     onOpenTopology={openInternalTraceTool}
-                    onOpenQA={() => openOperationPanel("qa", "qa")}
+                    onOpenQA={() => {
+                      setActiveTab("qa");
+                      setActiveOperationPanel("none");
+                    }}
                     onSelectAsset={setSelectedWorkspaceAsset}
                     onZoomAsset={setSelectedWorkspaceAsset}
                     onOpenJointEditor={onOpenJointEditor}
@@ -3790,7 +3764,10 @@ export default function ProjectWorkspace({
                         )
                       }
                       onOpenTrace={openInternalTraceTool}
-                      onOpenQA={() => openOperationPanel("qa", "qa")}
+                      onOpenQA={() => {
+                        setActiveTab("qa");
+                        setActiveOperationPanel("none");
+                      }}
                       onOpenFibreTopology={onOpenFibreTopology || openInternalTraceTool}
                       onExport={onExport}
                       onBackToMap={onBackToMap}

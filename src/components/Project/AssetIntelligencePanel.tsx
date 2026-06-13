@@ -25,6 +25,7 @@ import {
   poleAuditTemplate,
 } from "../audits/auditTemplates";
 import { createAuditFormLog } from "../../services/auditService";
+import { getDpIntelligence as getCentralDpIntelligence, isDpLikeAsset } from "../../services/dpIntelligence";
 
 // =====================================================
 // TYPES
@@ -211,7 +212,7 @@ function readCableFibreCount(asset: SavedMapAsset | null | undefined): number | 
     .filter(Boolean)
     .join(" ");
 
-  const match = haystack.match(/(288|144|96|48|36|24|12)\s*F?/i);
+  const match = haystack.match(/(?:^|[^0-9])(288|144|96|48|36|24|12)\s*F?(?:[^0-9]|$)/i);
   return match ? Number(match[1]) : null;
 }
 
@@ -475,118 +476,45 @@ function buildDpIntelligence(
   projectAssets: SavedMapAsset[],
   relatedAssets: SavedMapAsset[],
 ): DpIntelligence {
-  const item = asset as any;
-  const dpTypeRaw = String(read(item, ["dpType", "distributionPointType", "cbtType", "afnType", "type", "assetType"], "distribution-point"));
-  const dpType = dpTypeRaw === "distribution-point" && String(read(item, ["jointType"], "")).toLowerCase().includes("afn")
-    ? "AFN"
-    : dpTypeRaw;
+  if (asset && isDpLikeAsset(asset)) {
+    const intelligence = getCentralDpIntelligence(asset, projectAssets || []);
 
-  const selectedPoint = pointFor(asset);
+    return {
+      dpType: intelligence.dpType,
+      connectedHomes: intelligence.connectedHomes,
+      capacity: intelligence.capacity,
+      usedPorts: intelligence.usedPorts,
+      freePorts: intelligence.freePorts,
+      status: intelligence.status,
+      throughCable: intelligence.incomingCableName || "—",
+      fibres: intelligence.incomingCableFibreCount
+        ? `${intelligence.inputFibreCount} used / ${intelligence.incomingCableFibreCount}`
+        : "—",
+      capacityPercent: `${intelligence.capacityPercent}%`,
+      capacityWarning: intelligence.capacityWarning,
+      splitterRatio: intelligence.splitterRatio,
+      inputFibres: intelligence.inputFibreCount,
+      passthroughFibres: intelligence.passthroughFibreCount,
+    };
+  }
 
-  const nearbyCables = selectedPoint
-    ? projectAssets
-        .filter((candidate) => isCable(candidate))
-        .map((candidate) => {
-          const points = linePoints(candidate);
-          const distance = points.length
-            ? Math.min(...points.map((point) => haversineMeters(selectedPoint, point)))
-            : Number.POSITIVE_INFINITY;
-
-          return { candidate, distance };
-        })
-        .filter(({ distance }) => distance <= 25)
-        .sort((a, b) => a.distance - b.distance)
-        .map(({ candidate }) => candidate)
-    : relatedAssets.filter((candidate) => isCable(candidate));
-
-  const dropCables = nearbyCables.filter((candidate) => isDropCable(candidate));
-  const throughCableAsset =
-    nearbyCables.find((candidate) => !isDropCable(candidate)) ||
-    relatedAssets.find((candidate) => isCable(candidate) && !isDropCable(candidate)) ||
-    null;
-
-  const connectedHomesValue = read(item, ["homes", "connectedHomes", "homesConnected", "homeCount", "servedHomes"], null);
-  const usedPortsValue = read(item, ["usedPorts", "portsUsed", "usedFibres", "portsInUse"], null);
-  const capacityValue = read(item, ["capacity", "portCapacity", "ports", "totalPorts", "maxPorts"], null);
-  const afnDetails = item?.dpDetails?.afnDetails || item?.properties?.dpDetails?.afnDetails || item?.afnDetails || {};
-
-  const inferredHomes = connectedHomesValue !== null ? connectedHomesValue : dropCables.length;
-  const inferredUsedPorts = usedPortsValue !== null ? usedPortsValue : inferredHomes;
-  const usedNumber = toNumber(inferredUsedPorts);
-
-  const explicitSplitterRatio = read(afnDetails, ["splitterRatio", "ratio", "splitter"], null);
-  const splitterRatio = explicitSplitterRatio || (String(dpType).toLowerCase().includes("afn") ? "1:8" : "—");
-
-  const splitterPorts = getSplitterPortsFromRatio(splitterRatio);
-  const isAfnDp = String(dpType).toLowerCase().includes("afn") || String(splitterRatio).includes("1:8");
-
-  // For AFN/SB assets, uploaded joint mappings can include shoot-off branch
-  // fibres that pass through the SB. Capacity shown in intelligence should be
-  // the local customer splitter capacity, not all branch/pass-through fibres.
-  const requiredSplitterInputs =
-    isAfnDp && splitterPorts
-      ? Math.ceil((toNumber(inferredHomes) || 0) / splitterPorts)
-      : null;
-
-  const selectedInputFibres =
-    requiredSplitterInputs !== null && requiredSplitterInputs > 0
-      ? requiredSplitterInputs
-      : Array.isArray(afnDetails.inputFibres)
-        ? afnDetails.inputFibres.length
-        : readFirstNumber(afnDetails, ["fibreCountUsed", "inputFibres", "splitterCount", "splitters", "numberOfSplitters"]);
-
-  const splitterDerivedCapacity =
-    splitterPorts !== null && selectedInputFibres !== null
-      ? splitterPorts * selectedInputFibres
-      : null;
-
-  const inferredCapacity =
-    splitterDerivedCapacity !== null
-      ? splitterDerivedCapacity
-      : capacityValue !== null
-        ? capacityValue
-        : String(dpType).toLowerCase().includes("afn")
-          ? 16
-          : String(dpType).toLowerCase().includes("cbt")
-            ? 12
-            : "—";
-
-  const capacityNumber = toNumber(inferredCapacity);
-  const cableFibreTotal = readCableFibreCount(throughCableAsset);
-  const capacityPercent = capacityNumber !== null && usedNumber !== null && capacityNumber > 0 ? Math.round((usedNumber / capacityNumber) * 100) : null;
-  const capacityWarning =
-    capacityNumber !== null && usedNumber !== null
-      ? usedNumber > capacityNumber
-        ? "Over capacity"
-        : usedNumber === capacityNumber
-          ? "Full"
-          : capacityPercent !== null && capacityPercent >= 80
-            ? "Near capacity"
-            : "Capacity OK"
-      : "Capacity unknown";
+  const nearbyCables = relatedAssets.filter((candidate) => isCable(candidate));
+  const throughCableAsset = nearbyCables.find((candidate) => !isDropCable(candidate)) || null;
 
   return {
-    dpType,
-    connectedHomes: inferredHomes,
-    capacity: inferredCapacity,
-    usedPorts: inferredUsedPorts,
-    freePorts:
-      capacityNumber !== null && usedNumber !== null
-        ? capacityNumber - usedNumber
-        : read(item, ["freePorts", "portsFree"], "—"),
-    status: read(item, ["status", "dpStatus", "serviceStatus", "buildStatus"], "OK"),
-    throughCable: throughCableAsset ? getAssetName(throughCableAsset) : read(item, ["throughCable", "throughCableId", "parentCableId", "feedCable"], "-"),
-    fibres: throughCableAsset
-      ? `${read(throughCableAsset as any, ["usedFibres", "usedFibers", "fibresUsed"], "—")} / ${read(throughCableAsset as any, ["fibreCount", "fiberCount", "coreCount", "size"], "—")}`
-      : read(item, ["fibres", "fibreRange", "allocatedInputFibres"], "-"),
-    capacityPercent: capacityPercent !== null ? `${capacityPercent}%` : "—",
-    capacityWarning,
-    splitterRatio,
-    inputFibres: selectedInputFibres ?? "—",
-    passthroughFibres:
-      cableFibreTotal !== null && selectedInputFibres !== null
-        ? Math.max(cableFibreTotal - Number(selectedInputFibres), 0)
-        : "—",
+    dpType: read(asset as any, ["dpType", "distributionPointType", "cbtType", "afnType", "type", "assetType"], "distribution-point"),
+    connectedHomes: "—",
+    capacity: "—",
+    usedPorts: "—",
+    freePorts: "—",
+    status: read(asset as any, ["status", "dpStatus", "serviceStatus", "buildStatus"], "OK"),
+    throughCable: throughCableAsset ? getAssetName(throughCableAsset) : "—",
+    fibres: "—",
+    capacityPercent: "—",
+    capacityWarning: "Capacity unknown",
+    splitterRatio: "—",
+    inputFibres: "—",
+    passthroughFibres: "—",
   };
 }
 
