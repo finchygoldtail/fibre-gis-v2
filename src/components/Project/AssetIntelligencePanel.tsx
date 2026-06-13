@@ -26,6 +26,7 @@ import {
 } from "../audits/auditTemplates";
 import { createAuditFormLog } from "../../services/auditService";
 import { getDpIntelligence as getCentralDpIntelligence, isDpLikeAsset } from "../../services/dpIntelligence";
+import { getJointIntelligence } from "../../services/jointIntelligence";
 
 // =====================================================
 // TYPES
@@ -311,131 +312,6 @@ function nearbyPointAssets(asset: SavedMapAsset | null, assets: SavedMapAsset[],
     .slice(0, 6);
 }
 
-
-
-type JointIntelligence = {
-  jointType: RowValue;
-  trayRows: RowValue;
-  spliceCount: RowValue;
-  usedFibres: RowValue;
-  importedFiles: RowValue;
-  updatedBy: RowValue;
-};
-
-function arrayLength(asset: any, keys: string[]): number | null {
-  for (const key of keys) {
-    const value = asset?.[key];
-    if (Array.isArray(value)) return value.length;
-  }
-
-  return null;
-}
-
-function parseTrayCountFromText(value: any): number | null {
-  const text = String(value || "");
-  const match = text.match(/(\d+)\s*(tray|trays|rfs|rows?)/i);
-  if (!match) return null;
-
-  const next = Number(match[1]);
-  return Number.isFinite(next) ? next : null;
-}
-
-
-function extractJointMappingRows(asset: SavedMapAsset | null): any[] {
-  const item = asset as any;
-
-  const directRows = [
-    item?.mappingRows,
-    item?.continuityRows,
-    item?.spliceRows,
-    item?.trayRows,
-    item?.rows,
-  ].find((value) => Array.isArray(value));
-
-  if (Array.isArray(directRows)) {
-    return directRows;
-  }
-
-  const jsonSources = [
-    item?.mappingRowsJson,
-    item?.continuityRowsJson,
-    item?.spliceRowsJson,
-    item?.trayRowsJson,
-  ];
-
-  for (const source of jsonSources) {
-    if (!source || typeof source !== "string") continue;
-
-    try {
-      const parsed = JSON.parse(source);
-      if (Array.isArray(parsed)) {
-        return parsed;
-      }
-    } catch {
-      // ignore malformed legacy rows
-    }
-  }
-
-  return [];
-}
-
-
-function countTruthyMappedRows(rows: any[]): number {
-  return rows.filter((row) => {
-    if (!row || typeof row !== "object") return false;
-
-    const values = Object.values(row)
-      .map((value) => String(value ?? "").trim())
-      .filter(Boolean);
-
-    if (!values.length) return false;
-
-    return values.some((value) => value !== "-" && value.toLowerCase() !== "spare");
-  }).length;
-}
-
-function buildJointIntelligence(asset: SavedMapAsset | null): JointIntelligence {
-  const item = asset as any;
-
-  const mappingRows = extractJointMappingRows(asset);
-
-  const mappingRowCount =
-    (Array.isArray(mappingRows) && mappingRows.length
-      ? mappingRows.length
-      : null) ??
-    arrayLength(item, ["mappingRows", "trayRows", "fibreRows", "spliceRows", "continuityRows", "rows"]) ??
-    toNumber(read(item, ["mappingRowsCount", "trayRowsCount", "continuityRowsCount", "rowCount"], null));
-
-  const parsedTrayCount =
-    parseTrayCountFromText(item?.jointType) ??
-    parseTrayCountFromText(item?.status) ??
-    parseTrayCountFromText(item?.name) ??
-    parseTrayCountFromText(item?.notes);
-
-  const explicitTrayCount = toNumber(read(item, ["trayCount", "trays", "numberOfTrays"], null));
-
-  const usedFibres =
-    toNumber(read(item, ["usedFibres", "usedFibers", "fibresUsed", "usedCoreCount"], null)) ??
-    (Array.isArray(mappingRows) && mappingRows.length ? countTruthyMappedRows(mappingRows) : null);
-
-  const spliceCount =
-    toNumber(read(item, ["spliceCount", "splices", "spliceRowsCount", "usedSplices"], null)) ??
-    usedFibres;
-
-  return {
-    jointType: read(item, ["jointType", "assetType", "type"], "Joint"),
-    trayRows:
-      mappingRowCount && mappingRowCount > 0
-        ? mappingRowCount
-        : explicitTrayCount ?? parsedTrayCount ?? "—",
-    spliceCount: spliceCount ?? "—",
-    usedFibres: usedFibres ?? spliceCount ?? "—",
-    importedFiles: Array.isArray(item?.importedFiles)
-      ? item.importedFiles.length
-      : read(item, ["importedFilesCount", "filesImported"], "—"),
-    updatedBy: read(item, ["updatedByEmail", "updatedBy", "lastEditedBy"], "—"),
-  };
-}
 
 
 type DpIntelligence = {
@@ -1283,7 +1159,7 @@ export default function AssetIntelligencePanel({
   }, [asset, projectAssets]);
 
   const jointInfo = useMemo(() => {
-    return buildJointIntelligence(asset);
+    return getJointIntelligence(asset);
   }, [asset]);
 
   const engineeringRecommendations = useMemo(() => {
