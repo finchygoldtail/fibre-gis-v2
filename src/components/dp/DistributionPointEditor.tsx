@@ -9,6 +9,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import type { DistributionPointDetails, SavedMapAsset } from "../map/types";
 import { buildDpRoutingState, buildNetworkState } from "../../services/network";
+import CapacityPanel from "./dp/CapacityPanel";
+import RoutePanel from "./dp/RoutePanel";
+import ConnectedHomesPanel from "./dp/ConnectedHomesPanel";
+import FibreIntakePanel from "./dp/FibreIntakePanel";
 
 type ConnectedHomeRow = {
   id: string;
@@ -870,18 +874,6 @@ function getStateColour(state: string): string {
   if (state === "WARN") return "#fbbf24";
   if (state === "NO CAPACITY") return "#94a3b8";
   return "#4ade80";
-}
-
-function panelStyle(extra?: React.CSSProperties): React.CSSProperties {
-  return {
-    background:
-      "linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.96))",
-    border: "1px solid rgba(148, 163, 184, 0.18)",
-    borderRadius: 16,
-    padding: 16,
-    boxShadow: "0 18px 40px rgba(0,0,0,0.28)",
-    ...extra,
-  };
 }
 
 function smallLabelStyle(): React.CSSProperties {
@@ -1899,13 +1891,7 @@ export default function DistributionPointEditor({
           overflow: "auto",
         }}
       >
-        <section
-          style={panelStyle({
-            display: "grid",
-            gap: 14,
-            alignContent: "start",
-          })}
-        >
+        <CapacityPanel>
           <h2 style={{ margin: 0, fontSize: 18 }}>DP Capacity</h2>
           <div
             style={{
@@ -1974,6 +1960,7 @@ export default function DistributionPointEditor({
             }}
           />
 
+          <FibreIntakePanel>
           <h2 style={{ margin: 0, fontSize: 18 }}>Fibre Intake</h2>
           <Metric
             label="Incoming cable"
@@ -2335,16 +2322,10 @@ export default function DistributionPointEditor({
               </div>
             ) : null}
           </div>
-        </section>
+          </FibreIntakePanel>
+        </CapacityPanel>
 
-        <section
-          style={panelStyle({
-            display: "flex",
-            flexDirection: "column",
-            minHeight: 0,
-            gap: 12,
-          })}
-        >
+        <RoutePanel>
           <div
             style={{
               display: "flex",
@@ -2730,16 +2711,9 @@ export default function DistributionPointEditor({
               </small>
             </div>
           </div>
-        </section>
+        </RoutePanel>
 
-        <section
-          style={panelStyle({
-            display: "flex",
-            flexDirection: "column",
-            minHeight: 0,
-            gap: 12,
-          })}
-        >
+        <ConnectedHomesPanel>
           <div>
             <div style={smallLabelStyle()}>Served Homes</div>
             <h2 style={{ margin: "4px 0 0", fontSize: 22 }}>
@@ -2920,7 +2894,7 @@ export default function DistributionPointEditor({
               )}
             </div>
           </div>
-        </section>
+        </ConnectedHomesPanel>
       </main>
     </div>
   );
