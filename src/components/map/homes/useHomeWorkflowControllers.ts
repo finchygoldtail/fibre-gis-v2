@@ -251,14 +251,33 @@ export function useHomeWorkflowControllers({
         withAssetEditedMetadata(
           {
             ...home,
+
             connectedDpId: targetDpId,
+            dpId: targetDpId,
+            parentDpId: targetDpId,
+            connectedDP: targetDpId,
+            servedByDp: targetDpId,
+
             connection: "connected",
             connectionMode: "manual",
+
+            port: undefined,
+            splitterPort: undefined,
+
             properties: {
               ...((home as any).properties || {}),
+
               connectedDpId: targetDpId,
+              dpId: targetDpId,
+              parentDpId: targetDpId,
+              connectedDP: targetDpId,
+              servedByDp: targetDpId,
+
               connection: "connected",
               connectionMode: "manual",
+
+              port: undefined,
+              splitterPort: undefined,
             },
           } as SavedMapAsset,
           "updated",

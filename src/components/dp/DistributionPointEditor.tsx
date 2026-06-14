@@ -162,7 +162,16 @@ function uniqueSorted(values: number[]): number[] {
     (a, b) => a - b,
   );
 }
-
+function clampFibres(values: number[], maxFibre: number): number[] {
+  return uniqueSorted(
+    values.filter(
+      (fibre) =>
+        Number.isFinite(fibre) &&
+        fibre >= 1 &&
+        fibre <= maxFibre
+    )
+  );
+}
 function getFibreColour(fibreNumber: number): FibreColour {
   const index = Math.max(0, (Number(fibreNumber) - 1) % FIBRE_COLOURS.length);
   return FIBRE_COLOURS[index];
@@ -702,6 +711,34 @@ function getConnectedHomes(
     if (key) homeKeysFromDrops.add(key);
   });
 
+  // Drop cables are the strongest authority for a home's current DP.
+  // Address-sheet imports can leave stale home metadata behind, so if a home
+  // has a drop to another DP, do not also count it against this DP via old
+  // connectedDpId / dpId / parentDpId fields.
+  const allDropDpRefsByHomeKey = new Map<string, Set<string>>();
+  allAssets
+    .filter((candidate) => isDropCable(candidate))
+    .forEach((drop: any, index) => {
+      const key = getHomeIdentityKey(drop, `drop-${index}`);
+      if (!key) return;
+
+      const dpRefs = [
+        drop.dpId,
+        drop.fromAssetId,
+        drop.connectedDpId,
+        drop.parentDpId,
+        drop.sourceAssetId,
+      ]
+        .map((value) => text(value).toLowerCase())
+        .filter(Boolean);
+
+      if (!dpRefs.length) return;
+
+      const existing = allDropDpRefsByHomeKey.get(key) || new Set<string>();
+      dpRefs.forEach((ref) => existing.add(ref));
+      allDropDpRefsByHomeKey.set(key, existing);
+    });
+
   allAssets
     .filter((candidate) => isHome(candidate))
     .forEach((home: any, index) => {
@@ -710,6 +747,12 @@ function getConnectedHomes(
         home.connectedDpId,
         home.connectedDP,
         home.parentDpId,
+        home.servedByDp,
+        home.properties?.dpId,
+        home.properties?.connectedDpId,
+        home.properties?.connectedDP,
+        home.properties?.parentDpId,
+        home.properties?.servedByDp,
       ]
         .map((value) => text(value).toLowerCase())
         .filter(Boolean);
@@ -717,7 +760,12 @@ function getConnectedHomes(
       const linkedDirectly = directDpKeys.some((key) => dpLookup.has(key));
       const homeIdentity = getHomeIdentityKey(home, `home-${index}`);
       const linkedByDrop = homeIdentity ? homeKeysFromDrops.has(homeIdentity) : false;
+      const dropDpRefs = homeIdentity ? allDropDpRefsByHomeKey.get(homeIdentity) : undefined;
+      const hasDropForDifferentDp =
+        Boolean(dropDpRefs?.size) &&
+        !Array.from(dropDpRefs || []).some((ref) => dpLookup.has(ref));
 
+      if (hasDropForDifferentDp) return;
       if (!linkedDirectly && !linkedByDrop) return;
 
       addRow(
@@ -1095,6 +1143,7 @@ export default function DistributionPointEditor({
   const [rangeStartFibre, setRangeStartFibre] = useState("");
   const [rangeEndFibre, setRangeEndFibre] = useState("");
   const [rangeRouteType, setRangeRouteType] = useState<"splitter" | "direct" | "splice" | "passthrough" | "spare">("passthrough");
+  const [manualThroughCableId, setManualThroughCableId] = useState("");
 
   useEffect(() => {
     setEditorAsset(incomingAsset);
@@ -1109,6 +1158,7 @@ export default function DistributionPointEditor({
     setRangeStartFibre("");
     setRangeEndFibre("");
     setRangeRouteType("passthrough");
+    setManualThroughCableId("");
   }, [asset?.id]);
 
   const connectedHomes = useMemo(
@@ -1200,7 +1250,21 @@ export default function DistributionPointEditor({
     setSelectedPort(null);
     setActiveFibreView("splitter");
     setEditMode(false);
+    setManualThroughCableId("");
   };
+
+  const selectableThroughCables = useMemo(
+    () =>
+      allAssets
+        .filter(isThroughCableCandidate)
+        .sort((left, right) => {
+          const leftCount = getFibreCountFromCable(left);
+          const rightCount = getFibreCountFromCable(right);
+          if (rightCount !== leftCount) return rightCount - leftCount;
+          return cableName(left).localeCompare(cableName(right));
+        }),
+    [allAssets],
+  );
 
   if (!asset) return null;
 
@@ -1235,18 +1299,22 @@ export default function DistributionPointEditor({
     routedCableId ||
     "";
 
+  const manualThroughCable = manualThroughCableId
+    ? findCableByReference(allAssets, manualThroughCableId)
+    : null;
+
   const storedThroughCable = findCableByReference(allAssets, storedThroughCableId);
 
-  const branchParentThroughCable = !storedThroughCable
+  const branchParentThroughCable = !manualThroughCable && !storedThroughCable
     ? findBranchParentThroughCableForDp(asset, allAssets)
     : null;
 
-  const nearestThroughCable = !storedThroughCable && !branchParentThroughCable
+  const nearestThroughCable = !manualThroughCable && !storedThroughCable && !branchParentThroughCable
     ? findNearestThroughCableForDp(asset, allAssets)
     : null;
 
   const throughCable =
-    storedThroughCable || branchParentThroughCable || nearestThroughCable || null;
+    manualThroughCable || storedThroughCable || branchParentThroughCable || nearestThroughCable || null;
 
   const throughCableId =
     text(
@@ -1256,6 +1324,26 @@ export default function DistributionPointEditor({
         (throughCable as any)?.cableId ||
         storedThroughCableId,
     ) || "No through cable selected";
+
+  const throughCableSelectValue = text(
+    manualThroughCableId ||
+      storedThroughCableId ||
+      (throughCable as any)?.id ||
+      (throughCable as any)?.assetId ||
+      (throughCable as any)?.name ||
+      (throughCable as any)?.cableId ||
+      "",
+  );
+
+  // A manual cable selection must be treated as a saveable change even when
+  // no fibre route was edited. Compare the operator's selected cable only
+  // against the stored cable reference, not against the currently displayed
+  // throughCableId, because throughCableId updates immediately after selection.
+  const storedThroughCableRef = text(storedThroughCableId || "");
+  const selectedManualThroughCableRef = text(manualThroughCableId || "");
+  const throughCableChanged =
+    Boolean(selectedManualThroughCableRef) &&
+    !refsMatch(selectedManualThroughCableRef, storedThroughCableRef);
 
   const incomingFibreCount = getFibreCountFromCable(throughCable);
   const incomingFibreCountLabel = incomingFibreCount > 0 ? `${incomingFibreCount}F` : "Unknown";
@@ -1361,17 +1449,42 @@ export default function DistributionPointEditor({
         ? networkPassthroughFibres
         : draftRouting.passthroughFibres;
 
+  const clampToIncomingCable = (values: number[]): number[] =>
+    incomingFibreCount > 0 ? clampFibres(values, incomingFibreCount) : uniqueSorted(values);
+
+  const displaySplitterFibresOnCable = clampToIncomingCable(displaySplitterFibres);
+  const displayDirectFibresOnCable = clampToIncomingCable(displayDirectFibres);
+  const displaySpliceFibresOnCable = clampToIncomingCable(displaySpliceFibres);
+  const displayPassthroughFibresOnCable = clampToIncomingCable(displayPassthroughFibres);
+
+  const hasDirectFeeds = displayDirectFibresOnCable.length > 0;
+  const hasSplitterFeeds = displaySplitterFibresOnCable.length > 0;
+  const isHybridMduFeed =
+    closureType.includes("MDU") && hasDirectFeeds && hasSplitterFeeds;
+  const routeModeLabel = isHybridMduFeed
+    ? "Hybrid MDU Feed"
+    : closureType.includes("MDU") && hasSplitterFeeds
+      ? "MDU Splitter Feed"
+      : hasSplitterFeeds
+        ? splitterRatio
+        : hasDirectFeeds
+          ? "Direct Feed"
+          : splitterRatio;
+  const splitterBlockLabel = isHybridMduFeed || closureType.includes("MDU")
+    ? "1:8"
+    : splitterRatio;
+
   const inputFibres = uniqueSorted([
-    ...displaySplitterFibres,
-    ...displayDirectFibres,
-    ...displaySpliceFibres,
-    ...displayPassthroughFibres,
+    ...displaySplitterFibresOnCable,
+    ...displayDirectFibresOnCable,
+    ...displaySpliceFibresOnCable,
+    ...displayPassthroughFibresOnCable,
   ]);
 
   const locallyConsumedFibres = uniqueSorted([
-    ...displayDirectFibres,
-    ...displaySplitterFibres,
-    ...displaySpliceFibres,
+    ...displayDirectFibresOnCable,
+    ...displaySplitterFibresOnCable,
+    ...displaySpliceFibresOnCable,
   ]);
 
   // Shoot-off SBs are fed from parent fibres on the upstream/main run, then
@@ -1404,7 +1517,7 @@ export default function DistributionPointEditor({
   const capacity = getCapacity(
     asset,
     connectedHomes.length,
-    displaySplitterFibres.length + displayDirectFibres.length,
+    displaySplitterFibresOnCable.length + displayDirectFibresOnCable.length,
     splitterOutputsPerFibre,
   );
 
@@ -1500,7 +1613,7 @@ export default function DistributionPointEditor({
     (fibre) => !explicitlyClassifiedFibres.includes(fibre),
   );
 
-  const passthroughFibres = hasJointMappedFibres
+  const rawPassthroughFibres = hasJointMappedFibres
     ? jointPassthroughFibres
     : draftRouting.hasDownstreamCable
       ? uniqueSorted([
@@ -1509,21 +1622,26 @@ export default function DistributionPointEditor({
         ])
       : uniqueSorted(draftRouting.passthroughFibres);
 
-  const spareFibres = hasJointMappedFibres
+  const rawSpareFibres = hasJointMappedFibres
     ? jointTrueSpareFibres
     : draftRouting.hasDownstreamCable
       ? uniqueSorted(draftRouting.spareFibres)
       : uniqueSorted([...draftRouting.spareFibres, ...autoUnclassifiedFibres]);
 
-  const consumedFibreCount =
-    inputFibres.length ||
-    Number(afnDetails.fibreCountUsed || mduDetails.totalReservedFibres || 0);
+  const passthroughFibres = clampToIncomingCable(rawPassthroughFibres);
+  const spareFibres = clampToIncomingCable(rawSpareFibres);
+
+  const consumedFibreCount = uniqueSorted([
+    ...displaySplitterFibresOnCable,
+    ...displayDirectFibresOnCable,
+    ...displaySpliceFibresOnCable,
+  ]).length;
   const passthroughFibreCount = passthroughFibres.length;
   const spareEndOfLineFibreCount = spareFibres.length;
   const allocatedElsewhereFibreCount = jointAllocatedElsewhereFibres.length;
   const portRoutes = buildPortRoutes({
-    splitterInputFibres: displaySplitterFibres,
-    directFibres: displayDirectFibres,
+    splitterInputFibres: displaySplitterFibresOnCable,
+    directFibres: displayDirectFibresOnCable,
     splitterOutputsPerFibre,
     connectedHomes,
     dropCables,
@@ -1546,7 +1664,8 @@ export default function DistributionPointEditor({
       draftRouting.spliceFibres.join(",") ||
     initialDraft.passthroughFibres.join(",") !==
       draftRouting.passthroughFibres.join(",") ||
-    initialDraft.spareFibres.join(",") !== draftRouting.spareFibres.join(",");
+    initialDraft.spareFibres.join(",") !== draftRouting.spareFibres.join(",") ||
+    throughCableChanged;
 
   const setFibreRoute = (
     fibre: number,
@@ -1679,11 +1798,37 @@ export default function DistributionPointEditor({
   const saveRouting = () => {
     if (!onSaveRouting || !hasDraftChanges) return;
 
+    const maxCableFibre = incomingFibreCount || 999;
+
+    const cleanedSplitterFibres = clampFibres(
+      draftRouting.splitterFibres,
+      maxCableFibre,
+    );
+    const cleanedDirectFibres = clampFibres(
+      draftRouting.directFibres,
+      maxCableFibre,
+    );
+    const cleanedSpliceFibres = clampFibres(
+      draftRouting.spliceFibres,
+      maxCableFibre,
+    );
+    const cleanedPassthroughFibres = clampFibres(
+      passthroughFibres,
+      maxCableFibre,
+    );
+    const cleanedSpareFibres = clampFibres(
+      spareFibres,
+      maxCableFibre,
+    );
+
     const nextInputFibres = uniqueSorted([
-      ...draftRouting.splitterFibres,
-      ...draftRouting.directFibres,
+      ...cleanedSplitterFibres,
+      ...cleanedDirectFibres,
     ]);
-    const nextSpliceFibres = uniqueSorted(draftRouting.spliceFibres);
+    const cleanedFibreCountUsed =
+      nextInputFibres.length + cleanedSpliceFibres.length;
+    const nextThroughCableId =
+      throughCableId === "No through cable selected" ? undefined : throughCableId;
 
     const nextDetails: DistributionPointDetails = {
       ...(details as DistributionPointDetails),
@@ -1694,28 +1839,36 @@ export default function DistributionPointEditor({
       powerReadings: Array.isArray(details.powerReadings)
         ? details.powerReadings
         : [],
+      throughCableId: nextThroughCableId,
       afnDetails: {
         ...(afnDetails || {}),
         enabled: true,
-        throughCableId:
-          throughCableId === "No through cable selected"
-            ? undefined
-            : throughCableId,
+        throughCableId: nextThroughCableId,
         splitterRatio: "1:8",
         splitterOutputs: splitterOutputsPerFibre,
         inputFibres: nextInputFibres,
-        splitterFibres: draftRouting.splitterFibres,
-        spliceFibres: nextSpliceFibres,
-        fibreCountUsed: nextInputFibres.length + nextSpliceFibres.length,
-        directOutputFibres: draftRouting.directFibres,
-        passthroughFibres: passthroughFibres,
-        spareFibres: spareFibres,
+        splitterFibres: cleanedSplitterFibres,
+        spliceFibres: cleanedSpliceFibres,
+        fibreCountUsed: cleanedFibreCountUsed,
+        directOutputFibres: cleanedDirectFibres,
+        directFibres: cleanedDirectFibres,
+        passthroughFibres: cleanedPassthroughFibres,
+        spareFibres: cleanedSpareFibres,
         downstreamCableId: draftRouting.hasDownstreamCable
           ? afnDetails.downstreamCableId ||
             afnDetails.outCableId ||
             afnDetails.nextCableId ||
             "downstream-unassigned"
           : undefined,
+      } as any,
+      mduDetails: {
+        ...(mduDetails || {}),
+        throughCableId: nextThroughCableId,
+        inputFibres: nextInputFibres,
+        directFibres: cleanedDirectFibres,
+        passthroughFibres: cleanedPassthroughFibres,
+        spareFibres: cleanedSpareFibres,
+        totalReservedFibres: cleanedFibreCountUsed,
       } as any,
     };
 
@@ -1962,6 +2115,50 @@ export default function DistributionPointEditor({
 
           <FibreIntakePanel>
           <h2 style={{ margin: 0, fontSize: 18 }}>Fibre Intake</h2>
+          <div
+            style={{
+              background: "rgba(15,23,42,0.72)",
+              border: "1px solid rgba(56,189,248,0.22)",
+              borderRadius: 12,
+              padding: 12,
+            }}
+          >
+            <div style={smallLabelStyle()}>Set through / MDU cable</div>
+            <select
+              value={throughCableSelectValue}
+              disabled={!editMode}
+              onChange={(event) => setManualThroughCableId(event.target.value)}
+              style={{
+                marginTop: 8,
+                width: "100%",
+                background: editMode ? "#020617" : "#334155",
+                color: "#e5e7eb",
+                border: "1px solid rgba(148,163,184,0.28)",
+                borderRadius: 10,
+                padding: "10px 12px",
+                fontWeight: 800,
+              }}
+            >
+              <option value="">No through cable selected</option>
+              {selectableThroughCables.map((candidate) => {
+                const value = text(
+                  (candidate as any).id ||
+                    (candidate as any).assetId ||
+                    (candidate as any).name ||
+                    (candidate as any).cableId,
+                );
+                const fibreCount = getFibreCountFromCable(candidate);
+                return (
+                  <option key={value} value={value}>
+                    {cableName(candidate)}{fibreCount > 0 ? ` · ${fibreCount}F` : ""}
+                  </option>
+                );
+              })}
+            </select>
+            <small style={{ display: "block", marginTop: 8, color: "#94a3b8" }}>
+              Click Edit Routing, choose the correct 96F/144F cable, then Save Routing to persist it to the DP/MDU details.
+            </small>
+          </div>
           <Metric
             label="Incoming cable"
             value={text(
@@ -2339,7 +2536,7 @@ export default function DistributionPointEditor({
                 Splitter / Fibre Route Operations
               </div>
               <h2 style={{ margin: "4px 0 0", fontSize: 22 }}>
-                {splitterRatio}
+                {routeModeLabel}
               </h2>
             </div>
             <div style={{ color: "#94a3b8", fontSize: 13 }}>
@@ -2360,13 +2557,15 @@ export default function DistributionPointEditor({
             {activeFibreView === "splitter" ? (
               <FibreSpliceDiagram
                 allCableFibres={allCableFibres}
-                splitterInputFibres={displaySplitterFibres}
-                directFibres={displayDirectFibres}
-                spliceFibres={displaySpliceFibres}
+                splitterInputFibres={displaySplitterFibresOnCable}
+                directFibres={displayDirectFibresOnCable}
+                spliceFibres={displaySpliceFibresOnCable}
                 passthroughFibres={passthroughFibres}
                 spareFibres={spareFibres}
                 hasDownstreamCable={draftRouting.hasDownstreamCable}
-                splitterRatio={splitterRatio}
+                splitterRatio={splitterBlockLabel}
+                routeModeLabel={routeModeLabel}
+                isHybridMduFeed={isHybridMduFeed}
                 portRoutes={portRoutes.slice(0, 8)}
                 parentFibreMappings={parentFibreMappings}
                 selectedFibre={selectedFibre}
@@ -3120,6 +3319,8 @@ function FibreSpliceDiagram({
   spareFibres,
   hasDownstreamCable,
   splitterRatio,
+  routeModeLabel,
+  isHybridMduFeed = false,
   portRoutes,
   parentFibreMappings = [],
   selectedFibre,
@@ -3135,6 +3336,8 @@ function FibreSpliceDiagram({
   spareFibres: number[];
   hasDownstreamCable: boolean;
   splitterRatio: string;
+  routeModeLabel: string;
+  isHybridMduFeed?: boolean;
   portRoutes: PortRoute[];
   parentFibreMappings?: ParentFibreMapping[];
   selectedFibre: number | null;
@@ -3142,7 +3345,9 @@ function FibreSpliceDiagram({
   onSelectFibre: (fibre: number) => void;
   onSelectPort: (port: number) => void;
 }) {
-  const splitterFibres = uniqueSorted([...splitterInputFibres, ...directFibres]);
+  const directFeedFibres = uniqueSorted(directFibres);
+  const splitterFibres = uniqueSorted(splitterInputFibres);
+  const localConsumedFibres = uniqueSorted([...directFeedFibres, ...splitterFibres]);
   const spliceDisplayFibres = uniqueSorted(spliceFibres);
   const passDisplayFibres = uniqueSorted(passthroughFibres).slice(0, 8);
   const spareDisplayFibres = uniqueSorted(spareFibres).slice(0, 4);
@@ -3228,7 +3433,8 @@ function FibreSpliceDiagram({
   });
 
   const summaryItems = [
-    { label: "Splitter", value: splitterFibres.length, colour: "#22c55e" },
+    { label: "Direct feeds", value: directFeedFibres.length, colour: "#38bdf8" },
+    { label: "Splitter feeds", value: splitterFibres.length, colour: "#22c55e" },
     { label: "Splice", value: spliceDisplayFibres.length, colour: "#fb923c" },
     { label: "Pass-through", value: passthroughFibres.length, colour: "#38bdf8" },
     { label: "Spare / EOL", value: spareFibres.length, colour: "#94a3b8" },
@@ -3321,8 +3527,11 @@ function FibreSpliceDiagram({
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", marginBottom: 12 }}>
             <div>
               <div style={{ ...smallLabelStyle(), color: "#38bdf8" }}>Fibre Flow Diagram</div>
+              <div style={{ marginTop: 4, color: "#e0f2fe", fontSize: 15, fontWeight: 950 }}>
+                {routeModeLabel}
+              </div>
               <div style={{ color: "#cbd5e1", fontSize: 13, marginTop: 4 }}>
-                Complete view of splice, splitter and pass-through fibres. Fibre lines use the real 12-colour code.
+                Complete view of direct feeds, splitter feeds, splice and pass-through fibres. Fibre lines use the real 12-colour code.
               </div>
             </div>
             <div style={{ color: "#94a3b8", fontSize: 12 }}>
@@ -3359,9 +3568,37 @@ function FibreSpliceDiagram({
               </div>
             </section>
 
+            {directFeedFibres.length ? (
+              <section style={routeCardStyle("rgba(56,189,248,0.30)")}>
+                <div style={sectionHeaderStyle("#38bdf8")}>
+                  <span>{isHybridMduFeed ? "Direct MDU Feeds" : "Direct Feeds"}</span>
+                  <span>{directFeedFibres.length} fibre{directFeedFibres.length === 1 ? "" : "s"}</span>
+                </div>
+                <div style={{ display: "grid", gap: 6 }}>
+                  {directFeedFibres.map((fibre, index) => {
+                    const colour = getFibreColour(fibre);
+                    const active = selectedFibre === fibre;
+                    return (
+                      <button key={`direct-${fibre}`} type="button" onClick={() => onSelectFibre(fibre)} style={fibreRowStyle(active)}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={chipStyle(fibre, active)}>{fibre}</span>
+                          <span style={{ color: "#e5e7eb", fontWeight: 800 }}>{colour.name}</span>
+                        </span>
+                        <span style={lineStyle(fibre, "passthrough")} />
+                        <span style={{ color: "#38bdf8", fontWeight: 950, fontSize: 20 }}>→</span>
+                        <span style={{ color: "#cbd5e1", fontSize: 13 }}>
+                          Direct feed output {index + 1}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : null}
+
             <section style={routeCardStyle("rgba(34,197,94,0.34)")}>
               <div style={sectionHeaderStyle("#22c55e")}>
-                <span>Splitter Routes</span>
+                <span>{isHybridMduFeed ? "1:8 Splitter Feeds" : "Splitter Routes"}</span>
                 <span>{splitterFibres.length} fibre{splitterFibres.length === 1 ? "" : "s"}</span>
               </div>
               <div
@@ -3406,7 +3643,9 @@ function FibreSpliceDiagram({
                 >
                   <span style={{ textAlign: "center" }}>
                     <strong style={{ fontSize: 24 }}>{splitterRatio}</strong>
-                    <small style={{ display: "block", marginTop: 4, color: "#86efac", fontWeight: 900 }}>SPLITTER</small>
+                    <small style={{ display: "block", marginTop: 4, color: "#86efac", fontWeight: 900 }}>
+                      {isHybridMduFeed ? "SPLITTER FEED" : "SPLITTER"}
+                    </small>
                   </span>
                 </button>
 
@@ -3432,7 +3671,11 @@ function FibreSpliceDiagram({
                       >
                         Port {route.port}
                         <span style={{ display: "block", marginTop: 2, color: "#94a3b8", fontWeight: 600 }}>
-                          {route.routeType === "spare" ? "Not used" : "Splitter output"}
+                          {route.routeType === "direct"
+                            ? `Direct (${route.fibreLabel})`
+                            : route.routeType === "spare"
+                              ? "Not used"
+                              : "Splitter output"}
                         </span>
                       </button>
                     );

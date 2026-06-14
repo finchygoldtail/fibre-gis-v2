@@ -136,21 +136,29 @@ function valueMatchesAny(value: unknown, lookup: Set<string>): boolean {
 function homesForDp(dp: SavedMapAsset, homes: SavedMapAsset[], drops: SavedMapAsset[]): SavedMapAsset[] {
   const dpKeySet = new Set(assetKeys(dp));
   const homeKeysFromDrops = new Set<string>();
+  const dropDpRefsByHomeKey = new Map<string, Set<string>>();
 
   drops.forEach((drop: any) => {
-    const dropDpKeys = [drop.dpId, drop.fromAssetId, drop.connectedDpId, drop.parentDpId, drop.sourceAssetId].map((value) => text(value).toLowerCase()).filter(Boolean);
-    if (!dropDpKeys.some((key) => dpKeySet.has(key))) return;
-    [drop.homeId, drop.toAssetId, drop.connectedHomeId, drop.uprn, drop.UPRN].forEach((value) => {
-      const key = text(value).toLowerCase();
-      if (key) homeKeysFromDrops.add(key);
+    const dropDpKeys = [drop.dpId, drop.fromAssetId, drop.connectedDpId, drop.parentDpId, drop.sourceAssetId]
+      .map((value) => text(value).toLowerCase())
+      .filter(Boolean);
+
+    const rawDropHomeKeys = [drop.homeId, drop.toAssetId, drop.connectedHomeId, drop.uprn, drop.UPRN]
+      .map((value) => text(value).toLowerCase())
+      .filter(Boolean)
+      .flatMap((key) => [key, key.replace(/^uprn-/, ""), `uprn-${key.replace(/^uprn-/, "")}`]);
+
+    rawDropHomeKeys.forEach((key) => {
+      const existing = dropDpRefsByHomeKey.get(key) || new Set<string>();
+      dropDpKeys.forEach((dpRef) => existing.add(dpRef));
+      dropDpRefsByHomeKey.set(key, existing);
     });
+
+    if (!dropDpKeys.some((key) => dpKeySet.has(key))) return;
+    rawDropHomeKeys.forEach((key) => homeKeysFromDrops.add(key));
   });
 
   return homes.filter((home: any) => {
-    const directDp = [home.connectedDpId, home.dpId, home.parentDpId, home.properties?.connectedDpId, home.properties?.dpId]
-      .some((value) => valueMatchesAny(value, dpKeySet));
-    if (directDp) return true;
-
     const homeKeySet = new Set(assetKeys(home));
     [home.homeId, home.uprn, home.UPRN, home.properties?.UPRN, home.properties?.uprn].forEach((value) => {
       const key = text(value).toLowerCase();
@@ -160,6 +168,30 @@ function homesForDp(dp: SavedMapAsset, homes: SavedMapAsset[], drops: SavedMapAs
         homeKeySet.add(`uprn-${key.replace(/^uprn-/, "")}`);
       }
     });
+
+    const dropDpRefs = Array.from(homeKeySet).flatMap((key) =>
+      Array.from(dropDpRefsByHomeKey.get(key) || []),
+    );
+    const hasDrop = dropDpRefs.length > 0;
+    const hasDropForThisDp = dropDpRefs.some((key) => dpKeySet.has(key));
+
+    // If a drop exists, trust the drop's DP instead of stale address-sheet metadata.
+    if (hasDrop) return hasDropForThisDp;
+
+    const directDp = [
+      home.connectedDpId,
+      home.dpId,
+      home.parentDpId,
+      home.connectedDP,
+      home.servedByDp,
+      home.properties?.connectedDpId,
+      home.properties?.dpId,
+      home.properties?.parentDpId,
+      home.properties?.connectedDP,
+      home.properties?.servedByDp,
+    ].some((value) => valueMatchesAny(value, dpKeySet));
+
+    if (directDp) return true;
 
     return Array.from(homeKeySet).some((key) => homeKeysFromDrops.has(key) || homeKeysFromDrops.has(key.replace(/^uprn-/, "")) || homeKeysFromDrops.has(`uprn-${key.replace(/^uprn-/, "")}`));
   });

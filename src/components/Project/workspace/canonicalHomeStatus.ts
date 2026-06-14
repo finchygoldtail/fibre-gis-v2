@@ -235,20 +235,28 @@ export function getCanonicalHomeConnectionStatus(
 
   if (ownStatus === "live") return "live";
 
-  const metadataConnection = norm(item.connection || item.properties?.connection);
-  if (
-    item.connectedDpId ||
-    item.properties?.connectedDpId ||
-    item.connectedDP ||
-    item.dpId ||
-    metadataConnection === "connected" ||
-    ownStatus === "connected"
-  ) {
-    return "connected";
-  }
-
+  // Drop links are the strongest connection authority. Address-sheet imports
+  // can leave stale connectedDpId/dpId metadata behind after a home is moved,
+  // so check the current drop before trusting metadata-only connections.
   const linkedDrop = allAssets.find((asset) => dropLinksToCanonicalHome(asset, home));
-  if (!linkedDrop) return "unconnected";
+
+  if (!linkedDrop) {
+    const metadataConnection = norm(item.connection || item.properties?.connection);
+    if (
+      item.connectedDpId ||
+      item.properties?.connectedDpId ||
+      item.connectedDP ||
+      item.dpId ||
+      item.parentDpId ||
+      item.servedByDp ||
+      metadataConnection === "connected" ||
+      ownStatus === "connected"
+    ) {
+      return "connected";
+    }
+
+    return "unconnected";
+  }
 
   const dropItem = linkedDrop as any;
   const dropStatus = normaliseHomeStatus(
@@ -272,7 +280,16 @@ export function buildCanonicalHomeSummary(assets: SavedMapAsset[]): CanonicalHom
       status,
       linkedDrop,
       splitterBox: text(item.splitterBox || item.splitter_box || item.sbId || item.assignedSplitterBox),
-      connectedDpId: text(item.connectedDpId || item.properties?.connectedDpId || item.connectedDP || item.dpId),
+      connectedDpId: text(
+        (linkedDrop as any)?.dpId ||
+          (linkedDrop as any)?.fromAssetId ||
+          (linkedDrop as any)?.connectedDpId ||
+          (linkedDrop as any)?.parentDpId ||
+          item.connectedDpId ||
+          item.properties?.connectedDpId ||
+          item.connectedDP ||
+          item.dpId,
+      ),
     };
   });
 
