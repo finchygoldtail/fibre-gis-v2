@@ -12,6 +12,11 @@ type Props = {
   onSelectAsset?: (asset: SavedMapAsset) => void;
   onOpenAsset?: (asset: SavedMapAsset) => void;
   onTraceAsset?: (asset: SavedMapAsset) => void;
+  onBulkUpdateCablePiaNoi?: (args: {
+    assetIds: string[];
+    piaNoiNumber: string;
+    note: string;
+  }) => void | Promise<void>;
 };
 
 function text(value: unknown): string {
@@ -291,8 +296,16 @@ function sortRows(rows: AssetExplorerRow[], sort: AssetExplorerFiltersState["sor
   return next;
 }
 
-export default function OperationalAssetExplorer({ projectAssets, selectedAssetId, onSelectAsset, onOpenAsset, onTraceAsset }: Props) {
+export default function OperationalAssetExplorer({
+  projectAssets,
+  selectedAssetId,
+  onSelectAsset,
+  onOpenAsset,
+  onTraceAsset,
+  onBulkUpdateCablePiaNoi,
+}: Props) {
   const [filters, setFilters] = useState<AssetExplorerFiltersState>(DEFAULT_ASSET_EXPLORER_FILTERS);
+  const [selectedBulkCableIds, setSelectedBulkCableIds] = useState<string[]>([]);
 
   const allRows = useMemo(() => (projectAssets || []).map((asset) => toRow(asset, projectAssets || [])), [projectAssets]);
   const filteredRows = useMemo(() => sortRows(allRows.filter((row) => matchesFilters(row, filters)), filters.sort), [allRows, filters]);
@@ -301,6 +314,65 @@ export default function OperationalAssetExplorer({ projectAssets, selectedAssetI
   const dpCount = allRows.filter((row) => assetType(row.asset) === "distribution-point").length;
   const jointCount = allRows.filter((row) => assetType(row.asset) === "ag-joint").length;
   const cableCount = allRows.filter((row) => assetType(row.asset) === "cable").length;
+
+  const filteredCableRows = filteredRows.filter((row) => assetType(row.asset) === "cable");
+  const selectedCableCount = selectedBulkCableIds.length;
+
+  const toggleBulkCable = (assetId: string) => {
+    setSelectedBulkCableIds((prev) =>
+      prev.includes(assetId)
+        ? prev.filter((id) => id !== assetId)
+        : [...prev, assetId],
+    );
+  };
+
+  const selectFilteredCables = () => {
+    setSelectedBulkCableIds(filteredCableRows.map((row) => row.id));
+  };
+
+  const clearBulkCableSelection = () => setSelectedBulkCableIds([]);
+
+  const applyBulkPiaNoi = async () => {
+    if (!onBulkUpdateCablePiaNoi) {
+      alert("Bulk PIA NOI update is not wired into this workspace yet.");
+      return;
+    }
+
+    if (!selectedBulkCableIds.length) {
+      alert("Select one or more cables first.");
+      return;
+    }
+
+    const piaNoiNumber = window.prompt(
+      `PIA NOI number to apply to ${selectedBulkCableIds.length} selected cable${selectedBulkCableIds.length === 1 ? "" : "s"}:`,
+      "",
+    );
+    if (piaNoiNumber === null) return;
+
+    const trimmedPiaNoi = piaNoiNumber.trim();
+    if (!trimmedPiaNoi) {
+      alert("Enter a PIA NOI number before applying.");
+      return;
+    }
+
+    const note = window.prompt(
+      "Audit note for bulk PIA NOI update:",
+      `Bulk apply PIA NOI ${trimmedPiaNoi}`,
+    );
+    if (note === null) return;
+
+    const trimmedNote = note.trim();
+    if (!trimmedNote) {
+      alert("An audit note is required before applying a bulk PIA NOI update.");
+      return;
+    }
+
+    await onBulkUpdateCablePiaNoi({
+      assetIds: selectedBulkCableIds,
+      piaNoiNumber: trimmedPiaNoi,
+      note: trimmedNote,
+    });
+  };
 
   return (
     <section style={{ gridColumn: "span 2", display: "grid", gap: 12 }}>
@@ -320,7 +392,37 @@ export default function OperationalAssetExplorer({ projectAssets, selectedAssetI
       </div>
 
       <AssetExplorerFilters value={filters} onChange={setFilters} totalCount={allRows.length} filteredCount={filteredRows.length} />
-      <AssetExplorerTable rows={filteredRows} selectedAssetId={selectedAssetId} onSelectAsset={onSelectAsset} onOpenAsset={onOpenAsset || onSelectAsset} onTraceAsset={onTraceAsset || onSelectAsset} />
+
+      <div style={{ background: "#0f1b2d", border: "1px solid rgba(14,165,233,0.28)", borderRadius: 12, padding: 12, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
+        <div>
+          <div style={{ color: "#e0f2fe", fontWeight: 900 }}>Bulk PIA NOI</div>
+          <div style={{ color: "#94a3b8", fontSize: 12 }}>
+            Select cable rows below, then apply one PIA NOI number to all selected cables.
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ color: "#cbd5e1", fontSize: 12 }}>{selectedCableCount} selected</span>
+          <button type="button" style={{ border: "1px solid rgba(148,163,184,0.24)", background: "#111827", color: "#f8fafc", borderRadius: 8, padding: "8px 10px", fontWeight: 900, cursor: "pointer" }} onClick={selectFilteredCables}>
+            Select Filtered Cables ({filteredCableRows.length})
+          </button>
+          <button type="button" style={{ border: "1px solid rgba(148,163,184,0.24)", background: "#111827", color: "#f8fafc", borderRadius: 8, padding: "8px 10px", fontWeight: 900, cursor: "pointer" }} onClick={clearBulkCableSelection}>
+            Clear
+          </button>
+          <button type="button" style={{ border: "1px solid rgba(34,197,94,0.45)", background: "#14532d", color: "#dcfce7", borderRadius: 8, padding: "8px 10px", fontWeight: 900, cursor: "pointer" }} onClick={applyBulkPiaNoi}>
+            Apply PIA NOI
+          </button>
+        </div>
+      </div>
+
+      <AssetExplorerTable
+        rows={filteredRows}
+        selectedAssetId={selectedAssetId}
+        selectedBulkCableIds={selectedBulkCableIds}
+        onToggleBulkCable={toggleBulkCable}
+        onSelectAsset={onSelectAsset}
+        onOpenAsset={onOpenAsset || onSelectAsset}
+        onTraceAsset={onTraceAsset || onSelectAsset}
+      />
     </section>
   );
 }

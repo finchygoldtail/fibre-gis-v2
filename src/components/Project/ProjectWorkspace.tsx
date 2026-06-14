@@ -110,6 +110,11 @@ type ProjectWorkspaceProps = {
     status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
     note: string;
   }) => void;
+  onBulkUpdateCablePiaNoi?: (args: {
+    assetIds: string[];
+    piaNoiNumber: string;
+    note: string;
+  }) => void | Promise<void>;
   onUpdateDpStatus?: (args: {
     assetId: string;
     status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
@@ -1372,6 +1377,7 @@ export default function ProjectWorkspace({
   activeProjectId = null,
   onSelectProject,
   onBulkUpdateDpStatus,
+  onBulkUpdateCablePiaNoi,
   onUpdateDpStatus,
   onClearDpFibreAllocations,
   onResolveDuplicateHomes,
@@ -1392,6 +1398,7 @@ export default function ProjectWorkspace({
 
   const [selectedWorkspaceAsset, setSelectedWorkspaceAsset] =
     useState<SavedMapAsset | null>(null);
+  const [localAssetOverrides, setLocalAssetOverrides] = useState<Record<string, SavedMapAsset>>({});
   const [searchTerm, setSearchTerm] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(() => {
@@ -1475,10 +1482,21 @@ export default function ProjectWorkspace({
     };
   }, [mappingAssetKey, projectAssets]);
 
-  const workspaceAssets = useMemo(
-    () => enrichProjectAssetsWithMappings(projectAssets, mappingRowsByAssetId),
-    [projectAssets, mappingRowsByAssetId],
-  );
+  const workspaceAssets = useMemo(() => {
+    const enrichedAssets = enrichProjectAssetsWithMappings(projectAssets, mappingRowsByAssetId);
+    if (!Object.keys(localAssetOverrides).length) return enrichedAssets;
+
+    return enrichedAssets.map((asset) => {
+      const override = localAssetOverrides[asset.id];
+      return override
+        ? ({
+            ...asset,
+            ...override,
+            geometry: override.geometry || asset.geometry,
+          } as SavedMapAsset)
+        : asset;
+    });
+  }, [projectAssets, mappingRowsByAssetId, localAssetOverrides]);
 
   const fullSelectedWorkspaceAsset = useMemo(
     () => resolveFullProjectAsset(selectedWorkspaceAsset, workspaceAssets),
@@ -2536,6 +2554,7 @@ export default function ProjectWorkspace({
     setIssueNavigatorIndex(0);
     setManagerAreaPoints([]);
     setIsManagerAreaDrawing(false);
+    setLocalAssetOverrides({});
   }, [activeWorkspaceProjectId, projectArea?.id, projectName]);
 
   const walkOffSnapshot = useMemo(
@@ -2928,6 +2947,65 @@ export default function ProjectWorkspace({
     const syncedAsset = syncWorkspaceDpStatus(asset, status);
     setSelectedWorkspaceAsset(syncedAsset);
     onUpdateDpStatus({ assetId: asset.id, status, note: trimmed });
+  };
+
+  const handleBulkCablePiaNoiUpdate = async (args: {
+    assetIds: string[];
+    piaNoiNumber: string;
+    note: string;
+  }) => {
+    const targetIds = new Set(args.assetIds.map(String).filter(Boolean));
+    const trimmedPiaNoi = String(args.piaNoiNumber || "").trim();
+
+    if (!targetIds.size) {
+      alert("No cables were selected for the PIA NOI update.");
+      return;
+    }
+
+    if (!trimmedPiaNoi) {
+      alert("Enter a PIA NOI number before applying.");
+      return;
+    }
+
+    const nextOverrides: Record<string, SavedMapAsset> = {};
+
+    workspaceAssets.forEach((asset) => {
+      if (!targetIds.has(String(asset.id || ""))) return;
+      const item = asset as any;
+
+      nextOverrides[asset.id] = {
+        ...item,
+        piaNoiNumber: trimmedPiaNoi,
+        piaNOINumber: trimmedPiaNoi,
+        noiNumber: trimmedPiaNoi,
+        properties: {
+          ...(item.properties || {}),
+          piaNoiNumber: trimmedPiaNoi,
+          piaNOINumber: trimmedPiaNoi,
+          noiNumber: trimmedPiaNoi,
+        },
+      } as SavedMapAsset;
+    });
+
+    setLocalAssetOverrides((current) => ({
+      ...current,
+      ...nextOverrides,
+    }));
+
+    setSelectedWorkspaceAsset((current) => {
+      if (!current || !targetIds.has(String(current.id || ""))) return current;
+      return nextOverrides[current.id] || current;
+    });
+
+    await onBulkUpdateCablePiaNoi?.({
+      assetIds: Array.from(targetIds),
+      piaNoiNumber: trimmedPiaNoi,
+      note: args.note,
+    });
+
+    alert(
+      `Applied PIA NOI ${trimmedPiaNoi} to ${Object.keys(nextOverrides).length} cable${Object.keys(nextOverrides).length === 1 ? "" : "s"}.`,
+    );
   };
 
   const responsiveRoot: React.CSSProperties = {
@@ -3743,6 +3821,7 @@ export default function ProjectWorkspace({
                       }}
                       areaDistributionPoints={areaDistributionPoints}
                       onBulkUpdateDpStatus={onBulkUpdateDpStatus}
+                      onBulkUpdateCablePiaNoi={handleBulkCablePiaNoiUpdate}
                       onClearDpFibreAllocations={
                         handleClearAreaDpFibreAllocations
                       }
@@ -4500,10 +4579,9 @@ export default function ProjectWorkspace({
                       </button>
 
                       <div style={{ ...emptyPanel, marginTop: 10 }}>
-                        Download blank customer templates for the standard
+                        Download blank templates for the standard
                         Alistra GIS import workflow. These only create XLSX
-                        starter files and do not change project data, assets,
-                        homes, or Firestore storage.
+                        starter files
                       </div>
 
                       <div style={templateButtonGrid}>

@@ -19,6 +19,11 @@ type Props = {
   onBackToMap?: () => void;
   onSelectAsset?: (asset: SavedMapAsset) => void;
   onOpenJointEditor?: (asset: SavedMapAsset) => void;
+  onBulkUpdateCablePiaNoi?: (args: {
+    assetIds: string[];
+    piaNoiNumber: string;
+    note: string;
+  }) => void | Promise<void>;
 };
 
 const panel: React.CSSProperties = {
@@ -58,6 +63,7 @@ export default function WorkspaceAssets({
   onSelectAsset,
   onOpenJointEditor,
   onOpenTrace,
+  onBulkUpdateCablePiaNoi,
 }: Props) {
   const openAsset = (asset: SavedMapAsset) => {
     const kind = getAssetKind(asset);
@@ -87,6 +93,7 @@ export default function WorkspaceAssets({
         onSelectAsset={onSelectAsset}
         onOpenAsset={openAsset}
         onTraceAsset={() => onOpenTrace?.()}
+        onBulkUpdateCablePiaNoi={onBulkUpdateCablePiaNoi}
       />
     </>
   );

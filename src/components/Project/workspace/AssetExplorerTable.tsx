@@ -19,6 +19,8 @@ export type AssetExplorerRow = {
 type Props = {
   rows: AssetExplorerRow[];
   selectedAssetId?: string | null;
+  selectedBulkCableIds?: string[];
+  onToggleBulkCable?: (assetId: string) => void;
   onSelectAsset?: (asset: SavedMapAsset) => void;
   onOpenAsset?: (asset: SavedMapAsset) => void;
   onTraceAsset?: (asset: SavedMapAsset) => void;
@@ -100,7 +102,37 @@ function capacityText(row: AssetExplorerRow): string {
   return `${row.used}/${row.capacity} (${row.free} free)`;
 }
 
-export default function AssetExplorerTable({ rows, selectedAssetId, onSelectAsset, onOpenAsset, onTraceAsset }: Props) {
+function isCableRow(row: AssetExplorerRow): boolean {
+  const item = row.asset as any;
+  const raw = String(item.assetType || item.type || item.cableType || row.type || "").toLowerCase();
+  return row.asset.geometry?.type === "LineString" || raw.includes("cable");
+}
+
+function readPiaNoi(asset: SavedMapAsset): string {
+  const item = asset as any;
+  return String(
+    item.piaNoiNumber ||
+      item.piaNOI ||
+      item.piaNoi ||
+      item.noiNumber ||
+      item.properties?.piaNoiNumber ||
+      item.properties?.piaNOI ||
+      item.properties?.piaNoi ||
+      item.properties?.noiNumber ||
+      ""
+  ).trim();
+}
+
+export default function AssetExplorerTable({
+  rows,
+  selectedAssetId,
+  selectedBulkCableIds = [],
+  onToggleBulkCable,
+  onSelectAsset,
+  onOpenAsset,
+  onTraceAsset,
+}: Props) {
+  const selectedBulkSet = new Set(selectedBulkCableIds);
   if (!rows.length) {
     return (
       <div style={{ ...wrap, padding: 16, color: "#94a3b8" }}>
@@ -115,11 +147,13 @@ export default function AssetExplorerTable({ rows, selectedAssetId, onSelectAsse
         <table style={table}>
           <thead>
             <tr>
+              {onToggleBulkCable ? <th style={{ ...th, width: 42 }}>Bulk</th> : null}
               <th style={th}>Asset</th>
               <th style={th}>Type</th>
               <th style={th}>Status</th>
               <th style={th}>Capacity</th>
               <th style={th}>Fibre</th>
+              <th style={th}>PIA NOI</th>
               <th style={th}>Location</th>
               <th style={th}>Risk</th>
               <th style={th}>Actions</th>
@@ -128,8 +162,22 @@ export default function AssetExplorerTable({ rows, selectedAssetId, onSelectAsse
           <tbody>
             {rows.map((row) => {
               const active = row.id === selectedAssetId;
+              const cable = isCableRow(row);
+              const bulkSelected = selectedBulkSet.has(row.id);
               return (
                 <tr key={row.id} style={active ? { background: "rgba(37,99,235,0.18)" } : undefined}>
+                  {onToggleBulkCable ? (
+                    <td style={td}>
+                      {cable ? (
+                        <input
+                          type="checkbox"
+                          checked={bulkSelected}
+                          onChange={() => onToggleBulkCable(row.id)}
+                          aria-label={`Select ${row.name} for bulk PIA NOI`}
+                        />
+                      ) : null}
+                    </td>
+                  ) : null}
                   <td style={td}>
                     <button type="button" style={nameButton} onClick={() => onSelectAsset?.(row.asset)}>{row.name}</button>
                     <div style={{ color: "#64748b", marginTop: 3 }}>{row.id}</div>
@@ -138,6 +186,7 @@ export default function AssetExplorerTable({ rows, selectedAssetId, onSelectAsse
                   <td style={td}>{row.status || "Unknown"}</td>
                   <td style={td}>{capacityText(row)}</td>
                   <td style={td}>{row.fibreSummary || "—"}</td>
+                  <td style={td}>{readPiaNoi(row.asset) || "—"}</td>
                   <td style={td}>{row.location || "—"}</td>
                   <td style={td}><span style={riskStyle(row.risk)}>{row.risk}</span></td>
                   <td style={td}>

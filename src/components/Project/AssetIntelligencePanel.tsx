@@ -64,6 +64,18 @@ function read(asset: any, keys: string[], fallback: RowValue = "—"): RowValue 
   return fallback;
 }
 
+function readNested(asset: any, keys: string[], fallback: RowValue = "—"): RowValue {
+  for (const key of keys) {
+    const parts = key.split(".");
+    let cursor = asset;
+    for (const part of parts) {
+      cursor = cursor?.[part];
+    }
+    if (cursor !== undefined && cursor !== null && cursor !== "") return cursor;
+  }
+  return fallback;
+}
+
 function getAssetName(asset: SavedMapAsset | null): string {
   if (!asset) return "No asset selected";
   const item = asset as any;
@@ -1246,7 +1258,25 @@ export default function AssetIntelligencePanel({
           <InfoRow label="Fibre Count" value={read(item, ["fibreCount", "fiberCount", "coreCount", "size"])} />
           <InfoRow label="Used Fibres" value={cablePath.usedFibres ?? read(item, ["usedFibres", "usedFibers", "usedCoreCount", "fibresUsed"])} />
           <InfoRow label="Route Length" value={formatDistanceMeters(routeLength(asset))} />
-          <InfoRow label="PIA / NOI" value={read(item, ["piaNoiNumber", "piaNOINumber", "noiNumber", "piaNoi", "pia", "noi", "piaStatus"])} />
+          <InfoRow
+            label="PIA / NOI"
+            value={readNested(item, [
+              "piaNoiNumber",
+              "piaNOINumber",
+              "noiNumber",
+              "piaNoi",
+              "pia",
+              "noi",
+              "piaStatus",
+              "properties.piaNoiNumber",
+              "properties.piaNOINumber",
+              "properties.noiNumber",
+              "properties.piaNoi",
+              "properties.pia",
+              "properties.noi",
+              "properties.piaStatus",
+            ])}
+          />
         </PanelSection>
       )}
 
