@@ -1306,23 +1306,25 @@ export default function AssetDetailsSidebarSections({
 
   const fibreTotal =
     Number(String(selectedCable?.fibreCount || "48F").replace(/\D/g, "")) || 48;
-  const dpCapacity =
-    dpDetails.closureType === "AFN"
+  const isMduClosure =
+    dpDetails.closureType === "MDU" || dpDetails.closureType === "MDU_SPLITTER";
+  const mduFeedFibres = Number(
+    dpDetails.mduDetails?.mduFibres ||
+      dpDetails.mduDetails?.totalReservedFibres ||
+      currentInputFibres.length ||
+      0,
+  );
+  const dpCapacity = isMduClosure
+    ? mduFeedFibres
+    : dpDetails.closureType === "AFN"
       ? Number(
           dpDetails.autoFibrePlan?.capacity || currentInputFibres.length * 8,
         )
-      : dpDetails.closureType === "MDU" || dpDetails.closureType === "MDU_SPLITTER"
-        ? Number(
+      : Number(
+          dpDetails.connectionsToHomes ||
             dpDetails.autoFibrePlan?.capacity ||
-              dpDetails.connectionsToHomes ||
-              connectedHomes.length ||
-              0,
-          )
-        : Number(
-            dpDetails.connectionsToHomes ||
-              dpDetails.autoFibrePlan?.capacity ||
-              0,
-          );
+            0,
+        );
   const dpUsed = connectedHomes.length;
   const dpAvailable = Math.max(0, dpCapacity - dpUsed);
 
@@ -1752,9 +1754,19 @@ export default function AssetDetailsSidebarSections({
     const selectedManualRoute = primarySbRoute;
     const localFibres = parseFibreListInput(manualLocalFibres || formatFibreList(selectedManualRoute?.localFibres));
     const parentFibres = parseFibreListInput(manualParentFibres || formatFibreList(selectedManualRoute?.parentFibres));
-    const dpCapacityManual = dpDetails.closureType === "AFN"
-      ? localFibres.length * 8
-      : Number(dpDetails.connectionsToHomes || 8);
+    const isMduManual =
+      dpDetails.closureType === "MDU" || dpDetails.closureType === "MDU_SPLITTER";
+    const mduFeedFibresManual = Number(
+      dpDetails.mduDetails?.mduFibres ||
+        dpDetails.mduDetails?.totalReservedFibres ||
+        dpDetails.mduDetails?.inputFibres?.length ||
+        0,
+    );
+    const dpCapacityManual = isMduManual
+      ? mduFeedFibresManual
+      : dpDetails.closureType === "AFN"
+        ? localFibres.length * 8
+        : Number(dpDetails.connectionsToHomes || 8);
     const dpUsedManual = connectedHomes.length;
     const dpAvailableManual = Math.max(0, dpCapacityManual - dpUsedManual);
 
@@ -2001,25 +2013,40 @@ export default function AssetDetailsSidebarSections({
           </>
         ) : null}
 
-        <div style={labelStyle}>Connections to Homes</div>
-        <select
-          value={dpDetails.closureType === "AFN" ? dpCapacityManual : dpDetails.connectionsToHomes || 8}
-          disabled={dpDetails.closureType === "AFN"}
-          onChange={(e) => updateDp("connectionsToHomes", Number(e.target.value))}
-          style={inputStyle}
-        >
-          <option value={8}>8</option>
-          <option value={16}>16</option>
-          <option value={24}>24</option>
-          <option value={32}>32</option>
-        </select>
+        {isMduManual ? (
+          <div style={helpText}>
+            MDU Direct Feed capacity is measured as live feed fibres wrapped up ready for splicing to the building.
+          </div>
+        ) : (
+          <>
+            <div style={labelStyle}>Connections to Homes</div>
+            <select
+              value={dpDetails.closureType === "AFN" ? dpCapacityManual : dpDetails.connectionsToHomes || 8}
+              disabled={dpDetails.closureType === "AFN"}
+              onChange={(e) => updateDp("connectionsToHomes", Number(e.target.value))}
+              style={inputStyle}
+            >
+              <option value={8}>8</option>
+              <option value={16}>16</option>
+              <option value={24}>24</option>
+              <option value={32}>32</option>
+            </select>
+          </>
+        )}
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 10 }}>
-          {[
-            ["Capacity", dpCapacityManual],
-            ["Used", dpUsedManual],
-            ["Available", dpAvailableManual],
-          ].map(([title, value]) => (
+          {(isMduManual
+            ? [
+                ["Feed Fibres", dpCapacityManual],
+                ["Connected", dpUsedManual],
+                ["Spare Feed", dpAvailableManual],
+              ]
+            : [
+                ["Capacity", dpCapacityManual],
+                ["Used", dpUsedManual],
+                ["Available", dpAvailableManual],
+              ]
+          ).map(([title, value]) => (
             <div key={String(title)} style={{ background: "#111827", border: "1px solid #334155", borderRadius: 8, padding: 8, textAlign: "center" }}>
               <strong>{value}</strong>
               <br />

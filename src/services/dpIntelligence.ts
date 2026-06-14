@@ -434,6 +434,13 @@ export function getDpIntelligence(dp: SavedMapAsset | null | undefined, allAsset
   const usedPorts = connectedHomes;
   const splitterOutputs = getSplitterOutputs(dp);
   const storedInputFibres = getExplicitInputFibres(dp);
+  const mdu = getMduDetails(item);
+  const mduFeedFibres = Number(
+    mdu.mduFibres ||
+      mdu.totalReservedFibres ||
+      storedInputFibres.length ||
+      0,
+  );
   const requiredInputCount = isAfn && usedPorts > 0 ? Math.max(1, Math.ceil(usedPorts / splitterOutputs)) : 0;
   const inputFibreCount = isAfn
     ? Math.max(storedInputFibres.length, requiredInputCount)
@@ -445,8 +452,12 @@ export function getDpIntelligence(dp: SavedMapAsset | null | undefined, allAsset
       : [];
   const explicitCapacity = getExplicitCapacity(dp);
   const splitterCapacity = isAfn && inputFibreCount > 0 ? inputFibreCount * splitterOutputs : 0;
-  const fallbackCapacity = isCbt ? 12 : isMdu ? Math.max(explicitCapacity, usedPorts) : usedPorts;
-  const capacity = Math.max(explicitCapacity, splitterCapacity, fallbackCapacity, usedPorts);
+  const fallbackCapacity = isCbt ? 12 : usedPorts;
+  // For MDU Direct Feed / MDU + Splitter, capacity means live feed fibres
+  // wrapped up ready for splicing into the building, not CBT-style output ports.
+  const capacity = isMdu
+    ? Math.max(mduFeedFibres, storedInputFibres.length, usedPorts)
+    : Math.max(explicitCapacity, splitterCapacity, fallbackCapacity, usedPorts);
   const freePorts = Math.max(capacity - usedPorts, 0);
   const capacityPercent = capacity > 0 ? Math.round((usedPorts / capacity) * 100) : 0;
   const capacityRisk: DpCapacityRisk =

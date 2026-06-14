@@ -757,6 +757,7 @@ function getDpUsage(
   const dpIdentityValues = getAssetIdentityValues(dp as any);
   const dpDetails = ((dp as any).dpDetails || (dp as any).properties?.dpDetails || {}) as any;
   const afnDetails = dpDetails.afnDetails || (dp as any).afnDetails || {};
+  const mduDetails = dpDetails.mduDetails || (dp as any).mduDetails || {};
 
   const matchingDpState =
     (dp.id ? networkState?.dpStates?.[dp.id] : null) ||
@@ -825,15 +826,25 @@ function getDpUsage(
   ).toUpperCase();
 
   const isAfn = closureType.includes("AFN");
+  const isMdu = closureType.includes("MDU");
   const savedCapacity = getSavedDpCapacity(dp as any, dpDetails, matchingDpState);
   const savedUsed = getSavedDpUsedPorts(dp as any, dpDetails, matchingDpState);
+  const mduFeedFibres = readPositiveNumber(
+    mduDetails?.mduFibres,
+    mduDetails?.feedFibres,
+    mduDetails?.inputFibreCount,
+    dpDetails?.mduFibres,
+    (dp as any)?.mduFibres,
+  );
 
   // AFN/SB capacity is local splitter inputs × 8 where the route is present.
-  // If the saved DP already has a capacity from the workspace intelligence,
-  // keep that as the fallback instead of dropping back to the old hard-coded 16.
-  const capacity = isAfn && splitterFibres.length
-    ? splitterFibres.length * 8
-    : savedCapacity || connectedHomeKeys.size || 16;
+  // MDU Direct Feed capacity is not a port count: it is the number of live
+  // feed fibres wrapped up ready for splicing into the MDU building.
+  const capacity = isMdu
+    ? mduFeedFibres || savedCapacity || connectedHomeKeys.size || 0
+    : isAfn && splitterFibres.length
+      ? splitterFibres.length * 8
+      : savedCapacity || connectedHomeKeys.size || 16;
 
   // Prefer actual loaded homes/drop endpoints. If the main map has not loaded
   // homes for the project, fall back to the saved workspace/intelligence count.
@@ -847,6 +858,8 @@ function getDpUsage(
     overCapacity: used > capacity,
     inputFibres,
     spliceFibres: storedSpliceFibres,
+    isMdu,
+    mduFeedFibres: capacity,
   };
 }
 
@@ -1302,12 +1315,21 @@ export default function AssetMarkersLayer({
                   {infoRow("DP Type", asset.dpDetails?.closureType)}
                   {infoRow("Homes", dpUsage?.used ?? asset.dpDetails?.connectionsToHomes)}
                   {dpUsage ? (
-                    <>
-                      {infoRow("Capacity", dpUsage.capacity)}
-                      {infoRow("Used Ports", dpUsage.used)}
-                      {infoRow("Free Ports", dpUsage.free)}
-                      {infoRow("Status", dpUsage.overCapacity ? "Over capacity" : "OK")}
-                    </>
+                    dpUsage.isMdu ? (
+                      <>
+                        {infoRow("Feed Fibres", dpUsage.mduFeedFibres)}
+                        {infoRow("Connected", dpUsage.used)}
+                        {infoRow("Spare Feed", dpUsage.free)}
+                        {infoRow("Status", dpUsage.overCapacity ? "Over capacity" : "OK")}
+                      </>
+                    ) : (
+                      <>
+                        {infoRow("Capacity", dpUsage.capacity)}
+                        {infoRow("Used Ports", dpUsage.used)}
+                        {infoRow("Free Ports", dpUsage.free)}
+                        {infoRow("Status", dpUsage.overCapacity ? "Over capacity" : "OK")}
+                      </>
+                    )
                   ) : null}
 
                   {asset.dpDetails?.closureType === "AFN" && (
