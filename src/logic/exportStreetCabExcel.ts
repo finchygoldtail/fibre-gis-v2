@@ -126,11 +126,14 @@ export function downloadStreetCabTemplate() {
     { key: "LT", description: "Line terminal / card reference.", example: "LT1" },
     { key: "PON", description: "PON reference.", example: "PON1" },
     { key: "HD Splitter", description: "1:4 HD splitter reference.", example: "4WAY HD SPL1" },
+    { key: "Connection Type", description: "Use SPLITTER for normal feeder → 1:4 splitter → link cable, or FEEDER_PATCH for direct feeder-to-feeder patching such as HEE → HNE.", example: "SPLITTER" },
     { key: "Feeder Panel", description: "Feeder panel reference.", example: "144F PANEL A" },
-    { key: "Feeder Cable", description: "Feeder cable ID.", example: "FC001" },
-    { key: "Feeder Fibre", description: "Feeder fibre number.", example: 1 },
-    { key: "Output Cable", description: "Cable leaving the cabinet.", example: "BD-BAE-LMJ01" },
-    { key: "Output Fibre", description: "Output fibre number.", example: 1 },
+    { key: "Feeder Cable", description: "Source feeder cable ID.", example: "BD-HEE-FC001" },
+    { key: "Feeder Fibre", description: "Source feeder fibre number.", example: 73 },
+    { key: "Patch Destination Cable", description: "For FEEDER_PATCH rows, the destination feeder cable.", example: "BD-HNE-FC001" },
+    { key: "Patch Destination Fibre", description: "For FEEDER_PATCH rows, the destination feeder fibre.", example: 1 },
+    { key: "Output Cable", description: "Cable leaving the cabinet after a splitter output.", example: "BD-BAE-LMJ01" },
+    { key: "Output Fibre", description: "Output fibre number after a splitter output.", example: 1 },
     { key: "Notes", description: "Engineer notes or audit comments.", example: "Street cab starter template" },
   ];
 

@@ -1536,45 +1536,107 @@ export default function ProjectWorkspace({
 
   // =====================================================
   // QA AREA SCOPE GUARD
-  // The workspace map is already scoped to the selected project area, but
-  // generated drop/home metadata can still carry references from neighbouring
-  // build areas.  QA must never show BD-BAE issues while viewing Baildon South,
-  // or BD-BAS issues while viewing Baildon East.
+  // QA must only assess assets that belong to the currently selected
+  // workspace area. Older generated drops / homes can carry neighbouring
+  // area references in their DP, cable, home or drop metadata, so this guard
+  // is deliberately broader than the map render filter.
   //
-  // This guard only removes assets that clearly belong to another Baildon area.
-  // Assets without a known BD-BAS / BD-BAE / BD-BAW reference are kept so we do
-  // not hide valid legacy assets while the permanent areaId metadata is added.
+  // Supports:
+  // - explicit projectId / areaId matches
+  // - full codes such as BD-BAS-AG1, BD-CLH-AG3
+  // - AG-only names such as "Clayton Heights AG3"
+  // - legacy Baildon South / East / West names
   // =====================================================
   const qaWorkspaceAssets = useMemo(() => {
+    const normaliseScopeText = (value: unknown) =>
+      String(value || "")
+        .toUpperCase()
+        .replace(/[_/]+/g, "-")
+        .replace(/\s+/g, " ")
+        .trim();
+
     const projectText = [
       projectName,
+      activeProjectId,
+      (projectArea as any)?.id,
+      (projectArea as any)?.projectId,
+      (projectArea as any)?.areaId,
       (projectArea as any)?.name,
       (projectArea as any)?.label,
       (projectArea as any)?.projectName,
       (projectArea as any)?.areaName,
-      (projectArea as any)?.id,
+      (projectArea as any)?.code,
+      (projectArea as any)?.areaCode,
     ]
-      .map((value) => String(value || "").toUpperCase())
+      .map(normaliseScopeText)
+      .filter(Boolean)
       .join(" ");
 
-    const expectedPrefix =
-      projectText.includes("BD-BAS") || projectText.includes("BAILDON SOUTH")
-        ? "BD-BAS"
-        : projectText.includes("BD-BAE") || projectText.includes("BAILDON EAST")
-          ? "BD-BAE"
-          : projectText.includes("BD-BAW") ||
-              projectText.includes("BAILDON WEST")
-            ? "BD-BAW"
-            : "";
+    const extractFullAreaCodes = (text: string): string[] => {
+      const matches = text.match(/\b[A-Z]{2,4}-[A-Z]{2,6}-AG\d+\b/g) || [];
+      return Array.from(new Set(matches));
+    };
 
-    if (!expectedPrefix) return workspaceAssets;
+    const extractAgCodes = (text: string): string[] => {
+      const matches = text.match(/\bAG\s*0*\d+\b/g) || [];
+      return Array.from(
+        new Set(matches.map((match) => match.replace(/\s+/g, ""))),
+      );
+    };
 
-    const foreignPrefixes = ["BD-BAS", "BD-BAE", "BD-BAW"].filter(
-      (prefix) => prefix !== expectedPrefix,
+    const expectedFullCodes = new Set(extractFullAreaCodes(projectText));
+    const expectedAgCodes = new Set(extractAgCodes(projectText));
+
+    // Legacy friendly names that do not always include the BD code.
+    if (projectText.includes("BAILDON SOUTH")) expectedFullCodes.add("BD-BAS-AG1");
+    if (projectText.includes("BAILDON EAST")) expectedFullCodes.add("BD-BAE-AG1");
+    if (projectText.includes("BAILDON WEST")) expectedFullCodes.add("BD-BAW-AG1");
+
+    const currentProjectIds = new Set(
+      [
+        activeProjectId,
+        (projectArea as any)?.id,
+        (projectArea as any)?.projectId,
+        (projectArea as any)?.areaId,
+      ]
+        .map((value) => String(value || "").trim())
+        .filter(Boolean),
     );
+
+    if (
+      expectedFullCodes.size === 0 &&
+      expectedAgCodes.size === 0 &&
+      currentProjectIds.size === 0
+    ) {
+      return workspaceAssets;
+    }
 
     return workspaceAssets.filter((asset: SavedMapAsset) => {
       const item = asset as any;
+
+      const assetProjectIds = [
+        item.projectId,
+        item.areaId,
+        item.projectAreaId,
+        item.activeProjectId,
+        item.properties?.projectId,
+        item.properties?.areaId,
+        item.properties?.projectAreaId,
+      ]
+        .map((value) => String(value || "").trim())
+        .filter(Boolean);
+
+      const hasExplicitProjectId = assetProjectIds.length > 0;
+      const hasMatchingProjectId = assetProjectIds.some((id) =>
+        currentProjectIds.has(id),
+      );
+
+      if (hasMatchingProjectId) return true;
+
+      // If an asset is explicitly stamped to another area/project, exclude it
+      // from this QA run.
+      if (hasExplicitProjectId && currentProjectIds.size > 0) return false;
+
       const searchableText = [
         item.id,
         item.assetId,
@@ -1596,20 +1658,45 @@ export default function ProjectWorkspace({
         item.connectedHomeId,
         item.splitterBox,
         item.assignedSplitterBox,
+        item.projectName,
+        item.areaName,
+        item.areaCode,
         item.properties?.connectedDpId,
         item.properties?.connectedDP,
         item.properties?.dpId,
         item.properties?.splitterBox,
         item.properties?.assignedSplitterBox,
+        item.properties?.projectName,
+        item.properties?.areaName,
+        item.properties?.areaCode,
       ]
-        .map((value) => String(value || "").toUpperCase())
+        .map(normaliseScopeText)
+        .filter(Boolean)
         .join(" ");
 
       if (!searchableText) return true;
 
-      return !foreignPrefixes.some((prefix) => searchableText.includes(prefix));
+      const assetFullCodes = extractFullAreaCodes(searchableText);
+      const assetAgCodes = extractAgCodes(searchableText);
+
+      if (expectedFullCodes.size > 0 && assetFullCodes.length > 0) {
+        return assetFullCodes.some((code) => expectedFullCodes.has(code));
+      }
+
+      if (expectedAgCodes.size > 0 && assetAgCodes.length > 0) {
+        return assetAgCodes.some((code) => expectedAgCodes.has(code));
+      }
+
+      // If the asset clearly belongs to some other AG/area code but it did not
+      // match this workspace, exclude it. This stops Clayton Heights QA from
+      // pulling in BD-BAS / Baildon South drops and similar historic data.
+      if (assetFullCodes.length > 0 || assetAgCodes.length > 0) return false;
+
+      // Uncoded legacy assets are kept because they may still be valid assets
+      // inside an area that has not been permanently stamped yet.
+      return true;
     });
-  }, [projectArea, projectName, workspaceAssets]);
+  }, [activeProjectId, projectArea, projectName, workspaceAssets]);
 
   const auditIssues = useMemo(() => {
     const rawIssues = auditAreaAssets(qaWorkspaceAssets);

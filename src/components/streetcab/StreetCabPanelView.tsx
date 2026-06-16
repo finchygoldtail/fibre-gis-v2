@@ -254,7 +254,7 @@ export default function StreetCabPanelView({
       >
         <div style={panelHeader}>
           <div style={panelTitle}>{panel.name}</div>
-          <div style={panelSubtitle}>96F PANEL</div>
+          <div style={panelSubtitle}>FEEDER / PATCH</div>
         </div>
 
         <div style={fibrePanelFace}>
@@ -307,7 +307,7 @@ export default function StreetCabPanelView({
       >
         <div style={panelHeader}>
           <div style={panelTitle}>{panel.name}</div>
-          <div style={panelSubtitle}>LINK</div>
+          <div style={panelSubtitle}>LINK / PATCH</div>
         </div>
 
         <div style={fibrePanelFace}>

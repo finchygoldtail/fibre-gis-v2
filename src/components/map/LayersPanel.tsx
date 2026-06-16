@@ -139,10 +139,21 @@ const panel: React.CSSProperties = {
   overflowY: "auto",
   padding: "10px 8px",
   boxSizing: "border-box",
+  background: "#0b1220",
+  borderLeft: "1px solid rgba(96,165,250,0.28)",
 };
 
-const card: React.CSSProperties = { background: "#374151", borderRadius: 8 };
-const label: React.CSSProperties = { fontSize: "0.8rem", fontWeight: 700 };
+const card: React.CSSProperties = {
+  background: "#0f172a",
+  border: "1px solid #2563eb",
+  borderRadius: 12,
+  boxShadow: "0 10px 26px rgba(15,23,42,0.35)",
+};
+const label: React.CSSProperties = {
+  fontSize: "0.8rem",
+  fontWeight: 800,
+  color: "#bfdbfe",
+};
 
 const btnPrimary: React.CSSProperties = {
   background: "#2563eb",
@@ -178,9 +189,11 @@ const btnDanger: React.CSSProperties = {
 };
 
 const layerGroupCard: React.CSSProperties = {
-  background: "#374151",
-  borderRadius: 8,
+  background: "#0f172a",
+  border: "1px solid rgba(37,99,235,0.6)",
+  borderRadius: 12,
   overflow: "hidden",
+  boxShadow: "0 8px 20px rgba(15,23,42,0.28)",
 };
 
 const layerButton: React.CSSProperties = {
@@ -290,7 +303,17 @@ export default function LayersPanel({
 
   return (
     <div style={panel}>
-      <h3 style={{ margin: 0, fontSize: "0.95rem" }}>Map View</h3>
+      <h3
+        style={{
+          margin: 0,
+          fontSize: "0.95rem",
+          color: "#60a5fa",
+          fontWeight: 900,
+          letterSpacing: 0.3,
+        }}
+      >
+        Map View
+      </h3>
 
       <div style={{ ...card, padding: "0.7rem" }}>
         <div style={label}>Basemap</div>

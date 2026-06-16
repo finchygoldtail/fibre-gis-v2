@@ -155,6 +155,32 @@ export function isPortAlreadyConnected(
   );
 }
 
+export function getStreetCabConnectionType(
+  startRole: PortRole,
+  endRole: PortRole
+): "SPLITTER_FEED" | "SPLITTER_OUTPUT" | "FEEDER_PATCH" | "UNKNOWN" {
+  if (
+    (startRole === "96f" && endRole === "splitter-in") ||
+    (startRole === "splitter-in" && endRole === "96f")
+  ) {
+    return "SPLITTER_FEED";
+  }
+
+  if (
+    (startRole === "splitter-out" && endRole === "link-cable") ||
+    (startRole === "link-cable" && endRole === "splitter-out")
+  ) {
+    return "SPLITTER_OUTPUT";
+  }
+
+  const cableRoles = new Set<PortRole>(["96f", "link-cable"]);
+  if (cableRoles.has(startRole) && cableRoles.has(endRole)) {
+    return "FEEDER_PATCH";
+  }
+
+  return "UNKNOWN";
+}
+
 export function validateConnection(
   panels: StreetCabPanel[],
   start: { panelId: string; portId: string },
@@ -185,17 +211,13 @@ export function validateConnection(
     return { valid: false, message: "The target port is already connected." };
   }
 
-  const allowed =
-    (startRole === "96f" && endRole === "splitter-in") ||
-    (startRole === "splitter-in" && endRole === "96f") ||
-    (startRole === "splitter-out" && endRole === "link-cable") ||
-    (startRole === "link-cable" && endRole === "splitter-out");
+  const connectionType = getStreetCabConnectionType(startRole, endRole);
 
-  if (!allowed) {
+  if (connectionType === "UNKNOWN") {
     return {
       valid: false,
       message:
-        "Invalid connection. Use 96F → Splitter IN, or Splitter OUT → Link Cable.",
+        "Invalid connection. Use 96F → Splitter IN, Splitter OUT → Link Cable, or Cable Fibre → Cable Fibre for direct feeder patching.",
     };
   }
 

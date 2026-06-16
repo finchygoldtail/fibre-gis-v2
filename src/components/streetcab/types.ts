@@ -45,12 +45,18 @@ export type StreetCabPanel =
   | StreetCabSplitterPanel
   | StreetCabLinkCablePanel;
 
+export type StreetCabConnectionType =
+  | "SPLITTER_FEED"
+  | "SPLITTER_OUTPUT"
+  | "FEEDER_PATCH";
+
 export type StreetCabConnection = {
   id: string;
   fromPanelId: string;
   fromPortId: string;
   toPanelId: string;
   toPortId: string;
+  connectionType?: StreetCabConnectionType;
 };
 
 export type StreetCabDetails = {
@@ -61,4 +67,6 @@ export type StreetCabDetails = {
   documents?: string[];
   panels: StreetCabPanel[];
   connections: StreetCabConnection[];
+  importMappingRows?: Array<Record<string, unknown>>;
+  portAnnotations?: Record<string, string[]>;
 };

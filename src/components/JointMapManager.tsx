@@ -2183,6 +2183,7 @@ export default function JointMapManager({
       setPickedLocation(null);
       setDraftAreaPoints(clickedPoint ? [clickedPoint] : []);
       setMapMode("draw-area");
+      setIsPanelOpen(true);
       handleCloseContextMenu();
       return;
     }
@@ -2215,6 +2216,7 @@ export default function JointMapManager({
       ),
     );
     setMapMode("pick");
+    setIsPanelOpen(true);
 
     if (type === "joint") {
       setAssetType("ag-joint");
@@ -4121,12 +4123,14 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
           TOP LEFT: TOOLS DRAWER TOGGLE
           Keeps the first view clean and lets the full editor slide out.
           ===================================================== */}
-      <button
-        onClick={() => setIsPanelOpen((prev) => !prev)}
-        style={drawerToggleButton}
-      >
-        {isPanelOpen ? "× Close" : "☰ Asset Panel"}
-      </button>
+      {!isPanelOpen && (
+        <button
+          onClick={() => setIsPanelOpen(true)}
+          style={drawerToggleButton}
+        >
+          ☰ Asset Panel
+        </button>
+      )}
 
       {/* =====================================================
           EXCHANGE SIDE PANEL
@@ -4164,10 +4168,11 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
           />
 
           <button
-            onClick={onClose}
-            style={{ ...btnSecondary, marginLeft: "auto" }}
+            type="button"
+            onClick={() => setIsPanelOpen(false)}
+            style={{ ...btnSecondary, marginLeft: "auto", flexShrink: 0 }}
           >
-            Back
+            × Close
           </button>
         </div>
 
@@ -4194,15 +4199,6 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
           </button>
         )}
 
-        {activeProjectArea && canManageNetworkDesign && (
-          <button
-            type="button"
-            onClick={handleDeletePiaOverlayForActiveProject}
-            style={{ ...btnDanger, width: "100%", marginBottom: 6 }}
-          >
-            Delete PIA / Openreach Overlay In This Area
-          </button>
-        )}
 
         <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 10 }}>
           Scope:{" "}
@@ -4352,7 +4348,15 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         )}
 
         {canUseSurveyTools && (
-          <details open={Boolean(editingAssetId)} style={card}>
+          <details
+            open={Boolean(
+              editingAssetId ||
+                pickedLocation ||
+                mapMode === "draw-area" ||
+                draftAreaPoints.length > 0
+            )}
+            style={card}
+          >
           <summary style={sectionSummary}>
             {editingAssetId ? "Asset Details" : "Asset Editor"}
           </summary>
@@ -5709,18 +5713,20 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         !isSurveyTabletMode &&
         !isMaintenanceTabletMode && (
         <>
-          <button
-            onClick={handleSaveMapNow}
-            disabled={isSavingMapNow}
-            style={{
-              ...topMapButton,
-              right: isMobile ? 168 : isLayersOpen ? 512 : 168,
-              background: isSavingMapNow ? "#64748b" : "#16a34a",
-              cursor: isSavingMapNow ? "not-allowed" : "pointer",
-            }}
-          >
-            {isSavingMapNow ? "Saving..." : "Save Map"}
-          </button>
+          {canManageNetworkDesign && (
+            <button
+              onClick={handleSaveMapNow}
+              disabled={isSavingMapNow}
+              style={{
+                ...topMapButton,
+                right: isMobile ? 168 : isLayersOpen ? 512 : 168,
+                background: isSavingMapNow ? "#64748b" : "#16a34a",
+                cursor: isSavingMapNow ? "not-allowed" : "pointer",
+              }}
+            >
+              {isSavingMapNow ? "Saving..." : "Save Map"}
+            </button>
+          )}
 
           <button
             onClick={handleGpsLocate}
@@ -5901,9 +5907,9 @@ const projectWorkspaceProgressBar: React.CSSProperties = {
 // =====================================================
 const drawerToggleButton: React.CSSProperties = {
   position: "absolute",
-  top: 16,
-  left: 16,
-  zIndex: 2100,
+  top: 75,
+  left: 10,
+  zIndex: 1000,
   background: "#111827",
   color: "white",
   border: "1px solid #334155",

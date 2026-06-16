@@ -32,18 +32,25 @@ type SelectedPort = {
 
 type CleanPatchRow = {
   cabinetRef: string;
+  connectionType: "SPLITTER" | "FEEDER_PATCH";
+
   feederCable: string;
   feederFibre: number;
-  splitterNo: number;
-  splitterOutput: number;
+
+  splitterNo: number | null;
+  splitterOutput: number | null;
+
   linkCable: string;
   linkFibre: number;
+
   ag: string;
   agPort: number | null;
-  splitterPanelNumber: number;
+
+  splitterPanelNumber: number | null;
 };
 
 type ImportMappingRow = {
+  connectionType: "SPLITTER" | "FEEDER_PATCH";
   cabinetRef: string;
   feederCable: string;
   feederFibre: number | null;
@@ -186,6 +193,34 @@ function getCell(row: unknown[], index: number): unknown {
   return row[index] ?? "";
 }
 
+function normaliseConnectionType(value: unknown): "SPLITTER" | "FEEDER_PATCH" {
+  const text = normaliseText(value).toUpperCase().replace(/[\s-]+/g, "_");
+  if (text.includes("FEEDER_PATCH") || text.includes("DIRECT_PATCH") || text.includes("PATCH_THROUGH")) {
+    return "FEEDER_PATCH";
+  }
+  return "SPLITTER";
+}
+
+function looksLikeFeederPatchRow(args: {
+  explicitType: "SPLITTER" | "FEEDER_PATCH";
+  feederCable: string;
+  feederFibre: number | null;
+  splitterNo: number | null;
+  splitterOutput: number | null;
+  linkCable: string;
+  linkFibre: number | null;
+}): boolean {
+  if (args.explicitType === "FEEDER_PATCH") return true;
+  return Boolean(
+    args.feederCable &&
+      args.feederFibre &&
+      args.linkCable &&
+      args.linkFibre &&
+      !args.splitterNo &&
+      !args.splitterOutput
+  );
+}
+
 function getSplitterNumberFromOldSheet(value: unknown): number | "" {
   const text = normaliseText(value).replace(/\s/g, "");
   if (!text) return "";
@@ -234,6 +269,20 @@ function buildCabFromCleanPatchingSheet(workbook: XLSX.WorkBook): {
     const ag = normaliseText(getCell(row, 7));
     const agPort = parseNumber(getCell(row, 8));
 
+    // Column J is optional. Old clean sheets without this column still import as SPLITTER.
+    const explicitConnectionType = normaliseConnectionType(getCell(row, 9));
+    const connectionType = looksLikeFeederPatchRow({
+      explicitType: explicitConnectionType,
+      feederCable,
+      feederFibre,
+      splitterNo,
+      splitterOutput,
+      linkCable,
+      linkFibre,
+    })
+      ? "FEEDER_PATCH"
+      : "SPLITTER";
+
     if (
       !feederCable &&
       !feederFibre &&
@@ -247,16 +296,15 @@ function buildCabFromCleanPatchingSheet(workbook: XLSX.WorkBook): {
       continue;
     }
 
-    if (
-      !feederCable ||
-      !feederFibre ||
-      !splitterNo ||
-      !splitterOutput ||
-      !linkCable ||
-      !linkFibre
-    ) {
+    const hasRequiredPatchFields =
+      connectionType === "FEEDER_PATCH"
+        ? Boolean(feederCable && feederFibre && linkCable && linkFibre)
+        : Boolean(feederCable && feederFibre && splitterNo && splitterOutput && linkCable && linkFibre);
+
+    if (!hasRequiredPatchFields) {
       console.warn("Skipped incomplete clean import row", {
         rowNumber: i + 1,
+        connectionType,
         cabinetRef,
         feederCable,
         feederFibre,
@@ -270,7 +318,7 @@ function buildCabFromCleanPatchingSheet(workbook: XLSX.WorkBook): {
       continue;
     }
 
-    if (splitterOutput < 1 || splitterOutput > 4) {
+    if (connectionType === "SPLITTER" && splitterOutput && (splitterOutput < 1 || splitterOutput > 4)) {
       console.warn("Skipped row with invalid splitter output", {
         rowNumber: i + 1,
         splitterOutput,
@@ -278,12 +326,15 @@ function buildCabFromCleanPatchingSheet(workbook: XLSX.WorkBook): {
       continue;
     }
 
-    const splitterPanelNumber = Math.ceil(splitterNo / SPLITTERS_PER_PANEL);
+    const splitterPanelNumber = connectionType === "SPLITTER" && splitterNo
+      ? Math.ceil(splitterNo / SPLITTERS_PER_PANEL)
+      : null;
 
     parsedRows.push({
+      connectionType,
       cabinetRef,
       feederCable,
-      feederFibre,
+      feederFibre: feederFibre || 0,
       splitterNo,
       splitterOutput,
       linkCable,
@@ -298,12 +349,19 @@ function buildCabFromCleanPatchingSheet(workbook: XLSX.WorkBook): {
       Math.max(feederMaxFibres.get(feederCable) || 0, feederFibre)
     );
 
-    linkMaxFibres.set(
-      linkCable,
-      Math.max(linkMaxFibres.get(linkCable) || 0, linkFibre)
-    );
+    if (connectionType === "FEEDER_PATCH") {
+      feederMaxFibres.set(
+        linkCable,
+        Math.max(feederMaxFibres.get(linkCable) || 0, linkFibre || 0)
+      );
+    } else {
+      linkMaxFibres.set(
+        linkCable,
+        Math.max(linkMaxFibres.get(linkCable) || 0, linkFibre || 0)
+      );
 
-    splitterPanelsNeeded.add(splitterPanelNumber);
+      if (splitterPanelNumber) splitterPanelsNeeded.add(splitterPanelNumber);
+    }
   }
 
   const panels: StreetCabPanel[] = [];
@@ -374,6 +432,7 @@ function buildCabFromCleanPatchingSheet(workbook: XLSX.WorkBook): {
 
   parsedRows.forEach((row) => {
     mappingRows.push({
+      connectionType: row.connectionType,
       cabinetRef: row.cabinetRef,
       feederCable: row.feederCable,
       feederFibre: row.feederFibre,
@@ -385,8 +444,58 @@ function buildCabFromCleanPatchingSheet(workbook: XLSX.WorkBook): {
       agPort: row.agPort,
     });
 
-    const splitterPanel = splitterPanelMap.get(row.splitterPanelNumber);
-    if (!splitterPanel || splitterPanel.type !== "splitter-panel") return;
+    if (row.connectionType === "FEEDER_PATCH")  {
+      const sourceBlock = Math.ceil(row.feederFibre / 96);
+      const sourcePanel = feederPanelMap.get(`${row.feederCable}:${sourceBlock}`);
+      const sourcePort = sourcePanel
+        ? findPortByDisplayedNumber(sourcePanel, row.feederFibre)
+        : null;
+
+      const destFibre = row.linkFibre || 0;
+      const destBlock = Math.ceil(destFibre / 96);
+      const destPanel = feederPanelMap.get(`${row.linkCable}:${destBlock}`);
+      const destPort = destPanel
+        ? findPortByDisplayedNumber(destPanel, destFibre)
+        : null;
+
+      if (sourcePanel && sourcePort && destPanel && destPort && !(sourcePanel.id === destPanel.id && sourcePort.id === destPort.id)) {
+        const key = `${sourcePanel.id}:${sourcePort.id}->${destPanel.id}:${destPort.id}`;
+        const reverseKey = `${destPanel.id}:${destPort.id}->${sourcePanel.id}:${sourcePort.id}`;
+
+        if (!addedConnectionKeys.has(key) && !addedConnectionKeys.has(reverseKey)) {
+          connections.push({
+            id: crypto.randomUUID(),
+            fromPanelId: sourcePanel.id,
+            fromPortId: sourcePort.id,
+            toPanelId: destPanel.id,
+            toPortId: destPort.id,
+          });
+
+          addedConnectionKeys.add(key);
+          usedPortKeys.add(`${sourcePanel.id}:${sourcePort.id}`);
+          usedPortKeys.add(`${destPanel.id}:${destPort.id}`);
+        }
+
+        addPortAnnotation(
+          portAnnotations,
+          sourcePanel.id,
+          sourcePort.id,
+          `PATCH → ${row.linkCable}:F${destFibre}`
+        );
+
+        addPortAnnotation(
+          portAnnotations,
+          destPanel.id,
+          destPort.id,
+          `PATCH ← ${row.feederCable}:F${row.feederFibre}`
+        );
+      }
+
+      return;
+    }
+
+    const splitterPanel = row.splitterPanelNumber ? splitterPanelMap.get(row.splitterPanelNumber) : undefined;
+    if (!splitterPanel || splitterPanel.type !== "splitter-panel" || !row.splitterNo || !row.splitterOutput) return;
 
     const localSplitterIndex = (row.splitterNo - 1) % SPLITTERS_PER_PANEL;
     const splitter = splitterPanel.splitters[localSplitterIndex];
@@ -1013,6 +1122,7 @@ export default function StreetCabDesigner({
           "Link Fibre",
           "AG",
           "AG Port",
+          "Connection Type",
         ],
       ];
 
@@ -1041,6 +1151,8 @@ export default function StreetCabDesigner({
 
         return Number(all[all.length - 1]);
       };
+
+      const looksLikeCableRef = (value: string): boolean => /(?:^|[-_\s])(fc|lc|link|feeder)\d*/i.test(value) || /[-_\s]FC\d+/i.test(value);
 
       const deriveCabinetRef = (): string => {
         const existing = getText(cabinetRef || asset.name);
@@ -1235,32 +1347,55 @@ export default function StreetCabDesigner({
 
         if (!hasUsefulCells) continue;
 
+        const splitterCellText = getText(getCell(row, layout.splitterCol));
+        const hasDirectPatch = looksLikeCableRef(splitterCellText) && getNum(getCell(row, layout.splitterOutputCol)) !== null;
+
         if (
           !currentCabinetRef ||
           !currentFeederCable ||
           currentFeederFibre === null ||
-          currentSplitterNo === null ||
-          splitterOutput === null ||
-          !currentLinkCable ||
-          linkFibre === null ||
-          !currentAG ||
-          agPort === null
+          (!hasDirectPatch &&
+            (currentSplitterNo === null ||
+              splitterOutput === null ||
+              !currentLinkCable ||
+              linkFibre === null ||
+              !currentAG ||
+              agPort === null))
         ) {
           continue;
         }
 
-        if (splitterOutput < 1 || splitterOutput > 4) continue;
+        if (!hasDirectPatch && splitterOutput !== null && (splitterOutput < 1 || splitterOutput > 4)) continue;
+
+        const directPatchCable = looksLikeCableRef(splitterCellText) ? splitterCellText : "";
+        const directPatchFibre = directPatchCable ? getNum(getCell(row, layout.splitterOutputCol)) : null;
+
+        if (directPatchCable && directPatchFibre !== null && currentFeederCable && currentFeederFibre !== null) {
+          cleanRows.push([
+            currentCabinetRef,
+            currentFeederCable,
+            currentFeederFibre,
+            "",
+            "",
+            directPatchCable,
+            directPatchFibre,
+            currentAG,
+            agPort ?? "",
+            "FEEDER_PATCH",
+          ]);
+        }
 
         cleanRows.push([
           currentCabinetRef,
-          currentFeederCable,
-          currentFeederFibre,
+          directPatchCable || currentFeederCable,
+          directPatchFibre ?? currentFeederFibre,
           currentSplitterNo,
           splitterOutput,
           currentLinkCable,
           linkFibre,
           currentAG,
           agPort,
+          "SPLITTER",
         ]);
       }
 
@@ -1284,6 +1419,7 @@ export default function StreetCabDesigner({
         { wch: 12 },
         { wch: 14 },
         { wch: 12 },
+        { wch: 18 },
       ];
 
       XLSX.utils.book_append_sheet(cleanWorkbook, cleanSheet, "Patching Import");
@@ -1668,6 +1804,8 @@ export default function StreetCabDesigner({
             H AG
             <br />
             I AG Port
+            <br />
+            J Connection Type (SPLITTER or FEEDER_PATCH)
           </div>
         </div>
 
@@ -1687,6 +1825,9 @@ export default function StreetCabDesigner({
             >
               {importMappingRows.slice(0, 40).map((row, index) => (
                 <div key={index} style={mappingRow}>
+                  <div>
+                    <b>Type:</b> {row.connectionType || "SPLITTER"}
+                  </div>
                   <div>
                     <b>Cab:</b> {row.cabinetRef || "-"}
                   </div>
