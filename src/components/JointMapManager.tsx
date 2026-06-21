@@ -166,6 +166,17 @@ L.Icon.Default.mergeOptions({
   shadowUrl: markerShadow,
 });
 
+const measurePointIcon = new L.Icon({
+  iconRetinaUrl: markerIcon2x,
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  tooltipAnchor: [16, -28],
+  shadowSize: [41, 41],
+});
+
 function makeMeasureLabelIcon(text: string) {
   return L.divIcon({
     className: "alistra-measure-label",
@@ -5177,6 +5188,7 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
               <Marker
                 key={`measure-${index}`}
                 position={[point.lat, point.lng]}
+                icon={measurePointIcon}
               >
                 <Popup>
                   <b>Measure Point {index + 1}</b>

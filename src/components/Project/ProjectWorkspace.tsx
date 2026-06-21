@@ -1094,6 +1094,156 @@ function formatDistance(meters: number | undefined) {
   return `${Math.round(value)} m`;
 }
 
+
+function getLineDistanceMeters(points: [number, number][]): number {
+  if (!Array.isArray(points) || points.length < 2) return 0;
+
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const earthRadiusMeters = 6371000;
+  let total = 0;
+
+  for (let index = 1; index < points.length; index += 1) {
+    const [lat1, lng1] = points[index - 1];
+    const [lat2, lng2] = points[index];
+
+    if (
+      !Number.isFinite(lat1) ||
+      !Number.isFinite(lng1) ||
+      !Number.isFinite(lat2) ||
+      !Number.isFinite(lng2)
+    ) {
+      continue;
+    }
+
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRad(lat1)) *
+        Math.cos(toRad(lat2)) *
+        Math.sin(dLng / 2) *
+        Math.sin(dLng / 2);
+
+    total += earthRadiusMeters * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  return total;
+}
+
+function getWorkspaceAssetRouteLengthMeters(asset: SavedMapAsset): number {
+  const item = asset as any;
+  const explicitLength = Number(
+    item.routeLengthMeters ??
+      item.lengthMeters ??
+      item.distanceMeters ??
+      item.distanceM ??
+      item.properties?.routeLengthMeters ??
+      item.properties?.lengthMeters,
+  );
+
+  if (Number.isFinite(explicitLength) && explicitLength > 0) {
+    return explicitLength;
+  }
+
+  if (asset.geometry?.type !== "LineString") return 0;
+
+  const coordinates = asset.geometry.coordinates as [number, number][];
+  return getLineDistanceMeters(coordinates);
+}
+
+function normalisePolygonRingsFromGeometry(
+  geometry: SavedMapAsset["geometry"] | undefined,
+): [number, number][][] {
+  if (!geometry) return [];
+
+  const type = String((geometry as any).type || "");
+  const coordinates = (geometry as any).coordinates;
+
+  if (type === "Polygon" && Array.isArray(coordinates)) {
+    return coordinates.filter(Array.isArray) as [number, number][][];
+  }
+
+  if (type === "MultiPolygon" && Array.isArray(coordinates)) {
+    return coordinates
+      .flatMap((polygon: any) => (Array.isArray(polygon) ? polygon : []))
+      .filter(Array.isArray) as [number, number][][];
+  }
+
+  return [];
+}
+
+function getClosedRingDistanceMeters(ring: [number, number][]): number {
+  if (!Array.isArray(ring) || ring.length < 2) return 0;
+
+  const closedRing = [...ring];
+  const first = closedRing[0];
+  const last = closedRing[closedRing.length - 1];
+
+  if (first && last && (first[0] !== last[0] || first[1] !== last[1])) {
+    closedRing.push(first);
+  }
+
+  return getLineDistanceMeters(closedRing);
+}
+
+function getPolygonRingAreaSquareMeters(ring: [number, number][]): number {
+  if (!Array.isArray(ring) || ring.length < 3) return 0;
+
+  const radius = 6378137;
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  let area = 0;
+
+  for (let index = 0; index < ring.length; index += 1) {
+    const [lat1, lng1] = ring[index];
+    const [lat2, lng2] = ring[(index + 1) % ring.length];
+
+    if (
+      !Number.isFinite(lat1) ||
+      !Number.isFinite(lng1) ||
+      !Number.isFinite(lat2) ||
+      !Number.isFinite(lng2)
+    ) {
+      continue;
+    }
+
+    area +=
+      toRad(lng2 - lng1) *
+      (2 + Math.sin(toRad(lat1)) + Math.sin(toRad(lat2)));
+  }
+
+  return Math.abs((area * radius * radius) / 2);
+}
+
+function getWorkspaceAreaMetrics(area: SavedMapAsset | null | undefined): {
+  areaSquareMeters: number;
+  boundaryLengthMeters: number;
+} {
+  const rings = normalisePolygonRingsFromGeometry(area?.geometry);
+
+  if (!rings.length) {
+    return { areaSquareMeters: 0, boundaryLengthMeters: 0 };
+  }
+
+  // Imported APX AGs may arrive as MultiPolygons. Treat every ring as part of
+  // the selected AG boundary so the KPI reflects the geometry on screen.
+  return rings.reduce(
+    (totals, ring) => ({
+      areaSquareMeters:
+        totals.areaSquareMeters + getPolygonRingAreaSquareMeters(ring),
+      boundaryLengthMeters:
+        totals.boundaryLengthMeters + getClosedRingDistanceMeters(ring),
+    }),
+    { areaSquareMeters: 0, boundaryLengthMeters: 0 },
+  );
+}
+
+function formatAreaSize(squareMeters: number | undefined): string {
+  const value = squareMeters ?? 0;
+  if (value >= 1000000) return `${(value / 1000000).toFixed(2)} km²`;
+  if (value >= 10000) return `${(value / 10000).toFixed(2)} ha`;
+  return `${Math.round(value).toLocaleString("en-GB")} m²`;
+}
+
 function StatCard({
   label,
   value,
@@ -1401,6 +1551,8 @@ export default function ProjectWorkspace({
   const [localAssetOverrides, setLocalAssetOverrides] = useState<Record<string, SavedMapAsset>>({});
   const [searchTerm, setSearchTerm] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
+  const [projectAreaSearchTerm, setProjectAreaSearchTerm] = useState("");
+  const [projectAreaSearchFocused, setProjectAreaSearchFocused] = useState(false);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(() => {
     if (typeof window === "undefined") return "overview";
     try {
@@ -1843,6 +1995,24 @@ export default function ProjectWorkspace({
     [stats, dpClosureCount, designCableCount, dropCableCount],
   );
 
+
+  const workspaceRouteLengthMeters = useMemo(
+    () =>
+      workspaceAssets
+        .filter(isDesignCableAsset)
+        .reduce(
+          (total, asset) => total + getWorkspaceAssetRouteLengthMeters(asset),
+          0,
+        ),
+    [workspaceAssets],
+  );
+
+
+  const workspaceAreaMetrics = useMemo(
+    () => getWorkspaceAreaMetrics(projectArea),
+    [projectArea],
+  );
+
   // =====================================================
   // PHASE 7D.1 — OPERATIONAL ROLLOUT KPI ENGINE
   // Derived only from already-scoped workspace assets so this
@@ -1936,11 +2106,12 @@ export default function ProjectWorkspace({
       buildCompletionPercent,
       qaIssues: auditIssues.length || Number(displayStats?.issueCount || 0),
       disconnectedAssets: disconnectedAssets.length,
-      routeLengthMeters: Number(displayStats?.routeLengthMeters || 0),
+      routeLengthMeters: workspaceRouteLengthMeters,
     };
   }, [
     workspaceAssets,
     displayStats,
+    workspaceRouteLengthMeters,
     auditIssues.length,
     disconnectedAssets.length,
   ]);
@@ -2378,6 +2549,8 @@ export default function ProjectWorkspace({
     rows.push(["QA medium issues", issueBuckets.medium.length]);
     rows.push(["QA low issues", issueBuckets.low.length]);
     rows.push(["Disconnected assets", rolloutKpis.disconnectedAssets]);
+    rows.push(["Area size", formatAreaSize(workspaceAreaMetrics.areaSquareMeters)]);
+    rows.push(["Boundary length", formatDistance(workspaceAreaMetrics.boundaryLengthMeters)]);
     rows.push(["Route length", formatDistance(rolloutKpis.routeLengthMeters)]);
     rows.push([]);
 
@@ -2623,6 +2796,55 @@ export default function ProjectWorkspace({
   const activeWorkspaceProjectId =
     activeProjectId || projectArea?.id || workspaceProjectOptions[0]?.id || "";
 
+
+  const activeWorkspaceProjectLabel = useMemo(() => {
+    const activeArea = workspaceProjectOptions.find(
+      (area) => area.id === activeWorkspaceProjectId,
+    );
+    return activeArea ? getProjectAreaLabel(activeArea) : projectName;
+  }, [activeWorkspaceProjectId, projectName, workspaceProjectOptions]);
+
+  const filteredWorkspaceProjectOptions = useMemo(() => {
+    const query = projectAreaSearchTerm.trim().toLowerCase();
+    if (!query) return workspaceProjectOptions.slice(0, 60);
+
+    return workspaceProjectOptions
+      .filter((area) => {
+        const item = area as any;
+        const searchText = [
+          getProjectAreaLabel(area),
+          item.name,
+          item.label,
+          item.areaCode,
+          item.code,
+          item.projectName,
+          item.fibrehood_code,
+          item.ag_code,
+          item.importedProperties?.ag_code,
+          item.importedProperties?.fibrehood_code,
+        ]
+          .map((value) => String(value ?? "").toLowerCase())
+          .join(" ");
+
+        return searchText.includes(query);
+      })
+      .slice(0, 60);
+  }, [projectAreaSearchTerm, workspaceProjectOptions]);
+
+  const handleWorkspaceProjectSelect = (nextProjectId: string) => {
+    if (!nextProjectId || nextProjectId === activeWorkspaceProjectId) return;
+    setSelectedWorkspaceAsset(null);
+    setSearchTerm("");
+    setSearchFocused(false);
+    setActiveOperationPanel("none");
+    setActiveIssueSeverity(null);
+    setManagerAreaPoints([]);
+    setIsManagerAreaDrawing(false);
+    setProjectAreaSearchTerm("");
+    setProjectAreaSearchFocused(false);
+    onSelectProject?.(nextProjectId);
+  };
+
   const workspaceMapRemountKey = [
     activeWorkspaceProjectId,
     projectArea?.id || "",
@@ -2642,6 +2864,8 @@ export default function ProjectWorkspace({
     setManagerAreaPoints([]);
     setIsManagerAreaDrawing(false);
     setLocalAssetOverrides({});
+    setProjectAreaSearchTerm("");
+    setProjectAreaSearchFocused(false);
   }, [activeWorkspaceProjectId, projectArea?.id, projectName]);
 
   const walkOffSnapshot = useMemo(
@@ -3329,34 +3553,67 @@ export default function ProjectWorkspace({
                   Project Area
                 </label>
                 {workspaceProjectOptions.length > 1 && onSelectProject ? (
-                  <select
-                    id="workspace-project-switcher"
-                    value={activeWorkspaceProjectId}
-                    onChange={(event) => {
-                      const nextProjectId = event.target.value;
-                      if (
-                        !nextProjectId ||
-                        nextProjectId === activeWorkspaceProjectId
-                      )
-                        return;
-                      setSelectedWorkspaceAsset(null);
-                      setSearchTerm("");
-                      setSearchFocused(false);
-                      setActiveOperationPanel("none");
-                      setActiveIssueSeverity(null);
-                      setManagerAreaPoints([]);
-                      setIsManagerAreaDrawing(false);
-                      onSelectProject(nextProjectId);
-                    }}
-                    style={projectSwitcherSelect}
-                    title="Switch project area without going back to the main map"
-                  >
-                    {workspaceProjectOptions.map((area) => (
-                      <option key={area.id} value={area.id}>
-                        {getProjectAreaLabel(area)}
-                      </option>
-                    ))}
-                  </select>
+                  <div style={projectSwitcherSearchWrap}>
+                    <input
+                      id="workspace-project-switcher"
+                      value={
+                        projectAreaSearchFocused || projectAreaSearchTerm
+                          ? projectAreaSearchTerm
+                          : activeWorkspaceProjectLabel
+                      }
+                      onChange={(event) => {
+                        setProjectAreaSearchTerm(event.target.value);
+                        setProjectAreaSearchFocused(true);
+                      }}
+                      onFocus={() => {
+                        setProjectAreaSearchTerm("");
+                        setProjectAreaSearchFocused(true);
+                      }}
+                      onBlur={() => {
+                        window.setTimeout(() => {
+                          setProjectAreaSearchFocused(false);
+                          setProjectAreaSearchTerm("");
+                        }, 160);
+                      }}
+                      placeholder="Search project areas..."
+                      style={projectSwitcherSearchInput}
+                      title="Search and switch project area without going back to the main map"
+                      autoComplete="off"
+                    />
+
+                    {projectAreaSearchFocused && (
+                      <div style={projectSwitcherResults}>
+                        {filteredWorkspaceProjectOptions.length ? (
+                          filteredWorkspaceProjectOptions.map((area) => {
+                            const selected = area.id === activeWorkspaceProjectId;
+                            return (
+                              <button
+                                key={area.id}
+                                type="button"
+                                style={{
+                                  ...projectSwitcherResultButton,
+                                  background: selected
+                                    ? "rgba(37,99,235,0.35)"
+                                    : projectSwitcherResultButton.background,
+                                  color: selected ? "#bfdbfe" : "#e5e7eb",
+                                }}
+                                onMouseDown={(event) => {
+                                  event.preventDefault();
+                                  handleWorkspaceProjectSelect(area.id);
+                                }}
+                              >
+                                {getProjectAreaLabel(area)}
+                              </button>
+                            );
+                          })
+                        ) : (
+                          <div style={projectSwitcherNoResults}>
+                            No matching areas
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <div style={projectSwitcherStatic}>{projectName}</div>
                 )}
@@ -3488,8 +3745,19 @@ export default function ProjectWorkspace({
                 onClick={() => openKpiDrilldown("disconnected", "topology")}
               />
               <StatCard
+                label="Area Size"
+                value={formatAreaSize(workspaceAreaMetrics.areaSquareMeters)}
+                title="Selected AG polygon area"
+              />
+              <StatCard
+                label="Boundary Length"
+                value={formatDistance(workspaceAreaMetrics.boundaryLengthMeters)}
+                title="Selected AG polygon perimeter"
+              />
+              <StatCard
                 label="Route Length"
                 value={formatDistance(rolloutKpis.routeLengthMeters)}
+                title="Design cable length inside this workspace"
               />
             </div>
 
@@ -4086,8 +4354,16 @@ export default function ProjectWorkspace({
                         value={`${formatNumber(displayStats.homesConnected)} / ${formatNumber(displayStats.homesPassed)}`}
                       />
                       <InfoRow
+                        label="Area Size"
+                        value={formatAreaSize(workspaceAreaMetrics.areaSquareMeters)}
+                      />
+                      <InfoRow
+                        label="Boundary Length"
+                        value={formatDistance(workspaceAreaMetrics.boundaryLengthMeters)}
+                      />
+                      <InfoRow
                         label="Route Length"
-                        value={formatDistance(displayStats.routeLengthMeters)}
+                        value={formatDistance(rolloutKpis.routeLengthMeters)}
                       />
                       <InfoRow
                         label="Total Assets"
@@ -5258,6 +5534,52 @@ const projectSwitcherSelect: React.CSSProperties = {
   boxShadow:
     "0 0 0 1px rgba(37,99,235,0.16), inset 0 1px 0 rgba(255,255,255,0.04)",
   cursor: "pointer",
+};
+
+
+const projectSwitcherSearchWrap: React.CSSProperties = {
+  position: "relative",
+  minWidth: 0,
+};
+
+const projectSwitcherSearchInput: React.CSSProperties = {
+  ...projectSwitcherSelect,
+  cursor: "text",
+};
+
+const projectSwitcherResults: React.CSSProperties = {
+  position: "absolute",
+  top: "calc(100% + 4px)",
+  left: 0,
+  right: 0,
+  zIndex: 5000,
+  maxHeight: 320,
+  overflowY: "auto",
+  background: "#020617",
+  border: "1px solid rgba(96,165,250,0.6)",
+  borderRadius: 10,
+  boxShadow: "0 18px 40px rgba(0,0,0,0.45)",
+  padding: 4,
+};
+
+const projectSwitcherResultButton: React.CSSProperties = {
+  width: "100%",
+  display: "block",
+  textAlign: "left",
+  border: "none",
+  background: "transparent",
+  color: "#e5e7eb",
+  padding: "8px 10px",
+  borderRadius: 7,
+  fontSize: 12,
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const projectSwitcherNoResults: React.CSSProperties = {
+  color: "#94a3b8",
+  padding: "10px 12px",
+  fontSize: 12,
 };
 const statusPill: React.CSSProperties = {
   background: "rgba(34,197,94,0.18)",

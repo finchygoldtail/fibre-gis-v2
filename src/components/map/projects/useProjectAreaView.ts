@@ -36,14 +36,6 @@ export function isProjectAreaAsset(asset: SavedMapAsset): boolean {
   );
 }
 
-function isHomeAsset(asset: SavedMapAsset): boolean {
-  const item = asset as any;
-  return (
-    item.assetType === "home" ||
-    item.jointType === "Home" ||
-    Boolean(item.uprn || item.UPRN || item.properties?.UPRN)
-  );
-}
 
 export function useProjectAreaView({
   allMapAssets,
@@ -91,19 +83,12 @@ export function useProjectAreaView({
   );
 
   const visibleProjectAssets = useMemo(() => {
-    const nonAreaAssets = allMapAssets.filter(
-      (asset) => !isProjectAreaAsset(asset),
-    );
+  const nonAreaAssets = allMapAssets.filter(
+    (asset) => !isProjectAreaAsset(asset),
+  );
 
-    const homes = nonAreaAssets.filter(isHomeAsset);
-    const homeIds = new Set(homes.map((home) => home.id));
-    const nonHomes = nonAreaAssets.filter((asset) => !homeIds.has(asset.id));
-
-    return [
-      ...filterAssetsForProjectArea(nonHomes, activeProjectArea),
-      ...homes,
-    ];
-  }, [activeProjectArea, allMapAssets]);
+  return filterAssetsForProjectArea(nonAreaAssets, activeProjectArea);
+}, [activeProjectArea, allMapAssets]);
 
   const visibleProjectAreas = useMemo(
     () => (activeProjectArea ? [activeProjectArea] : projectAreas),
