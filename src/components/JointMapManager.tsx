@@ -37,6 +37,10 @@ import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import AreaPolygonsLayer from "./map/AreaPolygonsLayer";
+import AdminCleanupPanel from "./map/admin/AdminCleanupPanel";
+import { usePolygonAdminTools, isPolygonAreaAsset } from "./map/admin/usePolygonAdminTools";
+import { useAreaRepairTools } from "./map/admin/useAreaRepairTools";
+import { useOrReferenceAdminTools } from "./map/admin/useOrReferenceAdminTools";
 import ExchangeDesigner from "./exchange/ExchangeDesigner";
 import { formatDistance, getPathDistanceMeters } from "../utils/mapMeasure";
 import { getNextAssetName } from "../utils/mapAssetNames";
@@ -165,7 +169,6 @@ import {
   loadOrAssets,
   mergeAndSaveOrAssets,
   normaliseOpenreachAsset,
-  saveOrAssets,
 } from "../services/orAssetStorage";
 import { withAreaAssetIndex } from "../services/areaAssetIndex";
 export type SavedJoint = SavedMapAsset;
@@ -534,146 +537,6 @@ function isAreaVisibleForLevel(
   return true;
 }
 
-
-function getPolygonOuterRing(asset: SavedMapAsset | null | undefined): [number, number][] {
-  const geometry = (asset as any)?.geometry;
-  if (geometry?.type !== "Polygon" || !Array.isArray(geometry.coordinates)) return [];
-
-  const ring = geometry.coordinates[0];
-  if (!Array.isArray(ring)) return [];
-
-  return ring
-    .map((coord: any) => {
-      if (!Array.isArray(coord) || coord.length < 2) return null;
-      const lat = Number(coord[0]);
-      const lng = Number(coord[1]);
-      return Number.isFinite(lat) && Number.isFinite(lng)
-        ? ([lat, lng] as [number, number])
-        : null;
-    })
-    .filter(Boolean) as [number, number][];
-}
-
-function pointInPolygon(point: [number, number], polygon: [number, number][]): boolean {
-  if (polygon.length < 3) return false;
-
-  const [pointLat, pointLng] = point;
-  let inside = false;
-
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const [latI, lngI] = polygon[i];
-    const [latJ, lngJ] = polygon[j];
-
-    const intersects =
-      latI > pointLat !== latJ > pointLat &&
-      pointLng <
-        ((lngJ - lngI) * (pointLat - latI)) /
-          ((latJ - latI) || Number.EPSILON) +
-          lngI;
-
-    if (intersects) inside = !inside;
-  }
-
-  return inside;
-}
-
-function getAssetGeometryPoints(asset: SavedMapAsset): [number, number][] {
-  const geometry = (asset as any)?.geometry;
-  if (!geometry) return [];
-
-  if (geometry.type === "Point" && Array.isArray(geometry.coordinates)) {
-    const [lat, lng] = geometry.coordinates;
-    return Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
-      ? [[Number(lat), Number(lng)]]
-      : [];
-  }
-
-  if (geometry.type === "LineString" && Array.isArray(geometry.coordinates)) {
-    return geometry.coordinates
-      .map((coord: any) => {
-        if (!Array.isArray(coord) || coord.length < 2) return null;
-        const lat = Number(coord[0]);
-        const lng = Number(coord[1]);
-        return Number.isFinite(lat) && Number.isFinite(lng)
-          ? ([lat, lng] as [number, number])
-          : null;
-      })
-      .filter(Boolean) as [number, number][];
-  }
-
-  if (geometry.type === "Polygon" && Array.isArray(geometry.coordinates)) {
-    const ring = geometry.coordinates[0];
-    if (!Array.isArray(ring)) return [];
-    return ring
-      .map((coord: any) => {
-        if (!Array.isArray(coord) || coord.length < 2) return null;
-        const lat = Number(coord[0]);
-        const lng = Number(coord[1]);
-        return Number.isFinite(lat) && Number.isFinite(lng)
-          ? ([lat, lng] as [number, number])
-          : null;
-      })
-      .filter(Boolean) as [number, number][];
-  }
-
-  return [];
-}
-
-function assetTouchesPolygon(asset: SavedMapAsset, polygon: [number, number][]): boolean {
-  if (polygon.length < 3) return false;
-  return getAssetGeometryPoints(asset).some((point) => pointInPolygon(point, polygon));
-}
-
-
-function getAreaRepairCodes(area: SavedMapAsset | null | undefined, areaName: string): string[] {
-  const source = area as any;
-  const values = [
-    source?.areaCode,
-    source?.projectAreaCode,
-    source?.code,
-    source?.ag_code,
-    source?.fibrehood_code,
-    source?.importedProperties?.ag_code,
-    source?.importedProperties?.AG_CODE,
-    source?.importedProperties?.fibrehood_code,
-    source?.importedProperties?.FIBREHOOD_CODE,
-    source?.name,
-    areaName,
-  ];
-
-  const codes = values
-    .map((value) => String(value || "").trim().toUpperCase())
-    .filter(Boolean)
-    .filter((value) => /[A-Z]{2,}-[A-Z0-9]{2,}/.test(value));
-
-  const lowerAreaName = String(areaName || "").toLowerCase();
-  if (lowerAreaName.includes("baildon south")) codes.push("BD-BAS");
-  if (lowerAreaName.includes("baildon east")) codes.push("BD-BAE");
-  if (lowerAreaName.includes("baildon west")) codes.push("BD-BAW");
-
-  return Array.from(new Set(codes));
-}
-
-function assetMatchesAreaRepairCode(asset: SavedMapAsset, areaCodes: string[]): boolean {
-  if (!areaCodes.length) return false;
-
-  const item = asset as any;
-  const haystack = [
-    item?.name,
-    item?.jointName,
-    item?.label,
-    item?.id,
-    item?.areaName,
-    item?.projectAreaName,
-    item?.properties?.name,
-    item?.properties?.areaName,
-    item?.properties?.projectAreaName,
-  ]
-    .map((value) => String(value || "").toUpperCase())
-    .join(" ");
-
-  return areaCodes.some((code) => haystack.includes(code));
-}
 
 // Firebase stores older/chunked map assets in a flattened shape:
 //   geometryType + geometryCoordinatesJson
@@ -1132,9 +995,6 @@ export default function JointMapManager({
   // Project homes still save separately through saveProjectHomes().
   // =====================================================
   const [isSavingMapNow, setIsSavingMapNow] = useState(false);
-  const [polygonBulkSelectEnabled, setPolygonBulkSelectEnabled] = useState(false);
-  const [selectedPolygonIds, setSelectedPolygonIds] = useState<string[]>([]);
-
   const handleSaveMapNow = async () => {
     if (isSavingMapNow) return;
 
@@ -1162,519 +1022,6 @@ export default function JointMapManager({
     } finally {
       setIsSavingMapNow(false);
     }
-  };
-
-  const isPolygonAreaAsset = (asset: any) => {
-    const geometryType = String(
-      asset?.geometry?.type || asset?.geometryType || "",
-    ).toLowerCase();
-    return asset?.assetType === "area" || geometryType === "polygon";
-  };
-
-  const isImportedAreaAsset = (asset: any) => {
-    const name = String(asset?.name || "")
-      .trim()
-      .toLowerCase();
-    const jointType = String(asset?.jointType || "")
-      .trim()
-      .toLowerCase();
-    return (
-      isPolygonAreaAsset(asset) &&
-      (name.startsWith("imported area") || jointType.includes("imported area"))
-    );
-  };
-
-  const removePolygonAssetsFromMapState = (
-    polygonsToRemove: SavedMapAsset[],
-    successLabel: string,
-  ) => {
-    const polygonIds = new Set(
-      polygonsToRemove.map((asset) => String(asset.id || "")),
-    );
-
-    setSavedJoints((prev) =>
-      (prev ?? []).filter(
-        (asset: any) => !polygonIds.has(String(asset?.id || "")),
-      ),
-    );
-
-    if (editingAssetId && polygonIds.has(String(editingAssetId))) {
-      resetEditor();
-    }
-
-    setSelectedPolygonIds((prev) =>
-      prev.filter((id) => !polygonIds.has(String(id))),
-    );
-
-    alert(
-      `${polygonsToRemove.length} ${successLabel} removed from the map.
-
-Press Save Map to make this permanent in Firestore.`,
-    );
-  };
-
-  const handleAdminRemoveImportedAreas = () => {
-    if (!isAdmin) {
-      alert("Administrator access required.");
-      return;
-    }
-
-    const importedAreas = operationalSavedJoints.filter(isImportedAreaAsset);
-
-    if (!importedAreas.length) {
-      alert("No imported area polygons were found.");
-      return;
-    }
-
-    const typed = window.prompt(
-      `Found ${importedAreas.length} imported area polygon(s).
-
-Type DELETE IMPORTED AREAS to remove them from the map.
-
-You must still press Save Map afterwards to persist the cleanup.`,
-      "",
-    );
-
-    if (typed !== "DELETE IMPORTED AREAS") return;
-
-    removePolygonAssetsFromMapState(importedAreas, "imported area polygon(s)");
-  };
-
-  const getVisiblePolygonAreas = () =>
-    visibleProjectAreas.filter((asset) =>
-      isAreaVisibleForLevel(asset, visibleLayers),
-    );
-
-  const togglePolygonBulkSelection = (id: string) => {
-    setSelectedPolygonIds((prev) =>
-      prev.includes(id)
-        ? prev.filter((existingId) => existingId !== id)
-        : [...prev, id],
-    );
-  };
-
-  const handleAdminSelectAllPolygons = () => {
-    const ids = operationalSavedJoints
-      .filter(isPolygonAreaAsset)
-      .map((asset) => asset.id)
-      .filter(Boolean);
-    setSelectedPolygonIds(Array.from(new Set(ids)));
-    setPolygonBulkSelectEnabled(true);
-  };
-
-  const handleAdminSelectVisiblePolygons = () => {
-    const ids = getVisiblePolygonAreas()
-      .map((asset) => asset.id)
-      .filter(Boolean);
-    setSelectedPolygonIds(Array.from(new Set(ids)));
-    setPolygonBulkSelectEnabled(true);
-  };
-
-  const handleAdminSelectImportedPolygons = () => {
-    const ids = operationalSavedJoints
-      .filter(isImportedAreaAsset)
-      .map((asset) => asset.id)
-      .filter(Boolean);
-    setSelectedPolygonIds(Array.from(new Set(ids)));
-    setPolygonBulkSelectEnabled(true);
-  };
-
-  const handleAdminClearPolygonSelection = () => {
-    setSelectedPolygonIds([]);
-  };
-
-  const handleAdminRemoveSelectedPolygons = () => {
-    if (!isAdmin) {
-      alert("Administrator access required.");
-      return;
-    }
-
-    const selectedIds = new Set(selectedPolygonIds.map(String));
-    const selectedPolygons = operationalSavedJoints.filter(
-      (asset: any) =>
-        selectedIds.has(String(asset?.id || "")) && isPolygonAreaAsset(asset),
-    );
-
-    if (!selectedPolygons.length) {
-      alert("No polygons are currently selected. Turn on bulk select and click polygons on the map first.");
-      return;
-    }
-
-    const typed = window.prompt(
-      `Selected ${selectedPolygons.length} polygon(s).
-
-Type DELETE SELECTED POLYGONS to remove the selected polygons from the map.
-
-You must still press Save Map afterwards to persist the cleanup.`,
-      "",
-    );
-
-    if (typed !== "DELETE SELECTED POLYGONS") return;
-
-    removePolygonAssetsFromMapState(selectedPolygons, "selected polygon(s)");
-  };
-
-  const handleAdminRemoveSelectedPolygon = () => {
-    if (!isAdmin) {
-      alert("Administrator access required.");
-      return;
-    }
-
-    const selectedPolygon = operationalSavedJoints.find(
-      (asset: any) =>
-        String(asset?.id || "") === String(editingAssetId || "") &&
-        isPolygonAreaAsset(asset),
-    );
-
-    if (!selectedPolygon) {
-      alert("Select a polygon first, then use this cleanup action.");
-      return;
-    }
-
-    const polygonName = String(
-      selectedPolygon.name ||
-        selectedPolygon.jointName ||
-        selectedPolygon.id ||
-        "selected polygon",
-    );
-    const typed = window.prompt(
-      `Selected polygon:
-${polygonName}
-
-Type DELETE SELECTED POLYGON to remove only this polygon from the map.
-
-You must still press Save Map afterwards to persist the cleanup.`,
-      "",
-    );
-
-    if (typed !== "DELETE SELECTED POLYGON") return;
-
-    removePolygonAssetsFromMapState([selectedPolygon], "selected polygon");
-  };
-
-  const handleAdminRemoveAllPolygons = () => {
-    if (!isAdmin) {
-      alert("Administrator access required.");
-      return;
-    }
-
-    const allPolygons = operationalSavedJoints.filter(isPolygonAreaAsset);
-
-    if (!allPolygons.length) {
-      alert("No polygon areas were found.");
-      return;
-    }
-
-    const typed = window.prompt(
-      `WARNING: This will remove ALL ${allPolygons.length} polygon area(s) from the map.
-
-This includes imported polygons and manually drawn project/area polygons.
-
-Type DELETE ALL POLYGONS to continue.
-
-You must still press Save Map afterwards to persist the cleanup.`,
-      "",
-    );
-
-    if (typed !== "DELETE ALL POLYGONS") return;
-
-    removePolygonAssetsFromMapState(allPolygons, "polygon area(s)");
-  };
-
-  const handleAdminRepairAreaStamps = async () => {
-    if (!isAdmin) {
-      alert("Administrator access required.");
-      return;
-    }
-
-    if (!activeProjectArea) {
-      alert("Select the area polygon you want to repair first.");
-      return;
-    }
-
-    const areaRing = getPolygonOuterRing(activeProjectArea);
-    if (areaRing.length < 3) {
-      alert("The selected area does not have a valid polygon boundary.");
-      return;
-    }
-
-    const areaName = String(
-      (activeProjectArea as any).areaName ||
-        (activeProjectArea as any).projectAreaName ||
-        activeProjectArea.name ||
-        activeProjectArea.id ||
-        "selected area",
-    ).trim();
-
-    const areaCodes = getAreaRepairCodes(activeProjectArea, areaName);
-    const areaSlug = areaName
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
-    const preferredAreaCode =
-      areaCodes
-        .map((code) => String(code || "").trim().toUpperCase())
-        .find((code) => code.startsWith("BD-"))
-        ?.split("-")[1] ||
-      String((activeProjectArea as any).areaCode || (activeProjectArea as any).projectAreaCode || "").trim();
-
-    const repairAreaStamp = <T extends SavedMapAsset,>(asset: T): T =>
-      markAssetForLiveSync(
-        {
-          ...(asset as any),
-          projectId: activeProjectArea.id,
-          areaId: activeProjectArea.id,
-          projectAreaId: activeProjectArea.id,
-          areaName,
-          projectAreaName: areaName,
-          ...(preferredAreaCode
-            ? {
-                areaCode: preferredAreaCode,
-                projectAreaCode: preferredAreaCode,
-              }
-            : {}),
-          areaSlug,
-          areaStorageKey: areaSlug,
-          repairSource: "admin-repair-area-stamps",
-          repairUpdatedAt: new Date().toISOString(),
-          properties: {
-            ...((asset as any).properties || {}),
-            projectId: activeProjectArea.id,
-            areaId: activeProjectArea.id,
-            projectAreaId: activeProjectArea.id,
-            areaName,
-            projectAreaName: areaName,
-            ...(preferredAreaCode
-              ? {
-                  areaCode: preferredAreaCode,
-                  projectAreaCode: preferredAreaCode,
-                }
-              : {}),
-            areaSlug,
-            areaStorageKey: areaSlug,
-            repairSource: "admin-repair-area-stamps",
-            repairUpdatedAt: new Date().toISOString(),
-          },
-        } as T,
-        true,
-      ) as T;
-
-    const repairableAssets = operationalSavedJoints.filter((asset: any) => {
-      if (!asset?.id) return false;
-      if (String(asset.id) === String(activeProjectArea.id)) return false;
-      if (isPolygonAreaAsset(asset)) return false;
-      if (isOpenreachReferenceAsset(asset)) return false;
-
-      return (
-        assetTouchesPolygon(asset as SavedMapAsset, areaRing) ||
-        assetMatchesAreaRepairCode(asset as SavedMapAsset, areaCodes)
-      );
-    });
-
-    const lowerAreaName = areaName.toLowerCase();
-    const legacyProjectHomeKeys = [
-      // Baildon South homes were originally saved under this deleted polygon id.
-      // Keep this here so Admin repair can recover homes after the area polygon
-      // has been recreated and renamed back to Baildon South.
-      lowerAreaName.includes("baildon south")
-        ? "85cd3428-edc3-4315-85a2-957a09715175"
-        : null,
-    ]
-      .map((value) => String(value || "").trim())
-      .filter(Boolean);
-
-    const candidateProjectHomeKeys = Array.from(
-      new Set(
-        [
-          activeProjectId,
-          activeProjectArea.id,
-          (activeProjectArea as any).projectId,
-          (activeProjectArea as any).areaId,
-          (activeProjectArea as any).projectAreaId,
-          (activeProjectArea as any).areaStorageKey,
-          (activeProjectArea as any).areaSlug,
-          (activeProjectArea as any).properties?.projectId,
-          (activeProjectArea as any).properties?.areaId,
-          (activeProjectArea as any).properties?.projectAreaId,
-          (activeProjectArea as any).properties?.areaStorageKey,
-          (activeProjectArea as any).properties?.areaSlug,
-          areaSlug,
-          lowerAreaName.includes("baildon south") ? "baildon-south" : null,
-          lowerAreaName.includes("baildon east") ? "baildon-east" : null,
-          lowerAreaName.includes("baildon west") ? "baildon-west" : null,
-          ...legacyProjectHomeKeys,
-        ]
-          .map((value) => String(value || "").trim())
-          .filter(Boolean),
-      ),
-    );
-
-    let allCandidateHomes = [...(projectHomes ?? [])];
-
-    const getHomeRepairKey = (home: any): string =>
-      String(
-        home?.id ||
-          home?.uprn ||
-          home?.UPRN ||
-          home?.properties?.UPRN ||
-          home?.properties?.uprn ||
-          home?.name ||
-          "",
-      ).trim();
-
-    for (const projectHomeKey of candidateProjectHomeKeys) {
-      try {
-        const loadedHomes = await loadProjectHomes(projectHomeKey);
-        allCandidateHomes = [...allCandidateHomes, ...loadedHomes];
-      } catch (err) {
-        console.warn("Could not load project homes for area repair", projectHomeKey, err);
-      }
-    }
-
-    const homesByKey = new Map<string, SavedMapAsset>();
-    allCandidateHomes.forEach((home: any) => {
-      const key = getHomeRepairKey(home);
-      if (key && !homesByKey.has(key)) homesByKey.set(key, home as SavedMapAsset);
-    });
-
-    const candidateHomes = Array.from(homesByKey.values());
-
-    // IMPORTANT SAFETY GUARD:
-    // Legacy project-home storage can contain thousands of homes under one old
-    // project id. Do not repair every home that merely has the old id. Only
-    // repair homes whose actual point geometry is inside the selected polygon.
-    const repairableHomes = candidateHomes.filter((home: any) =>
-      assetTouchesPolygon(home as SavedMapAsset, areaRing),
-    );
-
-    if (!repairableAssets.length && !repairableHomes.length) {
-      alert(`No operational assets or project homes were found inside ${areaName}.`);
-      return;
-    }
-
-    const typeCounts = repairableAssets.reduce<Record<string, number>>((acc, asset: any) => {
-      const key = String(asset?.assetType || "unknown");
-      acc[key] = (acc[key] || 0) + 1;
-      return acc;
-    }, {});
-
-    const summary = [
-      ...Object.entries(typeCounts)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([type, count]) => `${type}: ${count}`),
-      `project homes: ${repairableHomes.length}`,
-    ].join("\n");
-
-    const typed = window.prompt(
-      `Repair area stamps for ${areaName}?\n\nThis will restamp ${repairableAssets.length} operational asset(s) and ${repairableHomes.length} project home(s).
-
-Project homes are restricted to homes physically inside the selected polygon only.\n\nArea code matches: ${areaCodes.length ? areaCodes.join(", ") : "none"}\n\n${summary}\n\nIt will NOT delete anything and it will NOT change fibre routing or DP-home assignments.\n\nType REPAIR AREA STAMPS to continue.\n\nPress Save Map afterwards to persist map assets. Project homes are saved by this repair tool.`,
-      "",
-    );
-
-    if (typed !== "REPAIR AREA STAMPS") return;
-
-    const repairIds = new Set(repairableAssets.map((asset) => String(asset.id)));
-
-    setSavedJoints((prev) =>
-      (prev ?? []).map((asset: any) => {
-        if (!repairIds.has(String(asset?.id || ""))) return asset;
-        return repairAreaStamp(asset as SavedMapAsset);
-      }),
-    );
-
-    const repairHomeKeys = new Set(
-      repairableHomes
-        .map((home: any) => String(home?.id || home?.uprn || home?.UPRN || home?.properties?.UPRN || home?.name || "").trim())
-        .filter(Boolean),
-    );
-
-    const repairedHomes = candidateHomes
-      .filter((home: any) => {
-        const key = String(home?.id || home?.uprn || home?.UPRN || home?.properties?.UPRN || home?.name || "").trim();
-        return repairHomeKeys.has(key);
-      })
-      .map((home) => repairAreaStamp(home as SavedMapAsset));
-
-    setProjectHomes(repairedHomes);
-    setLoadedHomesProjectId(activeProjectArea.id);
-
-    try {
-      const homeSaveKeys = Array.from(
-        new Set(
-          [
-            activeProjectArea.id,
-            (activeProjectArea as any).projectId,
-            (activeProjectArea as any).areaId,
-            (activeProjectArea as any).projectAreaId,
-            (activeProjectArea as any).areaStorageKey,
-            (activeProjectArea as any).areaSlug,
-            (activeProjectArea as any).properties?.projectId,
-            (activeProjectArea as any).properties?.areaStorageKey,
-            lowerAreaName.includes("baildon south") ? "baildon-south" : null,
-          ]
-            .map((value) => String(value || "").trim())
-            .filter(Boolean),
-        ),
-      );
-
-      for (const homeSaveKey of homeSaveKeys) {
-        await saveProjectHomes(homeSaveKey, repairedHomes, areaName);
-      }
-    } catch (err) {
-      console.error("Failed to save repaired project homes", err);
-      alert(
-        "Map assets were repaired on screen, but saving repaired project homes failed. Do not refresh yet; check the console.",
-      );
-      return;
-    }
-
-    alert(
-      `Repaired area stamps for ${repairableAssets.length} asset(s) and ${repairableHomes.length} home(s) inside ${areaName}.\n\nProject homes have been saved. Press Save Map to make the map-asset repair permanent in Firestore.`,
-    );
-  };
-
-  const handleAdminDeleteAllOrReferenceAssets = async () => {
-    if (!isAdmin) {
-      alert("Administrator access required.");
-      return;
-    }
-
-    const count = openreachReferenceAssets.length;
-    if (!count) {
-      alert("No OR / PIA reference assets are currently loaded.");
-      return;
-    }
-
-    const typed = window.prompt(
-      `This will delete ALL ${count} OR / PIA reference assets from the OR reference storage.
-
-It will not delete designed DPs, joints, homes, project areas or cables.
-
-Type DELETE ALL OR to continue.`,
-      "",
-    );
-
-    if (typed !== "DELETE ALL OR") return;
-
-    setOrAssets([]);
-
-    try {
-      await saveOrAssets([], {
-        allowDestructiveSave: true,
-        reason: "administrator delete all OR / PIA reference assets",
-      });
-    } catch (err) {
-      console.error("Failed to delete all OR / PIA reference assets", err);
-      alert("Delete all OR / PIA reference assets failed. Check the console.");
-      return;
-    }
-
-    setSavedJoints((prev) =>
-      (prev ?? []).filter((asset) => !isOpenreachReferenceAsset(asset)),
-    );
-
-    alert(`Deleted ${count} OR / PIA reference asset(s).`);
   };
 
   const [contextMenu, setContextMenu] = useState<{
@@ -1901,6 +1248,54 @@ Type DELETE ALL OR to continue.`,
     setShowDpModal,
     setShowChamberModal,
     setOpenDistributionPointAsset,
+  });
+
+
+  const {
+    polygonBulkSelectEnabled,
+    setPolygonBulkSelectEnabled,
+    selectedPolygonIds,
+    togglePolygonBulkSelection,
+    handleAdminRemoveImportedAreas,
+    handleAdminSelectAllPolygons,
+    handleAdminSelectVisiblePolygons,
+    handleAdminSelectImportedPolygons,
+    handleAdminClearPolygonSelection,
+    handleAdminRemoveSelectedPolygons,
+    handleAdminRemoveSelectedPolygon,
+    handleAdminRemoveAllPolygons,
+  } = usePolygonAdminTools({
+    isAdmin,
+    operationalSavedJoints,
+    editingAssetId,
+    getVisiblePolygonAreas: () =>
+      visibleProjectAreas.filter((asset) =>
+        isAreaVisibleForLevel(asset, visibleLayers),
+      ),
+    setSavedJoints,
+    resetEditor,
+  });
+
+  const { handleAdminRepairAreaStamps } = useAreaRepairTools({
+    isAdmin,
+    activeProjectId,
+    activeProjectArea,
+    operationalSavedJoints,
+    projectHomes,
+    setProjectHomes,
+    setLoadedHomesProjectId,
+    setSavedJoints,
+  });
+
+  const {
+    handleAdminDeleteAllOrReferenceAssets,
+    handleDeletePiaOverlayForActiveProject,
+  } = useOrReferenceAdminTools({
+    isAdmin,
+    activeProjectArea,
+    openreachReferenceAssets,
+    setOrAssets,
+    setSavedJoints,
   });
 
   // =====================================================
@@ -3516,190 +2911,6 @@ Type DELETE ALL OR to continue.`,
     reader.readAsText(file);
   };
 
-  const isPiaOverlayAsset = (asset: SavedMapAsset): boolean => {
-    const item = asset as any;
-    const source = String(item.source || "")
-      .trim()
-      .toLowerCase();
-    const assetType = String(item.assetType || "")
-      .trim()
-      .toLowerCase();
-    const jointType = String(item.jointType || "")
-      .trim()
-      .toLowerCase();
-    const cableType = String(item.cableType || "")
-      .trim()
-      .toLowerCase();
-    const routeType = String(
-      item.routeType || item.importedProperties?.routeType || "",
-    )
-      .trim()
-      .toLowerCase();
-
-    return (
-      source === "pia-overlay" ||
-      source.includes("pia screenshot") ||
-      source.includes("openreach") ||
-      assetType === "pia-route" ||
-      assetType === "or-duct" ||
-      assetType === "or-pole" ||
-      assetType === "or-chamber" ||
-      jointType === "pia route" ||
-      jointType === "or duct" ||
-      jointType === "or pole" ||
-      jointType === "or chamber" ||
-      routeType === "or duct" ||
-      routeType.includes("duct") ||
-      cableType === "pia overlay"
-    );
-  };
-
-  const getAssetLinePositions = (asset: SavedMapAsset): [number, number][] => {
-    const coords = (asset as any).geometry?.coordinates;
-    if (!Array.isArray(coords)) return [];
-
-    return coords
-      .filter((point: any) => Array.isArray(point) && point.length >= 2)
-      .map(
-        (point: any) =>
-          [Number(point[0]), Number(point[1])] as [number, number],
-      )
-      .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
-  };
-
-  const getAssetPointPosition = (
-    asset: SavedMapAsset,
-  ): [number, number] | null => {
-    const coords = (asset as any).geometry?.coordinates;
-    if (!Array.isArray(coords) || coords.length < 2) return null;
-
-    const lat = Number(coords[0]);
-    const lng = Number(coords[1]);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-    return [lat, lng];
-  };
-
-  const isImportedOrDuctAsset = (asset: SavedMapAsset): boolean => {
-    const item = asset as any;
-    const source = String(item.source || "")
-      .trim()
-      .toLowerCase();
-    const assetType = String(item.assetType || "")
-      .trim()
-      .toLowerCase();
-    const jointType = String(item.jointType || "")
-      .trim()
-      .toLowerCase();
-    const cableType = String(item.cableType || "")
-      .trim()
-      .toLowerCase();
-    const routeType = String(
-      item.routeType || item.importedProperties?.routeType || "",
-    )
-      .trim()
-      .toLowerCase();
-    const geometryType = String(item.geometry?.type || item.geometryType || "")
-      .trim()
-      .toLowerCase();
-
-    return (
-      geometryType === "linestring" &&
-      (assetType === "pia-route" ||
-        assetType === "or-duct" ||
-        jointType.includes("duct") ||
-        routeType.includes("duct") ||
-        cableType === "pia overlay" ||
-        source.includes("pia screenshot"))
-    );
-  };
-
-  const isImportedOrChamberAsset = (asset: SavedMapAsset): boolean => {
-    const item = asset as any;
-    const assetType = String(item.assetType || "")
-      .trim()
-      .toLowerCase();
-    const jointType = String(item.jointType || "")
-      .trim()
-      .toLowerCase();
-    return (
-      assetType === "chamber" ||
-      assetType === "or-chamber" ||
-      jointType.includes("chamber")
-    );
-  };
-
-  const isImportedOrPoleAsset = (asset: SavedMapAsset): boolean => {
-    const item = asset as any;
-    const assetType = String(item.assetType || "")
-      .trim()
-      .toLowerCase();
-    const jointType = String(item.jointType || "")
-      .trim()
-      .toLowerCase();
-    return (
-      assetType === "pole" ||
-      assetType === "or-pole" ||
-      jointType.includes("pole")
-    );
-  };
-
-  const handleDeletePiaOverlayForActiveProject = async () => {
-    if (!activeProjectArea) {
-      alert(
-        "Select a project area first, then delete the PIA / Openreach overlay for that area.",
-      );
-      return;
-    }
-
-    const scopedPiaAssets = filterAssetsForProjectArea(
-      openreachReferenceAssets.filter((asset) => isPiaOverlayAsset(asset)),
-      activeProjectArea,
-    );
-
-    if (!scopedPiaAssets.length) {
-      alert(
-        "No PIA / Openreach overlay assets were found inside this selected project area.",
-      );
-      return;
-    }
-
-    const areaName = activeProjectArea.name || "this selected area";
-    const confirmed = window.confirm(
-      `Delete ${scopedPiaAssets.length} PIA / Openreach overlay route(s) from ${areaName}?
-
-Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
-    );
-
-    if (!confirmed) return;
-
-    const deleteIds = new Set(scopedPiaAssets.map((asset) => String(asset.id)));
-
-    const remainingOrAssets = openreachReferenceAssets.filter(
-      (asset) => !deleteIds.has(String(asset.id)),
-    );
-
-    setOrAssets(remainingOrAssets);
-
-    try {
-      await saveOrAssets(remainingOrAssets, {
-        allowDestructiveSave: true,
-        reason: "delete OR overlay for selected project area",
-      });
-    } catch (err) {
-      console.error("Failed to save OR overlay deletion", err);
-      alert("OR overlay deletion failed to save. Check console.");
-      return;
-    }
-
-    setSavedJoints((prev) =>
-      prev.filter((asset) => !deleteIds.has(String(asset.id))),
-    );
-
-    alert(
-      `Deleted ${scopedPiaAssets.length} PIA / Openreach overlay route(s) from ${areaName}.`,
-    );
-  };
-
   const handleImportJson = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -5078,158 +4289,32 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         <UserMenu variant="sidebar" />
 
         {isAdmin && (
-          <details style={card}>
-            <summary style={sectionSummary}>Administration</summary>
-            <div style={sectionBody}>
-              <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.45 }}>
-                Admin-only cleanup tools. These are hidden from Super Users,
-                Build, Survey and Maintenance users. Use typed confirmations
-                before any destructive cleanup.
-              </div>
-
-              <div
-                style={{
-                  marginTop: 10,
-                  padding: 10,
-                  border: "1px solid #475569",
-                  borderRadius: 10,
-                  background: "#0f172a",
-                }}
-              >
-                <div style={{ fontSize: 12, color: "#e5e7eb", fontWeight: 800 }}>
-                  Polygon bulk selection
-                </div>
-                <div style={{ marginTop: 4, fontSize: 11, color: "#94a3b8", lineHeight: 1.4 }}>
-                  {polygonBulkSelectEnabled
-                    ? `Bulk select is ON. Click polygons on the map to add/remove them. Selected: ${selectedPolygonIds.length}`
-                    : `Bulk select is OFF. Selected: ${selectedPolygonIds.length}`}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setPolygonBulkSelectEnabled((value) => !value)}
-                  style={{
-                    ...btnSecondary,
-                    width: "100%",
-                    marginTop: 8,
-                    background: polygonBulkSelectEnabled ? "#14532d" : "#1f2937",
-                  }}
-                >
-                  {polygonBulkSelectEnabled ? "Polygon Bulk Select: ON" : "Polygon Bulk Select: OFF"}
-                </button>
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-                  <button type="button" onClick={handleAdminSelectVisiblePolygons} style={btnSecondary}>
-                    Select Visible
-                  </button>
-                  <button type="button" onClick={handleAdminSelectImportedPolygons} style={btnSecondary}>
-                    Select Imported
-                  </button>
-                  <button type="button" onClick={handleAdminSelectAllPolygons} style={btnSecondary}>
-                    Select All
-                  </button>
-                  <button type="button" onClick={handleAdminClearPolygonSelection} style={btnSecondary}>
-                    Clear Selection
-                  </button>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleAdminRemoveImportedAreas}
-                style={btnDanger}
-              >
-                Remove Imported Area Polygons
-              </button>
-
-              <button
-                type="button"
-                onClick={handleAdminRemoveSelectedPolygons}
-                style={btnDanger}
-                disabled={selectedPolygonIds.length === 0}
-                title={
-                  selectedPolygonIds.length > 0
-                    ? "Remove the selected polygon set"
-                    : "Use Polygon Bulk Select or Select Visible/Imported/All first"
-                }
-              >
-                Remove Selected Polygons ({selectedPolygonIds.length})
-              </button>
-
-              <button
-                type="button"
-                onClick={handleAdminRemoveSelectedPolygon}
-                style={btnDanger}
-                disabled={
-                  !currentEditingAsset ||
-                  !isPolygonAreaAsset(currentEditingAsset)
-                }
-                title={
-                  currentEditingAsset && isPolygonAreaAsset(currentEditingAsset)
-                    ? "Remove the currently selected polygon only"
-                    : "Select a polygon first"
-                }
-              >
-                Remove Current Polygon
-              </button>
-
-              <button
-                type="button"
-                onClick={handleAdminRemoveAllPolygons}
-                style={btnDanger}
-              >
-                Remove ALL Polygons
-              </button>
-
-              <button
-                type="button"
-                onClick={handleAdminRepairAreaStamps}
-                style={{
-                  ...btnSecondary,
-                  width: "100%",
-                  marginTop: 8,
-                  background: activeProjectArea ? "#14532d" : "#1f2937",
-                  borderColor: activeProjectArea ? "#22c55e" : "#475569",
-                }}
-                disabled={!activeProjectArea}
-                title={
-                  activeProjectArea
-                    ? "Restamp operational assets inside the selected polygon back to this area"
-                    : "Select an area polygon first"
-                }
-              >
-                Repair Area Stamps for Selected Area
-              </button>
-
-              <button
-                type="button"
-                onClick={handleDeletePiaOverlayForActiveProject}
-                style={btnDanger}
-                disabled={!activeProjectArea}
-                title={
-                  activeProjectArea
-                    ? "Delete OR / PIA overlay only inside the selected area"
-                    : "Select an area first"
-                }
-              >
-                Delete OR / PIA in Selected Area
-              </button>
-
-              <button
-                type="button"
-                onClick={handleAdminDeleteAllOrReferenceAssets}
-                style={btnDanger}
-              >
-                Delete ALL OR / PIA Reference Layers
-              </button>
-
-              <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.4 }}>
-                Imported area cleanup removes polygons from the map state first;
-                press Save Map afterwards to persist that cleanup. OR / PIA
-                cleanup writes directly to OR reference storage.
-              </div>
-            </div>
-          </details>
+          <AdminCleanupPanel
+            card={card}
+            sectionSummary={sectionSummary}
+            sectionBody={sectionBody}
+            btnSecondary={btnSecondary}
+            btnDanger={btnDanger}
+            activeProjectArea={activeProjectArea}
+            currentEditingAsset={currentEditingAsset}
+            polygonBulkSelectEnabled={polygonBulkSelectEnabled}
+            selectedPolygonCount={selectedPolygonIds.length}
+            isPolygonAreaAsset={isPolygonAreaAsset}
+            onTogglePolygonBulkSelect={() =>
+              setPolygonBulkSelectEnabled((value) => !value)
+            }
+            onSelectVisiblePolygons={handleAdminSelectVisiblePolygons}
+            onSelectImportedPolygons={handleAdminSelectImportedPolygons}
+            onSelectAllPolygons={handleAdminSelectAllPolygons}
+            onClearPolygonSelection={handleAdminClearPolygonSelection}
+            onRemoveImportedAreas={handleAdminRemoveImportedAreas}
+            onRemoveSelectedPolygons={handleAdminRemoveSelectedPolygons}
+            onRemoveSelectedPolygon={handleAdminRemoveSelectedPolygon}
+            onRemoveAllPolygons={handleAdminRemoveAllPolygons}
+            onRepairAreaStamps={handleAdminRepairAreaStamps}
+            onDeletePiaOverlayForActiveProject={handleDeletePiaOverlayForActiveProject}
+            onDeleteAllOrReferenceAssets={handleAdminDeleteAllOrReferenceAssets}
+          />
         )}
 
         {activeProjectArea && canManageNetworkDesign && (
