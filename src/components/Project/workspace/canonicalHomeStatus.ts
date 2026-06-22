@@ -293,8 +293,12 @@ export function buildCanonicalHomeSummary(assets: SavedMapAsset[]): CanonicalHom
     };
   });
 
-  const homesLive = records.filter((record) => record.status === "live").length;
+  // In the workspace, RFS / live-home progress means the premise is
+  // connected to the network. Some imports store this as status=CONNECTED
+  // rather than status=Live, so all non-unconnected homes must be counted
+  // consistently as live/connected for KPI purposes.
   const homesConnected = records.filter((record) => record.status !== "unconnected").length;
+  const homesLive = homesConnected;
 
   return {
     homes,
@@ -302,7 +306,7 @@ export function buildCanonicalHomeSummary(assets: SavedMapAsset[]): CanonicalHom
     homesPassed: homes.length,
     homesConnected,
     homesLive,
-    homesNotLive: Math.max(homes.length - homesLive, 0),
+    homesNotLive: Math.max(homes.length - homesConnected, 0),
     drops,
   };
 }

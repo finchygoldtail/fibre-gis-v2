@@ -800,7 +800,10 @@ export const createMapAssetsFromAnyGeoJson = (
               {
                 ...base,
                 id: `${base.id}-${polygonIndex + 1}`,
-                name: `${base.name} ${polygonIndex + 1}`,
+                // Keep APX / GeoJSON AG labels clean.
+                // MultiPolygon parts still get unique IDs, but the display name
+                // stays as the metadata value, e.g. BD-WRO-AG1 not BD-WRO-AG1 1.
+                name: base.name,
                 assetType: "area" as AssetType,
                 jointType: "Polygon Area",
                 areaLevel: readGeoJsonProp(

@@ -11,9 +11,12 @@ type Props = {
    * This stops area polygons stealing clicks while drawing cables.
    */
   polygonEditingEnabled?: boolean;
+  polygonBulkSelectEnabled?: boolean;
   editingAreaId?: string | null;
+  selectedAreaIds?: string[];
   onUnlockPolygon?: (id: string | null) => void;
   onSelect: (id: string) => void;
+  onToggleSelect?: (id: string) => void;
   onEdit: (asset: SavedMapAsset) => void;
   onDelete: (id: string) => void;
 };
@@ -51,9 +54,12 @@ export default function AreaPolygonsLayer({
   areas,
   activeProjectId,
   polygonEditingEnabled = false,
+  polygonBulkSelectEnabled = false,
   editingAreaId = null,
+  selectedAreaIds = [],
   onUnlockPolygon,
   onSelect,
+  onToggleSelect,
   onEdit,
   onDelete,
 }: Props) {
@@ -72,14 +78,16 @@ export default function AreaPolygonsLayer({
         if (asset.geometry?.type !== "Polygon") return null;
 
         const positions = asset.geometry.coordinates[0].map(
-          ([lat, lng]) => [lat, lng] as [number, number]
+          ([lat, lng]) => [lat, lng] as [number, number],
         );
 
         const baseColor = getColor(asset.id);
         const isActive = asset.id === activeProjectId;
         const isSecretEditing = asset.id === editingAreaId;
-        const isInteractive = polygonEditingEnabled || isSecretEditing;
-        const shouldShowLabel = isSecretEditing || mapZoom >= AREA_LABEL_MIN_ZOOM;
+        const isBulkSelected = selectedAreaIds.includes(asset.id);
+        const isInteractive = polygonEditingEnabled || polygonBulkSelectEnabled || isSecretEditing;
+        const shouldShowLabel =
+          isSecretEditing || mapZoom >= AREA_LABEL_MIN_ZOOM;
 
         const unlock = (event?: LeafletMouseEvent | React.MouseEvent) => {
           event?.originalEvent?.stopPropagation?.();
@@ -99,17 +107,23 @@ export default function AreaPolygonsLayer({
             positions={positions}
             interactive={isInteractive}
             pathOptions={{
-              color: isSecretEditing ? "#ef4444" : baseColor,
-              weight: isSecretEditing ? 7 : isActive ? 6 : 3,
-              fillOpacity: isSecretEditing ? 0.22 : 0.15,
+              color: isSecretEditing ? "#ef4444" : isBulkSelected ? "#facc15" : baseColor,
+              weight: isSecretEditing ? 7 : isBulkSelected ? 6 : isActive ? 6 : 3,
+              fillOpacity: isSecretEditing ? 0.22 : isBulkSelected ? 0.32 : 0.15,
               opacity: 1,
-              dashArray: isSecretEditing ? "10 8" : undefined,
+              dashArray: isSecretEditing ? "10 8" : isBulkSelected ? "6 6" : undefined,
               className: isActive ? "glow-polygon" : "",
             }}
             eventHandlers={
               isInteractive
                 ? {
-                    click: () => onSelect(asset.id),
+                    click: () => {
+                      if (polygonBulkSelectEnabled) {
+                        onToggleSelect?.(asset.id);
+                        return;
+                      }
+                      onSelect(asset.id);
+                    },
                   }
                 : undefined
             }
@@ -138,7 +152,19 @@ export default function AreaPolygonsLayer({
                 }}
               >
                 <span
-                  title="Ctrl + double-click to unlock polygon editing"
+                  title={
+                    polygonBulkSelectEnabled
+                      ? "Click to add/remove this polygon from bulk selection."
+                      : "Click to select polygon. Ctrl + double-click to unlock polygon editing."
+                  }
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (polygonBulkSelectEnabled) {
+                      onToggleSelect?.(asset.id);
+                      return;
+                    }
+                    onSelect(asset.id);
+                  }}
                   onDoubleClick={(event) => {
                     if (!event.ctrlKey) return;
                     unlock(event);
@@ -148,11 +174,12 @@ export default function AreaPolygonsLayer({
                     alignItems: "center",
                     gap: 4,
                     pointerEvents: "auto",
-                    cursor: isSecretEditing ? "default" : "pointer",
+                    cursor: polygonBulkSelectEnabled || !isSecretEditing ? "pointer" : "default",
                     userSelect: "none",
                   }}
                 >
                   {asset.name}
+                  {isBulkSelected ? " ✅" : ""}
                   {isSecretEditing ? " 🔓" : ""}
                   {isSecretEditing && (
                     <>
@@ -162,14 +189,22 @@ export default function AreaPolygonsLayer({
                           event.stopPropagation();
                           onEdit(asset);
                         }}
-                        style={{ ...labelButton, background: "#2563eb", color: "white" }}
+                        style={{
+                          ...labelButton,
+                          background: "#2563eb",
+                          color: "white",
+                        }}
                       >
                         Edit
                       </button>
                       <button
                         type="button"
                         onClick={lock}
-                        style={{ ...labelButton, background: "#111827", color: "white" }}
+                        style={{
+                          ...labelButton,
+                          background: "#111827",
+                          color: "white",
+                        }}
                       >
                         Lock
                       </button>
@@ -179,7 +214,11 @@ export default function AreaPolygonsLayer({
                           event.stopPropagation();
                           onDelete(asset.id);
                         }}
-                        style={{ ...labelButton, background: "#dc2626", color: "white" }}
+                        style={{
+                          ...labelButton,
+                          background: "#dc2626",
+                          color: "white",
+                        }}
                       >
                         Delete
                       </button>

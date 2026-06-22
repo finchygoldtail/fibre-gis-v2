@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { getPathDistanceMeters } from "../../../utils/mapMeasure";
 import type { SavedMapAsset } from "../types";
+import { buildCanonicalHomeSummary } from "../../Project/workspace/canonicalHomeStatus";
 
 export type ProjectWorkspaceStats = {
   homesPassed: number;
@@ -94,76 +95,7 @@ export function useProjectWorkspaceStats({
     const dropCables = cables.filter(isDropCableAsset);
     const designCables = cables.filter((asset) => !isDropCableAsset(asset));
 
-    const isHomePremiseAsset = (asset: SavedMapAsset) => {
-      const item = asset as any;
-      const hasPointGeometry =
-        asset.geometry?.type === "Point" ||
-        (typeof item.lat === "number" && typeof item.lng === "number");
-
-      if (!hasPointGeometry) return false;
-      if (isLineCable(asset) || isDropCableAsset(asset) || isDpClosureAsset(asset)) {
-        return false;
-      }
-
-      const haystack = `${norm(item.assetType)} ${norm(item.type)} ${norm(
-        item.homeType,
-      )} ${norm(item.name)} ${norm(item.label)}`;
-      const hasHomeIdentifier = Boolean(
-        item.uprn ||
-          item.UPRN ||
-          item.homeId ||
-          item.properties?.UPRN ||
-          item.properties?.uprn,
-      );
-
-      return (
-        hasHomeIdentifier ||
-        haystack.includes("home") ||
-        haystack.includes("premise") ||
-        haystack.includes("sdu") ||
-        haystack.includes("flat")
-      );
-    };
-
-    const homeKey = (asset: SavedMapAsset) => {
-      const item = asset as any;
-      const rawKey =
-        item.uprn ||
-        item.UPRN ||
-        item.properties?.UPRN ||
-        item.properties?.uprn ||
-        item.homeId ||
-        item.address ||
-        item.label ||
-        item.name ||
-        item.id;
-
-      if (rawKey) return String(rawKey).trim().toLowerCase();
-
-      if (asset.geometry?.type === "Point") {
-        const [lat, lng] = asset.geometry.coordinates as [number, number];
-        return `${Number(lat).toFixed(7)},${Number(lng).toFixed(7)}`;
-      }
-
-      return "";
-    };
-
-    const homesByKey = new Map<string, SavedMapAsset>();
-    visibleProjectAssets.filter(isHomePremiseAsset).forEach((asset) => {
-      const key = homeKey(asset);
-      if (key && !homesByKey.has(key)) homesByKey.set(key, asset);
-    });
-
-    const homes = Array.from(homesByKey.values());
-    const connectedHomes = homes.filter((asset: any) =>
-      Boolean(
-        asset.connectedDpId ||
-          asset.connectedDP ||
-          asset.dpId ||
-          asset.connection === "connected" ||
-          asset.status === "connected",
-      ),
-    );
+    const canonicalHomeSummary = buildCanonicalHomeSummary(visibleProjectAssets);
 
     const routeLengthMeters = cables.reduce((total, asset) => {
       if (asset.geometry?.type !== "LineString") return total;
@@ -187,10 +119,10 @@ export function useProjectWorkspaceStats({
     ).length;
 
     return {
-      homesPassed: homes.length,
-      homesConnected: connectedHomes.length,
-      rfsPercent: homes.length
-        ? Math.round((connectedHomes.length / homes.length) * 100)
+      homesPassed: canonicalHomeSummary.homesPassed,
+      homesConnected: canonicalHomeSummary.homesConnected,
+      rfsPercent: canonicalHomeSummary.homesPassed
+        ? Math.round((canonicalHomeSummary.homesConnected / canonicalHomeSummary.homesPassed) * 100)
         : 0,
       issueCount,
       topologyLinks,

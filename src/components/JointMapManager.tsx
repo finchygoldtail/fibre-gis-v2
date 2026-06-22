@@ -26,7 +26,10 @@ import { useAppMode } from "../context/AppModeContext";
 import { useUserRole } from "../context/UserRoleContext";
 import { useJointMappings } from "./map/hooks/useJointMappings";
 import { useOpenreachAssets } from "./map/hooks/useOpenreachAssets";
-import { useLayerVisibility, type LayerVisibility } from "./map/hooks/useLayerVisibility";
+import {
+  useLayerVisibility,
+  type LayerVisibility,
+} from "./map/hooks/useLayerVisibility";
 import { useProjectHomesController } from "./map/homes/useProjectHomesController";
 import { useHomeWorkflowControllers } from "./map/homes/useHomeWorkflowControllers";
 import AppModeSwitch from "./AppModeSwitch";
@@ -102,7 +105,11 @@ import { useProjectWorkspaceStats } from "./map/workspace/useProjectWorkspaceSta
 import { useLayerCounts } from "./map/layers/useLayerCounts";
 import { useCableAllocationOptions } from "./map/cables/useCableAllocationOptions";
 import { useCableWorkflow } from "./map/cables/useCableWorkflow";
-import { useMapDrawingState, type BasemapType, type MapMode } from "./map/hooks/useMapDrawingState";
+import {
+  useMapDrawingState,
+  type BasemapType,
+  type MapMode,
+} from "./map/hooks/useMapDrawingState";
 import { useRoleMobileMode } from "./map/responsive/useRoleMobileMode";
 import { useDeviceLayout } from "./map/responsive/useDeviceLayout";
 import SurveyMobileControls from "./map/responsive/mobile/SurveyMobileControls";
@@ -119,7 +126,10 @@ import FieldPhotoCapturePanel from "./map/responsive/photos/FieldPhotoCapturePan
 import ResponsiveFieldPolish from "./map/responsive/shared/ResponsiveFieldPolish";
 import SurveyTabletControls from "./map/responsive/tablet/SurveyTabletControls";
 import MaintenanceTabletControls from "./map/responsive/tablet/MaintenanceTabletControls";
-import { markAssetForLiveSync, useAssetPersistence } from "./map/persistence/useAssetPersistence";
+import {
+  markAssetForLiveSync,
+  useAssetPersistence,
+} from "./map/persistence/useAssetPersistence";
 import {
   createMapAssetsFromAnyGeoJson,
   createPiaOverlayAssetsFromGeoJson,
@@ -129,7 +139,10 @@ import {
   saveProjectHomes,
 } from "./map/projects/projectHomesStorage";
 import { ExchangeMarkersLayer } from "./map/ExchangeMarkersLayer";
-import { useExchangeController, type ExchangeAsset } from "./map/exchange/useExchangeController";
+import {
+  useExchangeController,
+  type ExchangeAsset,
+} from "./map/exchange/useExchangeController";
 import { useAssetEditorState } from "./map/editor/useAssetEditorState";
 import { useAssetSelection } from "./map/editor/useAssetSelection";
 import { useEditorReset } from "./map/editor/useEditorReset";
@@ -522,6 +535,146 @@ function isAreaVisibleForLevel(
 }
 
 
+function getPolygonOuterRing(asset: SavedMapAsset | null | undefined): [number, number][] {
+  const geometry = (asset as any)?.geometry;
+  if (geometry?.type !== "Polygon" || !Array.isArray(geometry.coordinates)) return [];
+
+  const ring = geometry.coordinates[0];
+  if (!Array.isArray(ring)) return [];
+
+  return ring
+    .map((coord: any) => {
+      if (!Array.isArray(coord) || coord.length < 2) return null;
+      const lat = Number(coord[0]);
+      const lng = Number(coord[1]);
+      return Number.isFinite(lat) && Number.isFinite(lng)
+        ? ([lat, lng] as [number, number])
+        : null;
+    })
+    .filter(Boolean) as [number, number][];
+}
+
+function pointInPolygon(point: [number, number], polygon: [number, number][]): boolean {
+  if (polygon.length < 3) return false;
+
+  const [pointLat, pointLng] = point;
+  let inside = false;
+
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const [latI, lngI] = polygon[i];
+    const [latJ, lngJ] = polygon[j];
+
+    const intersects =
+      latI > pointLat !== latJ > pointLat &&
+      pointLng <
+        ((lngJ - lngI) * (pointLat - latI)) /
+          ((latJ - latI) || Number.EPSILON) +
+          lngI;
+
+    if (intersects) inside = !inside;
+  }
+
+  return inside;
+}
+
+function getAssetGeometryPoints(asset: SavedMapAsset): [number, number][] {
+  const geometry = (asset as any)?.geometry;
+  if (!geometry) return [];
+
+  if (geometry.type === "Point" && Array.isArray(geometry.coordinates)) {
+    const [lat, lng] = geometry.coordinates;
+    return Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
+      ? [[Number(lat), Number(lng)]]
+      : [];
+  }
+
+  if (geometry.type === "LineString" && Array.isArray(geometry.coordinates)) {
+    return geometry.coordinates
+      .map((coord: any) => {
+        if (!Array.isArray(coord) || coord.length < 2) return null;
+        const lat = Number(coord[0]);
+        const lng = Number(coord[1]);
+        return Number.isFinite(lat) && Number.isFinite(lng)
+          ? ([lat, lng] as [number, number])
+          : null;
+      })
+      .filter(Boolean) as [number, number][];
+  }
+
+  if (geometry.type === "Polygon" && Array.isArray(geometry.coordinates)) {
+    const ring = geometry.coordinates[0];
+    if (!Array.isArray(ring)) return [];
+    return ring
+      .map((coord: any) => {
+        if (!Array.isArray(coord) || coord.length < 2) return null;
+        const lat = Number(coord[0]);
+        const lng = Number(coord[1]);
+        return Number.isFinite(lat) && Number.isFinite(lng)
+          ? ([lat, lng] as [number, number])
+          : null;
+      })
+      .filter(Boolean) as [number, number][];
+  }
+
+  return [];
+}
+
+function assetTouchesPolygon(asset: SavedMapAsset, polygon: [number, number][]): boolean {
+  if (polygon.length < 3) return false;
+  return getAssetGeometryPoints(asset).some((point) => pointInPolygon(point, polygon));
+}
+
+
+function getAreaRepairCodes(area: SavedMapAsset | null | undefined, areaName: string): string[] {
+  const source = area as any;
+  const values = [
+    source?.areaCode,
+    source?.projectAreaCode,
+    source?.code,
+    source?.ag_code,
+    source?.fibrehood_code,
+    source?.importedProperties?.ag_code,
+    source?.importedProperties?.AG_CODE,
+    source?.importedProperties?.fibrehood_code,
+    source?.importedProperties?.FIBREHOOD_CODE,
+    source?.name,
+    areaName,
+  ];
+
+  const codes = values
+    .map((value) => String(value || "").trim().toUpperCase())
+    .filter(Boolean)
+    .filter((value) => /[A-Z]{2,}-[A-Z0-9]{2,}/.test(value));
+
+  const lowerAreaName = String(areaName || "").toLowerCase();
+  if (lowerAreaName.includes("baildon south")) codes.push("BD-BAS");
+  if (lowerAreaName.includes("baildon east")) codes.push("BD-BAE");
+  if (lowerAreaName.includes("baildon west")) codes.push("BD-BAW");
+
+  return Array.from(new Set(codes));
+}
+
+function assetMatchesAreaRepairCode(asset: SavedMapAsset, areaCodes: string[]): boolean {
+  if (!areaCodes.length) return false;
+
+  const item = asset as any;
+  const haystack = [
+    item?.name,
+    item?.jointName,
+    item?.label,
+    item?.id,
+    item?.areaName,
+    item?.projectAreaName,
+    item?.properties?.name,
+    item?.properties?.areaName,
+    item?.properties?.projectAreaName,
+  ]
+    .map((value) => String(value || "").toUpperCase())
+    .join(" ");
+
+  return areaCodes.some((code) => haystack.includes(code));
+}
+
 // Firebase stores older/chunked map assets in a flattened shape:
 //   geometryType + geometryCoordinatesJson
 // The map layers need a real geometry object. Normalise once before
@@ -542,7 +695,10 @@ function normaliseDpOperationalStatus(value: unknown): string {
   return raw;
 }
 
-function getDpOperationalStatus(asset: any, fallback: string = "Planned"): string {
+function getDpOperationalStatus(
+  asset: any,
+  fallback: string = "Planned",
+): string {
   return normaliseDpOperationalStatus(
     asset?.dpDetails?.buildStatus ||
       asset?.properties?.dpDetails?.buildStatus ||
@@ -551,7 +707,6 @@ function getDpOperationalStatus(asset: any, fallback: string = "Planned"): strin
       fallback,
   );
 }
-
 
 function normaliseForSaveComparison(value: unknown): unknown {
   if (Array.isArray(value)) {
@@ -601,7 +756,6 @@ function stableAssetSignature(value: unknown): string {
 function sameOperationalData(left: unknown, right: unknown): boolean {
   return stableAssetSignature(left) === stableAssetSignature(right);
 }
-
 
 function syncDpOperationalStatusOnAsset<T extends Record<string, any>>(
   asset: T,
@@ -686,7 +840,9 @@ function normalizeMapAsset(asset: SavedMapAsset): SavedMapAsset {
   // Repair older OR / PIA imports that were previously classified as DPs.
   // This fixes existing saved POL:DATA / JC:* point assets without requiring
   // manual deletion. It only changes Openreach-prefixed point imports.
-  const geometryType = String(copy.geometry?.type || copy.geometryType || "").toLowerCase();
+  const geometryType = String(
+    copy.geometry?.type || copy.geometryType || "",
+  ).toLowerCase();
   const nameText = String(
     copy.name ||
       copy.piaRef ||
@@ -719,7 +875,11 @@ function normalizeMapAsset(asset: SavedMapAsset): SavedMapAsset {
       nameText.startsWith("MP:"))
   ) {
     copy.assetType = "pole";
-    copy.referenceSubtype = isSuggestedReference ? "suggested" : isNpReference ? "np" : "or";
+    copy.referenceSubtype = isSuggestedReference
+      ? "suggested"
+      : isNpReference
+        ? "np"
+        : "or";
     copy.jointType = isSuggestedReference
       ? "Suggested Pole"
       : isNpReference
@@ -728,14 +888,20 @@ function normalizeMapAsset(asset: SavedMapAsset): SavedMapAsset {
     copy.source = copy.source || "pia-overlay";
     copy.poleDetails = {
       ...(copy.poleDetails || {}),
-      poleType: isSuggestedReference ? "suggested" : isNpReference ? "new" : "or",
+      poleType: isSuggestedReference
+        ? "suggested"
+        : isNpReference
+          ? "new"
+          : "or",
     };
     delete copy.dpDetails;
   }
 
   if (
     geometryType === "point" &&
-    (nameText.startsWith("JC:") || nameText.startsWith("CH:") || nameText.startsWith("CHAMBER:"))
+    (nameText.startsWith("JC:") ||
+      nameText.startsWith("CH:") ||
+      nameText.startsWith("CHAMBER:"))
   ) {
     copy.assetType = "chamber";
     copy.referenceSubtype = isSuggestedReference ? "suggested" : "or";
@@ -743,16 +909,15 @@ function normalizeMapAsset(asset: SavedMapAsset): SavedMapAsset {
     copy.source = copy.source || "pia-overlay";
     copy.chamberDetails = {
       ...(copy.chamberDetails || {}),
-      chamberType: copy.chamberDetails?.chamberType || (isSuggestedReference ? "Suggested Chamber" : "OR Chamber"),
+      chamberType:
+        copy.chamberDetails?.chamberType ||
+        (isSuggestedReference ? "Suggested Chamber" : "OR Chamber"),
     };
     delete copy.dpDetails;
   }
 
   return copy as SavedMapAsset;
 }
-
-
-
 
 export default function JointMapManager({
   currentJointName,
@@ -927,11 +1092,16 @@ export default function JointMapManager({
   );
 
   const operationalSavedJoints = useMemo(
-    () => normalizedSavedJoints.filter((asset) => !isOpenreachReferenceAsset(asset)),
+    () =>
+      normalizedSavedJoints.filter(
+        (asset) => !isOpenreachReferenceAsset(asset),
+      ),
     [normalizedSavedJoints],
   );
 
-  const { hydratedOperationalSavedJoints } = useJointMappings(operationalSavedJoints);
+  const { hydratedOperationalSavedJoints } = useJointMappings(
+    operationalSavedJoints,
+  );
 
   const {
     orAssets,
@@ -962,6 +1132,8 @@ export default function JointMapManager({
   // Project homes still save separately through saveProjectHomes().
   // =====================================================
   const [isSavingMapNow, setIsSavingMapNow] = useState(false);
+  const [polygonBulkSelectEnabled, setPolygonBulkSelectEnabled] = useState(false);
+  const [selectedPolygonIds, setSelectedPolygonIds] = useState<string[]>([]);
 
   const handleSaveMapNow = async () => {
     if (isSavingMapNow) return;
@@ -974,15 +1146,16 @@ export default function JointMapManager({
     setIsSavingMapNow(true);
 
     try {
-      const { saveMapAssetsToFirestore } = await import(
-        "../services/mapAssetStorage"
-      );
+      const { saveMapAssetsToFirestore } =
+        await import("../services/mapAssetStorage");
 
       await saveMapAssetsToFirestore(operationalSavedJoints, {
         reason: "manual-save-map-now",
       });
 
-      alert(`Map saved. ${operationalSavedJoints.length} asset(s) written to Firestore.`);
+      alert(
+        `Map saved. ${operationalSavedJoints.length} asset(s) written to Firestore.`,
+      );
     } catch (err) {
       console.error("MANUAL MAP SAVE FAILED", err);
       alert("Map save failed. Check the console for details.");
@@ -991,6 +1164,54 @@ export default function JointMapManager({
     }
   };
 
+  const isPolygonAreaAsset = (asset: any) => {
+    const geometryType = String(
+      asset?.geometry?.type || asset?.geometryType || "",
+    ).toLowerCase();
+    return asset?.assetType === "area" || geometryType === "polygon";
+  };
+
+  const isImportedAreaAsset = (asset: any) => {
+    const name = String(asset?.name || "")
+      .trim()
+      .toLowerCase();
+    const jointType = String(asset?.jointType || "")
+      .trim()
+      .toLowerCase();
+    return (
+      isPolygonAreaAsset(asset) &&
+      (name.startsWith("imported area") || jointType.includes("imported area"))
+    );
+  };
+
+  const removePolygonAssetsFromMapState = (
+    polygonsToRemove: SavedMapAsset[],
+    successLabel: string,
+  ) => {
+    const polygonIds = new Set(
+      polygonsToRemove.map((asset) => String(asset.id || "")),
+    );
+
+    setSavedJoints((prev) =>
+      (prev ?? []).filter(
+        (asset: any) => !polygonIds.has(String(asset?.id || "")),
+      ),
+    );
+
+    if (editingAssetId && polygonIds.has(String(editingAssetId))) {
+      resetEditor();
+    }
+
+    setSelectedPolygonIds((prev) =>
+      prev.filter((id) => !polygonIds.has(String(id))),
+    );
+
+    alert(
+      `${polygonsToRemove.length} ${successLabel} removed from the map.
+
+Press Save Map to make this permanent in Firestore.`,
+    );
+  };
 
   const handleAdminRemoveImportedAreas = () => {
     if (!isAdmin) {
@@ -998,14 +1219,7 @@ export default function JointMapManager({
       return;
     }
 
-    const importedAreas = operationalSavedJoints.filter((asset: any) => {
-      const name = String(asset?.name || "").trim().toLowerCase();
-      const jointType = String(asset?.jointType || "").trim().toLowerCase();
-      return (
-        asset?.assetType === "area" &&
-        (name.startsWith("imported area") || jointType.includes("imported area"))
-      );
-    });
+    const importedAreas = operationalSavedJoints.filter(isImportedAreaAsset);
 
     if (!importedAreas.length) {
       alert("No imported area polygons were found.");
@@ -1023,24 +1237,400 @@ You must still press Save Map afterwards to persist the cleanup.`,
 
     if (typed !== "DELETE IMPORTED AREAS") return;
 
-    const importedAreaIds = new Set(importedAreas.map((asset) => String(asset.id || "")));
+    removePolygonAssetsFromMapState(importedAreas, "imported area polygon(s)");
+  };
+
+  const getVisiblePolygonAreas = () =>
+    visibleProjectAreas.filter((asset) =>
+      isAreaVisibleForLevel(asset, visibleLayers),
+    );
+
+  const togglePolygonBulkSelection = (id: string) => {
+    setSelectedPolygonIds((prev) =>
+      prev.includes(id)
+        ? prev.filter((existingId) => existingId !== id)
+        : [...prev, id],
+    );
+  };
+
+  const handleAdminSelectAllPolygons = () => {
+    const ids = operationalSavedJoints
+      .filter(isPolygonAreaAsset)
+      .map((asset) => asset.id)
+      .filter(Boolean);
+    setSelectedPolygonIds(Array.from(new Set(ids)));
+    setPolygonBulkSelectEnabled(true);
+  };
+
+  const handleAdminSelectVisiblePolygons = () => {
+    const ids = getVisiblePolygonAreas()
+      .map((asset) => asset.id)
+      .filter(Boolean);
+    setSelectedPolygonIds(Array.from(new Set(ids)));
+    setPolygonBulkSelectEnabled(true);
+  };
+
+  const handleAdminSelectImportedPolygons = () => {
+    const ids = operationalSavedJoints
+      .filter(isImportedAreaAsset)
+      .map((asset) => asset.id)
+      .filter(Boolean);
+    setSelectedPolygonIds(Array.from(new Set(ids)));
+    setPolygonBulkSelectEnabled(true);
+  };
+
+  const handleAdminClearPolygonSelection = () => {
+    setSelectedPolygonIds([]);
+  };
+
+  const handleAdminRemoveSelectedPolygons = () => {
+    if (!isAdmin) {
+      alert("Administrator access required.");
+      return;
+    }
+
+    const selectedIds = new Set(selectedPolygonIds.map(String));
+    const selectedPolygons = operationalSavedJoints.filter(
+      (asset: any) =>
+        selectedIds.has(String(asset?.id || "")) && isPolygonAreaAsset(asset),
+    );
+
+    if (!selectedPolygons.length) {
+      alert("No polygons are currently selected. Turn on bulk select and click polygons on the map first.");
+      return;
+    }
+
+    const typed = window.prompt(
+      `Selected ${selectedPolygons.length} polygon(s).
+
+Type DELETE SELECTED POLYGONS to remove the selected polygons from the map.
+
+You must still press Save Map afterwards to persist the cleanup.`,
+      "",
+    );
+
+    if (typed !== "DELETE SELECTED POLYGONS") return;
+
+    removePolygonAssetsFromMapState(selectedPolygons, "selected polygon(s)");
+  };
+
+  const handleAdminRemoveSelectedPolygon = () => {
+    if (!isAdmin) {
+      alert("Administrator access required.");
+      return;
+    }
+
+    const selectedPolygon = operationalSavedJoints.find(
+      (asset: any) =>
+        String(asset?.id || "") === String(editingAssetId || "") &&
+        isPolygonAreaAsset(asset),
+    );
+
+    if (!selectedPolygon) {
+      alert("Select a polygon first, then use this cleanup action.");
+      return;
+    }
+
+    const polygonName = String(
+      selectedPolygon.name ||
+        selectedPolygon.jointName ||
+        selectedPolygon.id ||
+        "selected polygon",
+    );
+    const typed = window.prompt(
+      `Selected polygon:
+${polygonName}
+
+Type DELETE SELECTED POLYGON to remove only this polygon from the map.
+
+You must still press Save Map afterwards to persist the cleanup.`,
+      "",
+    );
+
+    if (typed !== "DELETE SELECTED POLYGON") return;
+
+    removePolygonAssetsFromMapState([selectedPolygon], "selected polygon");
+  };
+
+  const handleAdminRemoveAllPolygons = () => {
+    if (!isAdmin) {
+      alert("Administrator access required.");
+      return;
+    }
+
+    const allPolygons = operationalSavedJoints.filter(isPolygonAreaAsset);
+
+    if (!allPolygons.length) {
+      alert("No polygon areas were found.");
+      return;
+    }
+
+    const typed = window.prompt(
+      `WARNING: This will remove ALL ${allPolygons.length} polygon area(s) from the map.
+
+This includes imported polygons and manually drawn project/area polygons.
+
+Type DELETE ALL POLYGONS to continue.
+
+You must still press Save Map afterwards to persist the cleanup.`,
+      "",
+    );
+
+    if (typed !== "DELETE ALL POLYGONS") return;
+
+    removePolygonAssetsFromMapState(allPolygons, "polygon area(s)");
+  };
+
+  const handleAdminRepairAreaStamps = async () => {
+    if (!isAdmin) {
+      alert("Administrator access required.");
+      return;
+    }
+
+    if (!activeProjectArea) {
+      alert("Select the area polygon you want to repair first.");
+      return;
+    }
+
+    const areaRing = getPolygonOuterRing(activeProjectArea);
+    if (areaRing.length < 3) {
+      alert("The selected area does not have a valid polygon boundary.");
+      return;
+    }
+
+    const areaName = String(
+      (activeProjectArea as any).areaName ||
+        (activeProjectArea as any).projectAreaName ||
+        activeProjectArea.name ||
+        activeProjectArea.id ||
+        "selected area",
+    ).trim();
+
+    const areaCodes = getAreaRepairCodes(activeProjectArea, areaName);
+    const areaSlug = areaName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    const preferredAreaCode =
+      areaCodes
+        .map((code) => String(code || "").trim().toUpperCase())
+        .find((code) => code.startsWith("BD-"))
+        ?.split("-")[1] ||
+      String((activeProjectArea as any).areaCode || (activeProjectArea as any).projectAreaCode || "").trim();
+
+    const repairAreaStamp = <T extends SavedMapAsset,>(asset: T): T =>
+      markAssetForLiveSync(
+        {
+          ...(asset as any),
+          projectId: activeProjectArea.id,
+          areaId: activeProjectArea.id,
+          projectAreaId: activeProjectArea.id,
+          areaName,
+          projectAreaName: areaName,
+          ...(preferredAreaCode
+            ? {
+                areaCode: preferredAreaCode,
+                projectAreaCode: preferredAreaCode,
+              }
+            : {}),
+          areaSlug,
+          areaStorageKey: areaSlug,
+          repairSource: "admin-repair-area-stamps",
+          repairUpdatedAt: new Date().toISOString(),
+          properties: {
+            ...((asset as any).properties || {}),
+            projectId: activeProjectArea.id,
+            areaId: activeProjectArea.id,
+            projectAreaId: activeProjectArea.id,
+            areaName,
+            projectAreaName: areaName,
+            ...(preferredAreaCode
+              ? {
+                  areaCode: preferredAreaCode,
+                  projectAreaCode: preferredAreaCode,
+                }
+              : {}),
+            areaSlug,
+            areaStorageKey: areaSlug,
+            repairSource: "admin-repair-area-stamps",
+            repairUpdatedAt: new Date().toISOString(),
+          },
+        } as T,
+        true,
+      ) as T;
+
+    const repairableAssets = operationalSavedJoints.filter((asset: any) => {
+      if (!asset?.id) return false;
+      if (String(asset.id) === String(activeProjectArea.id)) return false;
+      if (isPolygonAreaAsset(asset)) return false;
+      if (isOpenreachReferenceAsset(asset)) return false;
+
+      return (
+        assetTouchesPolygon(asset as SavedMapAsset, areaRing) ||
+        assetMatchesAreaRepairCode(asset as SavedMapAsset, areaCodes)
+      );
+    });
+
+    const lowerAreaName = areaName.toLowerCase();
+    const legacyProjectHomeKeys = [
+      // Baildon South homes were originally saved under this deleted polygon id.
+      // Keep this here so Admin repair can recover homes after the area polygon
+      // has been recreated and renamed back to Baildon South.
+      lowerAreaName.includes("baildon south")
+        ? "85cd3428-edc3-4315-85a2-957a09715175"
+        : null,
+    ]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+
+    const candidateProjectHomeKeys = Array.from(
+      new Set(
+        [
+          activeProjectId,
+          activeProjectArea.id,
+          (activeProjectArea as any).projectId,
+          (activeProjectArea as any).areaId,
+          (activeProjectArea as any).projectAreaId,
+          (activeProjectArea as any).areaStorageKey,
+          (activeProjectArea as any).areaSlug,
+          (activeProjectArea as any).properties?.projectId,
+          (activeProjectArea as any).properties?.areaId,
+          (activeProjectArea as any).properties?.projectAreaId,
+          (activeProjectArea as any).properties?.areaStorageKey,
+          (activeProjectArea as any).properties?.areaSlug,
+          areaSlug,
+          lowerAreaName.includes("baildon south") ? "baildon-south" : null,
+          lowerAreaName.includes("baildon east") ? "baildon-east" : null,
+          lowerAreaName.includes("baildon west") ? "baildon-west" : null,
+          ...legacyProjectHomeKeys,
+        ]
+          .map((value) => String(value || "").trim())
+          .filter(Boolean),
+      ),
+    );
+
+    let allCandidateHomes = [...(projectHomes ?? [])];
+
+    const getHomeRepairKey = (home: any): string =>
+      String(
+        home?.id ||
+          home?.uprn ||
+          home?.UPRN ||
+          home?.properties?.UPRN ||
+          home?.properties?.uprn ||
+          home?.name ||
+          "",
+      ).trim();
+
+    for (const projectHomeKey of candidateProjectHomeKeys) {
+      try {
+        const loadedHomes = await loadProjectHomes(projectHomeKey);
+        allCandidateHomes = [...allCandidateHomes, ...loadedHomes];
+      } catch (err) {
+        console.warn("Could not load project homes for area repair", projectHomeKey, err);
+      }
+    }
+
+    const homesByKey = new Map<string, SavedMapAsset>();
+    allCandidateHomes.forEach((home: any) => {
+      const key = getHomeRepairKey(home);
+      if (key && !homesByKey.has(key)) homesByKey.set(key, home as SavedMapAsset);
+    });
+
+    const candidateHomes = Array.from(homesByKey.values());
+
+    // IMPORTANT SAFETY GUARD:
+    // Legacy project-home storage can contain thousands of homes under one old
+    // project id. Do not repair every home that merely has the old id. Only
+    // repair homes whose actual point geometry is inside the selected polygon.
+    const repairableHomes = candidateHomes.filter((home: any) =>
+      assetTouchesPolygon(home as SavedMapAsset, areaRing),
+    );
+
+    if (!repairableAssets.length && !repairableHomes.length) {
+      alert(`No operational assets or project homes were found inside ${areaName}.`);
+      return;
+    }
+
+    const typeCounts = repairableAssets.reduce<Record<string, number>>((acc, asset: any) => {
+      const key = String(asset?.assetType || "unknown");
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+
+    const summary = [
+      ...Object.entries(typeCounts)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([type, count]) => `${type}: ${count}`),
+      `project homes: ${repairableHomes.length}`,
+    ].join("\n");
+
+    const typed = window.prompt(
+      `Repair area stamps for ${areaName}?\n\nThis will restamp ${repairableAssets.length} operational asset(s) and ${repairableHomes.length} project home(s).
+
+Project homes are restricted to homes physically inside the selected polygon only.\n\nArea code matches: ${areaCodes.length ? areaCodes.join(", ") : "none"}\n\n${summary}\n\nIt will NOT delete anything and it will NOT change fibre routing or DP-home assignments.\n\nType REPAIR AREA STAMPS to continue.\n\nPress Save Map afterwards to persist map assets. Project homes are saved by this repair tool.`,
+      "",
+    );
+
+    if (typed !== "REPAIR AREA STAMPS") return;
+
+    const repairIds = new Set(repairableAssets.map((asset) => String(asset.id)));
 
     setSavedJoints((prev) =>
-      (prev ?? []).filter((asset: any) => {
-        const name = String(asset?.name || "").trim().toLowerCase();
-        const jointType = String(asset?.jointType || "").trim().toLowerCase();
-        const isImportedAreaByName =
-          asset?.assetType === "area" &&
-          (name.startsWith("imported area") || jointType.includes("imported area"));
-        const isImportedAreaById = importedAreaIds.has(String(asset?.id || ""));
-        return !(isImportedAreaByName || isImportedAreaById);
+      (prev ?? []).map((asset: any) => {
+        if (!repairIds.has(String(asset?.id || ""))) return asset;
+        return repairAreaStamp(asset as SavedMapAsset);
       }),
     );
 
-    alert(
-      `${importedAreas.length} imported area polygon(s) removed from the map.
+    const repairHomeKeys = new Set(
+      repairableHomes
+        .map((home: any) => String(home?.id || home?.uprn || home?.UPRN || home?.properties?.UPRN || home?.name || "").trim())
+        .filter(Boolean),
+    );
 
-Press Save Map to make this permanent in Firestore.`,
+    const repairedHomes = candidateHomes
+      .filter((home: any) => {
+        const key = String(home?.id || home?.uprn || home?.UPRN || home?.properties?.UPRN || home?.name || "").trim();
+        return repairHomeKeys.has(key);
+      })
+      .map((home) => repairAreaStamp(home as SavedMapAsset));
+
+    setProjectHomes(repairedHomes);
+    setLoadedHomesProjectId(activeProjectArea.id);
+
+    try {
+      const homeSaveKeys = Array.from(
+        new Set(
+          [
+            activeProjectArea.id,
+            (activeProjectArea as any).projectId,
+            (activeProjectArea as any).areaId,
+            (activeProjectArea as any).projectAreaId,
+            (activeProjectArea as any).areaStorageKey,
+            (activeProjectArea as any).areaSlug,
+            (activeProjectArea as any).properties?.projectId,
+            (activeProjectArea as any).properties?.areaStorageKey,
+            lowerAreaName.includes("baildon south") ? "baildon-south" : null,
+          ]
+            .map((value) => String(value || "").trim())
+            .filter(Boolean),
+        ),
+      );
+
+      for (const homeSaveKey of homeSaveKeys) {
+        await saveProjectHomes(homeSaveKey, repairedHomes, areaName);
+      }
+    } catch (err) {
+      console.error("Failed to save repaired project homes", err);
+      alert(
+        "Map assets were repaired on screen, but saving repaired project homes failed. Do not refresh yet; check the console.",
+      );
+      return;
+    }
+
+    alert(
+      `Repaired area stamps for ${repairableAssets.length} asset(s) and ${repairableHomes.length} home(s) inside ${areaName}.\n\nProject homes have been saved. Press Save Map to make the map-asset repair permanent in Firestore.`,
     );
   };
 
@@ -1252,8 +1842,6 @@ Type DELETE ALL OR to continue.`,
     topologyLinks: networkGraph.edges.size,
   });
 
-
-
   // =====================================================
   // LAYER COUNTS
   // Extracted from JointMapManager so layer panel badge/count logic
@@ -1264,7 +1852,6 @@ Type DELETE ALL OR to continue.`,
     visibleProjectAssets,
     visibleOpenreachAssets,
   });
-
 
   useEffect(() => {
     if (!activeProjectArea || !canManageNetworkDesign) {
@@ -1720,7 +2307,8 @@ Type DELETE ALL OR to continue.`,
                   : jointType,
       notes: notes.trim(),
       mappingRows: assetType === "ag-joint" ? currentMappingRows : [],
-      mappingRowsCount: assetType === "ag-joint" ? currentMappingRows.length : undefined,
+      mappingRowsCount:
+        assetType === "ag-joint" ? currentMappingRows.length : undefined,
       ...(assetType === "ag-joint" && currentMappingRows.length > 0
         ? {
             mappingRowsRef: false,
@@ -1736,7 +2324,9 @@ Type DELETE ALL OR to continue.`,
               buildStatus: getDpOperationalStatus({ dpDetails: nextDpDetails }),
               dpDetails: {
                 ...nextDpDetails,
-                buildStatus: getDpOperationalStatus({ dpDetails: nextDpDetails }),
+                buildStatus: getDpOperationalStatus({
+                  dpDetails: nextDpDetails,
+                }),
               },
             },
           }
@@ -1835,18 +2425,24 @@ Type DELETE ALL OR to continue.`,
     setIsRoutingCable(true);
 
     try {
-      const shouldUseReferenceDuct = shouldUseDuctTraceForInstallMethod(installMethod);
-      const ductTracePoints = shouldUseReferenceDuct && selectedReferenceDuctId
-        ? traceReferenceDuctRouteBetweenPoints(
-            draftCablePoints[0],
-            draftCablePoints[draftCablePoints.length - 1],
-            snapCandidateAssets,
-            25,
-            selectedReferenceDuctId,
-          )
-        : null;
+      const shouldUseReferenceDuct =
+        shouldUseDuctTraceForInstallMethod(installMethod);
+      const ductTracePoints =
+        shouldUseReferenceDuct && selectedReferenceDuctId
+          ? traceReferenceDuctRouteBetweenPoints(
+              draftCablePoints[0],
+              draftCablePoints[draftCablePoints.length - 1],
+              snapCandidateAssets,
+              25,
+              selectedReferenceDuctId,
+            )
+          : null;
 
-      if (shouldUseReferenceDuct && selectedReferenceDuctId && !ductTracePoints) {
+      if (
+        shouldUseReferenceDuct &&
+        selectedReferenceDuctId &&
+        !ductTracePoints
+      ) {
         alert(
           `Could not trace both cable ends onto the selected duct${selectedReferenceDuctName ? ` (${selectedReferenceDuctName})` : ""}.\n\nMove the first/last cable points closer to that duct, or clear the selected duct and choose another one.`,
         );
@@ -1870,8 +2466,12 @@ Type DELETE ALL OR to continue.`,
         parentCableId,
         allocatedInputFibres,
         routeMode: ductTracePoints ? "selected-or-duct" : "road",
-        referenceDuctId: ductTracePoints ? selectedReferenceDuctId || undefined : undefined,
-        referenceDuctName: ductTracePoints ? selectedReferenceDuctName || undefined : undefined,
+        referenceDuctId: ductTracePoints
+          ? selectedReferenceDuctId || undefined
+          : undefined,
+        referenceDuctName: ductTracePoints
+          ? selectedReferenceDuctName || undefined
+          : undefined,
         geometry: {
           type: "LineString",
           coordinates: routedCoordinates,
@@ -2040,7 +2640,11 @@ Type DELETE ALL OR to continue.`,
         });
 
         setProjectHomes(updatedProjectHomes);
-        await saveProjectHomes(activeProjectId, stampHomesForActiveArea(updatedProjectHomes), activeProjectAreaName);
+        await saveProjectHomes(
+          activeProjectId,
+          stampHomesForActiveArea(updatedProjectHomes),
+          activeProjectAreaName,
+        );
       }
 
       if (autoDrops.length > 0) {
@@ -2204,7 +2808,11 @@ Type DELETE ALL OR to continue.`,
       });
 
       setProjectHomes(updatedProjectHomes);
-      await saveProjectHomes(activeProjectId, stampHomesForActiveArea(updatedProjectHomes), activeProjectAreaName);
+      await saveProjectHomes(
+        activeProjectId,
+        stampHomesForActiveArea(updatedProjectHomes),
+        activeProjectAreaName,
+      );
     }
 
     if (editingAssetId === id) {
@@ -2433,7 +3041,11 @@ Type DELETE ALL OR to continue.`,
       );
       const mergedHomes = [...projectHomes, ...savedHomes];
 
-      await saveProjectHomes(activeProjectId, stampHomesForActiveArea(mergedHomes), activeProjectAreaName);
+      await saveProjectHomes(
+        activeProjectId,
+        stampHomesForActiveArea(mergedHomes),
+        activeProjectAreaName,
+      );
       setProjectHomes(mergedHomes);
       setLoadedHomesProjectId(activeProjectId);
 
@@ -2545,7 +3157,11 @@ Type DELETE ALL OR to continue.`,
         );
         const mergedHomes = [...projectHomes, ...savedHomes];
 
-        await saveProjectHomes(projectIdForImport, stampHomesForActiveArea(mergedHomes), activeProjectAreaName);
+        await saveProjectHomes(
+          projectIdForImport,
+          stampHomesForActiveArea(mergedHomes),
+          activeProjectAreaName,
+        );
         setProjectHomes(mergedHomes);
         setLoadedHomesProjectId(projectIdForImport);
 
@@ -2605,7 +3221,11 @@ Type DELETE ALL OR to continue.`,
         );
         const mergedHomes = [...projectHomes, ...savedHomes];
 
-        await saveProjectHomes(projectIdForImport, stampHomesForActiveArea(mergedHomes), activeProjectAreaName);
+        await saveProjectHomes(
+          projectIdForImport,
+          stampHomesForActiveArea(mergedHomes),
+          activeProjectAreaName,
+        );
         setProjectHomes(mergedHomes);
         setLoadedHomesProjectId(projectIdForImport);
 
@@ -2827,7 +3447,11 @@ Type DELETE ALL OR to continue.`,
                 projectId: activeProjectId,
               })),
             ];
-            await saveProjectHomes(activeProjectId, stampHomesForActiveArea(mergedHomes), activeProjectAreaName);
+            await saveProjectHomes(
+              activeProjectId,
+              stampHomesForActiveArea(mergedHomes),
+              activeProjectAreaName,
+            );
             setProjectHomes(mergedHomes);
             setLoadedHomesProjectId(activeProjectId);
             savedHomeCount = newHomes.length;
@@ -2840,7 +3464,8 @@ Type DELETE ALL OR to continue.`,
             withAreaAssetIndex(
               normaliseOpenreachAsset(asset),
               activeProjectId,
-              (activeProjectArea as any)?.name || (activeProjectArea as any)?.label,
+              (activeProjectArea as any)?.name ||
+                (activeProjectArea as any)?.label,
             ),
           );
         const designedNetworkAssets = networkAssets.filter(
@@ -2872,7 +3497,8 @@ Type DELETE ALL OR to continue.`,
               withAreaAssetIndex(
                 asset,
                 activeProjectId,
-                (activeProjectArea as any)?.name || (activeProjectArea as any)?.label,
+                (activeProjectArea as any)?.name ||
+                  (activeProjectArea as any)?.label,
               ),
             ),
           ]);
@@ -3094,7 +3720,8 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
           withAreaAssetIndex(
             normaliseOpenreachAsset(asset),
             activeProjectId,
-            (activeProjectArea as any)?.name || (activeProjectArea as any)?.label,
+            (activeProjectArea as any)?.name ||
+              (activeProjectArea as any)?.label,
           ),
         );
       const importedDesignedAssets = importedAssets.filter(
@@ -3113,7 +3740,8 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
           withAreaAssetIndex(
             asset,
             activeProjectId,
-            (activeProjectArea as any)?.name || (activeProjectArea as any)?.label,
+            (activeProjectArea as any)?.name ||
+              (activeProjectArea as any)?.label,
           ),
         ),
       );
@@ -3220,7 +3848,9 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
     });
 
     if (!updatedById.size) {
-      alert(`No DP status changes were needed; selected DPs already show ${args.status}.`);
+      alert(
+        `No DP status changes were needed; selected DPs already show ${args.status}.`,
+      );
       return;
     }
 
@@ -3255,7 +3885,6 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
       `Updated ${beforeAssets.length} DP${beforeAssets.length === 1 ? "" : "s"} to ${args.status}.`,
     );
   };
-
 
   // =====================================================
   // PROJECT WORKSPACE — CLEAR DP FIBRE ALLOCATIONS IN AREA
@@ -3293,7 +3922,9 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
 
     clearResult.assets.forEach((asset) => {
       const item = asset as any;
-      const details = { ...(item.dpDetails || item.properties?.dpDetails || {}) } as any;
+      const details = {
+        ...(item.dpDetails || item.properties?.dpDetails || {}),
+      } as any;
       const nextAfnDetails = { ...(details.afnDetails || {}) } as any;
       delete nextAfnDetails.sbToSbRoutes;
       delete nextAfnDetails.inputFibres;
@@ -3325,7 +3956,9 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
     });
 
     if (!updatedById.size) {
-      alert("No DP fibre allocation changes were needed; selected DPs were already clear.");
+      alert(
+        "No DP fibre allocation changes were needed; selected DPs were already clear.",
+      );
       return;
     }
 
@@ -3344,7 +3977,8 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         asset: afterAsset,
         action: "updated",
         reason,
-        comment: "Manager cleared DP fibre allocations from selected project area ready for Rebuild Chain.",
+        comment:
+          "Manager cleared DP fibre allocations from selected project area ready for Rebuild Chain.",
         before: {
           dpDetails: (beforeAsset as any).dpDetails,
           allocatedInputFibres: (beforeAsset as any).allocatedInputFibres,
@@ -3362,9 +3996,6 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
       `Cleared fibre allocations from ${clearResult.summary.clearedDpCount} DP${clearResult.summary.clearedDpCount === 1 ? "" : "s"} in this area. You can now run Rebuild Chain.`,
     );
   };
-
-
-
 
   // =====================================================
   // PROJECT WORKSPACE — BULK FAS SB ROUTE IMPORT
@@ -3398,7 +4029,14 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         .replace(/[^A-Z0-9]/g, "");
 
     const getTitle = (asset: any) =>
-      String(asset?.name || asset?.jointName || asset?.label || asset?.assetId || asset?.id || "");
+      String(
+        asset?.name ||
+          asset?.jointName ||
+          asset?.label ||
+          asset?.assetId ||
+          asset?.id ||
+          "",
+      );
 
     const isDpAsset = (asset: SavedMapAsset | null | undefined) => {
       if (!asset || asset.geometry?.type === "LineString") return false;
@@ -3434,11 +4072,23 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         (savedJoints ?? []).find((asset) => {
           if (!isDpAsset(asset)) return false;
           const item = asset as any;
-          const candidates = [asset.id, item.assetId, item.name, item.jointName, item.label, item.dpId]
+          const candidates = [
+            asset.id,
+            item.assetId,
+            item.name,
+            item.jointName,
+            item.label,
+            item.dpId,
+          ]
             .map(normaliseRef)
             .filter(Boolean);
 
-          return candidates.some((candidate) => candidate === wanted || candidate.includes(wanted) || wanted.includes(candidate));
+          return candidates.some(
+            (candidate) =>
+              candidate === wanted ||
+              candidate.includes(wanted) ||
+              wanted.includes(candidate),
+          );
         }) || null
       );
     };
@@ -3460,7 +4110,9 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
     }
 
     const updatedById = new Map<string, SavedMapAsset>();
-    const beforeAssets = (savedJoints ?? []).filter((asset) => routeGroups.has(String(asset.id || "")));
+    const beforeAssets = (savedJoints ?? []).filter((asset) =>
+      routeGroups.has(String(asset.id || "")),
+    );
 
     beforeAssets.forEach((beforeAsset) => {
       const item = beforeAsset as any;
@@ -3471,12 +4123,19 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         ...(details.afnDetails || {}),
       } as any;
 
-      const existingRoutes = Array.isArray(afnDetails.sbToSbRoutes) ? afnDetails.sbToSbRoutes : [];
-      const preservedRoutes = request.replaceImportedRoutes === false
-        ? existingRoutes
-        : existingRoutes.filter((route: any) => route?.source !== "fas-import");
+      const existingRoutes = Array.isArray(afnDetails.sbToSbRoutes)
+        ? afnDetails.sbToSbRoutes
+        : [];
+      const preservedRoutes =
+        request.replaceImportedRoutes === false
+          ? existingRoutes
+          : existingRoutes.filter(
+              (route: any) => route?.source !== "fas-import",
+            );
 
-      const importedRoutes = (routeGroups.get(String(beforeAsset.id || "")) || []).map((route) => ({
+      const importedRoutes = (
+        routeGroups.get(String(beforeAsset.id || "")) || []
+      ).map((route) => ({
         id:
           route.id ||
           `fas_${normaliseRef(route.fromSbName)}_${normaliseRef(route.toSbName)}_${normaliseRef(route.supportingCableName)}`,
@@ -3484,9 +4143,14 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         fromSbName: String(route.fromSbName || "").trim(),
         toSbId: beforeAsset.id,
         toSbName: String(route.toSbName || getTitle(beforeAsset)).trim(),
-        parentFibres: Array.isArray(route.parentFibres) ? route.parentFibres.map(Number).filter(Number.isFinite) : [],
-        localFibres: Array.isArray(route.localFibres) ? route.localFibres.map(Number).filter(Number.isFinite) : [],
-        supportingCableName: String(route.supportingCableName || "").trim() || undefined,
+        parentFibres: Array.isArray(route.parentFibres)
+          ? route.parentFibres.map(Number).filter(Number.isFinite)
+          : [],
+        localFibres: Array.isArray(route.localFibres)
+          ? route.localFibres.map(Number).filter(Number.isFinite)
+          : [],
+        supportingCableName:
+          String(route.supportingCableName || "").trim() || undefined,
         source: "fas-import",
         note: route.note || reason,
         importedAt: new Date().toISOString(),
@@ -3499,10 +4163,18 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         // Keep the local fibre list populated for capacity/splitter display only.
         // Authority remains the SB → SB route records above.
         inputFibres: Array.from(
-          new Set([
-            ...((Array.isArray(afnDetails.inputFibres) ? afnDetails.inputFibres : []) as any[]),
-            ...importedRoutes.flatMap((route: any) => route.localFibres || []),
-          ].map(Number).filter(Number.isFinite)),
+          new Set(
+            [
+              ...((Array.isArray(afnDetails.inputFibres)
+                ? afnDetails.inputFibres
+                : []) as any[]),
+              ...importedRoutes.flatMap(
+                (route: any) => route.localFibres || [],
+              ),
+            ]
+              .map(Number)
+              .filter(Number.isFinite),
+          ),
         ).sort((a, b) => a - b),
       };
 
@@ -3533,12 +4205,16 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
     });
 
     if (!updatedById.size) {
-      alert("No DP fibre changes were needed; the saved SB route data already matches.");
+      alert(
+        "No DP fibre changes were needed; the saved SB route data already matches.",
+      );
       return;
     }
 
     setSavedJoints((prev) =>
-      (prev ?? []).map((asset) => updatedById.get(String(asset.id || "")) || asset),
+      (prev ?? []).map(
+        (asset) => updatedById.get(String(asset.id || "")) || asset,
+      ),
     );
 
     beforeAssets.forEach((beforeAsset) => {
@@ -3548,19 +4224,22 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         asset: afterAsset,
         action: "updated",
         reason,
-        comment: "Imported FAS SB → SB fibre routes from Project Workspace Build tab.",
+        comment:
+          "Imported FAS SB → SB fibre routes from Project Workspace Build tab.",
         before: { dpDetails: (beforeAsset as any).dpDetails },
         after: { dpDetails: (afterAsset as any).dpDetails },
       });
     });
 
-    const missing = routes.length - Array.from(routeGroups.values()).flat().length;
+    const missing =
+      routes.length - Array.from(routeGroups.values()).flat().length;
     alert(
       `Applied FAS SB routes to ${beforeAssets.length} SB${beforeAssets.length === 1 ? "" : "s"}.` +
-        (missing > 0 ? ` ${missing} route${missing === 1 ? "" : "s"} could not be matched to a saved SB.` : ""),
+        (missing > 0
+          ? ` ${missing} route${missing === 1 ? "" : "s"} could not be matched to a saved SB.`
+          : ""),
     );
   };
-
 
   // =====================================================
   // PROJECT WORKSPACE — PERSIST SINGLE DP STATUS
@@ -3579,7 +4258,6 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
       note: args.note,
     });
   };
-
 
   // =====================================================
   // PROJECT WORKSPACE — ADDRESS SHEET SB / HOME / DROP ASSIGNMENT
@@ -3624,7 +4302,14 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         .replace(/^_+|_+$/g, "") || "splitter";
 
     const getTitle = (asset: any) =>
-      String(asset?.name || asset?.jointName || asset?.label || asset?.assetId || asset?.id || "");
+      String(
+        asset?.name ||
+          asset?.jointName ||
+          asset?.label ||
+          asset?.assetId ||
+          asset?.id ||
+          "",
+      );
 
     const isSplitterDp = (asset: SavedMapAsset | null | undefined) => {
       if (!asset) return false;
@@ -3661,7 +4346,9 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         allMapAssets.find((asset) => {
           if (!isSplitterDp(asset)) return false;
           const title = compact(getTitle(asset));
-          return title === target || title.includes(target) || target.includes(title);
+          return (
+            title === target || title.includes(target) || target.includes(title)
+          );
         }) || null
       );
     };
@@ -3690,7 +4377,10 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
 
     groups.forEach((groupRows, splitterBox) => {
       const matchedHomes = groupRows
-        .map((row) => fullHomeById.get(String(row.homeAsset?.id || "")) || row.homeAsset)
+        .map(
+          (row) =>
+            fullHomeById.get(String(row.homeAsset?.id || "")) || row.homeAsset,
+        )
         .filter(Boolean) as SavedMapAsset[];
 
       const homePoints = matchedHomes
@@ -3703,21 +4393,45 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
       }
 
       const existingSplitter = findExistingSplitter(splitterBox);
-      const splitterId = String(existingSplitter?.id || `sb_${safeId(splitterBox)}`);
+      const splitterId = String(
+        existingSplitter?.id || `sb_${safeId(splitterBox)}`,
+      );
       const centre = existingSplitter
         ? getAssetLatLng(existingSplitter as any) || {
-            lat: homePoints.reduce((sum, point) => sum + point.lat, 0) / homePoints.length,
-            lng: homePoints.reduce((sum, point) => sum + point.lng, 0) / homePoints.length,
+            lat:
+              homePoints.reduce((sum, point) => sum + point.lat, 0) /
+              homePoints.length,
+            lng:
+              homePoints.reduce((sum, point) => sum + point.lng, 0) /
+              homePoints.length,
           }
         : {
-            lat: homePoints.reduce((sum, point) => sum + point.lat, 0) / homePoints.length,
-            lng: homePoints.reduce((sum, point) => sum + point.lng, 0) / homePoints.length,
+            lat:
+              homePoints.reduce((sum, point) => sum + point.lat, 0) /
+              homePoints.length,
+            lng:
+              homePoints.reduce((sum, point) => sum + point.lng, 0) /
+              homePoints.length,
           };
 
-      const splitterRatio = String((existingSplitter as any)?.dpDetails?.splitterRatio || (existingSplitter as any)?.splitterRatio || "1:8");
+      const splitterRatio = String(
+        (existingSplitter as any)?.dpDetails?.splitterRatio ||
+          (existingSplitter as any)?.splitterRatio ||
+          "1:8",
+      );
       const splitterPortsMatch = splitterRatio.match(/1\s*:\s*(\d+)/i);
-      const splitterPorts = splitterPortsMatch ? Number(splitterPortsMatch[1]) : 8;
-      const splitterCount = Math.max(1, Math.ceil(matchedHomes.length / (Number.isFinite(splitterPorts) && splitterPorts > 0 ? splitterPorts : 8)));
+      const splitterPorts = splitterPortsMatch
+        ? Number(splitterPortsMatch[1])
+        : 8;
+      const splitterCount = Math.max(
+        1,
+        Math.ceil(
+          matchedHomes.length /
+            (Number.isFinite(splitterPorts) && splitterPorts > 0
+              ? splitterPorts
+              : 8),
+        ),
+      );
 
       const splitterAsset = markAssetForLiveSync(
         withAssetEditedMetadata(
@@ -3731,7 +4445,9 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
             jointType: "Splitter Box",
             dpType: "SB",
             splitterBox,
-            source: existingSplitter ? (existingSplitter as any).source : "address-sheet-import",
+            source: existingSplitter
+              ? (existingSplitter as any).source
+              : "address-sheet-import",
             lat: centre.lat,
             lng: centre.lng,
             geometry: {
@@ -3740,14 +4456,18 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
             },
             dpDetails: {
               ...((existingSplitter as any)?.dpDetails || {}),
-              closureType: ((existingSplitter as any)?.dpDetails?.closureType || "CBT") as any,
+              closureType: ((existingSplitter as any)?.dpDetails?.closureType ||
+                "CBT") as any,
               connectionsToHomes: matchedHomes.length,
               connectedHomes: matchedHomes.length,
               splitterRatio,
               splitterCount,
               inputFibreCount: splitterCount,
               inputFibresRequired: splitterCount,
-              buildStatus: getDpOperationalStatus(existingSplitter || {}, "Planned"),
+              buildStatus: getDpOperationalStatus(
+                existingSplitter || {},
+                "Planned",
+              ),
               addressSheetAssignment: {
                 source: "address-sheet",
                 splitterBox,
@@ -3785,10 +4505,16 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
           return;
         }
 
-        const matchingRow = groupRows.find((row) => String(row.homeAsset?.id || "") === String(home.id)) || groupRows[index];
+        const matchingRow =
+          groupRows.find(
+            (row) => String(row.homeAsset?.id || "") === String(home.id),
+          ) || groupRows[index];
         const dropTypeText = String(matchingRow?.dropType || "").toLowerCase();
-        const homeConnectionKey = getHomeConnectionKey(home as any) || String(home.id || "");
-        getHomeDropKeys(home as any).forEach((key) => affectedHomeDropKeys.add(key));
+        const homeConnectionKey =
+          getHomeConnectionKey(home as any) || String(home.id || "");
+        getHomeDropKeys(home as any).forEach((key) =>
+          affectedHomeDropKeys.add(key),
+        );
 
         const stampedHome = markAssetForLiveSync(
           withAssetEditedMetadata(
@@ -3844,7 +4570,10 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
             type: "cable",
             cableType: "Drop" as any,
             fibreCount: "1F" as any,
-            installMethod: (dropTypeText.includes("oh") || dropTypeText.includes("overhead") ? "OH" : "Underground") as any,
+            installMethod: (dropTypeText.includes("oh") ||
+            dropTypeText.includes("overhead")
+              ? "OH"
+              : "Underground") as any,
             fromAssetId: splitterId,
             toAssetId: String(home.id || homeConnectionKey),
             fromType: "distribution-point",
@@ -3852,13 +4581,18 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
             dpId: splitterId,
             homeId: homeConnectionKey,
             connectedHomeId: String(home.id || homeConnectionKey),
-            uprn: (home as any).uprn || (home as any).UPRN || (home as any).properties?.UPRN || (home as any).properties?.uprn,
+            uprn:
+              (home as any).uprn ||
+              (home as any).UPRN ||
+              (home as any).properties?.UPRN ||
+              (home as any).properties?.uprn,
             splitterBox,
             source: "address-sheet-import",
             generationMode: "address-sheet-sb-home-drop",
             connectionMode: "address-sheet",
             status: "planned",
-            distanceM: Math.round(getDistanceMeters(centre, homeCoord) * 10) / 10,
+            distanceM:
+              Math.round(getDistanceMeters(centre, homeCoord) * 10) / 10,
             route: [
               [centre.lat, centre.lng],
               [homeCoord.lat, homeCoord.lng],
@@ -3898,7 +4632,9 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
     });
 
     if (!splitterById.size || !updatedHomeById.size) {
-      alert("No SB/home/drop assignments could be created. Check that matched homes have coordinates.");
+      alert(
+        "No SB/home/drop assignments could be created. Check that matched homes have coordinates.",
+      );
       return;
     }
 
@@ -3926,10 +4662,17 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         return updated || home;
       });
       setProjectHomes(updatedProjectHomes);
-      await saveProjectHomes(activeProjectId, stampHomesForActiveArea(updatedProjectHomes), activeProjectAreaName);
+      await saveProjectHomes(
+        activeProjectId,
+        stampHomesForActiveArea(updatedProjectHomes),
+        activeProjectAreaName,
+      );
     }
 
-    const auditTarget = splitterById.values().next().value || activeProjectArea || ({} as SavedMapAsset);
+    const auditTarget =
+      splitterById.values().next().value ||
+      activeProjectArea ||
+      ({} as SavedMapAsset);
     writeAssetAuditLog({
       asset: auditTarget,
       action: "updated",
@@ -3965,14 +4708,19 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
       return;
     }
 
-    const getPointForHome = (asset: SavedMapAsset): { lat: number; lng: number } | null => {
+    const getPointForHome = (
+      asset: SavedMapAsset,
+    ): { lat: number; lng: number } | null => {
       const item = asset as any;
 
       if (typeof item.lat === "number" && typeof item.lng === "number") {
         return { lat: item.lat, lng: item.lng };
       }
 
-      if (asset.geometry?.type === "Point" && Array.isArray(asset.geometry.coordinates)) {
+      if (
+        asset.geometry?.type === "Point" &&
+        Array.isArray(asset.geometry.coordinates)
+      ) {
         const [lat, lng] = asset.geometry.coordinates as any[];
         const nextLat = Number(lat);
         const nextLng = Number(lng);
@@ -3984,29 +4732,42 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
       return null;
     };
 
-    const isSpreadHomeAsset = (asset: SavedMapAsset | null | undefined): boolean => {
-      if (!asset || asset.geometry?.type === "LineString" || isDropCable(asset)) return false;
+    const isSpreadHomeAsset = (
+      asset: SavedMapAsset | null | undefined,
+    ): boolean => {
+      if (!asset || asset.geometry?.type === "LineString" || isDropCable(asset))
+        return false;
       const item = asset as any;
-      const text = [item.assetType, item.type, item.homeType, item.name, item.label]
+      const text = [
+        item.assetType,
+        item.type,
+        item.homeType,
+        item.name,
+        item.label,
+      ]
         .map((value) => String(value ?? "").toLowerCase())
         .join(" ");
 
       return Boolean(
         item.uprn ||
-          item.UPRN ||
-          item.properties?.UPRN ||
-          item.properties?.uprn ||
-          item.homeId ||
-          text.includes("home") ||
-          text.includes("premise") ||
-          text.includes("property") ||
-          text.includes("sdu") ||
-          text.includes("flat"),
+        item.UPRN ||
+        item.properties?.UPRN ||
+        item.properties?.uprn ||
+        item.homeId ||
+        text.includes("home") ||
+        text.includes("premise") ||
+        text.includes("property") ||
+        text.includes("sdu") ||
+        text.includes("flat"),
       );
     };
 
-    const projectHomeIds = new Set((projectHomes ?? []).map((home) => String(home.id)));
-    const areaHomes = (projectHomes.length ? projectHomes : visibleProjectAssets).filter(isSpreadHomeAsset);
+    const projectHomeIds = new Set(
+      (projectHomes ?? []).map((home) => String(home.id)),
+    );
+    const areaHomes = (
+      projectHomes.length ? projectHomes : visibleProjectAssets
+    ).filter(isSpreadHomeAsset);
 
     if (areaHomes.length < 2) {
       alert("No project homes are loaded to auto-spread.");
@@ -4028,7 +4789,9 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         if (processed.has(candidate.id)) return false;
         const candidatePoint = getPointForHome(candidate);
         if (!candidatePoint) return false;
-        return getDistanceMeters(seedPoint, candidatePoint) <= stackThresholdMeters;
+        return (
+          getDistanceMeters(seedPoint, candidatePoint) <= stackThresholdMeters
+        );
       });
 
       if (group.length <= 1) {
@@ -4043,11 +4806,13 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         // Keep the first/canonical home exactly where it is.
         if (index === 0) return;
 
-        const angle = ((Math.PI * 2) / Math.max(group.length - 1, 1)) * (index - 1);
+        const angle =
+          ((Math.PI * 2) / Math.max(group.length - 1, 1)) * (index - 1);
         const latOffset = (Math.sin(angle) * spreadRadiusMeters) / 111_320;
         const lngOffset =
           (Math.cos(angle) * spreadRadiusMeters) /
-          (111_320 * Math.max(Math.cos((seedPoint.lat * Math.PI) / 180), 0.000001));
+          (111_320 *
+            Math.max(Math.cos((seedPoint.lat * Math.PI) / 180), 0.000001));
 
         const nextLat = seedPoint.lat + latOffset;
         const nextLng = seedPoint.lng + lngOffset;
@@ -4083,14 +4848,22 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
     );
 
     if (projectHomes.length > 0) {
-      const updatedProjectHomes = projectHomes.map((home) => movedById.get(home.id) || home);
+      const updatedProjectHomes = projectHomes.map(
+        (home) => movedById.get(home.id) || home,
+      );
       setProjectHomes(updatedProjectHomes);
 
       try {
-        await saveProjectHomes(activeProjectId, stampHomesForActiveArea(updatedProjectHomes), activeProjectAreaName);
+        await saveProjectHomes(
+          activeProjectId,
+          stampHomesForActiveArea(updatedProjectHomes),
+          activeProjectAreaName,
+        );
       } catch (err) {
         console.error("Failed to save auto-spread project homes", err);
-        alert("Homes moved on screen, but saving project homes failed. Check the console before refreshing.");
+        alert(
+          "Homes moved on screen, but saving project homes failed. Check the console before refreshing.",
+        );
         return;
       }
     } else if (projectHomeIds.size === 0) {
@@ -4099,10 +4872,13 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
     }
 
     writeAssetAuditLog({
-      asset: activeProjectArea || (Array.from(movedById.values())[0] as SavedMapAsset),
+      asset:
+        activeProjectArea ||
+        (Array.from(movedById.values())[0] as SavedMapAsset),
       action: "moved",
       reason,
-      comment: "Auto-spread stacked homes within 1.75m into a small 2.5m circle. No homes were deleted and UPRNs were preserved.",
+      comment:
+        "Auto-spread stacked homes within 1.75m into a small 2.5m circle. No homes were deleted and UPRNs were preserved.",
       before: {
         stackThresholdMeters,
         spreadRadiusMeters,
@@ -4113,10 +4889,16 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
       },
     });
 
-    alert(`Auto-spread complete. ${movedById.size} home${movedById.size === 1 ? "" : "s"} moved across ${stackCount} stack${stackCount === 1 ? "" : "s"}.`);
+    alert(
+      `Auto-spread complete. ${movedById.size} home${movedById.size === 1 ? "" : "s"} moved across ${stackCount} stack${stackCount === 1 ? "" : "s"}.`,
+    );
   };
 
-  if (isProjectWorkspaceLoading && activeProjectArea && canManageNetworkDesign) {
+  if (
+    isProjectWorkspaceLoading &&
+    activeProjectArea &&
+    canManageNetworkDesign
+  ) {
     return (
       <div style={projectWorkspaceLoadingOverlay}>
         <div style={projectWorkspaceLoadingCard}>
@@ -4137,7 +4919,12 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
     );
   }
 
-  if (isProjectWorkspaceOpen && activeProjectArea && canManageNetworkDesign && isMobile) {
+  if (
+    isProjectWorkspaceOpen &&
+    activeProjectArea &&
+    canManageNetworkDesign &&
+    isMobile
+  ) {
     return (
       <BuildMobileWorkspaceNotice
         projectName={activeProjectArea.name || "Selected Project"}
@@ -4158,29 +4945,37 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         activeProjectId={activeProjectId}
         onSelectProject={handleSelectProject}
         onBackToMap={() => {
-  setIsProjectWorkspaceOpen(false);
+          setIsProjectWorkspaceOpen(false);
 
-  window.setTimeout(() => {
-    if (!mapRef.current || activeProjectArea?.geometry?.type !== "Polygon") {
-      return;
-    }
+          window.setTimeout(() => {
+            if (
+              !mapRef.current ||
+              activeProjectArea?.geometry?.type !== "Polygon"
+            ) {
+              return;
+            }
 
-    const ring = activeProjectArea.geometry.coordinates?.[0] || [];
-    const bounds = L.latLngBounds(
-      ring
-        .map(([lat, lng]: [number, number]) => [lat, lng] as [number, number])
-        .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng)),
-    );
+            const ring = activeProjectArea.geometry.coordinates?.[0] || [];
+            const bounds = L.latLngBounds(
+              ring
+                .map(
+                  ([lat, lng]: [number, number]) =>
+                    [lat, lng] as [number, number],
+                )
+                .filter(
+                  ([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng),
+                ),
+            );
 
-    if (bounds.isValid()) {
-      mapRef.current.fitBounds(bounds, {
-        padding: [40, 40],
-        maxZoom: 18,
-        animate: false,
-      });
-    }
-  }, 150);
-}}
+            if (bounds.isValid()) {
+              mapRef.current.fitBounds(bounds, {
+                padding: [40, 40],
+                maxZoom: 18,
+                animate: false,
+              });
+            }
+          }, 150);
+        }}
         onOpenTrace={() => {
           setIsProjectWorkspaceOpen(false);
           setIsPanelOpen(true);
@@ -4231,10 +5026,7 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
           Keeps the first view clean and lets the full editor slide out.
           ===================================================== */}
       {!isPanelOpen && (
-        <button
-          onClick={() => setIsPanelOpen(true)}
-          style={drawerToggleButton}
-        >
+        <button onClick={() => setIsPanelOpen(true)} style={drawerToggleButton}>
           ☰ Asset Panel
         </button>
       )}
@@ -4290,9 +5082,56 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
             <summary style={sectionSummary}>Administration</summary>
             <div style={sectionBody}>
               <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.45 }}>
-                Admin-only cleanup tools. These are hidden from Super Users, Build,
-                Survey and Maintenance users. Use typed confirmations before any
-                destructive cleanup.
+                Admin-only cleanup tools. These are hidden from Super Users,
+                Build, Survey and Maintenance users. Use typed confirmations
+                before any destructive cleanup.
+              </div>
+
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: 10,
+                  border: "1px solid #475569",
+                  borderRadius: 10,
+                  background: "#0f172a",
+                }}
+              >
+                <div style={{ fontSize: 12, color: "#e5e7eb", fontWeight: 800 }}>
+                  Polygon bulk selection
+                </div>
+                <div style={{ marginTop: 4, fontSize: 11, color: "#94a3b8", lineHeight: 1.4 }}>
+                  {polygonBulkSelectEnabled
+                    ? `Bulk select is ON. Click polygons on the map to add/remove them. Selected: ${selectedPolygonIds.length}`
+                    : `Bulk select is OFF. Selected: ${selectedPolygonIds.length}`}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setPolygonBulkSelectEnabled((value) => !value)}
+                  style={{
+                    ...btnSecondary,
+                    width: "100%",
+                    marginTop: 8,
+                    background: polygonBulkSelectEnabled ? "#14532d" : "#1f2937",
+                  }}
+                >
+                  {polygonBulkSelectEnabled ? "Polygon Bulk Select: ON" : "Polygon Bulk Select: OFF"}
+                </button>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+                  <button type="button" onClick={handleAdminSelectVisiblePolygons} style={btnSecondary}>
+                    Select Visible
+                  </button>
+                  <button type="button" onClick={handleAdminSelectImportedPolygons} style={btnSecondary}>
+                    Select Imported
+                  </button>
+                  <button type="button" onClick={handleAdminSelectAllPolygons} style={btnSecondary}>
+                    Select All
+                  </button>
+                  <button type="button" onClick={handleAdminClearPolygonSelection} style={btnSecondary}>
+                    Clear Selection
+                  </button>
+                </div>
               </div>
 
               <button
@@ -4301,6 +5140,65 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
                 style={btnDanger}
               >
                 Remove Imported Area Polygons
+              </button>
+
+              <button
+                type="button"
+                onClick={handleAdminRemoveSelectedPolygons}
+                style={btnDanger}
+                disabled={selectedPolygonIds.length === 0}
+                title={
+                  selectedPolygonIds.length > 0
+                    ? "Remove the selected polygon set"
+                    : "Use Polygon Bulk Select or Select Visible/Imported/All first"
+                }
+              >
+                Remove Selected Polygons ({selectedPolygonIds.length})
+              </button>
+
+              <button
+                type="button"
+                onClick={handleAdminRemoveSelectedPolygon}
+                style={btnDanger}
+                disabled={
+                  !currentEditingAsset ||
+                  !isPolygonAreaAsset(currentEditingAsset)
+                }
+                title={
+                  currentEditingAsset && isPolygonAreaAsset(currentEditingAsset)
+                    ? "Remove the currently selected polygon only"
+                    : "Select a polygon first"
+                }
+              >
+                Remove Current Polygon
+              </button>
+
+              <button
+                type="button"
+                onClick={handleAdminRemoveAllPolygons}
+                style={btnDanger}
+              >
+                Remove ALL Polygons
+              </button>
+
+              <button
+                type="button"
+                onClick={handleAdminRepairAreaStamps}
+                style={{
+                  ...btnSecondary,
+                  width: "100%",
+                  marginTop: 8,
+                  background: activeProjectArea ? "#14532d" : "#1f2937",
+                  borderColor: activeProjectArea ? "#22c55e" : "#475569",
+                }}
+                disabled={!activeProjectArea}
+                title={
+                  activeProjectArea
+                    ? "Restamp operational assets inside the selected polygon back to this area"
+                    : "Select an area polygon first"
+                }
+              >
+                Repair Area Stamps for Selected Area
               </button>
 
               <button
@@ -4327,8 +5225,8 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
 
               <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.4 }}>
                 Imported area cleanup removes polygons from the map state first;
-                press Save Map afterwards to persist that cleanup. OR / PIA cleanup
-                writes directly to OR reference storage.
+                press Save Map afterwards to persist that cleanup. OR / PIA
+                cleanup writes directly to OR reference storage.
               </div>
             </div>
           </details>
@@ -4355,7 +5253,6 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
           </button>
         )}
 
-
         <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 10 }}>
           Scope:{" "}
           {activeProjectArea
@@ -4366,484 +5263,454 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         {canUseSurveyTools && (
           <details style={card}>
             <summary style={sectionSummary}>Survey Cleanup</summary>
-          <div style={sectionBody}>
-            <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.4 }}>
-              Select wrong imported homes on the map and delete them in one
-              batch. This does not touch DPs, joints, feeder/link cables,
-              project areas or PIA/Openreach overlay.
-            </div>
-
-            <button
-              type="button"
-              onClick={handleToggleSurveyDeleteHomesMode}
-              style={
-                mapMode === "survey-delete-homes" ? btnDanger : btnSecondary
-              }
-            >
-              {mapMode === "survey-delete-homes"
-                ? "✓ Delete Homes Mode Active"
-                : "Delete Wrong Homes"}
-            </button>
-
-            {mapMode === "survey-delete-homes" ? (
-              <div
-                style={{
-                  background: "#450a0a",
-                  border: "1px solid #ef4444",
-                  borderRadius: 10,
-                  padding: 10,
-                  fontSize: 12,
-                  color: "#fee2e2",
-                }}
-              >
-                <div style={{ fontWeight: 800, marginBottom: 4 }}>
-                  {selectedSurveyDeleteHomeIds.length} home
-                  {selectedSurveyDeleteHomeIds.length === 1 ? "" : "s"} selected
-                </div>
-                <div>
-                  Click incorrect homes to select/unselect them, then bulk
-                  delete.
-                </div>
+            <div style={sectionBody}>
+              <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.4 }}>
+                Select wrong imported homes on the map and delete them in one
+                batch. This does not touch DPs, joints, feeder/link cables,
+                project areas or PIA/Openreach overlay.
               </div>
-            ) : null}
 
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button
                 type="button"
-                onClick={handleDeleteSelectedSurveyHomes}
-                style={btnDanger}
-                disabled={selectedSurveyDeleteHomeIds.length === 0}
+                onClick={handleToggleSurveyDeleteHomesMode}
+                style={
+                  mapMode === "survey-delete-homes" ? btnDanger : btnSecondary
+                }
               >
-                Delete Selected Homes
+                {mapMode === "survey-delete-homes"
+                  ? "✓ Delete Homes Mode Active"
+                  : "Delete Wrong Homes"}
               </button>
-              <button
-                type="button"
-                onClick={handleClearSurveyDeleteHomeSelection}
-                style={btnSecondary}
-                disabled={selectedSurveyDeleteHomeIds.length === 0}
-              >
-                Clear Selection
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  handleClearSurveyDeleteHomeSelection();
-                  setMapMode("pick");
-                }}
-                style={btnSecondary}
-              >
-                Exit
-              </button>
+
+              {mapMode === "survey-delete-homes" ? (
+                <div
+                  style={{
+                    background: "#450a0a",
+                    border: "1px solid #ef4444",
+                    borderRadius: 10,
+                    padding: 10,
+                    fontSize: 12,
+                    color: "#fee2e2",
+                  }}
+                >
+                  <div style={{ fontWeight: 800, marginBottom: 4 }}>
+                    {selectedSurveyDeleteHomeIds.length} home
+                    {selectedSurveyDeleteHomeIds.length === 1 ? "" : "s"}{" "}
+                    selected
+                  </div>
+                  <div>
+                    Click incorrect homes to select/unselect them, then bulk
+                    delete.
+                  </div>
+                </div>
+              ) : null}
+
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={handleDeleteSelectedSurveyHomes}
+                  style={btnDanger}
+                  disabled={selectedSurveyDeleteHomeIds.length === 0}
+                >
+                  Delete Selected Homes
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearSurveyDeleteHomeSelection}
+                  style={btnSecondary}
+                  disabled={selectedSurveyDeleteHomeIds.length === 0}
+                >
+                  Clear Selection
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleClearSurveyDeleteHomeSelection();
+                    setMapMode("pick");
+                  }}
+                  style={btnSecondary}
+                >
+                  Exit
+                </button>
+              </div>
             </div>
-          </div>
-        </details>
+          </details>
         )}
 
         {canUseSurveyTools && (
           <details style={card}>
-          <summary style={sectionSummary}>Home Reassignment</summary>
-          <div style={sectionBody}>
-            <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.4 }}>
-              Move UPRNs/homes from one DP to another without touching feeder or
-              link cables.
-            </div>
-
-            <button
-              type="button"
-              onClick={handleToggleMoveHomesMode}
-              style={mapMode === "move-homes" ? btnPrimary : btnSecondary}
-            >
-              {mapMode === "move-homes"
-                ? "✓ Move Homes Active"
-                : "Move Homes to DP"}
-            </button>
-
-            {mapMode === "move-homes" ? (
-              <div
-                style={{
-                  background: "#0f172a",
-                  border: "1px solid #334155",
-                  borderRadius: 10,
-                  padding: 10,
-                  fontSize: 12,
-                  color: "#dbeafe",
-                }}
-              >
-                <div style={{ fontWeight: 800, marginBottom: 4 }}>
-                  {selectedMoveHomeIds.length} home
-                  {selectedMoveHomeIds.length === 1 ? "" : "s"} selected
-                </div>
-                <div>
-                  Click UPRNs/homes to select them, then click the target DP.
-                </div>
+            <summary style={sectionSummary}>Home Reassignment</summary>
+            <div style={sectionBody}>
+              <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.4 }}>
+                Move UPRNs/homes from one DP to another without touching feeder
+                or link cables.
               </div>
-            ) : null}
 
-            <div style={{ display: "flex", gap: 8 }}>
               <button
                 type="button"
-                onClick={handleClearMoveHomeSelection}
-                style={btnSecondary}
-                disabled={selectedMoveHomeIds.length === 0}
+                onClick={handleToggleMoveHomesMode}
+                style={mapMode === "move-homes" ? btnPrimary : btnSecondary}
               >
-                Clear Selection
+                {mapMode === "move-homes"
+                  ? "✓ Move Homes Active"
+                  : "Move Homes to DP"}
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  handleClearMoveHomeSelection();
-                  setMapMode("pick");
-                }}
-                style={btnSecondary}
-              >
-                Exit
-              </button>
+
+              {mapMode === "move-homes" ? (
+                <div
+                  style={{
+                    background: "#0f172a",
+                    border: "1px solid #334155",
+                    borderRadius: 10,
+                    padding: 10,
+                    fontSize: 12,
+                    color: "#dbeafe",
+                  }}
+                >
+                  <div style={{ fontWeight: 800, marginBottom: 4 }}>
+                    {selectedMoveHomeIds.length} home
+                    {selectedMoveHomeIds.length === 1 ? "" : "s"} selected
+                  </div>
+                  <div>
+                    Click UPRNs/homes to select them, then click the target DP.
+                  </div>
+                </div>
+              ) : null}
+
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={handleClearMoveHomeSelection}
+                  style={btnSecondary}
+                  disabled={selectedMoveHomeIds.length === 0}
+                >
+                  Clear Selection
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleClearMoveHomeSelection();
+                    setMapMode("pick");
+                  }}
+                  style={btnSecondary}
+                >
+                  Exit
+                </button>
+              </div>
             </div>
-          </div>
-        </details>
+          </details>
         )}
 
         {canUseSurveyTools && (
           <details
             open={Boolean(
               editingAssetId ||
-                pickedLocation ||
-                mapMode === "draw-area" ||
-                draftAreaPoints.length > 0
+              pickedLocation ||
+              mapMode === "draw-area" ||
+              draftAreaPoints.length > 0,
             )}
             style={card}
           >
-          <summary style={sectionSummary}>
-            {editingAssetId ? "Asset Details" : "Asset Editor"}
-          </summary>
-          <div style={sectionBody}>
-            <div style={label}>Asset Type</div>
-            <select
-              value={assetType}
-              onChange={(e) => setAssetType(e.target.value as AssetType)}
-              style={input}
-              disabled={!!editingAssetId}
-            >
-              <option value="ag-joint">AG Joint</option>
-              <option value="street-cab">Street Cab</option>
-              <option value="pole">Pole</option>
-              <option value="distribution-point">Distribution Point</option>
-              <option value="chamber">Chamber</option>
-              <option value="home">Home</option>
-              <option value="area">Polygon Area</option>
-              <option value="cable">Cable</option>
-            </select>
+            <summary style={sectionSummary}>
+              {editingAssetId ? "Asset Details" : "Asset Editor"}
+            </summary>
+            <div style={sectionBody}>
+              <div style={label}>Asset Type</div>
+              <select
+                value={assetType}
+                onChange={(e) => setAssetType(e.target.value as AssetType)}
+                style={input}
+                disabled={!!editingAssetId}
+              >
+                <option value="ag-joint">AG Joint</option>
+                <option value="street-cab">Street Cab</option>
+                <option value="pole">Pole</option>
+                <option value="distribution-point">Distribution Point</option>
+                <option value="chamber">Chamber</option>
+                <option value="home">Home</option>
+                <option value="area">Polygon Area</option>
+                <option value="cable">Cable</option>
+              </select>
 
-            <div style={{ ...label, marginTop: 10 }}>
-              {assetType === "cable" ? "Cable Name" : "Name"}
-            </div>
-            <input
-              value={jointName}
-              onChange={(e) => setJointName(e.target.value)}
-              style={input}
-              placeholder="Asset name"
-            />
+              <div style={{ ...label, marginTop: 10 }}>
+                {assetType === "cable" ? "Cable Name" : "Name"}
+              </div>
+              <input
+                value={jointName}
+                onChange={(e) => setJointName(e.target.value)}
+                style={input}
+                placeholder="Asset name"
+              />
 
-            {assetType === "cable" ? (
-              <>
-                <div style={{ ...label, marginTop: 10 }}>PIA NOI Number</div>
-                <input
-                  value={cablePiaNoiNumber}
-                  onChange={(e) => setCablePiaNoiNumber(e.target.value)}
-                  style={input}
-                  placeholder="e.g. NOI-123456"
-                />
+              {assetType === "cable" ? (
+                <>
+                  <div style={{ ...label, marginTop: 10 }}>PIA NOI Number</div>
+                  <input
+                    value={cablePiaNoiNumber}
+                    onChange={(e) => setCablePiaNoiNumber(e.target.value)}
+                    style={input}
+                    placeholder="e.g. NOI-123456"
+                  />
 
-                <div style={{ ...label, marginTop: 10 }}>Cable Type</div>
-                <select
-                  value={cableType}
-                  onChange={(e) => setCableType(e.target.value as CableType)}
-                  style={input}
-                >
-                  <option>Feeder Cable</option>
-                  <option>Link Cable</option>
-                  <option>Distribution Cable</option>
-                  <option>Drop</option>
-                  <option>Spine Cable</option>
-                </select>
-
-                <div style={{ ...label, marginTop: 10 }}>Fibre Count</div>
-                <select
-                  value={fibreCount}
-                  onChange={(e) => setFibreCount(e.target.value as FibreCount)}
-                  style={input}
-                >
-                  <option>12F</option>
-                  <option>24F</option>
-                  <option>48F</option>
-                  <option>96F</option>
-                  <option>144F</option>
-                  <option>288F</option>
-                </select>
-
-                <div style={{ ...label, marginTop: 10 }}>Used Fibres</div>
-                <input
-                  type="number"
-                  min={0}
-                  max={Number(String(fibreCount).replace(/\D/g, "")) || 288}
-                  value={allocatedInputFibres.length}
-                  onChange={(e) => {
-                    const max =
-                      Number(String(fibreCount).replace(/\D/g, "")) || 288;
-                    const next = Math.max(
-                      0,
-                      Math.min(max, Number(e.target.value) || 0),
-                    );
-                    setAllocatedInputFibres(
-                      Array.from({ length: next }, (_, index) => index + 1),
-                    );
-                  }}
-                  style={input}
-                />
-
-                <div style={{ ...label, marginTop: 10 }}>Install Method</div>
-                <select
-                  value={installMethod}
-                  onChange={(e) =>
-                    setInstallMethod(e.target.value as InstallMethod)
-                  }
-                  style={input}
-                >
-                  <option>Underground</option>
-                  <option>Overhead</option>
-                  <option>Existing Duct</option>
-                  <option>New Duct</option>
-                </select>
-
-                <div style={{ ...label, marginTop: 10 }}>
-                  Parent / Through Cable
-                </div>
-                <select
-                  value={parentCableId || ""}
-                  onChange={(e) =>
-                    setParentCableId(e.target.value || undefined)
-                  }
-                  style={input}
-                >
-                  <option value="">No parent cable</option>
-                  {availableParentCablesForBranchAllocation.map((cable) => (
-                    <option key={cable.id} value={cable.id}>
-                      {cable.name} — {cable.fibreCount || "Unknown size"}
-                    </option>
-                  ))}
-                </select>
-
-                {!editingAssetId && mapMode !== "draw-cable" ? (
-                  <button
-                    onClick={startCableDrawing}
-                    style={{ ...btnPrimary, marginTop: 10, width: "100%" }}
+                  <div style={{ ...label, marginTop: 10 }}>Cable Type</div>
+                  <select
+                    value={cableType}
+                    onChange={(e) => setCableType(e.target.value as CableType)}
+                    style={input}
                   >
-                    Start Drawing Cable
-                  </button>
-                ) : null}
-              </>
-            ) : null}
+                    <option>Feeder Cable</option>
+                    <option>Link Cable</option>
+                    <option>Distribution Cable</option>
+                    <option>Drop</option>
+                    <option>Spine Cable</option>
+                  </select>
 
-            {assetType === "area" ? (
-              <>
-                <div style={{ ...label, marginTop: 10 }}>Polygon Level</div>
-                <select
-                  value={areaLevel}
-                  onChange={(e) => setAreaLevel(e.target.value as AreaLevel)}
-                  style={input}
-                >
-                  <option value="L0">L0</option>
-                  <option value="L1">L1</option>
-                  <option value="L2">L2</option>
-                  <option value="L3">L3</option>
-                </select>
-              </>
-            ) : null}
-
-            {assetType === "ag-joint" ? (
-              <>
-                <div style={{ ...label, marginTop: 10 }}>Joint Type</div>
-                <select
-                  value={jointType}
-                  onChange={(e) => setJointType(e.target.value)}
-                  style={input}
-                >
-                  <option>CMJ (12 trays)</option>
-                  <option>MMJ (20 trays)</option>
-                  <option>LMJ (40 trays)</option>
-                </select>
-              </>
-            ) : null}
-
-            <AssetDetailsSidebarSections
-              assetType={assetType}
-              poleDetails={poleDetails}
-              chamberDetails={chamberDetails}
-              dpDetails={dpDetails}
-              onChangePoleDetails={setPoleDetails}
-              onChangeChamberDetails={setChamberDetails}
-              onChangeDpDetails={setDpDetails}
-              onRebuildThroughCableReservations={
-                handleRebuildThroughCableReservations
-              }
-              connectedHomes={connectedHomesForSelectedDp}
-              availableThroughCables={availableParentCablesForBranchAllocation}
-              allDistributionPoints={allDistributionPointsForAfnAllocation}
-              allAssets={allMapAssets}
-              currentDpId={editingAssetId}
-              inputStyle={input}
-              labelStyle={{ ...label, marginTop: 10 }}
-              secondaryButtonStyle={btnSecondary}
-            />
-
-            <div style={{ ...label, marginTop: 10 }}>Notes</div>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              style={{ ...input, height: 80 }}
-            />
-
-            {editingAssetId ? (
-              <>
-                {currentEditingAsset?.assetType === "ag-joint" ? (
-                  <button
-                    onClick={() =>
-                      currentEditingAsset && onOpenJoint(currentEditingAsset)
+                  <div style={{ ...label, marginTop: 10 }}>Fibre Count</div>
+                  <select
+                    value={fibreCount}
+                    onChange={(e) =>
+                      setFibreCount(e.target.value as FibreCount)
                     }
-                    style={{ ...btnPrimary, marginTop: 10 }}
+                    style={input}
                   >
-                    Open Joint Editor
-                  </button>
-                ) : null}
+                    <option>12F</option>
+                    <option>24F</option>
+                    <option>48F</option>
+                    <option>96F</option>
+                    <option>144F</option>
+                    <option>288F</option>
+                  </select>
 
-                {currentEditingAsset?.assetType === "street-cab" ? (
-                  <button
-                    onClick={() =>
-                      currentEditingAsset &&
-                      setOpenStreetCabAsset(currentEditingAsset)
-                    }
-                    style={{ ...btnPrimary, marginTop: 10 }}
-                  >
-                    Open Street Cab Editor
-                  </button>
-                ) : null}
-
-                {currentEditingAsset?.assetType === "distribution-point" ? (
-                  <button
-                    onClick={() =>
-                      currentEditingAsset &&
-                      setOpenDistributionPointAsset(currentEditingAsset)
-                    }
-                    style={{ ...btnPrimary, marginTop: 10 }}
-                  >
-                    Open DP Operations Editor
-                  </button>
-                ) : null}
-
-                <AssetActivityMiniSummary asset={currentEditingAsset} />
-                <button
-                  onClick={() => openMaintenanceHistory(currentEditingAsset)}
-                  style={{ ...btnSecondary, marginTop: 10 }}
-                >
-                  Changes / Maintenance History
-                </button>
-              </>
-            ) : null}
-
-            {!editingAssetId ? (
-              <>
-                <div style={{ ...label, marginTop: 12 }}>Selected Location</div>
-                <div style={{ color: "#9ca3af" }}>
-                  {pickedLocation
-                    ? `${pickedLocation.lat.toFixed(5)}, ${pickedLocation.lng.toFixed(5)}`
-                    : "Right click the map to choose what you want to create here."}
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    marginTop: 10,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <button
-                    onClick={() => setMapMode("pick")}
-                    style={mapMode === "pick" ? btnPrimary : btnSecondary}
-                  >
-                    Pick Location
-                  </button>
-                  <button
-                    onClick={handleSaveJoint}
-                    style={btnPrimary}
-                    disabled={
-                      !pickedLocation &&
-                      assetType !== "cable" &&
-                      assetType !== "area"
-                    }
-                  >
-                    Save Asset
-                  </button>
-                  <button onClick={openCableModalForNew} style={btnSecondary}>
-                    Prepare Cable
-                  </button>
-                  <button
-                    onClick={() => {
-                      setAssetType("area");
-                      setJointType("Polygon Area");
-                      setJointName(
-                        `Area ${(savedJoints ?? []).filter((asset) => asset.assetType === "area").length + 1}`,
+                  <div style={{ ...label, marginTop: 10 }}>Used Fibres</div>
+                  <input
+                    type="number"
+                    min={0}
+                    max={Number(String(fibreCount).replace(/\D/g, "")) || 288}
+                    value={allocatedInputFibres.length}
+                    onChange={(e) => {
+                      const max =
+                        Number(String(fibreCount).replace(/\D/g, "")) || 288;
+                      const next = Math.max(
+                        0,
+                        Math.min(max, Number(e.target.value) || 0),
                       );
-                      setPickedLocation(null);
-                      setDraftCablePoints([]);
-                      setMapMode("draw-area");
+                      setAllocatedInputFibres(
+                        Array.from({ length: next }, (_, index) => index + 1),
+                      );
                     }}
-                    style={btnSecondary}
+                    style={input}
+                  />
+
+                  <div style={{ ...label, marginTop: 10 }}>Install Method</div>
+                  <select
+                    value={installMethod}
+                    onChange={(e) =>
+                      setInstallMethod(e.target.value as InstallMethod)
+                    }
+                    style={input}
                   >
-                    Prepare Area
+                    <option>Underground</option>
+                    <option>Overhead</option>
+                    <option>Existing Duct</option>
+                    <option>New Duct</option>
+                  </select>
+
+                  <div style={{ ...label, marginTop: 10 }}>
+                    Parent / Through Cable
+                  </div>
+                  <select
+                    value={parentCableId || ""}
+                    onChange={(e) =>
+                      setParentCableId(e.target.value || undefined)
+                    }
+                    style={input}
+                  >
+                    <option value="">No parent cable</option>
+                    {availableParentCablesForBranchAllocation.map((cable) => (
+                      <option key={cable.id} value={cable.id}>
+                        {cable.name} — {cable.fibreCount || "Unknown size"}
+                      </option>
+                    ))}
+                  </select>
+
+                  {!editingAssetId && mapMode !== "draw-cable" ? (
+                    <button
+                      onClick={startCableDrawing}
+                      style={{ ...btnPrimary, marginTop: 10, width: "100%" }}
+                    >
+                      Start Drawing Cable
+                    </button>
+                  ) : null}
+                </>
+              ) : null}
+
+              {assetType === "area" ? (
+                <>
+                  <div style={{ ...label, marginTop: 10 }}>Polygon Level</div>
+                  <select
+                    value={areaLevel}
+                    onChange={(e) => setAreaLevel(e.target.value as AreaLevel)}
+                    style={input}
+                  >
+                    <option value="L0">L0</option>
+                    <option value="L1">L1</option>
+                    <option value="L2">L2</option>
+                    <option value="L3">L3</option>
+                  </select>
+                </>
+              ) : null}
+
+              {assetType === "ag-joint" ? (
+                <>
+                  <div style={{ ...label, marginTop: 10 }}>Joint Type</div>
+                  <select
+                    value={jointType}
+                    onChange={(e) => setJointType(e.target.value)}
+                    style={input}
+                  >
+                    <option>CMJ (12 trays)</option>
+                    <option>MMJ (20 trays)</option>
+                    <option>LMJ (40 trays)</option>
+                  </select>
+                </>
+              ) : null}
+
+              <AssetDetailsSidebarSections
+                assetType={assetType}
+                poleDetails={poleDetails}
+                chamberDetails={chamberDetails}
+                dpDetails={dpDetails}
+                onChangePoleDetails={setPoleDetails}
+                onChangeChamberDetails={setChamberDetails}
+                onChangeDpDetails={setDpDetails}
+                onRebuildThroughCableReservations={
+                  handleRebuildThroughCableReservations
+                }
+                connectedHomes={connectedHomesForSelectedDp}
+                availableThroughCables={
+                  availableParentCablesForBranchAllocation
+                }
+                allDistributionPoints={allDistributionPointsForAfnAllocation}
+                allAssets={allMapAssets}
+                currentDpId={editingAssetId}
+                inputStyle={input}
+                labelStyle={{ ...label, marginTop: 10 }}
+                secondaryButtonStyle={btnSecondary}
+              />
+
+              <div style={{ ...label, marginTop: 10 }}>Notes</div>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                style={{ ...input, height: 80 }}
+              />
+
+              {editingAssetId ? (
+                <>
+                  {currentEditingAsset?.assetType === "ag-joint" ? (
+                    <button
+                      onClick={() =>
+                        currentEditingAsset && onOpenJoint(currentEditingAsset)
+                      }
+                      style={{ ...btnPrimary, marginTop: 10 }}
+                    >
+                      Open Joint Editor
+                    </button>
+                  ) : null}
+
+                  {currentEditingAsset?.assetType === "street-cab" ? (
+                    <button
+                      onClick={() =>
+                        currentEditingAsset &&
+                        setOpenStreetCabAsset(currentEditingAsset)
+                      }
+                      style={{ ...btnPrimary, marginTop: 10 }}
+                    >
+                      Open Street Cab Editor
+                    </button>
+                  ) : null}
+
+                  {currentEditingAsset?.assetType === "distribution-point" ? (
+                    <button
+                      onClick={() =>
+                        currentEditingAsset &&
+                        setOpenDistributionPointAsset(currentEditingAsset)
+                      }
+                      style={{ ...btnPrimary, marginTop: 10 }}
+                    >
+                      Open DP Operations Editor
+                    </button>
+                  ) : null}
+
+                  <AssetActivityMiniSummary asset={currentEditingAsset} />
+                  <button
+                    onClick={() => openMaintenanceHistory(currentEditingAsset)}
+                    style={{ ...btnSecondary, marginTop: 10 }}
+                  >
+                    Changes / Maintenance History
                   </button>
-                </div>
-              </>
-            ) : null}
+                </>
+              ) : null}
 
-            {editingAssetId ? (
-              <div
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  marginTop: 10,
-                  flexWrap: "wrap",
-                }}
-              >
-                <button onClick={() => handleSaveEdits()} style={btnPrimary}>
-                  Save Changes
-                </button>
-                <button onClick={resetEditor} style={btnSecondary}>
-                  Cancel Edit
-                </button>
-              </div>
-            ) : null}
+              {!editingAssetId ? (
+                <>
+                  <div style={{ ...label, marginTop: 12 }}>
+                    Selected Location
+                  </div>
+                  <div style={{ color: "#9ca3af" }}>
+                    {pickedLocation
+                      ? `${pickedLocation.lat.toFixed(5)}, ${pickedLocation.lng.toFixed(5)}`
+                      : "Right click the map to choose what you want to create here."}
+                  </div>
 
-            {mapMode === "draw-area" ? (
-              <div
-                style={{
-                  marginTop: 14,
-                  paddingTop: 12,
-                  borderTop: "1px solid #334155",
-                }}
-              >
-                <div style={label}>
-                  {editingAssetId
-                    ? "Edit Polygon Area"
-                    : "Polygon Area Drawing"}
-                </div>
-                <div style={{ color: "#9ca3af" }}>
-                  Click around the boundary. Drag blue area point markers to
-                  adjust it.
-                </div>
-                <div style={{ marginTop: 8, color: "#e5e7eb" }}>
-                  Points: {draftAreaPoints.length}
-                </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      marginTop: 10,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <button
+                      onClick={() => setMapMode("pick")}
+                      style={mapMode === "pick" ? btnPrimary : btnSecondary}
+                    >
+                      Pick Location
+                    </button>
+                    <button
+                      onClick={handleSaveJoint}
+                      style={btnPrimary}
+                      disabled={
+                        !pickedLocation &&
+                        assetType !== "cable" &&
+                        assetType !== "area"
+                      }
+                    >
+                      Save Asset
+                    </button>
+                    <button onClick={openCableModalForNew} style={btnSecondary}>
+                      Prepare Cable
+                    </button>
+                    <button
+                      onClick={() => {
+                        setAssetType("area");
+                        setJointType("Polygon Area");
+                        setJointName(
+                          `Area ${(savedJoints ?? []).filter((asset) => asset.assetType === "area").length + 1}`,
+                        );
+                        setPickedLocation(null);
+                        setDraftCablePoints([]);
+                        setMapMode("draw-area");
+                      }}
+                      style={btnSecondary}
+                    >
+                      Prepare Area
+                    </button>
+                  </div>
+                </>
+              ) : null}
+
+              {editingAssetId ? (
                 <div
                   style={{
                     display: "flex",
@@ -4852,166 +5719,211 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
                     flexWrap: "wrap",
                   }}
                 >
-                  <button
-                    onClick={handleUndoAreaPoint}
-                    style={btnSecondary}
-                    disabled={draftAreaPoints.length === 0}
-                  >
-                    Undo
+                  <button onClick={() => handleSaveEdits()} style={btnPrimary}>
+                    Save Changes
                   </button>
-                  <button
-                    onClick={handleClearArea}
-                    style={btnSecondary}
-                    disabled={draftAreaPoints.length === 0}
-                  >
-                    Clear
+                  <button onClick={resetEditor} style={btnSecondary}>
+                    Cancel Edit
                   </button>
-                  {!editingAssetId ? (
-                    <button
-                      onClick={handleFinishArea}
-                      style={btnPrimary}
-                      disabled={draftAreaPoints.length < 3}
-                    >
-                      Finish Area
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => handleSaveEdits()}
-                      style={btnPrimary}
-                      disabled={draftAreaPoints.length < 3}
-                    >
-                      Save Area
-                    </button>
-                  )}
                 </div>
-              </div>
-            ) : null}
+              ) : null}
 
-            {mapMode === "draw-cable" ? (
-              <div
-                style={{
-                  marginTop: 14,
-                  paddingTop: 12,
-                  borderTop: "1px solid #334155",
-                }}
-              >
-                <div style={label}>
-                  {editingAssetId ? "Edit Cable Route" : "Cable Drawing"}
-                </div>
-                <div style={{ color: "#9ca3af" }}>
-                  Click the map to add points. Drag points to move them. Click a
-                  segment to insert a point.
-                </div>
-                <div style={{ marginTop: 8, color: "#e5e7eb" }}>
-                  Points: {draftCablePoints.length}
-                </div>
-                <div style={{ fontWeight: 700, color: "#fbbf24" }}>
-                  Length: {formatDistance(draftCableDistance)}
-                </div>
+              {mapMode === "draw-area" ? (
                 <div
                   style={{
-                    display: "flex",
-                    gap: 8,
-                    marginTop: 10,
-                    flexWrap: "wrap",
+                    marginTop: 14,
+                    paddingTop: 12,
+                    borderTop: "1px solid #334155",
                   }}
                 >
-                  <button
-                    onClick={handleUndoCablePoint}
-                    style={btnSecondary}
-                    disabled={draftCablePoints.length === 0}
+                  <div style={label}>
+                    {editingAssetId
+                      ? "Edit Polygon Area"
+                      : "Polygon Area Drawing"}
+                  </div>
+                  <div style={{ color: "#9ca3af" }}>
+                    Click around the boundary. Drag blue area point markers to
+                    adjust it.
+                  </div>
+                  <div style={{ marginTop: 8, color: "#e5e7eb" }}>
+                    Points: {draftAreaPoints.length}
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      marginTop: 10,
+                      flexWrap: "wrap",
+                    }}
                   >
-                    Undo
-                  </button>
-                  <button
-                    onClick={handleClearCable}
-                    style={btnSecondary}
-                    disabled={draftCablePoints.length === 0}
-                  >
-                    Clear
-                  </button>
-                  {!editingAssetId ? (
                     <button
-                      onClick={handleFinishCable}
-                      style={btnPrimary}
-                      disabled={draftCablePoints.length < 2 || isRoutingCable}
+                      onClick={handleUndoAreaPoint}
+                      style={btnSecondary}
+                      disabled={draftAreaPoints.length === 0}
                     >
-                      {isRoutingCable ? "Routing Cable..." : "Finish Cable"}
+                      Undo
                     </button>
-                  ) : (
                     <button
-                      onClick={() => handleSaveEdits()}
-                      style={btnPrimary}
-                      disabled={draftCablePoints.length < 2 || isRoutingCable}
+                      onClick={handleClearArea}
+                      style={btnSecondary}
+                      disabled={draftAreaPoints.length === 0}
                     >
-                      {isRoutingCable ? "Routing Cable..." : "Save Route"}
+                      Clear
                     </button>
-                  )}
+                    {!editingAssetId ? (
+                      <button
+                        onClick={handleFinishArea}
+                        style={btnPrimary}
+                        disabled={draftAreaPoints.length < 3}
+                      >
+                        Finish Area
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleSaveEdits()}
+                        style={btnPrimary}
+                        disabled={draftAreaPoints.length < 3}
+                      >
+                        Save Area
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ) : null}
-          </div>
-        </details>
+              ) : null}
+
+              {mapMode === "draw-cable" ? (
+                <div
+                  style={{
+                    marginTop: 14,
+                    paddingTop: 12,
+                    borderTop: "1px solid #334155",
+                  }}
+                >
+                  <div style={label}>
+                    {editingAssetId ? "Edit Cable Route" : "Cable Drawing"}
+                  </div>
+                  <div style={{ color: "#9ca3af" }}>
+                    Click the map to add points. Drag points to move them. Click
+                    a segment to insert a point.
+                  </div>
+                  <div style={{ marginTop: 8, color: "#e5e7eb" }}>
+                    Points: {draftCablePoints.length}
+                  </div>
+                  <div style={{ fontWeight: 700, color: "#fbbf24" }}>
+                    Length: {formatDistance(draftCableDistance)}
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      marginTop: 10,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <button
+                      onClick={handleUndoCablePoint}
+                      style={btnSecondary}
+                      disabled={draftCablePoints.length === 0}
+                    >
+                      Undo
+                    </button>
+                    <button
+                      onClick={handleClearCable}
+                      style={btnSecondary}
+                      disabled={draftCablePoints.length === 0}
+                    >
+                      Clear
+                    </button>
+                    {!editingAssetId ? (
+                      <button
+                        onClick={handleFinishCable}
+                        style={btnPrimary}
+                        disabled={draftCablePoints.length < 2 || isRoutingCable}
+                      >
+                        {isRoutingCable ? "Routing Cable..." : "Finish Cable"}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleSaveEdits()}
+                        style={btnPrimary}
+                        disabled={draftCablePoints.length < 2 || isRoutingCable}
+                      >
+                        {isRoutingCable ? "Routing Cable..." : "Save Route"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </details>
         )}
 
         {canManageNetworkDesign && (
           <details style={card}>
-          <summary style={sectionSummary}>Import / Export Saved Map</summary>
-          <div style={sectionBody}>
-            <input type="file" accept=".json" onChange={handleImportJson} />
+            <summary style={sectionSummary}>Import / Export Saved Map</summary>
+            <div style={sectionBody}>
+              <input type="file" accept=".json" onChange={handleImportJson} />
 
-            <button onClick={handleExportJson} style={btnSecondary}>
-              Export JSON
-            </button>
+              <button onClick={handleExportJson} style={btnSecondary}>
+                Export JSON
+              </button>
 
-            <button onClick={handleExportGeoJson} style={btnSecondary}>
-              Export GeoJSON
-            </button>
+              <button onClick={handleExportGeoJson} style={btnSecondary}>
+                Export GeoJSON
+              </button>
 
-            <button
-              onClick={handleLoadOsmHomes}
-              style={btnPrimary}
-              disabled={isLoadingOsmHomes}
-            >
-              {isLoadingOsmHomes
-                ? "Loading OSM Homes..."
-                : "Load OSM Homes in View"}
-            </button>
-
-            <div style={{ marginTop: 10 }}>
-              <div style={label}>Load GeoJSON Map Assets</div>
-              <input
-                type="file"
-                accept=".geojson,.json,application/geo+json,application/json"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) loadAnyGeoJsonMapAssets(file);
-                  e.target.value = "";
-                }}
-              />
-              <div
-                style={{ fontSize: "0.78rem", color: "#94a3b8", marginTop: 4 }}
+              <button
+                onClick={handleLoadOsmHomes}
+                style={btnPrimary}
+                disabled={isLoadingOsmHomes}
               >
-                One importer for DPs / AFNs / CBTs, poles, chambers, street
-                cabs, areas, cables, PIA routes and UPRN homes.
+                {isLoadingOsmHomes
+                  ? "Loading OSM Homes..."
+                  : "Load OSM Homes in View"}
+              </button>
+
+              <div style={{ marginTop: 10 }}>
+                <div style={label}>Load GeoJSON Map Assets</div>
+                <input
+                  type="file"
+                  accept=".geojson,.json,application/geo+json,application/json"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) loadAnyGeoJsonMapAssets(file);
+                    e.target.value = "";
+                  }}
+                />
+                <div
+                  style={{
+                    fontSize: "0.78rem",
+                    color: "#94a3b8",
+                    marginTop: 4,
+                  }}
+                >
+                  One importer for DPs / AFNs / CBTs, poles, chambers, street
+                  cabs, areas, cables, PIA routes and UPRN homes.
+                </div>
+              </div>
+
+              {isLoadingProjectHomes && (
+                <div
+                  style={{
+                    fontSize: "0.82rem",
+                    color: "#fbbf24",
+                    marginTop: 8,
+                  }}
+                >
+                  Loading saved homes for this project...
+                </div>
+              )}
+
+              <div style={{ fontSize: "0.82rem", color: "#cbd5e1" }}>
+                Zoom into the estate/road first, then load buildings or UPRN
+                GeoJSON homes. Imported points are saved once in project home
+                chunks.
               </div>
             </div>
-
-            {isLoadingProjectHomes && (
-              <div
-                style={{ fontSize: "0.82rem", color: "#fbbf24", marginTop: 8 }}
-              >
-                Loading saved homes for this project...
-              </div>
-            )}
-
-            <div style={{ fontSize: "0.82rem", color: "#cbd5e1" }}>
-              Zoom into the estate/road first, then load buildings or UPRN
-              GeoJSON homes. Imported points are saved once in project home
-              chunks.
-            </div>
-          </div>
-        </details>
+          </details>
         )}
       </div>
 
@@ -5169,7 +6081,9 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
               );
               if (!reason) return;
 
-              const buildMovedPointAsset = (asset: SavedMapAsset): SavedMapAsset =>
+              const buildMovedPointAsset = (
+                asset: SavedMapAsset,
+              ): SavedMapAsset =>
                 markAssetForLiveSync(
                   withAssetEditedMetadata(
                     {
@@ -5187,9 +6101,13 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
                   false,
                 );
 
-              const movedAsset = beforeAsset ? buildMovedPointAsset(beforeAsset) : null;
+              const movedAsset = beforeAsset
+                ? buildMovedPointAsset(beforeAsset)
+                : null;
               const isMovedHome = movedAsset?.assetType === "home";
-              const movedHomeKeys = movedAsset ? getHomeDropKeys(movedAsset) : [];
+              const movedHomeKeys = movedAsset
+                ? getHomeDropKeys(movedAsset)
+                : [];
               const connectedDpId = String(
                 (beforeAsset as any)?.connectedDpId ??
                   (beforeAsset as any)?.properties?.connectedDpId ??
@@ -5208,19 +6126,29 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
                   ? createManualDropCable(connectedDp, movedAsset)
                   : null;
 
-              const shouldRemoveExistingDropForMovedHome = (asset: SavedMapAsset): boolean => {
-                if (!isMovedHome || movedHomeKeys.length === 0 || !isDropCable(asset)) {
+              const shouldRemoveExistingDropForMovedHome = (
+                asset: SavedMapAsset,
+              ): boolean => {
+                if (
+                  !isMovedHome ||
+                  movedHomeKeys.length === 0 ||
+                  !isDropCable(asset)
+                ) {
                   return false;
                 }
 
-                return getDropHomeKeys(asset).some((key) => movedHomeKeys.includes(key));
+                return getDropHomeKeys(asset).some((key) =>
+                  movedHomeKeys.includes(key),
+                );
               };
 
               setSavedJoints((prev) => {
                 let foundInSavedJoints = false;
 
                 const updated = (prev ?? [])
-                  .filter((asset) => !shouldRemoveExistingDropForMovedHome(asset))
+                  .filter(
+                    (asset) => !shouldRemoveExistingDropForMovedHome(asset),
+                  )
                   .map((asset) => {
                     if (asset.id !== id) return asset;
                     if (asset.geometry?.type !== "Point") return asset;
@@ -5233,7 +6161,11 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
                   ? [...updated, markAssetForLiveSync(regeneratedDrop, true)]
                   : updated;
 
-                if (!foundInSavedJoints && movedAsset && beforeAsset?.assetType !== "home") {
+                if (
+                  !foundInSavedJoints &&
+                  movedAsset &&
+                  beforeAsset?.assetType !== "home"
+                ) {
                   return [...withRegeneratedDrop, movedAsset];
                 }
 
@@ -5249,7 +6181,11 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
                 setProjectHomes(updatedProjectHomes);
 
                 if (activeProjectId) {
-                  void saveProjectHomes(activeProjectId, stampHomesForActiveArea(updatedProjectHomes), activeProjectAreaName).catch((err) => {
+                  void saveProjectHomes(
+                    activeProjectId,
+                    stampHomesForActiveArea(updatedProjectHomes),
+                    activeProjectAreaName,
+                  ).catch((err) => {
                     console.error("Failed to save moved home position", err);
                     alert(
                       "The home moved on screen, but saving the project homes failed. Check the console before refreshing.",
@@ -5281,8 +6217,12 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
               )}
               activeProjectId={activeProjectId}
               editingAreaId={editingAreaId}
+              polygonEditingEnabled={polygonBulkSelectEnabled}
+              polygonBulkSelectEnabled={polygonBulkSelectEnabled}
+              selectedAreaIds={selectedPolygonIds}
               onUnlockPolygon={setEditingAreaId}
               onSelect={handleSelectProject}
+              onToggleSelect={togglePolygonBulkSelection}
               onEdit={handleEditAsset}
               onDelete={handleDeleteAsset}
             />
@@ -5291,7 +6231,10 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
           <OpenreachOverlayLayer
             assets={renderOpenreachAssets}
             visibleLayers={openreachLayerVisibility}
-            ductSelectionEnabled={mapMode === "draw-cable" && shouldUseDuctTraceForInstallMethod(installMethod)}
+            ductSelectionEnabled={
+              mapMode === "draw-cable" &&
+              shouldUseDuctTraceForInstallMethod(installMethod)
+            }
             selectedDuctId={selectedReferenceDuctId}
             onSelectDuct={(asset) => {
               const item = asset as any;
@@ -5678,7 +6621,11 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
           cachedHomeCount={offlineFieldMode.cachedHomeCount}
           onCacheNow={() => {
             const ok = offlineFieldMode.cacheFieldData();
-            alert(ok ? "Field data cached on this device." : "Could not cache field data on this device.");
+            alert(
+              ok
+                ? "Field data cached on this device."
+                : "Could not cache field data on this device.",
+            );
           }}
           onClearCache={() => {
             const ok = offlineFieldMode.clearCachedFieldData();
@@ -5687,27 +6634,29 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         />
       )}
 
-      {!showMaintenancePanel && isFieldResponsiveMode && currentEditingAsset && (
-        <button
-          type="button"
-          onClick={() => setIsFieldPhotoPanelOpen(true)}
-          style={{
-            position: "absolute",
-            right: 14,
-            bottom: isMobile ? 224 : 154,
-            zIndex: 1320,
-            border: "1px solid #60a5fa",
-            background: "#2563eb",
-            color: "#ffffff",
-            borderRadius: 999,
-            padding: "10px 13px",
-            fontWeight: 900,
-            boxShadow: "0 12px 24px rgba(15,23,42,0.35)",
-          }}
-        >
-          Photos
-        </button>
-      )}
+      {!showMaintenancePanel &&
+        isFieldResponsiveMode &&
+        currentEditingAsset && (
+          <button
+            type="button"
+            onClick={() => setIsFieldPhotoPanelOpen(true)}
+            style={{
+              position: "absolute",
+              right: 14,
+              bottom: isMobile ? 224 : 154,
+              zIndex: 1320,
+              border: "1px solid #60a5fa",
+              background: "#2563eb",
+              color: "#ffffff",
+              borderRadius: 999,
+              padding: "10px 13px",
+              fontWeight: 900,
+              boxShadow: "0 12px 24px rgba(15,23,42,0.35)",
+            }}
+          >
+            Photos
+          </button>
+        )}
 
       {!showMaintenancePanel && isFieldResponsiveMode && (
         <FieldPhotoCapturePanel
@@ -5759,29 +6708,39 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         />
       )}
 
-      {!showMaintenancePanel && isFieldResponsiveMode && !isMobile && currentEditingAsset && (
-        <FieldSelectedAssetCard
-          variant={isMobile ? "mobile" : "tablet"}
-          role={fieldQuickRole}
-          asset={currentEditingAsset}
-          onOpenDetails={() => setIsPanelOpen(true)}
-          onClearSelection={resetEditor}
-          onOpenMaintenance={() => openMaintenanceHistory(currentEditingAsset)}
-        />
-      )}
+      {!showMaintenancePanel &&
+        isFieldResponsiveMode &&
+        !isMobile &&
+        currentEditingAsset && (
+          <FieldSelectedAssetCard
+            variant={isMobile ? "mobile" : "tablet"}
+            role={fieldQuickRole}
+            asset={currentEditingAsset}
+            onOpenDetails={() => setIsPanelOpen(true)}
+            onClearSelection={resetEditor}
+            onOpenMaintenance={() =>
+              openMaintenanceHistory(currentEditingAsset)
+            }
+          />
+        )}
 
-      {!showMaintenancePanel && isMobile && isFieldResponsiveMode && currentEditingAsset && (
-        <AssetBottomSheet
-          role={fieldQuickRole}
-          asset={currentEditingAsset}
-          mapMode={mapMode}
-          selectedMoveHomeCount={selectedMoveHomeIds.length}
-          selectedDeleteHomeCount={selectedSurveyDeleteHomeIds.length}
-          onOpenDetails={() => setIsPanelOpen(true)}
-          onOpenMaintenance={() => openMaintenanceHistory(currentEditingAsset)}
-          onClose={resetEditor}
-        />
-      )}
+      {!showMaintenancePanel &&
+        isMobile &&
+        isFieldResponsiveMode &&
+        currentEditingAsset && (
+          <AssetBottomSheet
+            role={fieldQuickRole}
+            asset={currentEditingAsset}
+            mapMode={mapMode}
+            selectedMoveHomeCount={selectedMoveHomeIds.length}
+            selectedDeleteHomeCount={selectedSurveyDeleteHomeIds.length}
+            onOpenDetails={() => setIsPanelOpen(true)}
+            onOpenMaintenance={() =>
+              openMaintenanceHistory(currentEditingAsset)
+            }
+            onClose={resetEditor}
+          />
+        )}
 
       {!showMaintenancePanel && roleMobileMode === "survey" && (
         <SurveyMobileControls
@@ -5841,13 +6800,15 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         />
       )}
 
-
-      {!showMaintenancePanel && (roleMobileMode === "survey" || isSurveyTabletMode) &&
+      {!showMaintenancePanel &&
+        (roleMobileMode === "survey" || isSurveyTabletMode) &&
         (mapMode === "move-homes" || mapMode === "survey-delete-homes") && (
           <FieldModeStatusPill
             variant={isMobile ? "mobile" : "tablet"}
             tone="survey"
-            title={mapMode === "move-homes" ? "Move homes mode" : "Delete homes mode"}
+            title={
+              mapMode === "move-homes" ? "Move homes mode" : "Delete homes mode"
+            }
             detail={
               mapMode === "move-homes"
                 ? `${selectedMoveHomeIds.length} home${selectedMoveHomeIds.length === 1 ? "" : "s"} selected`
@@ -5869,53 +6830,52 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         roleMobileMode !== "maintenance" &&
         !isSurveyTabletMode &&
         !isMaintenanceTabletMode && (
-        <>
-          {canManageNetworkDesign && (
+          <>
+            {canManageNetworkDesign && (
+              <button
+                onClick={handleSaveMapNow}
+                disabled={isSavingMapNow}
+                style={{
+                  ...topMapButton,
+                  right: isMobile ? 168 : isLayersOpen ? 512 : 168,
+                  background: isSavingMapNow ? "#64748b" : "#16a34a",
+                  cursor: isSavingMapNow ? "not-allowed" : "pointer",
+                }}
+              >
+                {isSavingMapNow ? "Saving..." : "Save Map"}
+              </button>
+            )}
+
             <button
-              onClick={handleSaveMapNow}
-              disabled={isSavingMapNow}
+              onClick={handleGpsLocate}
               style={{
                 ...topMapButton,
-                right: isMobile ? 168 : isLayersOpen ? 512 : 168,
-                background: isSavingMapNow ? "#64748b" : "#16a34a",
-                cursor: isSavingMapNow ? "not-allowed" : "pointer",
+                right: isMobile ? 92 : isLayersOpen ? 430 : 92,
               }}
             >
-              {isSavingMapNow ? "Saving..." : "Save Map"}
+              GPS
             </button>
-          )}
 
-          <button
-            onClick={handleGpsLocate}
-            style={{
-              ...topMapButton,
-              right: isMobile ? 92 : isLayersOpen ? 430 : 92,
-            }}
-          >
-            GPS
-          </button>
-
-          <button
-            onClick={() => setIsLayersOpen((prev) => !prev)}
-            style={{
-              position: "absolute",
-              top: 16,
-              right: isMobile ? 16 : isLayersOpen ? 340 : 16,
-              zIndex: 1200,
-              background: "#2563eb",
-              color: "white",
-              border: "none",
-              padding: "10px 14px",
-              borderRadius: "8px",
-              cursor: "pointer",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.35)",
-            }}
-          >
-            {isLayersOpen ? "Hide Layers" : "Layers"}
-          </button>
-        </>
-      )}
-
+            <button
+              onClick={() => setIsLayersOpen((prev) => !prev)}
+              style={{
+                position: "absolute",
+                top: 16,
+                right: isMobile ? 16 : isLayersOpen ? 340 : 16,
+                zIndex: 1200,
+                background: "#2563eb",
+                color: "white",
+                border: "none",
+                padding: "10px 14px",
+                borderRadius: "8px",
+                cursor: "pointer",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.35)",
+              }}
+            >
+              {isLayersOpen ? "Hide Layers" : "Layers"}
+            </button>
+          </>
+        )}
 
       {openDistributionPointAsset && (
         <div
@@ -5931,34 +6891,34 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
             boxSizing: "border-box",
           }}
         >
-        <DistributionPointEditor
-          asset={openDistributionPointAsset}
-          allAssets={allMapAssets}
-          onClose={() => {
-            setOpenDistributionPointAsset(null);
-            if (activeProjectArea && canManageNetworkDesign) {
-              setIsProjectWorkspaceOpen(true);
-            } else {
-              setIsProjectWorkspaceOpen(false);
-            }
-          }}
-          onSaveRouting={({ asset, nextDetails }) => {
-            const updatedAsset = {
-              ...(asset as any),
-              dpDetails: nextDetails,
-              properties: {
-                ...((asset as any).properties || {}),
+          <DistributionPointEditor
+            asset={openDistributionPointAsset}
+            allAssets={allMapAssets}
+            onClose={() => {
+              setOpenDistributionPointAsset(null);
+              if (activeProjectArea && canManageNetworkDesign) {
+                setIsProjectWorkspaceOpen(true);
+              } else {
+                setIsProjectWorkspaceOpen(false);
+              }
+            }}
+            onSaveRouting={({ asset, nextDetails }) => {
+              const updatedAsset = {
+                ...(asset as any),
                 dpDetails: nextDetails,
-              },
-            } as SavedMapAsset;
+                properties: {
+                  ...((asset as any).properties || {}),
+                  dpDetails: nextDetails,
+                },
+              } as SavedMapAsset;
 
-            const savedAsset = saveMapAssetToState(updatedAsset, {
-              message: "DP routing updated",
-            });
+              const savedAsset = saveMapAssetToState(updatedAsset, {
+                message: "DP routing updated",
+              });
 
-            setOpenDistributionPointAsset(savedAsset);
-          }}
-        />
+              setOpenDistributionPointAsset(savedAsset);
+            }}
+          />
         </div>
       )}
 

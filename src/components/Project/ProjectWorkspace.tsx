@@ -29,6 +29,7 @@ import { createAuditFormLog } from "../../services/auditService";
 import AuditCommercialDashboard from "../audits/AuditCommercialDashboard";
 import AuditPaymentBlockerPanel from "../audits/AuditPaymentBlockerPanel";
 import AuditHistoryPanel from "../audits/AuditHistoryPanel";
+import { buildCanonicalHomeSummary } from "./workspace/canonicalHomeStatus";
 
 // =====================================================
 // FILE: ProjectWorkspace.tsx
@@ -528,9 +529,14 @@ function getWorkspaceHomeConnectionStatus(
   );
 
   if (ownStatus === "live") return "live";
+  if (ownStatus === "connected") return "connected";
 
   const metadataConnection = String(
-    item.connection || item.properties?.connection || "",
+    item.connection ||
+      item.connectionStatus ||
+      item.properties?.connection ||
+      item.properties?.connectionStatus ||
+      "",
   ).toLowerCase();
   if (
     item.connectedDpId ||
@@ -1650,6 +1656,11 @@ export default function ProjectWorkspace({
     });
   }, [projectAssets, mappingRowsByAssetId, localAssetOverrides]);
 
+  const canonicalHomeSummary = useMemo(
+    () => buildCanonicalHomeSummary(workspaceAssets),
+    [workspaceAssets],
+  );
+
   const fullSelectedWorkspaceAsset = useMemo(
     () => resolveFullProjectAsset(selectedWorkspaceAsset, workspaceAssets),
     [selectedWorkspaceAsset, workspaceAssets],
@@ -1984,16 +1995,30 @@ export default function ProjectWorkspace({
     [workspaceAssets],
   );
 
-  const displayStats = useMemo(
-    () => ({
+  const displayStats = useMemo(() => {
+    const homesPassed = canonicalHomeSummary.homesPassed;
+    const homesConnected = canonicalHomeSummary.homesConnected;
+    const rfsPercent = homesPassed
+      ? Math.round((homesConnected / homesPassed) * 100)
+      : 0;
+
+    return {
       ...stats,
+      homesPassed,
+      homesConnected,
+      rfsPercent,
       dps: dpClosureCount,
       cables: designCableCount,
       designCables: designCableCount,
       dropCables: dropCableCount,
-    }),
-    [stats, dpClosureCount, designCableCount, dropCableCount],
-  );
+    };
+  }, [
+    stats,
+    canonicalHomeSummary,
+    dpClosureCount,
+    designCableCount,
+    dropCableCount,
+  ]);
 
 
   const workspaceRouteLengthMeters = useMemo(
@@ -2020,42 +2045,8 @@ export default function ProjectWorkspace({
   // =====================================================
   const rolloutKpis = useMemo(() => {
     const dpAssets = workspaceAssets.filter(isWorkspaceDistributionPointAsset);
-    const homesPassed = Number(displayStats?.homesPassed || 0);
-    const fallbackHomesLive = Number(displayStats?.homesConnected || 0);
-    const uniqueHomeAssets = new Map<string, SavedMapAsset>();
-
-    workspaceAssets.forEach((asset) => {
-      const item = asset as any;
-
-      const assetType = String(item.assetType || item.type || "").toLowerCase();
-
-      // Ignore cables and infrastructure
-      if (
-        assetType.includes("cable") ||
-        assetType.includes("joint") ||
-        assetType.includes("pole") ||
-        assetType.includes("chamber") ||
-        assetType.includes("cab")
-      ) {
-        return;
-      }
-
-      // Use best unique identifier possible
-      const key =
-        item.uprn || item.UPRN || item.address || `${item.lat}-${item.lng}`;
-
-      if (!key) return;
-
-      if (!uniqueHomeAssets.has(String(key))) {
-        uniqueHomeAssets.set(String(key), asset);
-      }
-    });
-
-    const homesLiveFromAssets = Array.from(uniqueHomeAssets.values()).filter(
-      isLiveHomeAsset,
-    ).length;
-
-    const homesLive = Math.min(homesPassed, homesLiveFromAssets);
+    const homesPassed = canonicalHomeSummary.homesPassed;
+    const homesLive = canonicalHomeSummary.homesConnected;
 
     const dpStatusCounts = dpAssets.reduce(
       (counts, asset) => {
@@ -2094,7 +2085,7 @@ export default function ProjectWorkspace({
       homesPassed,
       homesLive,
       homesNotLive,
-      rfsPercent: Number(displayStats?.rfsPercent || 0),
+      rfsPercent: homesPassed ? Math.round((homesLive / homesPassed) * 100) : 0,
       dpTotal,
       dpLive: dpStatusCounts.live,
       dpBwip: dpStatusCounts.bwip,
@@ -2110,6 +2101,7 @@ export default function ProjectWorkspace({
     };
   }, [
     workspaceAssets,
+    canonicalHomeSummary,
     displayStats,
     workspaceRouteLengthMeters,
     auditIssues.length,
@@ -2213,35 +2205,25 @@ export default function ProjectWorkspace({
   // They are derived from the same scoped workspace assets already used by
   // the KPI engine, and do not create or change any storage path.
   // =====================================================
-  const canonicalHomeAssets = useMemo(() => {
-    const homesByKey = new Map<string, SavedMapAsset>();
-
-    workspaceAssets
-      .filter(isWorkspaceHomeAssetForLayerCount)
-      .forEach((asset) => {
-        const key = getWorkspaceLayerHomeKey(asset);
-        if (key && !homesByKey.has(key)) homesByKey.set(key, asset);
-      });
-
-    return Array.from(homesByKey.values());
-  }, [workspaceAssets]);
+  const canonicalHomeAssets = useMemo(
+    () => canonicalHomeSummary.homes,
+    [canonicalHomeSummary],
+  );
 
   const homesLiveAssets = useMemo(
     () =>
-      canonicalHomeAssets.filter(
-        (asset) =>
-          getWorkspaceHomeConnectionStatus(asset, workspaceAssets) !== "unconnected",
-      ),
-    [canonicalHomeAssets, workspaceAssets],
+      canonicalHomeSummary.records
+        .filter((record) => record.status !== "unconnected")
+        .map((record) => record.home),
+    [canonicalHomeSummary],
   );
 
   const homesNotLiveAssets = useMemo(
     () =>
-      canonicalHomeAssets.filter(
-        (asset) =>
-          getWorkspaceHomeConnectionStatus(asset, workspaceAssets) === "unconnected",
-      ),
-    [canonicalHomeAssets, workspaceAssets],
+      canonicalHomeSummary.records
+        .filter((record) => record.status === "unconnected")
+        .map((record) => record.home),
+    [canonicalHomeSummary],
   );
 
   const disconnectedWorkspaceAssets = useMemo(() => {
@@ -2972,8 +2954,8 @@ export default function ProjectWorkspace({
     const canonicalHomes = Array.from(homesByKey.values());
     const connectedHomes = canonicalHomes.filter(
       (asset) =>
-        getWorkspaceHomeConnectionStatus(asset, workspaceAssets) ===
-        "connected",
+        getWorkspaceHomeConnectionStatus(asset, workspaceAssets) !==
+        "unconnected",
     );
     const unconnectedHomes = canonicalHomes.filter(
       (asset) =>
