@@ -9,12 +9,13 @@ type Props = {
 };
 
 export default function UserMenu({ variant = "topbar" }: Props) {
-  const { profile, isLoadingProfile, isSuperUser, isAdmin } = useUserRole();
+  const { profile, isLoadingProfile } = useUserRole();
   const [open, setOpen] = useState(false);
   const [showUserManagement, setShowUserManagement] = useState(false);
 
   const displayName = profile?.name || profile?.email || "User";
   const roleLabel = profile ? ROLE_LABELS[profile.role] : "Loading role";
+  const canManageUsers = profile?.role === "admin";
 
   if (variant === "sidebar") {
     return (
@@ -36,7 +37,7 @@ export default function UserMenu({ variant = "topbar" }: Props) {
           </div>
         </div>
 
-        {(isSuperUser || isAdmin) && (
+        {canManageUsers && (
           <button
             type="button"
             onClick={() => setShowUserManagement((value) => !value)}
@@ -113,7 +114,7 @@ export default function UserMenu({ variant = "topbar" }: Props) {
               </div>
             </div>
 
-            {(isSuperUser || isAdmin) && (
+            {canManageUsers && (
               <button
                 type="button"
                 onClick={() => {

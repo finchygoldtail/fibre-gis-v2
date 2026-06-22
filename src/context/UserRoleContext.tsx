@@ -63,7 +63,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, UserPermissions> = {
     survey: true,
     build: true,
     maintenance: true,
-    manageUsers: true,
+    manageUsers: false,
   },
 
   maintenance_user: {

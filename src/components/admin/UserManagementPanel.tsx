@@ -34,7 +34,8 @@ const roleOptions: UserRole[] = [
 ];
 
 export default function UserManagementPanel({ visible, onClose }: Props) {
-  const { isSuperUser, isAdmin } = useUserRole();
+  const { profile } = useUserRole();
+  const canManageUsers = profile?.role === "admin";
 
   const [users, setUsers] = useState<AppUserProfile[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -98,9 +99,9 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
   };
 
   useEffect(() => {
-    if (!visible || !(isSuperUser || isAdmin)) return;
+    if (!visible || !canManageUsers) return;
     void loadUsers();
-  }, [visible, isSuperUser, isAdmin]);
+  }, [visible, canManageUsers]);
 
   if (!visible) return null;
 
@@ -112,6 +113,12 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
       role: UserRole;
     },
   ) => {
+    if (!canManageUsers) {
+      setSaveError("Only Administrators can change user roles.");
+      alert("Only Administrators can change user roles.");
+      return;
+    }
+
     const cleanUid = uid.trim();
     const cleanEmail = (patch.email || "").trim().toLowerCase();
     const permissions = ROLE_PERMISSIONS[patch.role];
@@ -154,7 +161,7 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
     } catch (err) {
       console.error("Failed to save user permissions", err);
       setSaveError(
-        "Save failed. Open the browser console for the Firebase error, and check your Firestore rules allow Super Users to write user profiles.",
+        "Save failed. Open the browser console for the Firebase error, and check your Firestore rules allow Administrators to write user profiles.",
       );
       throw err;
     } finally {
@@ -170,6 +177,12 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
 
     setSaveMessage("");
     setSaveError("");
+
+    if (!canManageUsers) {
+      setSaveError("Only Administrators can create or update login users.");
+      alert("Only Administrators can create or update login users.");
+      return;
+    }
 
     try {
       if (uid) {
@@ -210,7 +223,7 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
           role: newRole,
         });
 
-        const createdUid = result.data.uid;
+        void result.data.uid;
 
         // The callable Cloud Function already creates/updates both:
         // businesses/{businessId}/users/{uid}
@@ -237,13 +250,13 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
   };
 
 
-  if (!(isSuperUser || isAdmin)) {
+  if (!canManageUsers) {
     return (
       <section style={panelStyle}>
         <div style={headerStyle}>
           <div>
             <h3 style={titleStyle}>No access</h3>
-            <div style={mutedStyle}>Only Administrators or Super Users can manage users.</div>
+            <div style={mutedStyle}>Only Administrators can manage users.</div>
           </div>
           <button type="button" onClick={onClose} style={smallButtonStyle}>
             Close
@@ -304,6 +317,7 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
 
         <label style={labelStyle}>Role</label>
         <select
+          disabled={!canManageUsers || isSaving}
           value={newRole}
           onChange={(event) => setNewRole(event.target.value as UserRole)}
           style={inputStyle}
@@ -318,11 +332,11 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
         <button
           type="button"
           onClick={() => void handleCreateOrUpdateUser()}
-          disabled={isSaving}
+          disabled={isSaving || !canManageUsers}
           style={{
             ...primaryButtonStyle,
-            opacity: isSaving ? 0.65 : 1,
-            cursor: isSaving ? "not-allowed" : "pointer",
+            opacity: isSaving || !canManageUsers ? 0.65 : 1,
+            cursor: isSaving || !canManageUsers ? "not-allowed" : "pointer",
           }}
         >
           {isSaving ? "Saving..." : newUid.trim() ? "Save User Permissions" : "Create Login User"}
@@ -350,6 +364,7 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
                 </div>
 
                 <select
+                  disabled={!canManageUsers || isSaving}
                   value={user.role}
                   onChange={(event) =>
                     void saveUserRole(user.uid, {

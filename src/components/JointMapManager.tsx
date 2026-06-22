@@ -3815,7 +3815,7 @@ export default function JointMapManager({
           </details>
         )}
 
-        {canManageNetworkDesign && (
+        {isAdmin && (
           <details style={card}>
             <summary style={sectionSummary}>Import / Export Saved Map</summary>
             <div style={sectionBody}>
