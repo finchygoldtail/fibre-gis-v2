@@ -11,6 +11,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { db } from "../firebase";
 
 export type UserRole =
+  | "admin"
   | "super_user"
   | "maintenance_user"
   | "build_user"
@@ -35,6 +36,7 @@ type UserRoleContextValue = {
   profile: AppUserProfile | null;
   isLoadingProfile: boolean;
   permissions: UserPermissions;
+  isAdmin: boolean;
   isSuperUser: boolean;
   isMaintenanceUser: boolean;
   isBuildUser: boolean;
@@ -42,6 +44,7 @@ type UserRoleContextValue = {
 };
 
 export const ROLE_LABELS: Record<UserRole, string> = {
+  admin: "Administrator",
   super_user: "Super User",
   maintenance_user: "Maintenance User",
   build_user: "Build User",
@@ -49,6 +52,13 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 };
 
 export const ROLE_PERMISSIONS: Record<UserRole, UserPermissions> = {
+  admin: {
+    survey: true,
+    build: true,
+    maintenance: true,
+    manageUsers: true,
+  },
+
   super_user: {
     survey: true,
     build: true,
@@ -98,6 +108,7 @@ const UserRoleContext = createContext<UserRoleContextValue | null>(null);
 
 function normaliseRole(value: unknown): UserRole {
   if (
+    value === "admin" ||
     value === "super_user" ||
     value === "maintenance_user" ||
     value === "build_user" ||
@@ -251,6 +262,7 @@ export function UserRoleProvider({
       profile,
       isLoadingProfile,
       permissions,
+      isAdmin: profile?.role === "admin",
       isSuperUser: profile?.role === "super_user",
       isMaintenanceUser: profile?.role === "maintenance_user",
       isBuildUser: profile?.role === "build_user",

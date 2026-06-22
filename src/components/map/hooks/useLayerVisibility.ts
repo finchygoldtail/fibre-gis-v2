@@ -36,6 +36,7 @@ export type LayerVisibility = {
   homesFlats: boolean;
   feeders: boolean;
   links: boolean;
+  ulw96: boolean;
   ulw48: boolean;
   ulw36: boolean;
   ulw24: boolean;
@@ -84,6 +85,7 @@ export const DEFAULT_VISIBLE_LAYERS: LayerVisibility = {
   homesFlats: false,
   feeders: false,
   links: false,
+  ulw96: false,
   ulw48: false,
   ulw36: false,
   ulw24: false,

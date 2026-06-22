@@ -26,6 +26,7 @@ type Props = {
 const BUSINESS_ID = "fibre-gis-v2";
 
 const roleOptions: UserRole[] = [
+  "admin",
   "super_user",
   "maintenance_user",
   "build_user",
@@ -33,7 +34,7 @@ const roleOptions: UserRole[] = [
 ];
 
 export default function UserManagementPanel({ visible, onClose }: Props) {
-  const { isSuperUser } = useUserRole();
+  const { isSuperUser, isAdmin } = useUserRole();
 
   const [users, setUsers] = useState<AppUserProfile[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -97,9 +98,9 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
   };
 
   useEffect(() => {
-    if (!visible || !isSuperUser) return;
+    if (!visible || !(isSuperUser || isAdmin)) return;
     void loadUsers();
-  }, [visible, isSuperUser]);
+  }, [visible, isSuperUser, isAdmin]);
 
   if (!visible) return null;
 
@@ -236,13 +237,13 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
   };
 
 
-  if (!isSuperUser) {
+  if (!(isSuperUser || isAdmin)) {
     return (
       <section style={panelStyle}>
         <div style={headerStyle}>
           <div>
             <h3 style={titleStyle}>No access</h3>
-            <div style={mutedStyle}>Only Super Users can manage users.</div>
+            <div style={mutedStyle}>Only Administrators or Super Users can manage users.</div>
           </div>
           <button type="button" onClick={onClose} style={smallButtonStyle}>
             Close
@@ -376,6 +377,7 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
 
 function normaliseRole(value: unknown): UserRole {
   if (
+    value === "admin" ||
     value === "super_user" ||
     value === "maintenance_user" ||
     value === "build_user" ||

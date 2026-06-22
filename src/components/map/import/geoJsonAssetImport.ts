@@ -464,10 +464,25 @@ const buildImportedAssetBase = (
     "AssetId",
   ]);
   const name = readGeoJsonProp(
-    props,
-    ["name", "Name", "label", "Label", "ref", "Ref", "id", "ID"],
-    `Imported ${importKind} ${index + 1}`,
-  );
+  props,
+  [
+    "ag_code",
+    "AG_CODE",
+    "fibrehood_code",
+    "FIBREHOOD_CODE",
+    "fibrehood_name",
+    "FIBREHOOD_NAME",
+    "name",
+    "Name",
+    "label",
+    "Label",
+    "ref",
+    "Ref",
+    "id",
+    "ID",
+  ],
+  `Imported ${importKind} ${index + 1}`,
+);
 
   return {
     id: existingId

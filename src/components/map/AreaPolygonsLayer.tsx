@@ -1,4 +1,5 @@
-import { Polygon, Popup, Tooltip } from "react-leaflet";
+import { useState } from "react";
+import { Polygon, Popup, Tooltip, useMap, useMapEvents } from "react-leaflet";
 import type { LeafletMouseEvent } from "leaflet";
 import type { SavedMapAsset } from "../types";
 
@@ -34,6 +35,8 @@ function getColor(id: string) {
   return COLORS[Math.abs(hash) % COLORS.length];
 }
 
+const AREA_LABEL_MIN_ZOOM = 15;
+
 const labelButton: React.CSSProperties = {
   marginLeft: 6,
   border: "none",
@@ -54,6 +57,15 @@ export default function AreaPolygonsLayer({
   onEdit,
   onDelete,
 }: Props) {
+  const map = useMap();
+  const [mapZoom, setMapZoom] = useState(() => map.getZoom());
+
+  useMapEvents({
+    zoomend(event) {
+      setMapZoom(event.target.getZoom());
+    },
+  });
+
   return (
     <>
       {areas.map((asset) => {
@@ -67,6 +79,7 @@ export default function AreaPolygonsLayer({
         const isActive = asset.id === activeProjectId;
         const isSecretEditing = asset.id === editingAreaId;
         const isInteractive = polygonEditingEnabled || isSecretEditing;
+        const shouldShowLabel = isSecretEditing || mapZoom >= AREA_LABEL_MIN_ZOOM;
 
         const unlock = (event?: LeafletMouseEvent | React.MouseEvent) => {
           event?.originalEvent?.stopPropagation?.();
@@ -113,66 +126,68 @@ export default function AreaPolygonsLayer({
               </Popup>
             )}
 
-            <Tooltip
-              permanent
-              direction="center"
-              opacity={1}
-              className="area-label"
-              interactive
-              eventHandlers={{
-                dblclick: unlock,
-              }}
-            >
-              <span
-                title="Ctrl + double-click to unlock polygon editing"
-                onDoubleClick={(event) => {
-                  if (!event.ctrlKey) return;
-                  unlock(event);
-                }}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4,
-                  pointerEvents: "auto",
-                  cursor: isSecretEditing ? "default" : "pointer",
-                  userSelect: "none",
+            {shouldShowLabel && (
+              <Tooltip
+                permanent
+                direction="center"
+                opacity={1}
+                className="area-label"
+                interactive
+                eventHandlers={{
+                  dblclick: unlock,
                 }}
               >
-                {asset.name}
-                {isSecretEditing ? " 🔓" : ""}
-                {isSecretEditing && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onEdit(asset);
-                      }}
-                      style={{ ...labelButton, background: "#2563eb", color: "white" }}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={lock}
-                      style={{ ...labelButton, background: "#111827", color: "white" }}
-                    >
-                      Lock
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onDelete(asset.id);
-                      }}
-                      style={{ ...labelButton, background: "#dc2626", color: "white" }}
-                    >
-                      Delete
-                    </button>
-                  </>
-                )}
-              </span>
-            </Tooltip>
+                <span
+                  title="Ctrl + double-click to unlock polygon editing"
+                  onDoubleClick={(event) => {
+                    if (!event.ctrlKey) return;
+                    unlock(event);
+                  }}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                    pointerEvents: "auto",
+                    cursor: isSecretEditing ? "default" : "pointer",
+                    userSelect: "none",
+                  }}
+                >
+                  {asset.name}
+                  {isSecretEditing ? " 🔓" : ""}
+                  {isSecretEditing && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onEdit(asset);
+                        }}
+                        style={{ ...labelButton, background: "#2563eb", color: "white" }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={lock}
+                        style={{ ...labelButton, background: "#111827", color: "white" }}
+                      >
+                        Lock
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onDelete(asset.id);
+                        }}
+                        style={{ ...labelButton, background: "#dc2626", color: "white" }}
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
+                </span>
+              </Tooltip>
+            )}
           </Polygon>
         );
       })}

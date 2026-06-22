@@ -297,6 +297,7 @@ export function useLayerCounts({
       feeders: designCables.filter((asset) => textForAsset(asset).includes("feeder")).length,
       links: designCables.filter((asset) => textForAsset(asset).includes("link")).length,
       dropCables: dropCables.length,
+      ulw96: designCables.filter((asset) => textForAsset(asset).includes("96")).length,
       ulw48: designCables.filter((asset) => textForAsset(asset).includes("48")).length,
       ulw36: designCables.filter((asset) => textForAsset(asset).includes("36")).length,
       ulw24: designCables.filter((asset) => textForAsset(asset).includes("24")).length,

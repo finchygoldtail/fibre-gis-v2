@@ -765,7 +765,7 @@ export default function JointMapManager({
   onOpenAutoNetwork,
 }: Props) {
   const { activeMode, requiresAuditReason } = useAppMode();
-  const { permissions, isSuperUser } = useUserRole();
+  const { permissions, isSuperUser, isAdmin } = useUserRole();
   const canManageNetworkDesign = isSuperUser || permissions.build;
   const canUseSurveyTools = canManageNetworkDesign || permissions.survey;
   // =====================================================
@@ -989,6 +989,102 @@ export default function JointMapManager({
     } finally {
       setIsSavingMapNow(false);
     }
+  };
+
+
+  const handleAdminRemoveImportedAreas = () => {
+    if (!isAdmin) {
+      alert("Administrator access required.");
+      return;
+    }
+
+    const importedAreas = operationalSavedJoints.filter((asset: any) => {
+      const name = String(asset?.name || "").trim().toLowerCase();
+      const jointType = String(asset?.jointType || "").trim().toLowerCase();
+      return (
+        asset?.assetType === "area" &&
+        (name.startsWith("imported area") || jointType.includes("imported area"))
+      );
+    });
+
+    if (!importedAreas.length) {
+      alert("No imported area polygons were found.");
+      return;
+    }
+
+    const typed = window.prompt(
+      `Found ${importedAreas.length} imported area polygon(s).
+
+Type DELETE IMPORTED AREAS to remove them from the map.
+
+You must still press Save Map afterwards to persist the cleanup.`,
+      "",
+    );
+
+    if (typed !== "DELETE IMPORTED AREAS") return;
+
+    const importedAreaIds = new Set(importedAreas.map((asset) => String(asset.id || "")));
+
+    setSavedJoints((prev) =>
+      (prev ?? []).filter((asset: any) => {
+        const name = String(asset?.name || "").trim().toLowerCase();
+        const jointType = String(asset?.jointType || "").trim().toLowerCase();
+        const isImportedAreaByName =
+          asset?.assetType === "area" &&
+          (name.startsWith("imported area") || jointType.includes("imported area"));
+        const isImportedAreaById = importedAreaIds.has(String(asset?.id || ""));
+        return !(isImportedAreaByName || isImportedAreaById);
+      }),
+    );
+
+    alert(
+      `${importedAreas.length} imported area polygon(s) removed from the map.
+
+Press Save Map to make this permanent in Firestore.`,
+    );
+  };
+
+  const handleAdminDeleteAllOrReferenceAssets = async () => {
+    if (!isAdmin) {
+      alert("Administrator access required.");
+      return;
+    }
+
+    const count = openreachReferenceAssets.length;
+    if (!count) {
+      alert("No OR / PIA reference assets are currently loaded.");
+      return;
+    }
+
+    const typed = window.prompt(
+      `This will delete ALL ${count} OR / PIA reference assets from the OR reference storage.
+
+It will not delete designed DPs, joints, homes, project areas or cables.
+
+Type DELETE ALL OR to continue.`,
+      "",
+    );
+
+    if (typed !== "DELETE ALL OR") return;
+
+    setOrAssets([]);
+
+    try {
+      await saveOrAssets([], {
+        allowDestructiveSave: true,
+        reason: "administrator delete all OR / PIA reference assets",
+      });
+    } catch (err) {
+      console.error("Failed to delete all OR / PIA reference assets", err);
+      alert("Delete all OR / PIA reference assets failed. Check the console.");
+      return;
+    }
+
+    setSavedJoints((prev) =>
+      (prev ?? []).filter((asset) => !isOpenreachReferenceAsset(asset)),
+    );
+
+    alert(`Deleted ${count} OR / PIA reference asset(s).`);
   };
 
   const [contextMenu, setContextMenu] = useState<{
@@ -4188,6 +4284,55 @@ Homes, DPs, joints, designed cables and drop cables will not be deleted.`,
         </div>
 
         <UserMenu variant="sidebar" />
+
+        {isAdmin && (
+          <details style={card}>
+            <summary style={sectionSummary}>Administration</summary>
+            <div style={sectionBody}>
+              <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.45 }}>
+                Admin-only cleanup tools. These are hidden from Super Users, Build,
+                Survey and Maintenance users. Use typed confirmations before any
+                destructive cleanup.
+              </div>
+
+              <button
+                type="button"
+                onClick={handleAdminRemoveImportedAreas}
+                style={btnDanger}
+              >
+                Remove Imported Area Polygons
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDeletePiaOverlayForActiveProject}
+                style={btnDanger}
+                disabled={!activeProjectArea}
+                title={
+                  activeProjectArea
+                    ? "Delete OR / PIA overlay only inside the selected area"
+                    : "Select an area first"
+                }
+              >
+                Delete OR / PIA in Selected Area
+              </button>
+
+              <button
+                type="button"
+                onClick={handleAdminDeleteAllOrReferenceAssets}
+                style={btnDanger}
+              >
+                Delete ALL OR / PIA Reference Layers
+              </button>
+
+              <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.4 }}>
+                Imported area cleanup removes polygons from the map state first;
+                press Save Map afterwards to persist that cleanup. OR / PIA cleanup
+                writes directly to OR reference storage.
+              </div>
+            </div>
+          </details>
+        )}
 
         {activeProjectArea && canManageNetworkDesign && (
           <button

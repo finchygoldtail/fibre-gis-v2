@@ -83,6 +83,11 @@ export function useProjectAreaView({
   );
 
   const visibleProjectAssets = useMemo(() => {
+  // Global view = polygons only
+  if (!activeProjectArea) {
+    return [];
+  }
+
   const nonAreaAssets = allMapAssets.filter(
     (asset) => !isProjectAreaAsset(asset),
   );

@@ -293,10 +293,78 @@ export default function LayersPanel({
   });
 
   const toggleLayer = (key: string) =>
-    setVisibleLayers((prev: Record<string, boolean>) => ({
-      ...prev,
-      [key]: prev[key] === false,
-    }));
+    setVisibleLayers((prev: Record<string, boolean>) => {
+      const next = !(prev[key] !== false);
+
+      if (key === "areas") {
+        return {
+          ...prev,
+          areas: next,
+          l0: next,
+          l1: next,
+          l2: next,
+          l3: next,
+        };
+      }
+
+      if (key === "poles") {
+        return {
+          ...prev,
+          poles: next,
+          newPoles: next,
+          orPoles: next,
+          suggestedPoles: next,
+        };
+      }
+
+      if (key === "chambers") {
+        return {
+          ...prev,
+          chambers: next,
+          orChambers: next,
+          suggestedChambers: next,
+          fw2: next,
+          fw4: next,
+          fw6: next,
+          fw10: next,
+        };
+      }
+
+      if (key === "homes") {
+        return {
+          ...prev,
+          homes: next,
+          homesConnected: next,
+          homesUnconnected: next,
+          homesLive: next,
+          homesSdu: next,
+          homesMdu: next,
+          homesFlats: next,
+        };
+      }
+
+      if (key === "cables") {
+        return {
+          ...prev,
+          cables: next,
+          feeders: next,
+          links: next,
+          dropCables: next,
+          ulw96: next,
+          ulw48: next,
+          ulw36: next,
+          ulw24: next,
+          ulw12: next,
+          orDucts: next,
+          suggestedDucts: next,
+        };
+      }
+
+      return {
+        ...prev,
+        [key]: next,
+      };
+    });
 
   const toggleGroup = (id: string) =>
     setOpenGroups((prev) => ({ ...prev, [id]: !prev[id] }));
