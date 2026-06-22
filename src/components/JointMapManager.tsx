@@ -34,7 +34,6 @@ import { useProjectHomesController } from "./map/homes/useProjectHomesController
 import { useHomeImportTools } from "./map/homes/useHomeImportTools";
 import { useAreaDrawingTools } from "./map/areas/useAreaDrawingTools";
 import { useHomeWorkflowControllers } from "./map/homes/useHomeWorkflowControllers";
-import AppModeSwitch from "./AppModeSwitch";
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
@@ -506,6 +505,62 @@ function formatAreaLabel(areaSquareMeters: number): string {
   return `${(areaSquareMeters / 10000).toFixed(2)} ha`;
 }
 
+function getAssetSearchLabel(asset: SavedMapAsset): string {
+  const item = asset as any;
+  return String(
+    item.name ||
+      item.label ||
+      item.jointName ||
+      item.address ||
+      item.properties?.address ||
+      item.uprn ||
+      item.UPRN ||
+      asset.id ||
+      "Asset",
+  );
+}
+
+function getAssetSearchTypeLabel(asset: SavedMapAsset): string {
+  const item = asset as any;
+  const typeText = String(
+    item.assetType || item.type || item.jointType || item.homeType || "asset",
+  );
+
+  return typeText
+    .replace(/-/g, " ")
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+function buildAssetSearchText(asset: SavedMapAsset): string {
+  const item = asset as any;
+  return [
+    asset.id,
+    item.assetId,
+    item.name,
+    item.label,
+    item.jointName,
+    item.address,
+    item.properties?.address,
+    item.properties?.Address,
+    item.uprn,
+    item.UPRN,
+    item.properties?.uprn,
+    item.properties?.UPRN,
+    item.piaRef,
+    item.dpType,
+    item.assetType,
+    item.type,
+    item.jointType,
+    item.cableType,
+    item.poleType,
+    item.chamberType,
+    item.notes,
+  ]
+    .map((value) => String(value ?? "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+}
+
 function normaliseAreaLevel(value: unknown): AreaLevel {
   const level = String(value || "L0").toUpperCase();
 
@@ -799,6 +854,8 @@ export default function JointMapManager({
   });
 
   const { visibleLayers, setVisibleLayers } = useLayerVisibility();
+  const [assetSearchQuery, setAssetSearchQuery] = useState("");
+  const [isAssetSearchFocused, setIsAssetSearchFocused] = useState(false);
 
   const roleMobileMode = useRoleMobileMode({
     isMobile,
@@ -1252,6 +1309,35 @@ export default function JointMapManager({
     setShowChamberModal,
     setShowCableModal,
   });
+
+
+  const assetSearchResults = useMemo(() => {
+    const query = assetSearchQuery.trim().toLowerCase();
+    if (query.length < 2) return [];
+
+    return allMapAssets
+      .filter((asset) => buildAssetSearchText(asset).includes(query))
+      .slice(0, 12);
+  }, [allMapAssets, assetSearchQuery]);
+
+  const selectAssetSearchResult = (asset: SavedMapAsset) => {
+    handleEditAsset(asset);
+    handleZoomToAsset(asset);
+    setAssetSearchQuery(getAssetSearchLabel(asset));
+    setIsAssetSearchFocused(false);
+  };
+
+  const handleAssetSearchSubmit = () => {
+    const firstResult = assetSearchResults[0];
+    if (firstResult) {
+      selectAssetSearchResult(firstResult);
+      return;
+    }
+
+    if (assetSearchQuery.trim().length >= 2) {
+      alert("No matching asset, chamber, pole, DP, cable or address found.");
+    }
+  };
 
   // =====================================================
   // PHASE 7A.4 — REBUILD THROUGH-CABLE RESERVATIONS
@@ -3902,6 +3988,7 @@ export default function JointMapManager({
           center={mapCenter}
           zoom={initialMapViewRef.current?.zoom ?? 6}
           maxZoom={22}
+          zoomControl={false}
           rotate={true}
           touchRotate={true}
           rotateControl={true}
@@ -4554,17 +4641,190 @@ export default function JointMapManager({
         />
       </div>
 
-      {!showMaintenancePanel && !(isFieldResponsiveMode && isMobile) && (
+      {!showMaintenancePanel && !isFieldResponsiveMode && (
         <div
           style={{
             position: "absolute",
-            top: 12,
+            top: 16,
             left: "50%",
             transform: "translateX(-50%)",
-            zIndex: 1200,
+            zIndex: 1250,
+            width: "min(620px, calc(100vw - 560px))",
+            minWidth: 420,
           }}
         >
-          <AppModeSwitch />
+          <div
+            style={{
+              background: "#ffffff",
+              border: "1px solid rgba(148,163,184,0.55)",
+              borderRadius: 12,
+              boxShadow: "0 18px 42px rgba(15,23,42,0.28)",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "42px minmax(0, 1fr) 42px",
+                alignItems: "center",
+                height: 52,
+              }}
+            >
+              <div
+                aria-hidden="true"
+                style={{
+                  color: "#0f172a",
+                  fontSize: 24,
+                  textAlign: "center",
+                  lineHeight: "52px",
+                }}
+              >
+                ⌕
+              </div>
+
+              <input
+                value={assetSearchQuery}
+                onFocus={() => setIsAssetSearchFocused(true)}
+                onChange={(event) => {
+                  setAssetSearchQuery(event.target.value);
+                  setIsAssetSearchFocused(true);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    handleAssetSearchSubmit();
+                  }
+                  if (event.key === "Escape") {
+                    setIsAssetSearchFocused(false);
+                  }
+                }}
+                placeholder="Search assets, address or UPRN..."
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  border: "none",
+                  background: "transparent",
+                  color: "#0f172a",
+                  padding: "0 6px",
+                  fontSize: 16,
+                  fontWeight: 700,
+                  outline: "none",
+                }}
+              />
+
+              <button
+                type="button"
+                title="Search options"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => setIsAssetSearchFocused((value) => !value)}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  color: "#0f172a",
+                  cursor: "pointer",
+                  fontSize: 20,
+                  fontWeight: 900,
+                  height: 52,
+                }}
+              >
+                ☷
+              </button>
+            </div>
+
+            {isAssetSearchFocused && (
+              <div
+                style={{
+                  borderTop: "1px solid #e5e7eb",
+                  maxHeight: 380,
+                  overflowY: "auto",
+                  background: "#ffffff",
+                }}
+              >
+                <div
+                  style={{
+                    padding: "10px 22px 6px",
+                    color: "#94a3b8",
+                    fontSize: 11,
+                    fontWeight: 900,
+                    letterSpacing: 0.5,
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {assetSearchQuery.trim().length >= 2
+                    ? "Search results"
+                    : "Start typing to search assets, addresses or UPRNs"}
+                </div>
+
+                {assetSearchQuery.trim().length >= 2 ? (
+                  assetSearchResults.length > 0 ? (
+                    assetSearchResults.map((asset) => (
+                      <button
+                        key={asset.id}
+                        type="button"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => selectAssetSearchResult(asset)}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "34px minmax(0, 1fr) auto",
+                          alignItems: "center",
+                          gap: 12,
+                          width: "100%",
+                          textAlign: "left",
+                          border: "none",
+                          borderTop: "1px solid #f1f5f9",
+                          background:
+                            asset.id === editingAssetId ? "#eff6ff" : "#ffffff",
+                          color: "#0f172a",
+                          padding: "10px 22px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <span
+                          style={{
+                            display: "inline-grid",
+                            placeItems: "center",
+                            width: 28,
+                            height: 28,
+                            borderRadius: 7,
+                            background: "#2563eb",
+                            color: "#ffffff",
+                            fontSize: 11,
+                            fontWeight: 900,
+                          }}
+                        >
+                          {getAssetSearchTypeLabel(asset).slice(0, 2).toUpperCase()}
+                        </span>
+                        <span
+                          style={{
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            fontWeight: 900,
+                          }}
+                        >
+                          {getAssetSearchLabel(asset)}
+                        </span>
+                        <span
+                          style={{
+                            color: "#64748b",
+                            fontSize: 13,
+                            fontWeight: 700,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {getAssetSearchTypeLabel(asset)}
+                        </span>
+                      </button>
+                    ))
+                  ) : (
+                    <div style={{ color: "#64748b", padding: "12px 22px 18px", fontSize: 13 }}>
+                      No matching asset, chamber, pole, DP, cable, address or UPRN found.
+                    </div>
+                  )
+                ) : null}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -4981,13 +5241,13 @@ const projectWorkspaceProgressBar: React.CSSProperties = {
 // =====================================================
 const drawerToggleButton: React.CSSProperties = {
   position: "absolute",
-  top: 75,
-  left: 10,
-  zIndex: 1000,
+  top: 16,
+  left: 16,
+  zIndex: 1300,
   background: "#111827",
   color: "white",
   border: "1px solid #334155",
-  padding: "10px 14px",
+  padding: "12px 16px",
   borderRadius: 10,
   cursor: "pointer",
   fontWeight: 800,
