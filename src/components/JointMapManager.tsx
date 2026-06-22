@@ -31,6 +31,8 @@ import {
   type LayerVisibility,
 } from "./map/hooks/useLayerVisibility";
 import { useProjectHomesController } from "./map/homes/useProjectHomesController";
+import { useHomeImportTools } from "./map/homes/useHomeImportTools";
+import { useAreaDrawingTools } from "./map/areas/useAreaDrawingTools";
 import { useHomeWorkflowControllers } from "./map/homes/useHomeWorkflowControllers";
 import AppModeSwitch from "./AppModeSwitch";
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
@@ -78,10 +80,7 @@ import {
 import { clearDpFibreAllocationsForAssets } from "../services/network";
 
 import { routePointsToRoads } from "./map/utils/routeToRoads";
-import {
-  loadOsmBuildingsAsHomes,
-  type OsmBounds,
-} from "./map/utils/loadOsmBuildings";
+import type { OsmBounds } from "./map/utils/loadOsmBuildings";
 import {
   createDropCableRecordsFromDPs,
   getAssetLatLng,
@@ -134,14 +133,8 @@ import {
   markAssetForLiveSync,
   useAssetPersistence,
 } from "./map/persistence/useAssetPersistence";
-import {
-  createMapAssetsFromAnyGeoJson,
-  createPiaOverlayAssetsFromGeoJson,
-} from "./map/import/geoJsonAssetImport";
-import {
-  loadProjectHomes,
-  saveProjectHomes,
-} from "./map/projects/projectHomesStorage";
+import { useMapImportExportTools } from "./map/import/useMapImportExportTools";
+import { saveProjectHomes } from "./map/projects/projectHomesStorage";
 import { ExchangeMarkersLayer } from "./map/ExchangeMarkersLayer";
 import {
   useExchangeController,
@@ -149,6 +142,11 @@ import {
 } from "./map/exchange/useExchangeController";
 import { useAssetEditorState } from "./map/editor/useAssetEditorState";
 import { useAssetSelection } from "./map/editor/useAssetSelection";
+import {
+  getDpOperationalStatus,
+  syncDpOperationalStatusOnAsset,
+  useAssetSaveHandlers,
+} from "./map/editor/useAssetSaveHandlers";
 import { useEditorReset } from "./map/editor/useEditorReset";
 import { useMapNavigation } from "./map/navigation/useMapNavigation";
 import AssetDetailsSidebarSections from "./map/AssetDetailsSidebarSections";
@@ -164,12 +162,7 @@ import type {
 } from "./map/types";
 // Split storage is disabled during storage-integrity recovery.
 // Main chunks are the only authoritative save/load path.
-import {
-  isOpenreachReferenceAsset,
-  loadOrAssets,
-  mergeAndSaveOrAssets,
-  normaliseOpenreachAsset,
-} from "../services/orAssetStorage";
+import { isOpenreachReferenceAsset } from "../services/orAssetStorage";
 import { withAreaAssetIndex } from "../services/areaAssetIndex";
 export type SavedJoint = SavedMapAsset;
 export type { SavedMapAsset };
@@ -542,119 +535,6 @@ function isAreaVisibleForLevel(
 //   geometryType + geometryCoordinatesJson
 // The map layers need a real geometry object. Normalise once before
 // filtering/rendering so cables, polygons, homes and markers all reappear.
-
-function normaliseDpOperationalStatus(value: unknown): string {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "Planned";
-
-  const lower = raw.toLowerCase();
-  if (lower === "live") return "Live";
-  if (lower === "bwip") return "BWIP";
-  if (lower === "unserviceable") return "Unserviceable";
-  if (lower === "live not ready for service" || lower === "lnrfs") {
-    return "Live not ready for service";
-  }
-  if (lower === "planned") return "Planned";
-  return raw;
-}
-
-function getDpOperationalStatus(
-  asset: any,
-  fallback: string = "Planned",
-): string {
-  return normaliseDpOperationalStatus(
-    asset?.dpDetails?.buildStatus ||
-      asset?.properties?.dpDetails?.buildStatus ||
-      asset?.buildStatus ||
-      asset?.status ||
-      fallback,
-  );
-}
-
-function normaliseForSaveComparison(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map((item) => normaliseForSaveComparison(item));
-  }
-
-  if (value && typeof value === "object") {
-    const source = value as Record<string, unknown>;
-    const ignoredKeys = new Set([
-      "updatedAt",
-      "updatedByUid",
-      "updatedByEmail",
-      "lastEditedAt",
-      "lastEditedByUid",
-      "lastEditedByEmail",
-      "lastViewedAt",
-      "lastViewedBy",
-      "lastViewedByUid",
-      "lastViewedByEmail",
-      "lastViewedContext",
-      "syncRevision",
-      "importedAt",
-    ]);
-
-    return Object.keys(source)
-      .filter((key) => !ignoredKeys.has(key))
-      .sort()
-      .reduce<Record<string, unknown>>((acc, key) => {
-        const nextValue = source[key];
-        if (typeof nextValue === "undefined") return acc;
-        acc[key] = normaliseForSaveComparison(nextValue);
-        return acc;
-      }, {});
-  }
-
-  return value;
-}
-
-function stableAssetSignature(value: unknown): string {
-  try {
-    return JSON.stringify(normaliseForSaveComparison(value));
-  } catch {
-    return String(value ?? "");
-  }
-}
-
-function sameOperationalData(left: unknown, right: unknown): boolean {
-  return stableAssetSignature(left) === stableAssetSignature(right);
-}
-
-function syncDpOperationalStatusOnAsset<T extends Record<string, any>>(
-  asset: T,
-  statusValue?: unknown,
-): T {
-  const nextStatus = normaliseDpOperationalStatus(
-    statusValue ||
-      asset?.dpDetails?.buildStatus ||
-      asset?.properties?.dpDetails?.buildStatus ||
-      asset?.buildStatus ||
-      asset?.status ||
-      "Planned",
-  );
-
-  const nextDpDetails = {
-    ...(asset?.dpDetails || asset?.properties?.dpDetails || {}),
-    buildStatus: nextStatus,
-  };
-
-  return {
-    ...(asset as any),
-    status: nextStatus,
-    buildStatus: nextStatus,
-    dpDetails: nextDpDetails,
-    properties: {
-      ...((asset as any).properties || {}),
-      status: nextStatus,
-      buildStatus: nextStatus,
-      dpDetails: {
-        ...(((asset as any).properties || {}).dpDetails || {}),
-        ...nextDpDetails,
-        buildStatus: nextStatus,
-      },
-    },
-  } as T;
-}
 
 function normalizeMapAsset(asset: SavedMapAsset): SavedMapAsset {
   const copy: any = { ...(asset as any) };
@@ -1461,352 +1341,60 @@ export default function JointMapManager({
     writeAssetAuditLog,
   });
 
-  const handleSaveEdits = async (detailOverrides?: {
-    poleDetails?: PoleDetails;
-    dpDetails?: DistributionPointDetails;
-    chamberDetails?: ChamberDetails;
-  }) => {
-    if (!editingAssetId) return;
+  const {
+    handleSaveEdits,
+    handleSaveJoint,
+    handleDeleteAsset,
+  } = useAssetSaveHandlers({
+    activeProjectId,
+    activeProjectAreaName,
+    allocatedInputFibres,
+    areaLevel,
+    assetType,
+    cablePiaNoiNumber,
+    cableType,
+    chamberDetails,
+    currentMappingRows,
+    draftAreaPoints,
+    draftCablePoints,
+    editingAssetId,
+    fibreCount,
+    getChangeReasonForCurrentMode,
+    installMethod,
+    jointName,
+    jointType,
+    notes,
+    parentCableId,
+    pickedLocation,
+    poleDetails,
+    dpDetails,
+    projectHomes,
+    resetEditor,
+    saveMapAssetToState,
+    savedJoints,
+    setProjectHomes,
+    setSavedJoints,
+    stampHomesForActiveArea,
+    writeAssetAuditLog,
+  });
 
-    const beforeAsset = (savedJoints ?? []).find(
-      (asset) => asset.id === editingAssetId,
-    );
-    const reason = getChangeReasonForCurrentMode(
-      "updated",
-      beforeAsset?.name || jointName,
-    );
-    if (!reason) return;
-
-    let savedAfterAsset: SavedMapAsset | null = null;
-    const editedCableCoordinates =
-      assetType === "cable" && draftCablePoints.length >= 2
-        ? sanitiseCableRouteCoordinates(draftCablePoints)
-        : null;
-
-    const nextPoleDetails = detailOverrides?.poleDetails ?? poleDetails;
-    const nextDpDetails = detailOverrides?.dpDetails ?? dpDetails;
-    const nextChamberDetails =
-      detailOverrides?.chamberDetails ?? chamberDetails;
-
-    setSavedJoints((prev) =>
-      prev.map((asset) => {
-        if (asset.id !== editingAssetId) return asset;
-
-        if (assetType === "area") {
-          if (draftAreaPoints.length < 3) return asset;
-
-          savedAfterAsset = withAssetEditedMetadata(
-            markAssetForLiveSync({
-              ...asset,
-              name: jointName.trim() || asset.name,
-              jointType: "Polygon Area",
-              notes: notes.trim(),
-              assetType: "area",
-              areaLevel,
-              geometry: {
-                type: "Polygon",
-                coordinates: [draftAreaPoints.map((p) => [p.lat, p.lng])],
-              },
-            }),
-            "updated",
-            reason,
-          );
-          return savedAfterAsset;
-        }
-
-        if (asset.geometry?.type === "Point") {
-          if (!pickedLocation) return asset;
-
-          savedAfterAsset = withAssetEditedMetadata(
-            markAssetForLiveSync({
-              ...asset,
-              name: jointName.trim() || asset.name,
-              jointType:
-                assetType === "street-cab"
-                  ? "Street Cab"
-                  : assetType === "pole"
-                    ? "Pole"
-                    : assetType === "distribution-point"
-                      ? "Distribution Point"
-                      : assetType === "chamber"
-                        ? "Chamber"
-                        : assetType === "home"
-                          ? "Home"
-                          : jointType,
-              notes: notes.trim(),
-              assetType,
-              ...(assetType === "distribution-point"
-                ? {
-                    status: getDpOperationalStatus({
-                      ...(asset as any),
-                      dpDetails: nextDpDetails,
-                    }),
-                    buildStatus: getDpOperationalStatus({
-                      ...(asset as any),
-                      dpDetails: nextDpDetails,
-                    }),
-                    properties: {
-                      ...((asset as any).properties || {}),
-                      status: getDpOperationalStatus({
-                        ...(asset as any),
-                        dpDetails: nextDpDetails,
-                      }),
-                      buildStatus: getDpOperationalStatus({
-                        ...(asset as any),
-                        dpDetails: nextDpDetails,
-                      }),
-                      dpDetails: {
-                        ...(((asset as any).properties || {}).dpDetails || {}),
-                        ...nextDpDetails,
-                        buildStatus: getDpOperationalStatus({
-                          ...(asset as any),
-                          dpDetails: nextDpDetails,
-                        }),
-                      },
-                    },
-                  }
-                : {}),
-              poleDetails: assetType === "pole" ? nextPoleDetails : undefined,
-              dpDetails:
-                assetType === "distribution-point"
-                  ? ({
-                      ...nextDpDetails,
-                      buildStatus: getDpOperationalStatus({
-                        ...(asset as any),
-                        dpDetails: nextDpDetails,
-                      }),
-                    } as DistributionPointDetails)
-                  : undefined,
-              chamberDetails:
-                assetType === "chamber" ? nextChamberDetails : undefined,
-              geometry: {
-                type: "Point",
-                coordinates: [pickedLocation.lat, pickedLocation.lng],
-              },
-            }),
-            "updated",
-            reason,
-          );
-          return savedAfterAsset;
-        }
-
-        savedAfterAsset = withAssetEditedMetadata(
-          markAssetForLiveSync({
-            ...asset,
-            name: jointName.trim() || asset.name,
-            jointType: "Cable",
-            notes: notes.trim(),
-            piaNoiNumber: cablePiaNoiNumber.trim(),
-            assetType: "cable",
-            cableType,
-            fibreCount,
-            installMethod,
-            parentCableId,
-            allocatedInputFibres,
-            routeMode: (asset as any).routeMode,
-            geometry: {
-              type: "LineString",
-              coordinates: editedCableCoordinates?.length
-                ? editedCableCoordinates
-                : sanitiseCableRouteCoordinates(
-                    (asset.geometry?.type === "LineString"
-                      ? asset.geometry.coordinates
-                      : []) as [number, number][],
-                  ),
-            },
-          }),
-          "updated",
-          reason,
-        );
-        return savedAfterAsset;
-      }),
-    );
-
-    if (savedAfterAsset) {
-      writeAssetAuditLog({
-        asset: savedAfterAsset,
-        action: "updated",
-        reason,
-        before: beforeAsset,
-        after: savedAfterAsset,
-      });
-    }
-
-    resetEditor();
-  };
-  // =====================================================
-  // SAVE / UPDATE MAP ASSETS
-  // Handles joints, street cabs, poles, DPs, chambers, cables, areas.
-  // Exchange saving can be added separately once the ⭐ marker UI is live.
-  // =====================================================
-  const handleSaveJoint = (detailOverrides?: {
-    poleDetails?: PoleDetails;
-    dpDetails?: DistributionPointDetails;
-    chamberDetails?: ChamberDetails;
-  }) => {
-    if (!pickedLocation) {
-      alert("Click a location on the map first.");
-      return;
-    }
-
-    if (!jointName.trim()) {
-      if (assetType === "street-cab") {
-        alert("Enter a street cab name.");
-      } else if (assetType === "pole") {
-        alert("Enter a pole name.");
-      } else if (assetType === "distribution-point") {
-        alert("Enter a distribution point name.");
-      } else if (assetType === "chamber") {
-        alert("Enter a chamber name.");
-      } else if (assetType === "home") {
-        alert("Enter a home name.");
-      } else {
-        alert("Enter a joint name.");
-      }
-      return;
-    }
-
-    if (assetType === "cable") {
-      alert("Use Add Cable and Start Drawing for cables.");
-      return;
-    }
-
-    if (assetType === "area") {
-      alert("Use Draw Area, then Finish Area for polygons.");
-      return;
-    }
-
-    const nextPoleDetails = detailOverrides?.poleDetails ?? poleDetails;
-    const nextDpDetails = detailOverrides?.dpDetails ?? dpDetails;
-    const nextChamberDetails =
-      detailOverrides?.chamberDetails ?? chamberDetails;
-
-    const reason = getChangeReasonForCurrentMode("created", jointName.trim());
-    if (!reason) return;
-
-    const record: SavedMapAsset = {
-      id: crypto.randomUUID(),
-      name: jointName.trim(),
-      assetType,
-      jointType:
-        assetType === "street-cab"
-          ? "Street Cab"
-          : assetType === "pole"
-            ? "Pole"
-            : assetType === "distribution-point"
-              ? "Distribution Point"
-              : assetType === "chamber"
-                ? "Chamber"
-                : assetType === "home"
-                  ? "Home"
-                  : jointType,
-      notes: notes.trim(),
-      mappingRows: assetType === "ag-joint" ? currentMappingRows : [],
-      mappingRowsCount:
-        assetType === "ag-joint" ? currentMappingRows.length : undefined,
-      ...(assetType === "ag-joint" && currentMappingRows.length > 0
-        ? {
-            mappingRowsRef: false,
-            mappingRowsSummary: { rowCount: currentMappingRows.length },
-          }
-        : {}),
-      ...(assetType === "distribution-point"
-        ? {
-            status: getDpOperationalStatus({ dpDetails: nextDpDetails }),
-            buildStatus: getDpOperationalStatus({ dpDetails: nextDpDetails }),
-            properties: {
-              status: getDpOperationalStatus({ dpDetails: nextDpDetails }),
-              buildStatus: getDpOperationalStatus({ dpDetails: nextDpDetails }),
-              dpDetails: {
-                ...nextDpDetails,
-                buildStatus: getDpOperationalStatus({
-                  dpDetails: nextDpDetails,
-                }),
-              },
-            },
-          }
-        : {}),
-      poleDetails: assetType === "pole" ? nextPoleDetails : undefined,
-      dpDetails:
-        assetType === "distribution-point"
-          ? ({
-              ...nextDpDetails,
-              buildStatus: getDpOperationalStatus({ dpDetails: nextDpDetails }),
-            } as DistributionPointDetails)
-          : undefined,
-      chamberDetails: assetType === "chamber" ? nextChamberDetails : undefined,
-      geometry: {
-        type: "Point",
-        coordinates: [pickedLocation.lat, pickedLocation.lng],
-      },
-    };
-
-    // IMPORTANT:
-    // New point assets must use the single save path so area metadata is stamped
-    // before the workspace/map filters run. Without this, assets named with
-    // BD-BAS / BD-BAE can be indexed inconsistently and appear to not add.
-    const savedRecord = saveMapAssetToState(record, { isNew: true });
-    writeAssetAuditLog({
-      asset: savedRecord,
-      action: "created",
-      reason,
-      after: savedRecord,
-    });
-    resetEditor();
-  };
-
-  const handleFinishArea = () => {
-    if (draftAreaPoints.length < 3) {
-      alert("Add at least three polygon points.");
-      return;
-    }
-
-    const areaName =
-      jointName.trim() ||
-      `Area ${(savedJoints ?? []).filter((asset) => asset.assetType === "area").length + 1}`;
-
-    const reason = getChangeReasonForCurrentMode("created", areaName);
-    if (!reason) return;
-
-    const areaRecord: SavedMapAsset = {
-      id: crypto.randomUUID(),
-      name: areaName,
-      assetType: "area",
-      jointType: "Polygon Area",
-      notes: notes.trim(),
-      areaLevel,
-      mappingRows: [],
-      geometry: {
-        type: "Polygon",
-        coordinates: [draftAreaPoints.map((p) => [p.lat, p.lng])],
-      },
-    };
-
-    const savedAreaRecord = saveMapAssetToState(areaRecord, { isNew: true });
-    writeAssetAuditLog({
-      asset: savedAreaRecord,
-      action: "created",
-      reason,
-      after: savedAreaRecord,
-    });
-    resetEditor();
-  };
-
-  const handleUndoAreaPoint = () => {
-    setDraftAreaPoints((prev) => prev.slice(0, -1));
-  };
-
-  const handleClearArea = () => {
-    setDraftAreaPoints([]);
-  };
-
-  const handleMoveAreaPoint = (index: number, point: LatLngLiteral) => {
-    setDraftAreaPoints((prev) =>
-      prev.map((existingPoint, existingIndex) =>
-        existingIndex === index ? point : existingPoint,
-      ),
-    );
-  };
+  const {
+    handleFinishArea,
+    handleUndoAreaPoint,
+    handleClearArea,
+    handleMoveAreaPoint,
+  } = useAreaDrawingTools({
+    draftAreaPoints,
+    setDraftAreaPoints,
+    jointName,
+    savedJoints,
+    notes,
+    areaLevel,
+    saveMapAssetToState,
+    writeAssetAuditLog,
+    getChangeReasonForCurrentMode,
+    resetEditor,
+  });
 
   const handleFinishCable = async () => {
     if (draftCablePoints.length < 2) {
@@ -2054,167 +1642,6 @@ export default function JointMapManager({
     }
   };
 
-  const handleDeleteAsset = async (id: string) => {
-    const deletedId = String(id);
-    const deletedAsset = (savedJoints ?? []).find(
-      (asset) => asset.id === deletedId,
-    );
-    const reason = getChangeReasonForCurrentMode(
-      "deleted",
-      deletedAsset?.name || deletedId,
-    );
-    if (!reason) return;
-
-    const getHomeConnectionKey = (asset: any): string =>
-      String(
-        asset?.id ??
-          asset?.assetId ??
-          asset?.homeId ??
-          asset?.uprn ??
-          asset?.UPRN ??
-          asset?.properties?.UPRN ??
-          asset?.properties?.uprn ??
-          "",
-      ).trim();
-
-    const getDropHomeKeys = (drop: any): string[] => {
-      const rawHomeId = String(
-        drop?.homeId ??
-          drop?.toAssetId ??
-          drop?.connectedHomeId ??
-          drop?.uprn ??
-          drop?.UPRN ??
-          "",
-      ).trim();
-
-      if (!rawHomeId) return [];
-
-      return rawHomeId.startsWith("uprn-")
-        ? [rawHomeId, rawHomeId.replace(/^uprn-/, "")]
-        : [rawHomeId, `uprn-${rawHomeId}`];
-    };
-
-    const homeKeysToUnstamp = new Set<string>();
-
-    savedJoints.forEach((asset: any) => {
-      if (!isDropCable(asset)) return;
-
-      const dropDpId = String(asset?.dpId ?? asset?.fromAssetId ?? "").trim();
-      const dropHomeId = String(asset?.homeId ?? asset?.toAssetId ?? "").trim();
-
-      if (
-        dropDpId === deletedId ||
-        dropHomeId === deletedId ||
-        asset?.id === deletedId
-      ) {
-        getDropHomeKeys(asset).forEach((key) => homeKeysToUnstamp.add(key));
-      }
-    });
-
-    setSavedJoints((prev) => {
-      const filteredAssets = prev.filter((asset: any) => {
-        if (asset?.id === deletedId) return false;
-
-        // If a DP/AFN/CBT/home/drop is deleted, remove related auto-generated
-        // drop cables as well so stale drop lines do not remain on the map.
-        if (isDropCable(asset)) {
-          const dropDpId = String(
-            asset?.dpId ?? asset?.fromAssetId ?? "",
-          ).trim();
-          const dropHomeId = String(
-            asset?.homeId ?? asset?.toAssetId ?? "",
-          ).trim();
-
-          return dropDpId !== deletedId && dropHomeId !== deletedId;
-        }
-
-        return true;
-      });
-
-      return filteredAssets.map((asset: any) => {
-        const connectedDpId = String(
-          asset?.connectedDpId ?? asset?.properties?.connectedDpId ?? "",
-        ).trim();
-        const homeKey = getHomeConnectionKey(asset);
-
-        if (
-          connectedDpId !== deletedId &&
-          (!homeKey || !homeKeysToUnstamp.has(homeKey))
-        ) {
-          return asset;
-        }
-
-        return markAssetForLiveSync(
-          {
-            ...asset,
-            connection: "unconnected",
-            connectedDpId: null,
-            connectionMode: null,
-            properties: {
-              ...((asset as any).properties || {}),
-              connection: "unconnected",
-              connectedDpId: null,
-              connectionMode: null,
-            },
-          },
-          true,
-        );
-      });
-    });
-
-    if (deletedAsset) {
-      writeAssetAuditLog({
-        asset: deletedAsset,
-        action: "deleted",
-        reason,
-        before: deletedAsset,
-      });
-    }
-
-    if (activeProjectId && homeKeysToUnstamp.size > 0) {
-      const updatedProjectHomes = projectHomes.map((home: any) => {
-        const connectedDpId = String(
-          home?.connectedDpId ?? home?.properties?.connectedDpId ?? "",
-        ).trim();
-        const homeKey = getHomeConnectionKey(home);
-
-        if (
-          connectedDpId !== deletedId &&
-          (!homeKey || !homeKeysToUnstamp.has(homeKey))
-        ) {
-          return home;
-        }
-
-        return markAssetForLiveSync(
-          {
-            ...home,
-            connection: "unconnected",
-            connectedDpId: null,
-            connectionMode: null,
-            properties: {
-              ...((home as any).properties || {}),
-              connection: "unconnected",
-              connectedDpId: null,
-              connectionMode: null,
-            },
-          },
-          true,
-        );
-      });
-
-      setProjectHomes(updatedProjectHomes);
-      await saveProjectHomes(
-        activeProjectId,
-        stampHomesForActiveArea(updatedProjectHomes),
-        activeProjectAreaName,
-      );
-    }
-
-    if (editingAssetId === id) {
-      resetEditor();
-    }
-  };
-
   const handleClearMeasurement = () => {
     setMeasurePoints([]);
     setMapMode("pick");
@@ -2372,599 +1799,44 @@ export default function JointMapManager({
     setDraftAreaPoints((prev) => [...prev, point]);
   };
 
-  const loadExistingHomesOrContinueImport = async (
-    projectId: string,
-  ): Promise<boolean> => {
-    const existingHomes = await loadProjectHomes(projectId);
-
-    if (existingHomes.length === 0) {
-      return false;
-    }
-
-    setProjectHomes(existingHomes);
-    setLoadedHomesProjectId(projectId);
-    alert(
-      "Homes are already saved for this project, so I loaded the saved homes instead of importing duplicates.",
-    );
-    return true;
-  };
-
-  const handleLoadOsmHomes = async () => {
-    if (!activeProjectId) {
-      alert(
-        "Select a project area first, then load homes. This keeps homes saved against one area only.",
-      );
-      return;
-    }
-
-    const loadedExistingHomes =
-      await loadExistingHomesOrContinueImport(activeProjectId);
-    if (loadedExistingHomes) return;
-
-    if (!mapBounds) {
-      alert("Move or zoom the map once, then try again.");
-      return;
-    }
-
-    const latSpan = Math.abs(mapBounds.north - mapBounds.south);
-    const lngSpan = Math.abs(mapBounds.east - mapBounds.west);
-
-    if (latSpan > 0.08 || lngSpan > 0.12) {
-      alert(
-        "Zoom in closer before loading OSM homes. This avoids importing too many buildings at once.",
-      );
-      return;
-    }
-
-    setIsLoadingOsmHomes(true);
-
-    try {
-      const homes = (
-        await loadOsmBuildingsAsHomes(mapBounds, allMapAssets)
-      ).map((asset) => ({
-        ...(asset as SavedMapAsset),
-        projectId: activeProjectId,
-      }));
-
-      if (homes.length === 0) {
-        alert("No new OSM homes found in the current map view.");
-        return;
-      }
-
-      const savedHomes = homes.map((asset) =>
-        markAssetForLiveSync(asset as SavedMapAsset, true),
-      );
-      const mergedHomes = [...projectHomes, ...savedHomes];
-
-      await saveProjectHomes(
-        activeProjectId,
-        stampHomesForActiveArea(mergedHomes),
-        activeProjectAreaName,
-      );
-      setProjectHomes(mergedHomes);
-      setLoadedHomesProjectId(activeProjectId);
-
-      alert(`Saved ${homes.length} OSM homes to this project.`);
-    } catch (err: any) {
-      alert(`Failed to load OSM homes: ${err.message || String(err)}`);
-    } finally {
-      setIsLoadingOsmHomes(false);
-    }
-  };
-
-  const createHomeAssetsFromGeoJson = (
-    geojson: any,
-    onlyInBounds?: L.LatLngBounds,
-  ): SavedMapAsset[] => {
-    if (!geojson?.features || !Array.isArray(geojson.features)) {
-      throw new Error("Invalid GeoJSON");
-    }
-
-    const existingHomeKeys = new Set(
-      allMapAssets
-        .filter((asset) => asset.assetType === "home")
-        .map((asset) => {
-          const uprn = String(
-            (asset as any).uprn || asset.name || asset.id || "",
-          ).trim();
-          return uprn || asset.id;
-        }),
-    );
-
-    return geojson.features
-      .map((feature: any) => {
-        if (feature?.geometry?.type !== "Point") return null;
-        if (!Array.isArray(feature.geometry.coordinates)) return null;
-
-        const [lngRaw, latRaw] = feature.geometry.coordinates;
-        const lat = Number(latRaw);
-        const lng = Number(lngRaw);
-
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-        if (onlyInBounds && !onlyInBounds.contains([lat, lng])) return null;
-
-        const rawUprn =
-          feature.properties?.UPRN ??
-          feature.properties?.uprn ??
-          feature.properties?.Uprn ??
-          feature.properties?.id ??
-          "";
-        const uprn = String(rawUprn || "").trim();
-        const id = uprn ? `uprn-${uprn}` : crypto.randomUUID();
-        const duplicateKey = uprn || id;
-
-        if (existingHomeKeys.has(duplicateKey) || existingHomeKeys.has(id)) {
-          return null;
-        }
-
-        existingHomeKeys.add(duplicateKey);
-        existingHomeKeys.add(id);
-
-        return {
-          id,
-          name: uprn ? `UPRN ${uprn}` : "Home",
-          assetType: "home",
-          projectId: activeProjectId || undefined,
-          jointType: "Home",
-          notes: "",
-          mappingRows: [],
-          uprn: uprn || undefined,
-          connectionMode: "auto",
-          geometry: {
-            type: "Point",
-            coordinates: [lat, lng],
-          },
-        } as SavedMapAsset;
-      })
-      .filter(Boolean) as SavedMapAsset[];
-  };
-
-  const loadGeoJsonHomes = (file: File) => {
-    if (!activeProjectId) {
-      alert(
-        "Select a project area first, then import homes. This keeps homes saved against one area only.",
-      );
-      return;
-    }
-
-    const projectIdForImport = activeProjectId;
-    const reader = new FileReader();
-
-    reader.onload = async (e) => {
-      try {
-        const loadedExistingHomes =
-          await loadExistingHomesOrContinueImport(projectIdForImport);
-        if (loadedExistingHomes) return;
-
-        const geojson = JSON.parse(String(e.target?.result || ""));
-        const homes = createHomeAssetsFromGeoJson(geojson);
-
-        if (homes.length === 0) {
-          alert("No new GeoJSON homes found in that file.");
-          return;
-        }
-
-        const savedHomes = homes.map((asset) =>
-          markAssetForLiveSync(
-            { ...asset, projectId: projectIdForImport },
-            true,
-          ),
-        );
-        const mergedHomes = [...projectHomes, ...savedHomes];
-
-        await saveProjectHomes(
-          projectIdForImport,
-          stampHomesForActiveArea(mergedHomes),
-          activeProjectAreaName,
-        );
-        setProjectHomes(mergedHomes);
-        setLoadedHomesProjectId(projectIdForImport);
-
-        alert(`Saved ${homes.length} GeoJSON homes to this project.`);
-      } catch (err: any) {
-        console.error(err);
-        alert(`Failed to load GeoJSON homes: ${err.message || String(err)}`);
-      }
-    };
-
-    reader.readAsText(file);
-  };
-
-  const loadGeoJsonHomesInView = (file: File) => {
-    if (!activeProjectId) {
-      alert(
-        "Select a project area first, then import homes. This keeps homes saved against one area only.",
-      );
-      return;
-    }
-
-    const projectIdForImport = activeProjectId;
-    const map = mapRef.current;
-
-    if (!map) {
-      alert("Map is not ready yet. Move or zoom the map once, then try again.");
-      return;
-    }
-
-    const reader = new FileReader();
-
-    reader.onload = async (e) => {
-      try {
-        const loadedExistingHomes =
-          await loadExistingHomesOrContinueImport(projectIdForImport);
-        if (loadedExistingHomes) return;
-
-        const geojson = JSON.parse(String(e.target?.result || ""));
-        const importedHomes = createHomeAssetsFromGeoJson(
-          geojson,
-          map.getBounds(),
-        );
-        const homes = activeProjectArea
-          ? filterAssetsForProjectArea(importedHomes, activeProjectArea)
-          : importedHomes;
-
-        if (homes.length === 0) {
-          alert("No new GeoJSON homes found in the current map view.");
-          return;
-        }
-
-        const savedHomes = homes.map((asset) =>
-          markAssetForLiveSync(
-            { ...asset, projectId: projectIdForImport },
-            true,
-          ),
-        );
-        const mergedHomes = [...projectHomes, ...savedHomes];
-
-        await saveProjectHomes(
-          projectIdForImport,
-          stampHomesForActiveArea(mergedHomes),
-          activeProjectAreaName,
-        );
-        setProjectHomes(mergedHomes);
-        setLoadedHomesProjectId(projectIdForImport);
-
-        alert(`Saved ${homes.length} GeoJSON homes in view to this project.`);
-      } catch (err: any) {
-        console.error(err);
-        alert(`Failed to load GeoJSON homes: ${err.message || String(err)}`);
-      }
-    };
-
-    reader.readAsText(file);
-  };
-
-  const handleExportJson = () => {
-    const blob = new Blob([JSON.stringify(savedJoints, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "saved-assets.json";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleExportGeoJson = () => {
-    const geojson = {
-      type: "FeatureCollection",
-      features: (savedJoints ?? [])
-        .map((asset) => {
-          if (asset.geometry?.type === "Point") {
-            const [lat, lng] = asset.geometry.coordinates;
-            return {
-              type: "Feature",
-              properties: {
-                id: asset.id,
-                name: asset.name,
-                assetType: asset.assetType || "ag-joint",
-                jointType: asset.jointType,
-                notes: asset.notes || "",
-                cableType: asset.cableType || "",
-                fibreCount: asset.fibreCount || "",
-                installMethod: asset.installMethod || "",
-                poleDetails: asset.poleDetails || null,
-                dpDetails: asset.dpDetails || null,
-                chamberDetails: asset.chamberDetails || null,
-                streetCabDetails: asset.streetCabDetails || null,
-              },
-              geometry: {
-                type: "Point",
-                coordinates: [lng, lat],
-              },
-            };
-          }
-
-          if (asset.geometry?.type === "LineString") {
-            return {
-              type: "Feature",
-              properties: {
-                id: asset.id,
-                name: asset.name,
-                assetType: asset.assetType || "cable",
-                jointType: asset.jointType,
-                notes: asset.notes || "",
-                cableType: asset.cableType || "",
-                fibreCount: asset.fibreCount || "",
-                installMethod: asset.installMethod || "",
-              },
-              geometry: {
-                type: "LineString",
-                coordinates: asset.geometry.coordinates.map(([lat, lng]) => [
-                  lng,
-                  lat,
-                ]),
-              },
-            };
-          }
-
-          if (asset.geometry?.type === "Polygon") {
-            return {
-              type: "Feature",
-              properties: {
-                id: asset.id,
-                name: asset.name,
-                assetType: asset.assetType || "area",
-                jointType: asset.jointType,
-                notes: asset.notes || "",
-                areaLevel: (asset as any).areaLevel || "L0",
-              },
-              geometry: {
-                type: "Polygon",
-                coordinates: asset.geometry.coordinates.map((ring) =>
-                  ring.map(([lat, lng]) => [lng, lat]),
-                ),
-              },
-            };
-          }
-
-          return null;
-        })
-        .filter(Boolean),
-    };
-
-    const blob = new Blob([JSON.stringify(geojson, null, 2)], {
-      type: "application/geo+json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "saved-assets.geojson";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const loadPiaOverlayGeoJson = async (file: File) => {
-    const reader = new FileReader();
-
-    reader.onload = async (e) => {
-      try {
-        const geojson = JSON.parse(String(e.target?.result || ""));
-        const piaAssets = createPiaOverlayAssetsFromGeoJson(geojson, {
-          savedJoints,
-          markAssetForLiveSync,
-        });
-
-        if (!piaAssets.length) {
-          alert("No new PIA LineString routes found in that GeoJSON.");
-          return;
-        }
-
-        const mergedOrAssets = await mergeAndSaveOrAssets(
-          piaAssets.map(normaliseOpenreachAsset),
-          { reason: "PIA overlay GeoJSON import" },
-        );
-
-        setOrAssets(mergedOrAssets);
-
-        alert(
-          `Imported ${piaAssets.length} PIA overlay route(s) into read-only OR reference storage.`,
-        );
-      } catch (err: any) {
-        console.error(err);
-        alert(`PIA overlay import failed: ${err.message || String(err)}`);
-      }
-    };
-
-    reader.readAsText(file);
-  };
-
-  // =====================================================
-  // ONE-BUTTON GEOJSON MAP ASSET IMPORTER
-  // Accepts mixed GeoJSON containing DPs/AFNs/CBTs, poles,
-  // chambers, street cabs, project polygons, cables/routes,
-  // PIA overlay routes, exchanges and UPRN/home points.
-  // Homes still save to projectHomes chunks. Network assets save
-  // to saved map assets and are mirrored by split storage.
-  // =====================================================
-
-  const loadAnyGeoJsonMapAssets = (file: File) => {
-    const reader = new FileReader();
-
-    reader.onload = async (e) => {
-      try {
-        const geojson = JSON.parse(String(e.target?.result || ""));
-        const { networkAssets: rawNetworkAssets, homeAssets: rawHomeAssets } =
-          createMapAssetsFromAnyGeoJson(geojson, {
-            activeProjectId,
-            markAssetForLiveSync,
-            activeProjectArea,
-          });
-
-        const networkAssets = activeProjectArea
-          ? filterAssetsForProjectArea(rawNetworkAssets, activeProjectArea)
-          : rawNetworkAssets;
-        // Homes are now clipped to the active project polygon inside the importer.
-        // Do not run the generic asset-area index filter again here; imported homes
-        // may not yet have areaId/projectAreaId stamps until saveProjectHomes().
-        const homeAssets = rawHomeAssets;
-
-        if (!networkAssets.length && !homeAssets.length) {
-          alert(
-            "No supported GeoJSON map assets found inside the selected project area. Check the area polygon is selected before importing.",
-          );
-          return;
-        }
-
-        let savedHomeCount = 0;
-        if (homeAssets.length) {
-          if (!activeProjectId) {
-            alert(
-              "This file contains homes/UPRNs. Select a project area first so homes can be saved to project home chunks.",
-            );
-            return;
-          }
-
-          const existingHomes =
-            loadedHomesProjectId === activeProjectId
-              ? projectHomes
-              : await loadProjectHomes(activeProjectId);
-          const existingHomeKeys = new Set(
-            existingHomes
-              .map((home: any) =>
-                String(home.uprn || home.id || home.name || "").trim(),
-              )
-              .filter(Boolean),
-          );
-          const newHomes = homeAssets.filter((home: any) => {
-            const key = String(home.uprn || home.id || home.name || "").trim();
-            if (!key || existingHomeKeys.has(key)) return false;
-            existingHomeKeys.add(key);
-            return true;
-          });
-
-          if (newHomes.length) {
-            const mergedHomes = [
-              ...existingHomes,
-              ...newHomes.map((home) => ({
-                ...home,
-                projectId: activeProjectId,
-              })),
-            ];
-            await saveProjectHomes(
-              activeProjectId,
-              stampHomesForActiveArea(mergedHomes),
-              activeProjectAreaName,
-            );
-            setProjectHomes(mergedHomes);
-            setLoadedHomesProjectId(activeProjectId);
-            savedHomeCount = newHomes.length;
-          }
-        }
-
-        const importedOrAssets = networkAssets
-          .filter(isOpenreachReferenceAsset)
-          .map((asset) =>
-            withAreaAssetIndex(
-              normaliseOpenreachAsset(asset),
-              activeProjectId,
-              (activeProjectArea as any)?.name ||
-                (activeProjectArea as any)?.label,
-            ),
-          );
-        const designedNetworkAssets = networkAssets.filter(
-          (asset) => !isOpenreachReferenceAsset(asset),
-        );
-
-        let savedOrCount = 0;
-        if (importedOrAssets.length) {
-          const mergedOrAssets = await mergeAndSaveOrAssets(importedOrAssets, {
-            reason: "GeoJSON OR reference import",
-          });
-          setOrAssets(mergedOrAssets);
-          savedOrCount = importedOrAssets.length;
-        }
-
-        if (designedNetworkAssets.length) {
-          const existingIds = new Set(
-            savedJoints.map((asset) => String(asset.id)),
-          );
-          const dedupedNetworkAssets = designedNetworkAssets.filter((asset) => {
-            const id = String(asset.id);
-            if (existingIds.has(id)) return false;
-            existingIds.add(id);
-            return true;
-          });
-          setSavedJoints((prev) => [
-            ...prev,
-            ...dedupedNetworkAssets.map((asset) =>
-              withAreaAssetIndex(
-                asset,
-                activeProjectId,
-                (activeProjectArea as any)?.name ||
-                  (activeProjectArea as any)?.label,
-              ),
-            ),
-          ]);
-        }
-
-        alert(
-          `Imported ${designedNetworkAssets.length} designed network asset(s), ${savedOrCount} OR reference asset(s), and ${savedHomeCount} home(s) from GeoJSON.`,
-        );
-      } catch (err: any) {
-        console.error(err);
-        alert(`GeoJSON map asset import failed: ${err.message || String(err)}`);
-      }
-    };
-
-    reader.readAsText(file);
-  };
-
-  const handleImportJson = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      const text = await file.text();
-      const parsed = JSON.parse(text);
-
-      if (!Array.isArray(parsed)) throw new Error("Invalid file");
-
-      const importedAssets = (parsed as SavedMapAsset[]).map((asset) =>
-        markAssetForLiveSync(asset, !(asset as any).createdAt),
-      );
-
-      const importedOrAssets = importedAssets
-        .filter(isOpenreachReferenceAsset)
-        .map((asset) =>
-          withAreaAssetIndex(
-            normaliseOpenreachAsset(asset),
-            activeProjectId,
-            (activeProjectArea as any)?.name ||
-              (activeProjectArea as any)?.label,
-          ),
-        );
-      const importedDesignedAssets = importedAssets.filter(
-        (asset) => !isOpenreachReferenceAsset(asset),
-      );
-
-      if (importedOrAssets.length) {
-        const mergedOrAssets = await mergeAndSaveOrAssets(importedOrAssets, {
-          reason: "JSON import OR reference assets",
-        });
-        setOrAssets(mergedOrAssets);
-      }
-
-      setSavedJoints(
-        importedDesignedAssets.map((asset) =>
-          withAreaAssetIndex(
-            asset,
-            activeProjectId,
-            (activeProjectArea as any)?.name ||
-              (activeProjectArea as any)?.label,
-          ),
-        ),
-      );
-      alert(
-        `Imported ${importedDesignedAssets.length} designed asset(s) and ${importedOrAssets.length} OR reference asset(s).`,
-      );
-    } catch (err: any) {
-      alert("Import failed: " + err.message);
-    }
-
-    e.target.value = "";
-  };
+  const {
+    handleLoadOsmHomes,
+    loadGeoJsonHomes,
+    loadGeoJsonHomesInView,
+  } = useHomeImportTools({
+    activeProjectId,
+    activeProjectArea,
+    activeProjectAreaName,
+    mapBounds,
+    mapRef,
+    allMapAssets,
+    projectHomes,
+    setProjectHomes,
+    setLoadedHomesProjectId,
+    setIsLoadingOsmHomes,
+    stampHomesForActiveArea,
+  });
+
+  const {
+    handleExportJson,
+    handleExportGeoJson,
+    loadPiaOverlayGeoJson,
+    loadAnyGeoJsonMapAssets,
+    handleImportJson,
+  } = useMapImportExportTools({
+    savedJoints,
+    setSavedJoints,
+    activeProjectId,
+    activeProjectArea,
+    activeProjectAreaName,
+    projectHomes,
+    setProjectHomes,
+    loadedHomesProjectId,
+    setLoadedHomesProjectId,
+    setOrAssets,
+    stampHomesForActiveArea,
+    markAssetForLiveSync,
+  });
 
   // =====================================================
   // CABLE / AFN ALLOCATION OPTIONS
