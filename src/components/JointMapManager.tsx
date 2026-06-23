@@ -1311,23 +1311,41 @@ export default function JointMapManager({
     setShowCableModal,
   });
 
+  const [highlightedSearchAssetId, setHighlightedSearchAssetId] = useState<string | null>(null);
+  const assetSearchSource = useMemo(() => {
+  if (activeProjectArea) {
+    return [activeProjectArea, ...visibleProjectAssets];
+  }
 
-  const assetSearchResults = useMemo(() => {
-    const query = assetSearchQuery.trim().toLowerCase();
-    if (query.length < 2) return [];
+  return allMapAssets;
+}, [activeProjectArea, visibleProjectAssets, allMapAssets]);
 
-    return allMapAssets
-      .filter((asset) => buildAssetSearchText(asset).includes(query))
-      .slice(0, 12);
-  }, [allMapAssets, assetSearchQuery]);
+const assetSearchResults = useMemo(() => {
+  const query = assetSearchQuery.trim().toLowerCase();
+  if (query.length < 2) return [];
+
+  return assetSearchSource
+    .filter((asset) => buildAssetSearchText(asset).includes(query))
+    .slice(0, 12);
+}, [assetSearchSource, assetSearchQuery]);
 
   const selectAssetSearchResult = (asset: SavedMapAsset) => {
-    handleEditAsset(asset);
-    handleZoomToAsset(asset);
-    setAssetSearchQuery(getAssetSearchLabel(asset));
-    setIsAssetSearchFocused(false);
-  };
+  handleEditAsset(asset);
+  handleZoomToAsset(asset);
+  setAssetSearchQuery(getAssetSearchLabel(asset));
+  setIsAssetSearchFocused(false);
 
+  setHighlightedSearchAssetId(asset.id);
+
+  window.setTimeout(() => {
+    setHighlightedSearchAssetId((currentId) =>
+      currentId === asset.id ? null : currentId,
+    );
+  }, 4500);
+};
+const assetSearchScopeLabel = activeProjectArea
+  ? getAssetSearchLabel(activeProjectArea)
+  : "Whole map";
   const handleAssetSearchSubmit = () => {
     const firstResult = assetSearchResults[0];
     if (firstResult) {
@@ -3958,6 +3976,7 @@ export default function JointMapManager({
           <AssetMarkersLayer
             assets={renderProjectAssets}
             visibleLayers={visibleLayers}
+            highlightedAssetId={highlightedSearchAssetId}
             onOpenAsset={(asset) => {
               const routedType = String(
                 (asset as any).assetType || (asset as any).type || "",
@@ -4535,23 +4554,24 @@ export default function JointMapManager({
 
       {!showMaintenancePanel && !isFieldResponsiveMode && (
         <MapToolbar
-          showAssetPanelButton={!isPanelOpen}
-          onOpenAssetPanel={() => setIsPanelOpen(true)}
-          searchQuery={assetSearchQuery}
-          setSearchQuery={setAssetSearchQuery}
-          isSearchFocused={isAssetSearchFocused}
-          setIsSearchFocused={setIsAssetSearchFocused}
-          searchResults={assetSearchResults}
-          selectedAssetId={editingAssetId}
-          onSearchSubmit={handleAssetSearchSubmit}
-          onSelectSearchResult={selectAssetSearchResult}
-          canSaveMap={canManageNetworkDesign}
-          isSavingMap={isSavingMapNow}
-          onSaveMap={handleSaveMapNow}
-          onGpsLocate={handleGpsLocate}
-          isLayersOpen={isLayersOpen}
-          onToggleLayers={() => setIsLayersOpen((prev) => !prev)}
-        />
+  showAssetPanelButton={!isPanelOpen}
+  onOpenAssetPanel={() => setIsPanelOpen(true)}
+  searchQuery={assetSearchQuery}
+  setSearchQuery={setAssetSearchQuery}
+  searchResults={assetSearchResults}
+  selectedAssetId={editingAssetId}
+  searchScopeLabel={assetSearchScopeLabel}
+  onSearchSubmit={handleAssetSearchSubmit}
+  onSelectSearchResult={selectAssetSearchResult}
+  isSearchFocused={isAssetSearchFocused}
+  setIsSearchFocused={setIsAssetSearchFocused}
+  canSaveMap={canManageNetworkDesign}
+  isSavingMap={isSavingMapNow}
+  onSaveMap={handleSaveMapNow}
+  onGpsLocate={handleGpsLocate}
+  isLayersOpen={isLayersOpen}
+  onToggleLayers={() => setIsLayersOpen(!isLayersOpen)}
+/>
       )}
 
       <ResponsiveFieldPolish enabled={isFieldResponsiveMode} />

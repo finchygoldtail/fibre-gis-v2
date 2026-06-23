@@ -11,6 +11,7 @@ type Props = {
   setIsSearchFocused: React.Dispatch<React.SetStateAction<boolean>>;
   searchResults: SavedMapAsset[];
   selectedAssetId?: string | null;
+  searchScopeLabel: string;
   onSearchSubmit: () => void;
   onSelectSearchResult: (asset: SavedMapAsset) => void;
 
@@ -57,6 +58,7 @@ export default function MapToolbar({
   setIsSearchFocused,
   searchResults,
   selectedAssetId,
+  searchScopeLabel,
   onSearchSubmit,
   onSelectSearchResult,
   canSaveMap,
@@ -93,6 +95,7 @@ export default function MapToolbar({
                   event.preventDefault();
                   onSearchSubmit();
                 }
+
                 if (event.key === "Escape") {
                   setIsSearchFocused(false);
                 }
@@ -110,6 +113,10 @@ export default function MapToolbar({
             >
               ☷
             </button>
+          </div>
+
+          <div style={searchScopeStyle}>
+            Searching in: {searchScopeLabel}
           </div>
 
           {isSearchFocused && (
@@ -135,11 +142,15 @@ export default function MapToolbar({
                       }}
                     >
                       <span style={searchResultIconStyle}>
-                        {getAssetSearchTypeLabel(asset).slice(0, 2).toUpperCase()}
+                        {getAssetSearchTypeLabel(asset)
+                          .slice(0, 2)
+                          .toUpperCase()}
                       </span>
+
                       <span style={searchResultNameStyle}>
                         {getAssetSearchLabel(asset)}
                       </span>
+
                       <span style={searchResultTypeStyle}>
                         {getAssetSearchTypeLabel(asset)}
                       </span>
@@ -147,7 +158,8 @@ export default function MapToolbar({
                   ))
                 ) : (
                   <div style={emptyResultsStyle}>
-                    No matching asset, chamber, pole, DP, cable, address or UPRN found.
+                    No matching asset, chamber, pole, DP, cable, address or UPRN
+                    found.
                   </div>
                 )
               ) : null}
@@ -256,6 +268,15 @@ const searchOptionsButtonStyle: React.CSSProperties = {
   fontSize: 20,
   fontWeight: 900,
   height: 52,
+};
+
+const searchScopeStyle: React.CSSProperties = {
+  borderTop: "1px solid #e5e7eb",
+  padding: "6px 14px",
+  color: "#475569",
+  fontSize: 11,
+  fontWeight: 900,
+  background: "#f8fafc",
 };
 
 const searchResultsStyle: React.CSSProperties = {

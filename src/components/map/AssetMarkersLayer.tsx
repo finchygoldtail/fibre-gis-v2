@@ -37,6 +37,7 @@ type LayerVisibility = {
 type Props = {
   assets: SavedMapAsset[];
   visibleLayers: LayerVisibility;
+  highlightedAssetId?: string | null;
   onOpenAsset: (asset: SavedMapAsset) => void;
   onDeleteAsset: (id: string) => void;
   onEditAsset: (asset: SavedMapAsset) => void;
@@ -1070,7 +1071,40 @@ function groupStackedHomeAssets(homes: SavedMapAsset[]): HomeStack[] {
   return stacks;
 }
 
+function createHighlightedIcon(baseIcon: L.DivIcon) {
+  const html = baseIcon.options.html || "";
 
+  return L.divIcon({
+    className: "",
+    html: `
+      <div style="
+        position: relative;
+        width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+      ">
+        <div style="
+          position: absolute;
+          inset: 0;
+          border-radius: 999px;
+          border: 4px solid #facc15;
+          box-shadow: 0 0 0 6px rgba(250,204,21,0.35), 0 0 26px rgba(250,204,21,0.95);
+          animation: alistra-search-pulse 1s ease-in-out infinite;
+        "></div>
+        <div style="
+          position: relative;
+          z-index: 2;
+        ">
+          ${html}
+        </div>
+      </div>
+    `,
+    iconSize: [38, 38],
+    iconAnchor: [19, 19],
+    popupAnchor: [0, -19],
+  });
+}
 function getHomeClusterBounds(cluster: HomeCluster): L.LatLngBounds | null {
   const positions = cluster.assets
     .map((home) => getPointLatLng(home))
@@ -1130,6 +1164,7 @@ function clusterHomeAssets(homes: SavedMapAsset[], map: L.Map): HomeCluster[] {
 export default function AssetMarkersLayer({
   assets,
   visibleLayers,
+  highlightedAssetId,
   onOpenAsset,
   onDeleteAsset,
   onEditAsset,
@@ -1150,7 +1185,34 @@ export default function AssetMarkersLayer({
     bounds: map.getBounds(),
   }));
   const [positionMoveHomeId, setPositionMoveHomeId] = useState<string | null>(null);
+React.useEffect(() => {
+  if (document.getElementById("alistra-search-pulse-style")) return;
 
+  const style = document.createElement("style");
+  style.id = "alistra-search-pulse-style";
+  style.innerHTML = `
+    @keyframes alistra-search-pulse {
+      0% {
+        transform: scale(0.75);
+        opacity: 0.45;
+      }
+      50% {
+        transform: scale(1.15);
+        opacity: 1;
+      }
+      100% {
+        transform: scale(0.75);
+        opacity: 0.45;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+
+  return () => {
+    style.remove();
+  };
+}, []);
   const networkState = useMemo(() => buildNetworkState(assets as any), [assets]);
 
   useMapEvents({
@@ -1243,13 +1305,16 @@ export default function AssetMarkersLayer({
     const isSelectedMoveHome = moveHomesMode && asset.assetType === "home" && selectedMoveHomeIds.includes(asset.id);
     const isPositionMoveHome = asset.assetType === "home" && positionMoveHomeId === asset.id;
     const isSelectedSurveyDeleteHome = surveyDeleteHomesMode && asset.assetType === "home" && selectedSurveyDeleteHomeIds.includes(asset.id);
-    const icon = isSelectedSurveyDeleteHome
-      ? createHomeIcon("#ef4444", "#7f1d1d")
-      : isPositionMoveHome
-        ? createHomeIcon("#38bdf8", "#075985", "rgba(56, 189, 248, 0.95)")
-        : isSelectedMoveHome
-        ? createHomeIcon("#38bdf8", "#075985")
-        : getIconForAsset(asset, assets);
+    const baseIcon = isSelectedSurveyDeleteHome
+  ? createHomeIcon("#ef4444", "#7f1d1d")
+  : isPositionMoveHome
+    ? createHomeIcon("#38bdf8", "#075985", "rgba(56, 189, 248, 0.95)")
+    : isSelectedMoveHome
+      ? createHomeIcon("#38bdf8", "#075985")
+      : getIconForAsset(asset, assets);
+
+const icon =
+  asset.id === highlightedAssetId ? createHighlightedIcon(baseIcon as L.DivIcon) : baseIcon;
     const distributionPoints = getDistributionPoints(assets);
     const connectedDp = asset.assetType === "home" ? getHomeConnectedDp(asset, assets) : null;
     const dpUsage = asset.assetType === "distribution-point" ? getDpUsage(asset, assets, networkState) : null;
