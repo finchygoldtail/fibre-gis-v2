@@ -38,15 +38,18 @@ import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import AreaPolygonsLayer from "./map/AreaPolygonsLayer";
-import AdminCleanupPanel from "./map/admin/AdminCleanupPanel";
-import { usePolygonAdminTools, isPolygonAreaAsset } from "./map/admin/usePolygonAdminTools";
+import AdminPanels from "./map/panels/AdminPanels";
+import WorkspacePanels from "./map/panels/WorkspacePanels";
+import { usePolygonAdminTools } from "./map/admin/usePolygonAdminTools";
 import { useAreaRepairTools } from "./map/admin/useAreaRepairTools";
 import { useOrReferenceAdminTools } from "./map/admin/useOrReferenceAdminTools";
 import ExchangeDesigner from "./exchange/ExchangeDesigner";
 import { formatDistance, getPathDistanceMeters } from "../utils/mapMeasure";
 import { getNextAssetName } from "../utils/mapAssetNames";
 import MapContextMenu, { type MapContextAction } from "./map/MapContextMenu";
-import LayersPanel from "./map/LayersPanel";
+import LayerControls from "./map/panels/LayerControls";
+import MapToolbar from "./map/panels/MapToolbar";
+import ImportExportPanel from "./map/panels/ImportExportPanel";
 import AssetMarkersLayer from "./map/AssetMarkersLayer";
 import CableLinesLayer from "./map/CableLinesLayer";
 import OpenreachOverlayLayer from "./map/OpenreachOverlayLayer";
@@ -116,7 +119,6 @@ import { useRoleMobileMode } from "./map/responsive/useRoleMobileMode";
 import { useDeviceLayout } from "./map/responsive/useDeviceLayout";
 import SurveyMobileControls from "./map/responsive/mobile/SurveyMobileControls";
 import MaintenanceMobileControls from "./map/responsive/mobile/MaintenanceMobileControls";
-import BuildMobileWorkspaceNotice from "./map/responsive/mobile/BuildMobileWorkspaceNotice";
 import FieldModeStatusPill from "./map/responsive/shared/FieldModeStatusPill";
 import FieldQuickActionDrawer from "./map/responsive/shared/FieldQuickActionDrawer";
 import FieldSelectedAssetCard from "./map/responsive/shared/FieldSelectedAssetCard";
@@ -149,7 +151,6 @@ import {
 import { useEditorReset } from "./map/editor/useEditorReset";
 import { useMapNavigation } from "./map/navigation/useMapNavigation";
 import AssetDetailsSidebarSections from "./map/AssetDetailsSidebarSections";
-import ProjectWorkspace from "./Project/ProjectWorkspace";
 import type {
   AssetType,
   CableType,
@@ -3063,88 +3064,51 @@ export default function JointMapManager({
     );
   };
 
+  const handleBackToMapFromWorkspace = () => {
+    setIsProjectWorkspaceOpen(false);
+
+    window.setTimeout(() => {
+      if (!mapRef.current || activeProjectArea?.geometry?.type !== "Polygon") {
+        return;
+      }
+
+      const ring = activeProjectArea.geometry.coordinates?.[0] || [];
+      const bounds = L.latLngBounds(
+        ring
+          .map(
+            ([lat, lng]: [number, number]) =>
+              [lat, lng] as [number, number],
+          )
+          .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng)),
+      );
+
+      if (bounds.isValid()) {
+        mapRef.current.fitBounds(bounds, {
+          padding: [40, 40],
+          maxZoom: 18,
+          animate: false,
+        });
+      }
+    }, 150);
+  };
+
   if (
-    isProjectWorkspaceLoading &&
+    (isProjectWorkspaceLoading || isProjectWorkspaceOpen) &&
     activeProjectArea &&
     canManageNetworkDesign
   ) {
     return (
-      <div style={projectWorkspaceLoadingOverlay}>
-        <div style={projectWorkspaceLoadingCard}>
-          <div style={{ fontSize: 13, color: "#93c5fd", fontWeight: 800 }}>
-            Opening Project
-          </div>
-          <div style={{ fontSize: 26, fontWeight: 900, marginTop: 8 }}>
-            {activeProjectArea.name || "Selected Project"}
-          </div>
-          <div style={{ color: "#cbd5e1", marginTop: 8 }}>
-            Loading area assets, topology, QA status and fibre continuity…
-          </div>
-          <div style={projectWorkspaceProgressTrack}>
-            <div style={projectWorkspaceProgressBar} />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (
-    isProjectWorkspaceOpen &&
-    activeProjectArea &&
-    canManageNetworkDesign &&
-    isMobile
-  ) {
-    return (
-      <BuildMobileWorkspaceNotice
-        projectName={activeProjectArea.name || "Selected Project"}
-        onBackToMap={() => setIsProjectWorkspaceOpen(false)}
-      />
-    );
-  }
-
-  if (isProjectWorkspaceOpen && activeProjectArea && canManageNetworkDesign) {
-    return (
-      <ProjectWorkspace
-        projectName={activeProjectArea.name || "Selected Project"}
-        status="Build Phase"
-        stats={projectWorkspaceStats}
-        projectArea={activeProjectArea}
-        projectAssets={visibleProjectAssets}
+      <WorkspacePanels
+        isLoading={isProjectWorkspaceLoading}
+        isOpen={isProjectWorkspaceOpen}
+        isMobile={isMobile}
+        activeProjectArea={activeProjectArea}
+        projectWorkspaceStats={projectWorkspaceStats}
+        visibleProjectAssets={visibleProjectAssets}
         projectAreas={projectAreas}
         activeProjectId={activeProjectId}
         onSelectProject={handleSelectProject}
-        onBackToMap={() => {
-          setIsProjectWorkspaceOpen(false);
-
-          window.setTimeout(() => {
-            if (
-              !mapRef.current ||
-              activeProjectArea?.geometry?.type !== "Polygon"
-            ) {
-              return;
-            }
-
-            const ring = activeProjectArea.geometry.coordinates?.[0] || [];
-            const bounds = L.latLngBounds(
-              ring
-                .map(
-                  ([lat, lng]: [number, number]) =>
-                    [lat, lng] as [number, number],
-                )
-                .filter(
-                  ([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng),
-                ),
-            );
-
-            if (bounds.isValid()) {
-              mapRef.current.fitBounds(bounds, {
-                padding: [40, 40],
-                maxZoom: 18,
-                animate: false,
-              });
-            }
-          }, 150);
-        }}
+        onBackToMap={handleBackToMapFromWorkspace}
         onOpenTrace={() => {
           setIsProjectWorkspaceOpen(false);
           setIsPanelOpen(true);
@@ -3191,16 +3155,6 @@ export default function JointMapManager({
       }}
     >
       {/* =====================================================
-          TOP LEFT: TOOLS DRAWER TOGGLE
-          Keeps the first view clean and lets the full editor slide out.
-          ===================================================== */}
-      {!isPanelOpen && (
-        <button onClick={() => setIsPanelOpen(true)} style={drawerToggleButton}>
-          ☰ Asset Panel
-        </button>
-      )}
-
-      {/* =====================================================
           EXCHANGE SIDE PANEL
           Opens when a ⭐ exchange marker is clicked.
           ===================================================== */}
@@ -3246,34 +3200,32 @@ export default function JointMapManager({
 
         <UserMenu variant="sidebar" />
 
-        {isAdmin && (
-          <AdminCleanupPanel
-            card={card}
-            sectionSummary={sectionSummary}
-            sectionBody={sectionBody}
-            btnSecondary={btnSecondary}
-            btnDanger={btnDanger}
-            activeProjectArea={activeProjectArea}
-            currentEditingAsset={currentEditingAsset}
-            polygonBulkSelectEnabled={polygonBulkSelectEnabled}
-            selectedPolygonCount={selectedPolygonIds.length}
-            isPolygonAreaAsset={isPolygonAreaAsset}
-            onTogglePolygonBulkSelect={() =>
-              setPolygonBulkSelectEnabled((value) => !value)
-            }
-            onSelectVisiblePolygons={handleAdminSelectVisiblePolygons}
-            onSelectImportedPolygons={handleAdminSelectImportedPolygons}
-            onSelectAllPolygons={handleAdminSelectAllPolygons}
-            onClearPolygonSelection={handleAdminClearPolygonSelection}
-            onRemoveImportedAreas={handleAdminRemoveImportedAreas}
-            onRemoveSelectedPolygons={handleAdminRemoveSelectedPolygons}
-            onRemoveSelectedPolygon={handleAdminRemoveSelectedPolygon}
-            onRemoveAllPolygons={handleAdminRemoveAllPolygons}
-            onRepairAreaStamps={handleAdminRepairAreaStamps}
-            onDeletePiaOverlayForActiveProject={handleDeletePiaOverlayForActiveProject}
-            onDeleteAllOrReferenceAssets={handleAdminDeleteAllOrReferenceAssets}
-          />
-        )}
+        <AdminPanels
+          isAdmin={isAdmin}
+          card={card}
+          sectionSummary={sectionSummary}
+          sectionBody={sectionBody}
+          btnSecondary={btnSecondary}
+          btnDanger={btnDanger}
+          activeProjectArea={activeProjectArea}
+          currentEditingAsset={currentEditingAsset}
+          polygonBulkSelectEnabled={polygonBulkSelectEnabled}
+          selectedPolygonCount={selectedPolygonIds.length}
+          onTogglePolygonBulkSelect={() =>
+            setPolygonBulkSelectEnabled((value) => !value)
+          }
+          onSelectVisiblePolygons={handleAdminSelectVisiblePolygons}
+          onSelectImportedPolygons={handleAdminSelectImportedPolygons}
+          onSelectAllPolygons={handleAdminSelectAllPolygons}
+          onClearPolygonSelection={handleAdminClearPolygonSelection}
+          onRemoveImportedAreas={handleAdminRemoveImportedAreas}
+          onRemoveSelectedPolygons={handleAdminRemoveSelectedPolygons}
+          onRemoveSelectedPolygon={handleAdminRemoveSelectedPolygon}
+          onRemoveAllPolygons={handleAdminRemoveAllPolygons}
+          onRepairAreaStamps={handleAdminRepairAreaStamps}
+          onDeletePiaOverlayForActiveProject={handleDeletePiaOverlayForActiveProject}
+          onDeleteAllOrReferenceAssets={handleAdminDeleteAllOrReferenceAssets}
+        />
 
         {activeProjectArea && canManageNetworkDesign && (
           <button
@@ -3902,72 +3854,23 @@ export default function JointMapManager({
         )}
 
         {isAdmin && (
-          <details style={card}>
-            <summary style={sectionSummary}>Import / Export Saved Map</summary>
-            <div style={sectionBody}>
-              <input type="file" accept=".json" onChange={handleImportJson} />
-
-              <button onClick={handleExportJson} style={btnSecondary}>
-                Export JSON
-              </button>
-
-              <button onClick={handleExportGeoJson} style={btnSecondary}>
-                Export GeoJSON
-              </button>
-
-              <button
-                onClick={handleLoadOsmHomes}
-                style={btnPrimary}
-                disabled={isLoadingOsmHomes}
-              >
-                {isLoadingOsmHomes
-                  ? "Loading OSM Homes..."
-                  : "Load OSM Homes in View"}
-              </button>
-
-              <div style={{ marginTop: 10 }}>
-                <div style={label}>Load GeoJSON Map Assets</div>
-                <input
-                  type="file"
-                  accept=".geojson,.json,application/geo+json,application/json"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) loadAnyGeoJsonMapAssets(file);
-                    e.target.value = "";
-                  }}
-                />
-                <div
-                  style={{
-                    fontSize: "0.78rem",
-                    color: "#94a3b8",
-                    marginTop: 4,
-                  }}
-                >
-                  One importer for DPs / AFNs / CBTs, poles, chambers, street
-                  cabs, areas, cables, PIA routes and UPRN homes.
-                </div>
-              </div>
-
-              {isLoadingProjectHomes && (
-                <div
-                  style={{
-                    fontSize: "0.82rem",
-                    color: "#fbbf24",
-                    marginTop: 8,
-                  }}
-                >
-                  Loading saved homes for this project...
-                </div>
-              )}
-
-              <div style={{ fontSize: "0.82rem", color: "#cbd5e1" }}>
-                Zoom into the estate/road first, then load buildings or UPRN
-                GeoJSON homes. Imported points are saved once in project home
-                chunks.
-              </div>
-            </div>
-          </details>
+          <ImportExportPanel
+            isLoadingOsmHomes={isLoadingOsmHomes}
+            isLoadingProjectHomes={isLoadingProjectHomes}
+            onImportJson={handleImportJson}
+            onExportJson={handleExportJson}
+            onExportGeoJson={handleExportGeoJson}
+            onLoadOsmHomes={handleLoadOsmHomes}
+            onLoadAnyGeoJsonMapAssets={loadAnyGeoJsonMapAssets}
+            cardStyle={card}
+            sectionSummaryStyle={sectionSummary}
+            sectionBodyStyle={sectionBody}
+            labelStyle={label}
+            primaryButtonStyle={btnPrimary}
+            secondaryButtonStyle={btnSecondary}
+          />
         )}
+
       </div>
 
       <div
@@ -4610,222 +4513,45 @@ export default function JointMapManager({
         />
       </div>
 
-      <div
-        style={{
-          position: "absolute",
-          top: 0,
-          right: 0,
-          height: "100%",
-          zIndex: 1100,
-          transform: isLayersOpen ? "translateX(0)" : "translateX(100%)",
-          transition: "transform 0.3s ease",
-        }}
-      >
-        <LayersPanel
-          visibleLayers={visibleLayers}
-          setVisibleLayers={setVisibleLayers}
-          basemap={basemap}
-          setBasemap={setBasemap}
-          roadOverlayVisible={roadOverlayVisible}
-          setRoadOverlayVisible={setRoadOverlayVisible}
-          snapEnabled={snapEnabled}
-          setSnapEnabled={setSnapEnabled}
-          layerCounts={layerCounts}
-          measurementDistance={measuredDistance}
-          measurementPointCount={measurePoints.length}
-          isMeasuring={mapMode === "measure"}
-          onStartMeasurement={() => setMapMode("measure")}
-          onStopMeasurement={() => setMapMode("pick")}
-          onUndoMeasurementPoint={handleUndoMeasurementPoint}
-          onClearMeasurements={handleClearMeasurement}
-        />
-      </div>
+      <LayerControls
+        isOpen={isLayersOpen}
+        visibleLayers={visibleLayers}
+        setVisibleLayers={setVisibleLayers}
+        basemap={basemap}
+        setBasemap={setBasemap}
+        roadOverlayVisible={roadOverlayVisible}
+        setRoadOverlayVisible={setRoadOverlayVisible}
+        snapEnabled={snapEnabled}
+        setSnapEnabled={setSnapEnabled}
+        layerCounts={layerCounts}
+        measurementDistance={measuredDistance}
+        measurementPointCount={measurePoints.length}
+        isMeasuring={mapMode === "measure"}
+        onStartMeasurement={() => setMapMode("measure")}
+        onStopMeasurement={() => setMapMode("pick")}
+        onUndoMeasurementPoint={handleUndoMeasurementPoint}
+        onClearMeasurements={handleClearMeasurement}
+      />
 
       {!showMaintenancePanel && !isFieldResponsiveMode && (
-        <div
-          style={{
-            position: "absolute",
-            top: 16,
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 1250,
-            width: "min(620px, calc(100vw - 560px))",
-            minWidth: 420,
-          }}
-        >
-          <div
-            style={{
-              background: "#ffffff",
-              border: "1px solid rgba(148,163,184,0.55)",
-              borderRadius: 12,
-              boxShadow: "0 18px 42px rgba(15,23,42,0.28)",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "42px minmax(0, 1fr) 42px",
-                alignItems: "center",
-                height: 52,
-              }}
-            >
-              <div
-                aria-hidden="true"
-                style={{
-                  color: "#0f172a",
-                  fontSize: 24,
-                  textAlign: "center",
-                  lineHeight: "52px",
-                }}
-              >
-                ⌕
-              </div>
-
-              <input
-                value={assetSearchQuery}
-                onFocus={() => setIsAssetSearchFocused(true)}
-                onChange={(event) => {
-                  setAssetSearchQuery(event.target.value);
-                  setIsAssetSearchFocused(true);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    handleAssetSearchSubmit();
-                  }
-                  if (event.key === "Escape") {
-                    setIsAssetSearchFocused(false);
-                  }
-                }}
-                placeholder="Search assets, address or UPRN..."
-                style={{
-                  width: "100%",
-                  boxSizing: "border-box",
-                  border: "none",
-                  background: "transparent",
-                  color: "#0f172a",
-                  padding: "0 6px",
-                  fontSize: 16,
-                  fontWeight: 700,
-                  outline: "none",
-                }}
-              />
-
-              <button
-                type="button"
-                title="Search options"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => setIsAssetSearchFocused((value) => !value)}
-                style={{
-                  border: "none",
-                  background: "transparent",
-                  color: "#0f172a",
-                  cursor: "pointer",
-                  fontSize: 20,
-                  fontWeight: 900,
-                  height: 52,
-                }}
-              >
-                ☷
-              </button>
-            </div>
-
-            {isAssetSearchFocused && (
-              <div
-                style={{
-                  borderTop: "1px solid #e5e7eb",
-                  maxHeight: 380,
-                  overflowY: "auto",
-                  background: "#ffffff",
-                }}
-              >
-                <div
-                  style={{
-                    padding: "10px 22px 6px",
-                    color: "#94a3b8",
-                    fontSize: 11,
-                    fontWeight: 900,
-                    letterSpacing: 0.5,
-                    textTransform: "uppercase",
-                  }}
-                >
-                  {assetSearchQuery.trim().length >= 2
-                    ? "Search results"
-                    : "Start typing to search assets, addresses or UPRNs"}
-                </div>
-
-                {assetSearchQuery.trim().length >= 2 ? (
-                  assetSearchResults.length > 0 ? (
-                    assetSearchResults.map((asset) => (
-                      <button
-                        key={asset.id}
-                        type="button"
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => selectAssetSearchResult(asset)}
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "34px minmax(0, 1fr) auto",
-                          alignItems: "center",
-                          gap: 12,
-                          width: "100%",
-                          textAlign: "left",
-                          border: "none",
-                          borderTop: "1px solid #f1f5f9",
-                          background:
-                            asset.id === editingAssetId ? "#eff6ff" : "#ffffff",
-                          color: "#0f172a",
-                          padding: "10px 22px",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <span
-                          style={{
-                            display: "inline-grid",
-                            placeItems: "center",
-                            width: 28,
-                            height: 28,
-                            borderRadius: 7,
-                            background: "#2563eb",
-                            color: "#ffffff",
-                            fontSize: 11,
-                            fontWeight: 900,
-                          }}
-                        >
-                          {getAssetSearchTypeLabel(asset).slice(0, 2).toUpperCase()}
-                        </span>
-                        <span
-                          style={{
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                            fontWeight: 900,
-                          }}
-                        >
-                          {getAssetSearchLabel(asset)}
-                        </span>
-                        <span
-                          style={{
-                            color: "#64748b",
-                            fontSize: 13,
-                            fontWeight: 700,
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {getAssetSearchTypeLabel(asset)}
-                        </span>
-                      </button>
-                    ))
-                  ) : (
-                    <div style={{ color: "#64748b", padding: "12px 22px 18px", fontSize: 13 }}>
-                      No matching asset, chamber, pole, DP, cable, address or UPRN found.
-                    </div>
-                  )
-                ) : null}
-              </div>
-            )}
-          </div>
-        </div>
+        <MapToolbar
+          showAssetPanelButton={!isPanelOpen}
+          onOpenAssetPanel={() => setIsPanelOpen(true)}
+          searchQuery={assetSearchQuery}
+          setSearchQuery={setAssetSearchQuery}
+          isSearchFocused={isAssetSearchFocused}
+          setIsSearchFocused={setIsAssetSearchFocused}
+          searchResults={assetSearchResults}
+          selectedAssetId={editingAssetId}
+          onSearchSubmit={handleAssetSearchSubmit}
+          onSelectSearchResult={selectAssetSearchResult}
+          canSaveMap={canManageNetworkDesign}
+          isSavingMap={isSavingMapNow}
+          onSaveMap={handleSaveMapNow}
+          onGpsLocate={handleGpsLocate}
+          isLayersOpen={isLayersOpen}
+          onToggleLayers={() => setIsLayersOpen((prev) => !prev)}
+        />
       )}
 
       <ResponsiveFieldPolish enabled={isFieldResponsiveMode} />
@@ -5042,58 +4768,6 @@ export default function JointMapManager({
           />
         )}
 
-      {!showMaintenancePanel &&
-        roleMobileMode !== "survey" &&
-        roleMobileMode !== "maintenance" &&
-        !isSurveyTabletMode &&
-        !isMaintenanceTabletMode && (
-          <>
-            {canManageNetworkDesign && (
-              <button
-                onClick={handleSaveMapNow}
-                disabled={isSavingMapNow}
-                style={{
-                  ...topMapButton,
-                  right: isMobile ? 168 : isLayersOpen ? 512 : 168,
-                  background: isSavingMapNow ? "#64748b" : "#16a34a",
-                  cursor: isSavingMapNow ? "not-allowed" : "pointer",
-                }}
-              >
-                {isSavingMapNow ? "Saving..." : "Save Map"}
-              </button>
-            )}
-
-            <button
-              onClick={handleGpsLocate}
-              style={{
-                ...topMapButton,
-                right: isMobile ? 92 : isLayersOpen ? 430 : 92,
-              }}
-            >
-              GPS
-            </button>
-
-            <button
-              onClick={() => setIsLayersOpen((prev) => !prev)}
-              style={{
-                position: "absolute",
-                top: 16,
-                right: isMobile ? 16 : isLayersOpen ? 340 : 16,
-                zIndex: 1200,
-                background: "#2563eb",
-                color: "white",
-                border: "none",
-                padding: "10px 14px",
-                borderRadius: "8px",
-                cursor: "pointer",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.35)",
-              }}
-            >
-              {isLayersOpen ? "Hide Layers" : "Layers"}
-            </button>
-          </>
-        )}
-
       {openDistributionPointAsset && (
         <div
           style={{
@@ -5196,77 +4870,8 @@ export default function JointMapManager({
 }
 
 // =====================================================
-// STYLES: PROJECT WORKSPACE LOADING SCREEN
-// =====================================================
-const projectWorkspaceLoadingOverlay: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  zIndex: 10000,
-  background:
-    "radial-gradient(circle at 60% 40%, rgba(37, 99, 235, 0.22), transparent 36%), #020617",
-  color: "white",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: 24,
-  boxSizing: "border-box",
-};
-
-const projectWorkspaceLoadingCard: React.CSSProperties = {
-  width: "min(620px, calc(100vw - 48px))",
-  background: "rgba(15, 23, 42, 0.94)",
-  border: "1px solid rgba(96, 165, 250, 0.35)",
-  borderRadius: 20,
-  padding: 28,
-  boxShadow: "0 24px 80px rgba(0,0,0,0.55)",
-};
-
-const projectWorkspaceProgressTrack: React.CSSProperties = {
-  height: 8,
-  background: "rgba(148, 163, 184, 0.22)",
-  borderRadius: 999,
-  overflow: "hidden",
-  marginTop: 22,
-};
-
-const projectWorkspaceProgressBar: React.CSSProperties = {
-  height: "100%",
-  width: "72%",
-  borderRadius: 999,
-  background: "linear-gradient(90deg, #2563eb, #22c55e)",
-};
-
-// =====================================================
 // STYLES: DRAWER / TOP MAP ACTIONS
 // =====================================================
-const drawerToggleButton: React.CSSProperties = {
-  position: "absolute",
-  top: 16,
-  left: 16,
-  zIndex: 1300,
-  background: "#111827",
-  color: "white",
-  border: "1px solid #334155",
-  padding: "12px 16px",
-  borderRadius: 10,
-  cursor: "pointer",
-  fontWeight: 800,
-  boxShadow: "0 8px 22px rgba(0,0,0,0.35)",
-};
-
-const topMapButton: React.CSSProperties = {
-  position: "absolute",
-  top: 16,
-  zIndex: 1200,
-  background: "#2563eb",
-  color: "white",
-  border: "none",
-  padding: "10px 14px",
-  borderRadius: "8px",
-  cursor: "pointer",
-  boxShadow: "0 2px 8px rgba(0,0,0,0.35)",
-};
-
 const drawerSection: React.CSSProperties = {
   background: "#111827",
   border: "1px solid #334155",
