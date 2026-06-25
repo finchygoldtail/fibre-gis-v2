@@ -16,6 +16,12 @@ type Props = {
   refreshKey?: number;
   projectAssets?: Array<{ id?: string; assetId?: string; name?: string; label?: string }>;
   assetIds?: string[];
+  /**
+   * When true, the dashboard must stay scoped to the current workspace.
+   * If the workspace has no assets, show an empty commercial state instead
+   * of falling back to global blockers from other project areas.
+   */
+  scopedToProject?: boolean;
 };
 
 const panel: React.CSSProperties = {
@@ -138,7 +144,13 @@ function Tile({ label, value }: { label: string; value: React.ReactNode }) {
   return <div style={tile}><div style={{ color: "#94a3b8", fontSize: 12 }}>{label}</div><div style={{ marginTop: 6, fontSize: 24, fontWeight: 900, color: "#f8fafc" }}>{value}</div></div>;
 }
 
-export default function AuditCommercialDashboard({ onSelectAssetId, refreshKey = 0, projectAssets = [], assetIds = [] }: Props) {
+export default function AuditCommercialDashboard({
+  onSelectAssetId,
+  refreshKey = 0,
+  projectAssets = [],
+  assetIds = [],
+  scopedToProject = false,
+}: Props) {
   const [loading, setLoading] = useState(false);
   const [blockers, setBlockers] = useState<CommercialAuditBlocker[]>([]);
 
@@ -157,6 +169,15 @@ export default function AuditCommercialDashboard({ onSelectAssetId, refreshKey =
       setLoading(true);
       try {
         const scopedAssets = projectAssets.length ? projectAssets : assetIds;
+
+        // Project Workspace must never fall back to the global commercial
+        // register. If a selected area has no scoped assets yet, return an
+        // empty dashboard rather than showing blockers from another AG.
+        if (scopedToProject && !scopedAssets.length) {
+          if (!cancelled) setBlockers([]);
+          return;
+        }
+
         const next = scopedAssets.length
           ? await loadCommercialBlockersForAssets(scopedAssets, 750)
           : await loadAllCommercialBlockers(500);
@@ -171,7 +192,7 @@ export default function AuditCommercialDashboard({ onSelectAssetId, refreshKey =
     return () => {
       cancelled = true;
     };
-  }, [refreshKey, assetDependencyKey]);
+  }, [refreshKey, assetDependencyKey, scopedToProject]);
 
   const blocked = blockers.filter((item) => item.paymentStatus === "blocked");
   const review = blockers.filter((item) => item.paymentStatus === "review");

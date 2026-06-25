@@ -4399,6 +4399,7 @@ export default function ProjectWorkspace({
 
                       <AuditCommercialDashboard
                         projectAssets={workspaceAssets}
+                        scopedToProject
                         refreshKey={walkOffSavedAt ? 1 : 0}
                         onSelectAssetId={(assetId) => {
                           const asset = workspaceAssets.find((candidate) =>

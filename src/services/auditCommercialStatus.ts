@@ -132,7 +132,10 @@ export async function loadCommercialBlockersForAssets(
 ): Promise<CommercialAuditBlocker[]> {
   const seen = new Set<string>();
   const assetIds = assets
-    .map((asset) => (typeof asset === "string" ? asset : asset?.id || asset?.assetId || ""))
+    .flatMap((asset) => {
+      if (typeof asset === "string") return [asset];
+      return [asset?.id, asset?.assetId, asset?.name, asset?.label];
+    })
     .map(text)
     .filter(Boolean)
     .filter((assetId) => {
