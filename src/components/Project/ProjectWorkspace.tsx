@@ -3550,6 +3550,16 @@ export default function ProjectWorkspace({
     updatePiaQaDetailsInWorkspace(asset, { status });
   };
 
+  const openAssetInPiaReview = (asset: SavedMapAsset) => {
+    const resolvedAsset = resolveFullProjectAsset(asset, allWorkspaceSelectableAssets) || asset;
+    setSelectedWorkspaceAsset(resolvedAsset);
+    setPiaAssetSearchTerm("");
+    setPiaStatusFilter("all");
+    setPiaContractorFilter("all");
+    setActiveOperationPanel("none");
+    setActiveTab("pia");
+  };
+
   if (activeTab === "pia") {
     return (
       <PiaOperationsDashboard
@@ -4241,6 +4251,12 @@ export default function ProjectWorkspace({
                       const assetType = String(
                         (asset as any).assetType || (asset as any).type || "",
                       ).toLowerCase();
+
+                      if (isPiaReviewableWorkspaceAsset(asset)) {
+                        openAssetInPiaReview(asset);
+                        return;
+                      }
+
                       setSelectedWorkspaceAsset(asset);
 
                       if (

@@ -29,6 +29,19 @@ function statusColour(status: PiaAcceptanceStatus): string {
   return "#94a3b8";
 }
 
+function isReviewedStatus(status: PiaAcceptanceStatus): boolean {
+  return status === "pia_pass" || status === "pia_fail" || status === "not_required";
+}
+
+function formatLastUpdated(asset: SavedMapAsset, details: Record<string, any>): string {
+  const item = asset as any;
+  const raw = details.lastUpdatedAt || details.updatedAt || item.updatedAt || item.lastUpdatedAt || item.properties?.updatedAt || "";
+  if (!raw) return "—";
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return String(raw).slice(0, 16);
+  return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+}
+
 export default function PiaAssetTable({
   assets,
   selectedAsset,
@@ -84,6 +97,7 @@ export default function PiaAssetTable({
         <table style={tableStyle}>
           <thead>
             <tr>
+              <th style={thStyle}>Done</th>
               <th style={thStyle}>Asset</th>
               <th style={thStyle}>Type</th>
               <th style={thStyle}>Contractor</th>
@@ -91,6 +105,7 @@ export default function PiaAssetTable({
               <th style={thStyle}>Reviewer</th>
               <th style={thStyle}>Review Date</th>
               <th style={thStyle}>Photos</th>
+              <th style={thStyle}>Updated</th>
               <th style={thStyle}>View</th>
             </tr>
           </thead>
@@ -101,6 +116,7 @@ export default function PiaAssetTable({
               const selected = selectedAsset?.id === asset.id;
               return (
                 <tr key={asset.id} onClick={() => onSelectAsset(asset)} style={trStyle(selected)}>
+                  <td style={tdStyle}><span style={{ color: isReviewedStatus(status) ? statusColour(status) : "#475569", fontWeight: 950 }}>{isReviewedStatus(status) ? "✓" : "•"}</span></td>
                   <td style={tdStyle}><strong>{getAssetTitle(asset)}</strong></td>
                   <td style={tdStyle}>{getAssetType(asset)}</td>
                   <td style={tdStyle}>{getPiaAcceptanceContractor(asset as any) === "Unassigned" ? "—" : getPiaAcceptanceContractor(asset as any)}</td>
@@ -108,6 +124,7 @@ export default function PiaAssetTable({
                   <td style={tdStyle}>{details.piaReviewer || details.reviewer || "—"}</td>
                   <td style={tdStyle}>{details.piaReviewDate || details.reviewDate || "—"}</td>
                   <td style={tdStyle}>{getPiaAcceptancePhotoCount(asset as any)}</td>
+                  <td style={tdStyle}>{formatLastUpdated(asset, details)}</td>
                   <td style={tdStyle}><button type="button" onClick={(event) => { event.stopPropagation(); onSelectAsset(asset); }} style={viewButton}>⊙</button></td>
                 </tr>
               );
@@ -149,7 +166,7 @@ const tableWrap: React.CSSProperties = {
   flex: 1,
   minHeight: 260,
 };
-const tableStyle: React.CSSProperties = { width: "100%", borderCollapse: "collapse", minWidth: 900, fontSize: 13 };
+const tableStyle: React.CSSProperties = { width: "100%", borderCollapse: "collapse", minWidth: 980, fontSize: 13 };
 const thStyle: React.CSSProperties = { textAlign: "left", padding: "11px 12px", color: "#cbd5e1", fontSize: 11, fontWeight: 900, borderBottom: "1px solid rgba(148,163,184,0.12)", whiteSpace: "nowrap" };
 const tdStyle: React.CSSProperties = { padding: "13px 12px", borderBottom: "1px solid rgba(148,163,184,0.10)", whiteSpace: "nowrap", color: "#e5e7eb" };
 const trStyle = (selected: boolean): React.CSSProperties => ({ cursor: "pointer", background: selected ? "rgba(37,99,235,0.35)" : "transparent" });

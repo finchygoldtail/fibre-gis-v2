@@ -28,6 +28,11 @@ function KpiCard({ label, value, status, icon }: { label: string; value: React.R
 }
 
 export default function PiaKpiPanel({ stats }: { stats: PiaAcceptanceStats<any> }) {
+  const required = Math.max(0, stats.requiredTotal ?? stats.total - (stats.notRequired || 0));
+  const reviewed = Math.max(0, (stats.piaPass || 0) + (stats.piaFail || 0));
+  const remaining = Math.max(0, required - reviewed);
+  const progressPercent = required ? Math.round((reviewed / required) * 100) : 0;
+
   return (
     <div style={panel}>
       <div style={panelHeader}>
@@ -38,6 +43,13 @@ export default function PiaKpiPanel({ stats }: { stats: PiaAcceptanceStats<any> 
         <div style={pill}>{formatNumber(stats.awaitingPiaCheck)} awaiting check</div>
       </div>
       <p style={intro}>Review poles and chambers, check uploaded evidence, and update the PIA status.</p>
+      <div style={progressHeader}>
+        <strong>{formatNumber(reviewed)} / {formatNumber(required)} reviewed</strong>
+        <span>{formatNumber(remaining)} remaining · {progressPercent}% complete</span>
+      </div>
+      <div style={progressTrack}>
+        <div style={{ ...progressFill, width: `${progressPercent}%` }} />
+      </div>
       <div style={grid}>
         <KpiCard icon="−" label="Not Required" value={formatNumber(stats.notRequired)} status="not_required" />
         <KpiCard icon="▣" label="Photos Uploaded" value={formatNumber(stats.photosUploaded)} status="photo" />
@@ -63,6 +75,9 @@ const kicker: React.CSSProperties = { color: "#93c5fd", fontSize: 11, fontWeight
 const title: React.CSSProperties = { margin: "6px 0 0", fontSize: 18, color: "#f8fafc" };
 const intro: React.CSSProperties = { margin: "14px 0 16px", color: "#94a3b8", fontSize: 13 };
 const pill: React.CSSProperties = { border: "1px solid rgba(34,197,94,0.75)", color: "#4ade80", borderRadius: 999, padding: "7px 13px", fontWeight: 850, whiteSpace: "nowrap" };
+const progressHeader: React.CSSProperties = { display: "flex", justifyContent: "space-between", gap: 12, color: "#cbd5e1", fontSize: 13, marginBottom: 8 };
+const progressTrack: React.CSSProperties = { height: 9, borderRadius: 999, overflow: "hidden", background: "rgba(148,163,184,0.18)", marginBottom: 14 };
+const progressFill: React.CSSProperties = { height: "100%", borderRadius: 999, background: "linear-gradient(90deg, #2563eb, #22c55e)", transition: "width 180ms ease" };
 const grid: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 };
 const kpiCard: React.CSSProperties = { minHeight: 84, background: "rgba(2,6,23,0.55)", border: "1px solid rgba(148,163,184,0.15)", borderRadius: 10, padding: 14, display: "flex", alignItems: "center", gap: 13 };
 const kpiIcon: React.CSSProperties = { width: 34, height: 34, borderRadius: 999, display: "grid", placeItems: "center", fontWeight: 950 };

@@ -194,6 +194,9 @@ export default function PiaAssetEditor({
   const [notRequiredReason, setNotRequiredReason] = useState("");
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
   const [photoZoom, setPhotoZoom] = useState(1);
+  const [photoRotation, setPhotoRotation] = useState(0);
+  const [photoBrightness, setPhotoBrightness] = useState(100);
+  const [photoContrast, setPhotoContrast] = useState(100);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
 
   useEffect(() => {
@@ -208,7 +211,10 @@ export default function PiaAssetEditor({
 
   useEffect(() => {
     setSelectedPhotoIndex(null);
-    setPhotoZoom(1);
+    resetPhotoInspector();
+    setPhotoRotation(0);
+    setPhotoBrightness(100);
+    setPhotoContrast(100);
   }, [asset?.id]);
 
   if (!asset) {
@@ -259,15 +265,23 @@ export default function PiaAssetEditor({
       piaReviewNotes: reviewNotes,
       reviewNotes,
       notRequiredReason,
+      lastUpdatedAt: new Date().toISOString(),
     });
   };
 
   const selectedPhoto =
     selectedPhotoIndex === null ? null : evidencePhotos[selectedPhotoIndex] || null;
 
+  const resetPhotoInspector = () => {
+    setPhotoZoom(1);
+    setPhotoRotation(0);
+    setPhotoBrightness(100);
+    setPhotoContrast(100);
+  };
+
   const closePhotoViewer = () => {
     setSelectedPhotoIndex(null);
-    setPhotoZoom(1);
+    resetPhotoInspector();
   };
 
   const movePhoto = (direction: -1 | 1) => {
@@ -367,7 +381,7 @@ export default function PiaAssetEditor({
                   onClick={() => {
                     if (!url) return;
                     setSelectedPhotoIndex(index);
-                    setPhotoZoom(1);
+                    resetPhotoInspector();
                   }}
                   title={url ? "Open photo viewer" : "No preview URL"}
                 >
@@ -419,15 +433,25 @@ export default function PiaAssetEditor({
               <img
                 src={selectedPhoto.url || selectedPhoto.thumbUrl}
                 alt={selectedPhoto.name || selectedPhoto.fileName || "PIA evidence"}
-                style={{ ...viewerImage, transform: `scale(${photoZoom})` }}
+                style={{
+                  ...viewerImage,
+                  transform: `scale(${photoZoom}) rotate(${photoRotation}deg)`,
+                  filter: `brightness(${photoBrightness}%) contrast(${photoContrast}%)`,
+                }}
               />
             </div>
 
             <div style={viewerToolbar}>
               <button type="button" onClick={() => movePhoto(-1)} style={viewerButton}>← Previous</button>
               <button type="button" onClick={() => setPhotoZoom((value) => Math.max(1, Number((value - 0.25).toFixed(2))))} style={viewerButton}>− Zoom</button>
-              <button type="button" onClick={() => setPhotoZoom(1)} style={viewerButton}>Reset</button>
               <button type="button" onClick={() => setPhotoZoom((value) => Math.min(5, Number((value + 0.25).toFixed(2))))} style={viewerButton}>+ Zoom</button>
+              <button type="button" onClick={() => setPhotoRotation((value) => value - 90)} style={viewerButton}>↺ Rotate</button>
+              <button type="button" onClick={() => setPhotoRotation((value) => value + 90)} style={viewerButton}>↻ Rotate</button>
+              <button type="button" onClick={() => setPhotoBrightness((value) => Math.max(60, value - 10))} style={viewerButton}>B−</button>
+              <button type="button" onClick={() => setPhotoBrightness((value) => Math.min(160, value + 10))} style={viewerButton}>B+</button>
+              <button type="button" onClick={() => setPhotoContrast((value) => Math.max(60, value - 10))} style={viewerButton}>C−</button>
+              <button type="button" onClick={() => setPhotoContrast((value) => Math.min(180, value + 10))} style={viewerButton}>C+</button>
+              <button type="button" onClick={resetPhotoInspector} style={viewerButton}>Reset</button>
               <button type="button" onClick={() => movePhoto(1)} style={viewerButton}>Next →</button>
               {selectedPhoto.url ? (
                 <a href={selectedPhoto.url} target="_blank" rel="noreferrer" style={viewerLink}>Open full image</a>
