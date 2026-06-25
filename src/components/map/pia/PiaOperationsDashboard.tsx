@@ -1678,6 +1678,7 @@ export default function PiaReviewWorkspace({
 }
 
 const routeReviewPanel: React.CSSProperties = {
+  gridColumn: "1 / -1",
   minHeight: 0,
   background: "rgba(2,6,23,0.52)",
   border: "1px solid rgba(148,163,184,0.16)",
@@ -1751,17 +1752,23 @@ const root: React.CSSProperties = {
   flexDirection: "column",
   fontFamily:
     "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  overflowY: "auto",
+  overflowX: "hidden",
 };
 const header: React.CSSProperties = {
   minHeight: 76,
   padding: "14px 20px",
   borderBottom: "1px solid rgba(148,163,184,0.16)",
-  background: "rgba(15,23,42,0.92)",
+  background: "rgba(15,23,42,0.96)",
+  backdropFilter: "blur(14px)",
   display: "grid",
   gridTemplateColumns: "330px 1fr auto",
   alignItems: "center",
   gap: 18,
   flexShrink: 0,
+  position: "sticky",
+  top: 0,
+  zIndex: 20,
 };
 const kicker: React.CSSProperties = {
   color: "#38bdf8",
@@ -1798,14 +1805,14 @@ const headerMetric: React.CSSProperties = {
 };
 const headerActions: React.CSSProperties = { display: "flex", gap: 10 };
 const workspaceGrid: React.CSSProperties = {
-  flex: 1,
-  minHeight: 0,
+  flex: "0 0 auto",
+  minHeight: "auto",
   display: "grid",
   gridTemplateColumns: "minmax(360px, 0.72fr) minmax(720px, 1.28fr)",
-  gridTemplateRows: "auto minmax(0, 1fr)",
+  gridTemplateRows: "auto auto",
   gap: 16,
   padding: 16,
-  overflow: "hidden",
+  overflow: "visible",
 };
 const summaryPanel: React.CSSProperties = {
   gridColumn: "1 / -1",
@@ -1902,7 +1909,7 @@ const kpiValue: React.CSSProperties = {
 const queuePanel: React.CSSProperties = {
   minHeight: 0,
   minWidth: 0,
-  height: "100%",
+  height: "auto",
   background: "linear-gradient(180deg, rgba(15,23,42,0.96), rgba(2,6,23,0.94))",
   border: "1px solid rgba(96,165,250,0.24)",
   borderRadius: 14,
@@ -1913,12 +1920,12 @@ const queuePanel: React.CSSProperties = {
 const reviewPanel: React.CSSProperties = {
   minHeight: 0,
   minWidth: 0,
-  height: "100%",
+  height: "auto",
   background: "linear-gradient(180deg, rgba(15,23,42,0.96), rgba(2,6,23,0.94))",
   border: "1px solid rgba(96,165,250,0.24)",
   borderRadius: 14,
   padding: 16,
-  overflow: "hidden",
+  overflow: "visible",
 };
 const panelHeader: React.CSSProperties = {
   display: "flex",
@@ -1960,9 +1967,9 @@ const textarea: React.CSSProperties = {
   resize: "vertical",
 };
 const assetList: React.CSSProperties = {
-  flex: 1,
+  flex: "0 0 auto",
   minHeight: 0,
-  overflow: "auto",
+  overflow: "visible",
   display: "grid",
   alignContent: "start",
   gap: 9,
@@ -2015,23 +2022,23 @@ const statusPill: React.CSSProperties = {
   whiteSpace: "nowrap",
 };
 const reviewGrid: React.CSSProperties = {
-  height: "100%",
+  height: "auto",
   minHeight: 0,
   display: "grid",
   gridTemplateColumns: "minmax(360px, 0.9fr) minmax(420px, 1.1fr)",
   gap: 16,
-  overflow: "hidden",
+  overflow: "visible",
 };
 const detailsPane: React.CSSProperties = {
   minHeight: 0,
-  overflowY: "auto",
-  overflowX: "hidden",
+  overflowY: "visible",
+  overflowX: "visible",
   paddingRight: 4,
 };
 const photoPane: React.CSSProperties = {
   minHeight: 0,
-  overflowY: "auto",
-  overflowX: "hidden",
+  overflowY: "visible",
+  overflowX: "visible",
   borderLeft: "1px solid rgba(148,163,184,0.12)",
   paddingLeft: 16,
 };

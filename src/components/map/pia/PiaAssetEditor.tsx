@@ -4,7 +4,9 @@ import { storage } from "../../../firebase";
 import type { SavedMapAsset } from "../types";
 import type { PiaAcceptanceStatus } from "../../../services/piaIntelligence";
 import {
+  buildPiaAcceptanceHistoryPatch,
   getPiaAcceptanceDetails,
+  getPiaAcceptanceHistory,
   getPiaAcceptancePhotoCount,
   getPiaAcceptanceStatus,
   getPiaAcceptanceStatusLabel,
@@ -172,6 +174,26 @@ function statusColour(status: PiaAcceptanceStatus): string {
   return "#94a3b8";
 }
 
+function formatHistoryDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function historyTone(type: string, status?: PiaAcceptanceStatus): string {
+  if (status === "pia_pass") return "#22c55e";
+  if (status === "pia_fail") return "#ef4444";
+  if (status === "not_required") return "#94a3b8";
+  if (type === "photo_upload") return "#38bdf8";
+  if (type === "review_saved") return "#a855f7";
+  return "#f97316";
+}
+
 export default function PiaAssetEditor({
   asset,
   onStatusChange,
@@ -186,6 +208,7 @@ export default function PiaAssetEditor({
   const status = asset ? getPiaAcceptanceStatus(asset as any) : "not_started";
   const evidencePhotos = getPiaEvidencePhotos(asset);
   const evidencePhotoCount = Math.max(asset ? getPiaAcceptancePhotoCount(asset as any) : 0, evidencePhotos.length);
+  const assetHistory = getPiaAcceptanceHistory(asset as any);
   const [contractorName, setContractorName] = useState("");
   const [contractorNotes, setContractorNotes] = useState("");
   const [reviewer, setReviewer] = useState("");
@@ -247,6 +270,14 @@ export default function PiaAssetEditor({
         evidencePhotos: nextPhotos,
         uploadedEvidence: nextPhotos,
         status: status === "not_started" ? "photos_uploaded" : status,
+        lastUpdatedAt: new Date().toISOString(),
+        ...buildPiaAcceptanceHistoryPatch(asset as any, {
+          type: "photo_upload",
+          label: `${uploaded.length} photo${uploaded.length === 1 ? "" : "s"} uploaded`,
+          message: "Build / PIA evidence uploaded",
+          status: status === "not_started" ? "photos_uploaded" : status,
+          photoCount: uploaded.length,
+        }),
       });
     } finally {
       setUploadingPhotos(false);
@@ -254,6 +285,7 @@ export default function PiaAssetEditor({
   };
 
   const save = () => {
+    const now = new Date().toISOString();
     onDetailsSave(asset, {
       contractorName,
       contractor: contractorName,
@@ -265,7 +297,17 @@ export default function PiaAssetEditor({
       piaReviewNotes: reviewNotes,
       reviewNotes,
       notRequiredReason,
-      lastUpdatedAt: new Date().toISOString(),
+      lastUpdatedAt: now,
+      ...buildPiaAcceptanceHistoryPatch(asset as any, {
+        type: "review_saved",
+        label: "Review saved",
+        message: reviewNotes || contractorNotes || undefined,
+        status,
+        reviewer: reviewer || undefined,
+        contractor: contractorName || undefined,
+        reason: status === "not_required" ? notRequiredReason || undefined : undefined,
+        createdAt: now,
+      }),
     });
   };
 
@@ -317,7 +359,22 @@ export default function PiaAssetEditor({
       </div>
 
       <label style={field}>PIA Status
-        <select value={status} onChange={(event) => onStatusChange(asset, event.target.value as PiaAcceptanceStatus)} style={input}>
+        <select value={status} onChange={(event) => {
+            const nextStatus = event.target.value as PiaAcceptanceStatus;
+            onStatusChange(asset, nextStatus);
+            onDetailsSave(asset, {
+              status: nextStatus,
+              lastUpdatedAt: new Date().toISOString(),
+              ...buildPiaAcceptanceHistoryPatch(asset as any, {
+                type: nextStatus === "not_required" ? "not_required" : "status",
+                label: `PIA status changed to ${getPiaAcceptanceStatusLabel(nextStatus)}`,
+                status: nextStatus,
+                reviewer: reviewer || undefined,
+                contractor: contractorName || undefined,
+                reason: nextStatus === "not_required" ? notRequiredReason || undefined : undefined,
+              }),
+            });
+          }} style={input}>
           <option value="not_required">Not Required</option>
           <option value="not_started">Not Started</option>
           <option value="photos_uploaded">Photos Uploaded</option>
@@ -399,6 +456,36 @@ export default function PiaAssetEditor({
           <div style={{ color: "#94a3b8", marginTop: 10 }}>
             No photos uploaded for this PIA asset yet.
           </div>
+        )}
+      </div>
+
+      <div style={historyPanel}>
+        <div style={historyHeader}>
+          <strong>Asset History</strong>
+          <span>{assetHistory.length} events</span>
+        </div>
+        {assetHistory.length ? (
+          <div style={historyList}>
+            {assetHistory.slice(0, 8).map((entry) => (
+              <div key={entry.id || `${entry.createdAt}-${entry.label}`} style={historyRow}>
+                <span
+                  style={{
+                    ...historyDot,
+                    background: historyTone(entry.type, entry.status),
+                  }}
+                />
+                <div style={historyBody}>
+                  <strong>{entry.label}</strong>
+                  <span>{formatHistoryDate(entry.createdAt)}</span>
+                  {entry.message ? <small>{entry.message}</small> : null}
+                  {entry.reason ? <small>Reason: {entry.reason}</small> : null}
+                  {entry.reviewer ? <small>Reviewer: {entry.reviewer}</small> : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={historyEmpty}>No history recorded yet.</div>
         )}
       </div>
 
@@ -567,6 +654,49 @@ const viewerLink: React.CSSProperties = {
   background: "#12356b",
   color: "#bfdbfe",
 };
+const historyPanel: React.CSSProperties = {
+  marginTop: 14,
+  border: "1px solid rgba(148,163,184,0.16)",
+  borderRadius: 12,
+  padding: 12,
+  background: "rgba(2,6,23,0.38)",
+};
+const historyHeader: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 10,
+  color: "#cbd5e1",
+  fontSize: 12,
+  marginBottom: 10,
+};
+const historyList: React.CSSProperties = { display: "grid", gap: 9 };
+const historyRow: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "14px minmax(0, 1fr)",
+  gap: 9,
+  alignItems: "start",
+};
+const historyDot: React.CSSProperties = {
+  width: 10,
+  height: 10,
+  borderRadius: 999,
+  marginTop: 4,
+  boxShadow: "0 0 0 3px rgba(148,163,184,0.08)",
+};
+const historyBody: React.CSSProperties = {
+  display: "grid",
+  gap: 3,
+  color: "#cbd5e1",
+  fontSize: 12,
+};
+const historyEmpty: React.CSSProperties = {
+  color: "#94a3b8",
+  fontSize: 12,
+  border: "1px dashed rgba(148,163,184,0.18)",
+  borderRadius: 9,
+  padding: 10,
+};
+
 const actions: React.CSSProperties = { display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 16 };
 const secondaryButton: React.CSSProperties = { background: "#0f172a", color: "#e5e7eb", border: "1px solid rgba(148,163,184,0.28)", borderRadius: 10, padding: "10px 18px", cursor: "pointer" };
 const primaryButton: React.CSSProperties = { background: "#2563eb", color: "#fff", border: "1px solid rgba(96,165,250,0.55)", borderRadius: 10, padding: "10px 18px", cursor: "pointer", fontWeight: 850 };

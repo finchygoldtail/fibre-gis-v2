@@ -14,6 +14,26 @@ export type PiaAcceptanceStatus =
   | "pia_pass"
   | "pia_fail";
 
+
+export type PiaAcceptanceHistoryEntry = {
+  id?: string;
+  type:
+    | "status"
+    | "review_saved"
+    | "photo_upload"
+    | "not_required"
+    | "note"
+    | "system";
+  label: string;
+  message?: string;
+  status?: PiaAcceptanceStatus;
+  reviewer?: string;
+  contractor?: string;
+  photoCount?: number;
+  reason?: string;
+  createdAt: string;
+};
+
 export type PiaAcceptanceAlert<TAsset extends Record<string, any> = Record<string, any>> = {
   asset: TAsset;
   title: string;
@@ -112,6 +132,66 @@ export function getPiaAcceptanceDetails(
     asset.properties?.chamberDetails?.piaQa ||
     {}
   );
+}
+
+
+export function getPiaAcceptanceHistory(
+  asset: Record<string, any> | null | undefined,
+): PiaAcceptanceHistoryEntry[] {
+  if (!asset) return [];
+  const details = getPiaAcceptanceDetails(asset);
+  const rawHistory =
+    details.history ||
+    details.piaHistory ||
+    asset.piaHistory ||
+    asset.history ||
+    asset.properties?.piaHistory ||
+    [];
+
+  if (!Array.isArray(rawHistory)) return [];
+
+  return rawHistory
+    .map((entry): PiaAcceptanceHistoryEntry | null => {
+      if (!entry || typeof entry !== "object") return null;
+      const createdAt = String(entry.createdAt || entry.timestamp || entry.date || "");
+      if (!createdAt) return null;
+      return {
+        id: String(entry.id || `${createdAt}-${entry.type || "event"}`),
+        type: String(entry.type || "system") as PiaAcceptanceHistoryEntry["type"],
+        label: String(entry.label || entry.title || "PIA update"),
+        message: entry.message ? String(entry.message) : undefined,
+        status: entry.status ? normalisePiaAcceptanceStatus(entry.status) : undefined,
+        reviewer: entry.reviewer ? String(entry.reviewer) : undefined,
+        contractor: entry.contractor ? String(entry.contractor) : undefined,
+        photoCount: Number.isFinite(Number(entry.photoCount)) ? Number(entry.photoCount) : undefined,
+        reason: entry.reason ? String(entry.reason) : undefined,
+        createdAt,
+      };
+    })
+    .filter((entry): entry is PiaAcceptanceHistoryEntry => Boolean(entry))
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 75);
+}
+
+export function buildPiaAcceptanceHistoryPatch(
+  asset: Record<string, any> | null | undefined,
+  entry: Omit<PiaAcceptanceHistoryEntry, "id" | "createdAt"> & { createdAt?: string },
+): { history: PiaAcceptanceHistoryEntry[]; piaHistory: PiaAcceptanceHistoryEntry[] } {
+  const createdAt = entry.createdAt || new Date().toISOString();
+  const nextEntry: PiaAcceptanceHistoryEntry = {
+    ...entry,
+    id: `${createdAt}-${entry.type}-${Math.random().toString(36).slice(2, 8)}`,
+    createdAt,
+  };
+
+  const nextHistory = [nextEntry, ...getPiaAcceptanceHistory(asset)]
+    .filter((item, index, all) => {
+      const key = `${item.createdAt}-${item.type}-${item.label}-${item.status || ""}`;
+      return all.findIndex((other) => `${other.createdAt}-${other.type}-${other.label}-${other.status || ""}` === key) === index;
+    })
+    .slice(0, 75);
+
+  return { history: nextHistory, piaHistory: nextHistory };
 }
 
 export function getPiaAcceptancePhotoCount(asset: Record<string, any>): number {
