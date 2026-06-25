@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from "react";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { storage } from "../../../firebase";
+import PiaQaFields from "../pia/PiaQaFields";
+import type { PiaQaDetails } from "../pia/piaQaTypes";
 
 export type ChamberDetails = {
   chamberType?: string;
@@ -11,6 +13,7 @@ export type ChamberDetails = {
   connectedDucts?: string;
   photos?: string[];
   documents?: string[];
+  piaQa?: PiaQaDetails;
 };
 
 type Props = {
@@ -160,6 +163,11 @@ export default function ChamberDetailsModal({
           value={details.connectedDucts || ""}
           onChange={(e) => update("connectedDucts", e.target.value)}
           placeholder="2 in / 2 out"
+        />
+
+        <PiaQaFields
+          value={details.piaQa}
+          onChange={(nextPiaQa) => update("piaQa", nextPiaQa)}
         />
 
         <label>Notes</label>

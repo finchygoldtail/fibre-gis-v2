@@ -45,6 +45,14 @@ export type LayerVisibility = {
   bwip: boolean;
   unserviceable: boolean;
   liveNotReady: boolean;
+  piaContractorView: boolean;
+  piaQaView: boolean;
+  piaNotStarted: boolean;
+  piaPhotosUploaded: boolean;
+  piaContractorPass: boolean;
+  piaPleaseReview: boolean;
+  piaPass: boolean;
+  piaFail: boolean;
 };
 
 const LAYER_PREFERENCE_STORAGE_KEY = "alistra-gis-layer-preferences-v2";
@@ -94,6 +102,14 @@ export const DEFAULT_VISIBLE_LAYERS: LayerVisibility = {
   bwip: true,
   unserviceable: true,
   liveNotReady: true,
+  piaContractorView: false,
+  piaQaView: false,
+  piaNotStarted: true,
+  piaPhotosUploaded: true,
+  piaContractorPass: true,
+  piaPleaseReview: true,
+  piaPass: true,
+  piaFail: true,
 };
 
 function loadStoredLayerPreferences<T extends Record<string, boolean>>(

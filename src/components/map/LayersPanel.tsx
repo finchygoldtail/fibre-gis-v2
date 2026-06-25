@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { formatDistance } from "../../utils/mapMeasure";
+import { PIA_QA_LAYER_GROUP } from "./pia/piaQaLayerGroup";
 
 type BasemapType = "street" | "satellite" | "hybrid" | "dark";
 
@@ -117,6 +118,7 @@ const layerGroups: LayerGroup[] = [
       { label: "Live not ready", key: "liveNotReady" },
     ],
   },
+  PIA_QA_LAYER_GROUP,
   {
     id: "measurements",
     title: "Measurements",
@@ -357,6 +359,15 @@ export default function LayersPanel({
           ulw12: next,
           orDucts: next,
           suggestedDucts: next,
+        };
+      }
+
+      if (key === "piaContractorView" || key === "piaQaView") {
+        return {
+          ...prev,
+          [key]: next,
+          poles: next ? true : prev.poles,
+          chambers: next ? true : prev.chambers,
         };
       }
 

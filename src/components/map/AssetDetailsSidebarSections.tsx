@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import { useAppMode } from "../../context/AppModeContext";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { storage } from "../../firebase";
+import PiaQaFields from "./pia/PiaQaFields";
 import type {
   ChamberDetails,
   DistributionPointDetails,
@@ -43,6 +44,7 @@ type Props = {
   allDistributionPoints?: SavedMapAsset[];
   allAssets?: SavedMapAsset[];
   currentDpId?: string | null;
+  visibleLayers?: Record<string, boolean>;
   inputStyle: React.CSSProperties;
   labelStyle: React.CSSProperties;
   secondaryButtonStyle: React.CSSProperties;
@@ -845,6 +847,7 @@ export default function AssetDetailsSidebarSections({
   allDistributionPoints = [],
   allAssets = [],
   currentDpId,
+  visibleLayers,
   inputStyle,
   labelStyle,
   secondaryButtonStyle,
@@ -859,6 +862,10 @@ export default function AssetDetailsSidebarSections({
   const [manualSupportingCable, setManualSupportingCable] = useState("");
   const [manualRouteNote, setManualRouteNote] = useState("");
   const [fasImportStatus, setFasImportStatus] = useState("");
+
+  const showPiaQaFields = visibleLayers
+    ? Boolean(visibleLayers.piaContractorView || visibleLayers.piaQaView)
+    : true;
 
   const allDpOptions = useMemo(
     () => {
@@ -1554,6 +1561,13 @@ export default function AssetDetailsSidebarSections({
           <option>House Boundary</option>
         </select>
 
+        {showPiaQaFields ? (
+          <PiaQaFields
+            value={(poleDetails as any).piaQa}
+            onChange={(nextPiaQa) => updatePole("piaQa" as keyof PoleDetails, nextPiaQa)}
+          />
+        ) : null}
+
         <div style={labelStyle}>Photos (max 4)</div>
         <input
           type="file"
@@ -1683,6 +1697,13 @@ export default function AssetDetailsSidebarSections({
           placeholder="2 in / 2 out"
           style={inputStyle}
         />
+
+        {showPiaQaFields ? (
+          <PiaQaFields
+            value={(chamberDetails as any).piaQa}
+            onChange={(nextPiaQa) => updateChamber("piaQa" as keyof ChamberDetails, nextPiaQa)}
+          />
+        ) : null}
 
         <div style={labelStyle}>Photos (max 6)</div>
         <input

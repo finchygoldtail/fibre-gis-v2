@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { storage } from "../../../firebase";
 import type { PoleDetails } from "../types";
+import PiaQaFields from "../pia/PiaQaFields";
 
 type Props = {
   visible: boolean;
@@ -144,6 +145,11 @@ export default function PoleDetailsModal({
           <option>Kerbside</option>
           <option>House Boundary</option>
         </select>
+
+        <PiaQaFields
+          value={details.piaQa}
+          onChange={(nextPiaQa) => update("piaQa", nextPiaQa)}
+        />
 
         <label>Photos (max 4)</label>
         <input

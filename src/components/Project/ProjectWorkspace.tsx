@@ -30,7 +30,14 @@ import AuditCommercialDashboard from "../audits/AuditCommercialDashboard";
 import AuditPaymentBlockerPanel from "../audits/AuditPaymentBlockerPanel";
 import AuditHistoryPanel from "../audits/AuditHistoryPanel";
 import { buildCanonicalHomeSummary } from "./workspace/canonicalHomeStatus";
-
+import PiaOperationsDashboard from "../map/pia/PiaOperationsDashboard";
+import {
+  buildPiaAcceptanceStats,
+  getPiaAcceptanceDetails,
+  getPiaAcceptanceStatus,
+  isPiaAcceptanceAsset,
+  type PiaAcceptanceStatus,
+} from "../../services/piaIntelligence";
 // =====================================================
 // FILE: ProjectWorkspace.tsx
 // PURPOSE: Dedicated project workspace shell for Alistra GIS.
@@ -55,12 +62,14 @@ type WorkspaceOperationPanel =
   | "capacity"
   | "addAsset"
   | "handover"
-  | "report";
+  | "report"
+  | "piaQa";
 
 type WorkspaceTab =
   | "overview"
   | "topology"
   | "qa"
+  | "pia"
   | "build"
   | "maintenance"
   | "assets"
@@ -140,6 +149,7 @@ const tabs: { id: WorkspaceTab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "topology", label: "Topology" },
   { id: "qa", label: "QA" },
+  { id: "pia", label: "PIA" },
   { id: "build", label: "Build" },
   { id: "maintenance", label: "Maintenance" },
   { id: "assets", label: "Assets" },
@@ -1094,6 +1104,7 @@ function formatNumber(value: number | undefined) {
   return (value ?? 0).toLocaleString("en-GB");
 }
 
+
 function formatDistance(meters: number | undefined) {
   const value = meters ?? 0;
   if (value >= 1000) return `${(value / 1000).toFixed(2)} km`;
@@ -1583,6 +1594,10 @@ export default function ProjectWorkspace({
   const [mobileQuickPanel, setMobileQuickPanel] = useState<
     "none" | "dps" | "homes" | "qa" | "actions"
   >("none");
+  const [piaAssetSearchTerm, setPiaAssetSearchTerm] = useState("");
+  const [piaStatusFilter, setPiaStatusFilter] = useState<PiaAcceptanceStatus | "all">("all");
+  const [piaContractorFilter, setPiaContractorFilter] = useState("all");
+
 
   useEffect(() => {
     if (!isPhone && mobileQuickPanel !== "none") setMobileQuickPanel("none");
@@ -2107,6 +2122,11 @@ export default function ProjectWorkspace({
     auditIssues.length,
     disconnectedAssets.length,
   ]);
+
+  const piaQaStats = useMemo(
+    () => buildPiaAcceptanceStats(workspaceAssets as any),
+    [workspaceAssets],
+  );
 
   const operationalReadiness = useMemo(
     () =>
@@ -3301,6 +3321,133 @@ export default function ProjectWorkspace({
     );
   };
 
+
+  const piaWorkspaceAssets = useMemo(
+    () => workspaceAssets.filter((asset) => isPiaAcceptanceAsset(asset as any)),
+    [workspaceAssets],
+  );
+
+  const piaContractorOptions = useMemo(() => {
+    const contractors = new Set<string>();
+    piaWorkspaceAssets.forEach((asset) => {
+      const details = getPiaAcceptanceDetails(asset as any);
+      const contractor = String(details.contractorName || details.contractor || "").trim();
+      if (contractor) contractors.add(contractor);
+    });
+    return Array.from(contractors).sort((a, b) => a.localeCompare(b));
+  }, [piaWorkspaceAssets]);
+
+  const filteredPiaWorkspaceAssets = useMemo(() => {
+    const query = piaAssetSearchTerm.trim().toLowerCase();
+    return piaWorkspaceAssets.filter((asset) => {
+      const details = getPiaAcceptanceDetails(asset as any);
+      const status = getPiaAcceptanceStatus(asset as any);
+      const contractor = String(details.contractorName || details.contractor || "").trim();
+
+      const matchesSearch =
+        !query ||
+        [
+          getWorkspaceAssetTitle(asset),
+          getWorkspaceAssetType(asset),
+          contractor,
+          details.piaReviewer,
+          details.reviewer,
+          asset.id,
+        ]
+          .map((value) => String(value || "").toLowerCase())
+          .join(" ")
+          .includes(query);
+
+      const matchesStatus = piaStatusFilter === "all" || status === piaStatusFilter;
+      const matchesContractor =
+        piaContractorFilter === "all" || contractor === piaContractorFilter;
+
+      return matchesSearch && matchesStatus && matchesContractor;
+    });
+  }, [piaWorkspaceAssets, piaAssetSearchTerm, piaStatusFilter, piaContractorFilter]);
+
+  const updatePiaQaDetailsInWorkspace = (asset: SavedMapAsset, patch: Record<string, any>) => {
+    const item = asset as any;
+    const now = new Date().toISOString();
+    const existingDetails = getPiaAcceptanceDetails(asset as any);
+    const nextPiaQa = {
+      ...existingDetails,
+      ...patch,
+      lastUpdatedAt: now,
+    };
+
+    const nextAsset = {
+      ...item,
+      piaQa: nextPiaQa,
+      piaQaDetails: nextPiaQa,
+      properties: {
+        ...(item.properties || {}),
+        piaQa: nextPiaQa,
+      },
+      poleDetails:
+        item.assetType === "pole" || item.poleDetails
+          ? { ...(item.poleDetails || {}), piaQa: nextPiaQa }
+          : item.poleDetails,
+      chamberDetails:
+        item.assetType === "chamber" || item.chamberDetails
+          ? { ...(item.chamberDetails || {}), piaQa: nextPiaQa }
+          : item.chamberDetails,
+    } as SavedMapAsset;
+
+    setLocalAssetOverrides((current) => ({
+      ...current,
+      [asset.id]: nextAsset,
+    }));
+    setSelectedWorkspaceAsset(nextAsset);
+  };
+
+  const updatePiaQaStatusInWorkspace = (asset: SavedMapAsset, status: PiaAcceptanceStatus) => {
+    updatePiaQaDetailsInWorkspace(asset, { status });
+  };
+
+  if (activeTab === "pia") {
+    return (
+      <PiaOperationsDashboard
+        projectName={projectName}
+        projectArea={projectArea}
+        assets={workspaceAssets}
+        piaAssets={piaWorkspaceAssets}
+        filteredPiaAssets={filteredPiaWorkspaceAssets}
+        piaQaStats={piaQaStats}
+        selectedAsset={fullSelectedWorkspaceAsset}
+        searchTerm={piaAssetSearchTerm}
+        statusFilter={piaStatusFilter}
+        contractorFilter={piaContractorFilter}
+        contractorOptions={piaContractorOptions}
+        openreachLayers={openreachLayers}
+        visibleLayers={{
+          ...visibleLayers,
+          projectBoundary: true,
+          areas: true,
+          poles: true,
+          chambers: true,
+          dps: false,
+          joints: false,
+          cables: false,
+          dropCables: false,
+          streetCabs: false,
+          homes: false,
+        }}
+        networkState={networkState}
+        traceHighlightedAssetIds={workspaceHighlightedAssetIds}
+        traceHighlightKinds={traceHighlightKinds}
+        onSearchTermChange={setPiaAssetSearchTerm}
+        onStatusFilterChange={setPiaStatusFilter}
+        onContractorFilterChange={setPiaContractorFilter}
+        onSelectAsset={setSelectedWorkspaceAsset}
+        onStatusChange={updatePiaQaStatusInWorkspace}
+        onDetailsSave={updatePiaQaDetailsInWorkspace}
+        onClose={() => setActiveTab("overview")}
+        onExport={onExport}
+      />
+    );
+  }
+
   const responsiveRoot: React.CSSProperties = {
     ...workspaceRoot,
   };
@@ -4007,7 +4154,7 @@ export default function ProjectWorkspace({
                 </div>
               </section>
 
-              {fullSelectedWorkspaceAsset ? (
+              {fullSelectedWorkspaceAsset && activeTab !== "pia" ? (
                 <section style={intelligenceDock}>
                   <AssetIntelligencePanel
                     asset={fullSelectedWorkspaceAsset}
@@ -4036,6 +4183,7 @@ export default function ProjectWorkspace({
               ) : (
                 <>
                   {activeTab === "commercial" ? (
+
                     <section style={commercialPanel}>
                       <div style={commercialHeaderRow}>
                         <div>
@@ -4191,7 +4339,7 @@ export default function ProjectWorkspace({
                   )}
 
                   {activeTab === "overview" && (
-                    <section style={areaHandoverPanel}>
+                  <section style={areaHandoverPanel}>
                       <div style={areaHandoverHeader}>
                         <div>
                           <div style={operationKicker}>AREA HANDOVER</div>
@@ -4316,6 +4464,7 @@ export default function ProjectWorkspace({
                         {activeOperationPanel === "addAsset" && "Add New Asset"}
                         {activeOperationPanel === "handover" && "Area Handover"}
                         {activeOperationPanel === "report" && "Project Report"}
+                        {activeOperationPanel === "piaQa" && "PIA Acceptance"}
                       </h3>
                     </div>
                     <button
@@ -4416,7 +4565,6 @@ export default function ProjectWorkspace({
                       <InfoRow label="Build Status" value={status} />
                     </div>
                   )}
-
                   {(activeOperationPanel === "issues" ||
                     activeOperationPanel === "qa") && (
                     <div style={operationStack}>
@@ -5432,6 +5580,7 @@ const emptyPanel: React.CSSProperties = {
   color: "#cbd5e1",
 };
 
+
 const workspaceRoot: React.CSSProperties = {
   position: "absolute",
   inset: 0,
@@ -6041,6 +6190,8 @@ const widePanel: React.CSSProperties = {
   ...summaryPanel,
   gridColumn: "span 1",
 };
+
+
 const areaHandoverPanel: React.CSSProperties = {
   gridColumn: "1 / -1",
   background: "linear-gradient(180deg, #0f1b2d 0%, #0b1626 100%)",
@@ -6138,6 +6289,7 @@ function walkOffStatusPill(
 }
 
 const panelTitle: React.CSSProperties = { margin: "0 0 14px", fontSize: 18 };
+
 const infoRow: React.CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
@@ -6145,17 +6297,20 @@ const infoRow: React.CSSProperties = {
   padding: "7px 0",
   fontSize: 13,
 };
+
 const wideButton: React.CSSProperties = {
   ...smallButton,
   width: "100%",
   marginTop: 14,
   background: "#1e3a5f",
 };
+
 const donutWrap: React.CSSProperties = {
   height: 120,
   display: "grid",
   placeItems: "center",
 };
+
 const donut: React.CSSProperties = {
   width: 94,
   height: 94,
@@ -6166,11 +6321,13 @@ const donut: React.CSSProperties = {
   fontWeight: 900,
   fontSize: 25,
 };
+
 const issueGrid: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(3, 1fr)",
   gap: 8,
 };
+
 const issueCard: React.CSSProperties = {
   borderRadius: 8,
   padding: 12,
@@ -6317,11 +6474,13 @@ const qaCompactRow: React.CSSProperties = {
   color: "#e5e7eb",
   textAlign: "left",
 };
+
 const assetGrid: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
   gap: 10,
 };
+
 const assetTile: React.CSSProperties = {
   background: "rgba(17, 24, 39, 0.92)",
   border: "1px solid rgba(148, 163, 184, 0.16)",
@@ -6329,15 +6488,11 @@ const assetTile: React.CSSProperties = {
   padding: 13,
   minHeight: 74,
 };
+
 const quickActions: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(5, 1fr)",
   gap: 10,
-};
-const quickAction: React.CSSProperties = {
-  ...smallButton,
-  minHeight: 54,
-  background: "#111827",
 };
 
 const mobileSelectedActionBar: React.CSSProperties = {

@@ -2,12 +2,6 @@ import * as admin from "firebase-admin";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { setGlobalOptions } from "firebase-functions/v2";
 
-admin.initializeApp();
-
-setGlobalOptions({
-  region: "europe-west2",
-  maxInstances: 10,
-});
 
 type AppRole = "super_user" | "maintenance_user" | "build_user" | "survey_user";
 

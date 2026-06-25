@@ -1,3 +1,4 @@
+import type { PiaQaDetails } from "./pia/piaQaTypes";
 export type AssetType =
   | "ag-joint"
   | "joint"
@@ -48,6 +49,7 @@ export type PoleDetails = {
   locationType?: "Kerbside" | "House Boundary";
   photos?: string[];
   documents?: string[];
+  piaQa?: PiaQaDetails;
 };
 
 export type DistributionPointDetails = {
@@ -158,6 +160,7 @@ export type ChamberDetails = {
   connectedDucts?: string;
   photos?: string[];
   documents?: string[];
+  piaQa?: PiaQaDetails;
 };
 
 export type SavedMapAsset = {

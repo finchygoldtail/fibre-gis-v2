@@ -3,6 +3,12 @@ import { Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import type { SavedMapAsset } from "./types";
 import { buildNetworkState } from "../../services/network";
+import {
+  getPiaQaIconForAsset,
+  getPiaQaStatusLabel,
+  isPiaQaModeEnabled,
+  shouldShowAssetForPiaQaFilters,
+} from "./pia/piaQaWorkflow";
 
 type LayerVisibility = {
   agJoints: boolean;
@@ -32,6 +38,14 @@ type LayerVisibility = {
   bwip?: boolean;
   unserviceable?: boolean;
   liveNotReady?: boolean;
+  piaContractorView?: boolean;
+  piaQaView?: boolean;
+  piaNotStarted?: boolean;
+  piaPhotosUploaded?: boolean;
+  piaContractorPass?: boolean;
+  piaPleaseReview?: boolean;
+  piaPass?: boolean;
+  piaFail?: boolean;
 };
 
 type Props = {
@@ -263,6 +277,7 @@ function isVisible(asset: SavedMapAsset, visibleLayers: LayerVisibility): boolea
       if (poleType.includes("suggested") && layers.suggestedPoles === false) return false;
       if ((poleType.includes("new") || poleType.includes("proposed")) && layers.newPoles === false) return false;
       if ((poleType.includes("or") || poleType.includes("existing")) && layers.orPoles === false) return false;
+      if (!shouldShowAssetForPiaQaFilters(asset, layers)) return false;
 
       return true;
     }
@@ -297,6 +312,7 @@ function isVisible(asset: SavedMapAsset, visibleLayers: LayerVisibility): boolea
       if (chamberType.includes("fw4") && layers.fw4 === false) return false;
       if (chamberType.includes("fw6") && layers.fw6 === false) return false;
       if (chamberType.includes("fw10") && layers.fw10 === false) return false;
+      if (!shouldShowAssetForPiaQaFilters(asset, layers)) return false;
 
       return true;
     }
@@ -920,11 +936,14 @@ function buildParentSbPopupSummary(
 }
 
 
-function getIconForAsset(asset: SavedMapAsset, allAssets: SavedMapAsset[]) {
+function getIconForAsset(asset: SavedMapAsset, allAssets: SavedMapAsset[], visibleLayers?: LayerVisibility) {
   if (asset.assetType === "distribution-point") {
     return createSquareIcon(getDistributionPointColor(asset), "#ffffff");
   }
   if (asset.assetType === "street-cab") return streetCabIcon;
+  if ((asset.assetType === "chamber" || asset.assetType === "pole") && isPiaQaModeEnabled(visibleLayers || {})) {
+    return getPiaQaIconForAsset(asset);
+  }
   if (asset.assetType === "chamber") return chamberIcon;
   if (asset.assetType === "pole") return poleIcon;
   if (asset.assetType === "home") return getHomeIconForStatus(getHomeConnectionStatus(asset, allAssets));
@@ -1311,7 +1330,7 @@ React.useEffect(() => {
     ? createHomeIcon("#38bdf8", "#075985", "rgba(56, 189, 248, 0.95)")
     : isSelectedMoveHome
       ? createHomeIcon("#38bdf8", "#075985")
-      : getIconForAsset(asset, assets);
+      : getIconForAsset(asset, assets, visibleLayers);
 
 const icon =
   asset.id === highlightedAssetId ? createHighlightedIcon(baseIcon as L.DivIcon) : baseIcon;
@@ -1336,30 +1355,39 @@ const icon =
             onMoveAsset?.(asset.id, position.lat, position.lng);
           },
           click: () => {
-            if (surveyDeleteHomesMode) {
-              if (asset.assetType === "home") {
-                onToggleSurveyDeleteHome?.(asset);
-              }
-              return;
-            }
+  if (surveyDeleteHomesMode) {
+    if (asset.assetType === "home") {
+      onToggleSurveyDeleteHome?.(asset);
+    }
+    return;
+  }
 
-            if (!moveHomesMode) return;
+  if (moveHomesMode) {
+    if (asset.assetType === "home") {
+      onToggleMoveHome?.(asset);
+      return;
+    }
 
-            if (asset.assetType === "home") {
-              onToggleMoveHome?.(asset);
-              return;
-            }
+    if (asset.assetType === "distribution-point") {
+      onMoveHomesTargetDp?.(asset);
+    }
 
-            if (asset.assetType === "distribution-point") {
-              onMoveHomesTargetDp?.(asset);
-            }
-          },
+    return;
+  }
+
+  onEditAsset(asset);
+},
         }}
       >
         <Popup minWidth={260}>
           <div style={popupCardStyle}>
             <div style={titleStyle}>{asset.name}</div>
             <div style={subTitleStyle}>{getAssetTypeLabel(asset)}</div>
+            {(asset.assetType === "pole" || asset.assetType === "chamber") && isPiaQaModeEnabled(visibleLayers as any) ? (
+              <div style={{ fontSize: "0.78rem", fontWeight: 900, color: "#9a3412" }}>
+                PIA QA: {getPiaQaStatusLabel(asset)}
+              </div>
+            ) : null}
 
             <div style={sectionStyle}>
               {infoRow("Coordinates", `${lat.toFixed(5)}, ${lng.toFixed(5)}`)}
