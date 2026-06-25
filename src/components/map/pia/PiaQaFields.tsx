@@ -84,6 +84,27 @@ export default function PiaQaFields({ value, onChange }: Props) {
         ))}
       </select>
 
+
+      {current.status === "not_required" ? (
+        <>
+          <label style={labelStyle}>Reason Not Required</label>
+          <select
+            value={current.notRequiredReason || ""}
+            onChange={(event) => update({ notRequiredReason: event.target.value })}
+            style={inputStyle}
+          >
+            <option value="">Select reason...</option>
+            <option value="Existing asset untouched">Existing asset untouched</option>
+            <option value="Outside build scope">Outside build scope</option>
+            <option value="Existing Openreach asset">Existing Openreach asset</option>
+            <option value="Existing Netomnia asset">Existing Netomnia asset</option>
+            <option value="Survey only">Survey only</option>
+            <option value="Duplicate asset">Duplicate asset</option>
+            <option value="Other">Other</option>
+          </select>
+        </>
+      ) : null}
+
       <label style={labelStyle}>Principal Contractor</label>
       <select
         value={contractorSelectValue}

@@ -1,4 +1,5 @@
 export type PiaQaStatus =
+  | "not_required"
   | "not_started"
   | "photos_uploaded"
   | "contractor_pass"
@@ -13,6 +14,7 @@ export type PiaQaDetails = {
   piaReviewer?: string;
   piaReviewDate?: string;
   piaReviewNotes?: string;
+  notRequiredReason?: string;
   lastUpdatedAt?: string;
 };
 
@@ -22,6 +24,7 @@ export const PIA_QA_STATUS_OPTIONS: {
   shortLabel: string;
   colour: string;
 }[] = [
+  { value: "not_required", label: "Not Required", shortLabel: "NR", colour: "#64748b" },
   { value: "not_started", label: "Not Started", shortLabel: "", colour: "#020617" },
   { value: "photos_uploaded", label: "Photos Uploaded", shortLabel: "PH", colour: "#2563eb" },
   { value: "contractor_pass", label: "Contractor Pass", shortLabel: "CP", colour: "#f97316" },

@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from "react";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { storage } from "../../../firebase";
 import type { SavedMapAsset } from "../types";
 import type { PiaAcceptanceStatus } from "../../../services/piaIntelligence";
 import {
@@ -16,6 +18,31 @@ function getAssetTitle(asset: SavedMapAsset | null | undefined): string {
 function getAssetType(asset: SavedMapAsset | null | undefined): string {
   const item = (asset || {}) as any;
   return String(item.assetType || item.type || item.jointType || "Asset");
+}
+
+
+function safeFileName(name: string) {
+  return String(name || "photo.jpg").replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+async function uploadPiaEvidenceFile(asset: SavedMapAsset, file: File) {
+  const item = asset as any;
+  const assetId = String(item.id || item.assetId || item.name || "asset");
+  const folder = assetId.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const fileRef = ref(
+    storage,
+    `asset-uploads/pia-evidence/${folder}/${Date.now()}_${crypto.randomUUID()}_${safeFileName(file.name)}`,
+  );
+
+  await uploadBytes(fileRef, file);
+
+  return {
+    url: await getDownloadURL(fileRef),
+    name: file.name,
+    fileName: file.name,
+    uploadedAt: new Date().toISOString(),
+    evidenceType: "pia",
+  };
 }
 
 
@@ -136,6 +163,7 @@ function getPiaEvidencePhotos(asset: SavedMapAsset | null | undefined): PiaEvide
 }
 
 function statusColour(status: PiaAcceptanceStatus): string {
+  if (status === "not_required") return "#64748b";
   if (status === "photos_uploaded") return "#38bdf8";
   if (status === "contractor_pass") return "#f97316";
   if (status === "please_review") return "#a855f7";
@@ -157,14 +185,16 @@ export default function PiaAssetEditor({
 }) {
   const status = asset ? getPiaAcceptanceStatus(asset as any) : "not_started";
   const evidencePhotos = getPiaEvidencePhotos(asset);
-  const evidencePhotoCount = Math.max(getPiaAcceptancePhotoCount(asset as any), evidencePhotos.length);
+  const evidencePhotoCount = Math.max(asset ? getPiaAcceptancePhotoCount(asset as any) : 0, evidencePhotos.length);
   const [contractorName, setContractorName] = useState("");
   const [contractorNotes, setContractorNotes] = useState("");
   const [reviewer, setReviewer] = useState("");
   const [reviewDate, setReviewDate] = useState("");
   const [reviewNotes, setReviewNotes] = useState("");
+  const [notRequiredReason, setNotRequiredReason] = useState("");
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
   const [photoZoom, setPhotoZoom] = useState(1);
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
 
   useEffect(() => {
     const details = getPiaAcceptanceDetails(asset as any);
@@ -173,6 +203,7 @@ export default function PiaAssetEditor({
     setReviewer(String(details.piaReviewer || details.reviewer || ""));
     setReviewDate(String(details.piaReviewDate || details.reviewDate || ""));
     setReviewNotes(String(details.piaReviewNotes || details.reviewNotes || ""));
+    setNotRequiredReason(String(details.notRequiredReason || details.notRequiredNote || ""));
   }, [asset?.id]);
 
   useEffect(() => {
@@ -184,14 +215,37 @@ export default function PiaAssetEditor({
     return (
       <section style={card}>
         <div style={emptyBox}>
-          <h2 style={{ margin: 0 }}>Select a pole or chamber</h2>
+          <h2 style={{ margin: 0 }}>Select an asset</h2>
           <p style={{ margin: "8px 0 0", color: "#94a3b8" }}>
-            Pick an asset from the table to review photos and update the PIA status.
+            Pick any asset from the queue to upload evidence, review photos and update the PIA status.
           </p>
         </div>
       </section>
     );
   }
+
+  const uploadPhotos = async (files: FileList | null) => {
+    const nextFiles = Array.from(files || []);
+    if (!asset || nextFiles.length === 0) return;
+
+    setUploadingPhotos(true);
+    try {
+      const uploaded = await Promise.all(
+        nextFiles.map((file) => uploadPiaEvidenceFile(asset, file)),
+      );
+      const nextPhotos = [...evidencePhotos, ...uploaded];
+
+      onDetailsSave(asset, {
+        photos: nextPhotos,
+        photoEvidence: nextPhotos,
+        evidencePhotos: nextPhotos,
+        uploadedEvidence: nextPhotos,
+        status: status === "not_started" ? "photos_uploaded" : status,
+      });
+    } finally {
+      setUploadingPhotos(false);
+    }
+  };
 
   const save = () => {
     onDetailsSave(asset, {
@@ -204,6 +258,7 @@ export default function PiaAssetEditor({
       reviewDate,
       piaReviewNotes: reviewNotes,
       reviewNotes,
+      notRequiredReason,
     });
   };
 
@@ -249,6 +304,7 @@ export default function PiaAssetEditor({
 
       <label style={field}>PIA Status
         <select value={status} onChange={(event) => onStatusChange(asset, event.target.value as PiaAcceptanceStatus)} style={input}>
+          <option value="not_required">Not Required</option>
           <option value="not_started">Not Started</option>
           <option value="photos_uploaded">Photos Uploaded</option>
           <option value="contractor_pass">Contractor Pass</option>
@@ -258,10 +314,45 @@ export default function PiaAssetEditor({
         </select>
       </label>
 
+
+      {status === "not_required" ? (
+        <label style={field}>Reason Not Required
+          <select value={notRequiredReason} onChange={(event) => setNotRequiredReason(event.target.value)} style={input}>
+            <option value="">Select reason...</option>
+            <option value="Existing asset untouched">Existing asset untouched</option>
+            <option value="Outside build scope">Outside build scope</option>
+            <option value="Existing Openreach asset">Existing Openreach asset</option>
+            <option value="Existing Netomnia asset">Existing Netomnia asset</option>
+            <option value="Survey only">Survey only</option>
+            <option value="Duplicate asset">Duplicate asset</option>
+            <option value="Other">Other</option>
+          </select>
+        </label>
+      ) : null}
+
       <label style={field}>Contractor Notes<textarea value={contractorNotes} onChange={(event) => setContractorNotes(event.target.value)} style={textarea} /></label>
       <label style={field}>PIA Review Notes<textarea value={reviewNotes} onChange={(event) => setReviewNotes(event.target.value)} style={textarea} /></label>
 
       <div style={evidenceBox}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 12 }}>
+          <div>
+            <div style={{ color: "#cbd5e1", fontWeight: 850 }}>Build / PIA Evidence ({evidencePhotoCount})</div>
+            <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 4 }}>
+              Upload build complete and PIA check photos against this asset. Reference assets stay locked; only evidence and QA fields are updated.
+            </div>
+          </div>
+          <label style={{ ...primaryButton, display: "inline-flex", alignItems: "center", gap: 8, cursor: uploadingPhotos ? "wait" : "pointer", whiteSpace: "nowrap" }}>
+            {uploadingPhotos ? "Uploading..." : "Upload Photos"}
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              disabled={uploadingPhotos}
+              onChange={(event) => uploadPhotos(event.target.files)}
+              style={{ display: "none" }}
+            />
+          </label>
+        </div>
         <div style={{ color: "#cbd5e1", fontWeight: 850 }}>Uploaded Evidence ({evidencePhotoCount})</div>
         {evidencePhotos.length ? (
           <div style={photoGrid}>
@@ -341,7 +432,7 @@ export default function PiaAssetEditor({
               {selectedPhoto.url ? (
                 <a href={selectedPhoto.url} target="_blank" rel="noreferrer" style={viewerLink}>Open full image</a>
               ) : null}
-              <button type="button" style={viewerAiButton} disabled title="Coming next">AI Read PIANOI</button>
+              
             </div>
           </div>
         </div>
@@ -451,14 +542,6 @@ const viewerLink: React.CSSProperties = {
   textDecoration: "none",
   background: "#12356b",
   color: "#bfdbfe",
-};
-const viewerAiButton: React.CSSProperties = {
-  ...viewerButton,
-  background: "rgba(124,58,237,0.35)",
-  border: "1px solid rgba(168,85,247,0.55)",
-  color: "#ddd6fe",
-  cursor: "not-allowed",
-  opacity: 0.8,
 };
 const actions: React.CSSProperties = { display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 16 };
 const secondaryButton: React.CSSProperties = { background: "#0f172a", color: "#e5e7eb", border: "1px solid rgba(148,163,184,0.28)", borderRadius: 10, padding: "10px 18px", cursor: "pointer" };

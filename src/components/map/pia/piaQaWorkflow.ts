@@ -45,6 +45,7 @@ export function shouldShowAssetForPiaQaFilters(
 
   const status = getPiaQaStatusForAsset(asset);
 
+  if (status === "not_required" && layers.piaNotRequired === false) return false;
   if (status === "not_started" && layers.piaNotStarted === false) return false;
   if (status === "photos_uploaded" && layers.piaPhotosUploaded === false) return false;
   if (status === "contractor_pass" && layers.piaContractorPass === false) return false;

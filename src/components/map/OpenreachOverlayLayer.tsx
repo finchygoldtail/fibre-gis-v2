@@ -28,13 +28,16 @@ type OpenreachOverlayLayerProps = {
   visibleLayers: OpenreachLayerVisibility;
   selectedDuctId?: string | null;
   onSelectDuct?: (asset: SavedMapAsset) => void;
+  onSelectReferenceAsset?: (asset: SavedMapAsset) => void;
   ductSelectionEnabled?: boolean;
 };
 
 type ReferenceSubtype = "or" | "np" | "suggested";
 
 function normalise(value: unknown): string {
-  return String(value || "").trim().toLowerCase();
+  return String(value || "")
+    .trim()
+    .toLowerCase();
 }
 
 function getAssetType(asset: SavedMapAsset): string {
@@ -92,22 +95,42 @@ function getReferenceSubtype(asset: SavedMapAsset): ReferenceSubtype {
   // reference infrastructure, so keep them solid OR unless they were created
   // by a dedicated future NP/suggested route workflow.
   if (isRouteAsset(asset)) {
-    if (explicit === "np" && !source.includes("openreach") && !source.includes("pia")) {
+    if (
+      explicit === "np" &&
+      !source.includes("openreach") &&
+      !source.includes("pia")
+    ) {
       return "np";
     }
 
-    if (explicit === "suggested" && !source.includes("openreach") && !source.includes("pia")) {
+    if (
+      explicit === "suggested" &&
+      !source.includes("openreach") &&
+      !source.includes("pia")
+    ) {
       return "suggested";
     }
 
     return "or";
   }
 
-  if (explicit === "suggested" || text.includes("suggested") || text.includes("proposed") || text.includes("sugg:")) {
+  if (
+    explicit === "suggested" ||
+    text.includes("suggested") ||
+    text.includes("proposed") ||
+    text.includes("sugg:")
+  ) {
     return "suggested";
   }
 
-  if (explicit === "np" || text.includes("np:") || text.includes("new pole") || text.includes("new chamber") || text.includes("new duct") || text.includes("missing pole")) {
+  if (
+    explicit === "np" ||
+    text.includes("np:") ||
+    text.includes("new pole") ||
+    text.includes("new chamber") ||
+    text.includes("new duct") ||
+    text.includes("missing pole")
+  ) {
     return "np";
   }
 
@@ -115,7 +138,12 @@ function getReferenceSubtype(asset: SavedMapAsset): ReferenceSubtype {
 }
 
 function makePointIcon(kind: "pole" | "chamber", subtype: ReferenceSubtype) {
-  const colour = subtype === "suggested" ? "#f97316" : subtype === "np" ? "#16a34a" : "#7c3aed";
+  const colour =
+    subtype === "suggested"
+      ? "#f97316"
+      : subtype === "np"
+        ? "#16a34a"
+        : "#7c3aed";
   const label = kind === "pole" ? "P" : "C";
   const radius = kind === "pole" ? "50%" : "3px";
 
@@ -197,16 +225,31 @@ function isReferenceOverlayAsset(asset: SavedMapAsset): boolean {
 function isPole(asset: SavedMapAsset): boolean {
   const type = getAssetType(asset);
   const text = getAssetText(asset);
-  return type === "pole" || text.includes("pol:") || text.includes("mp:") || text.includes("np:") || text.includes("missing pole");
+  return (
+    type === "pole" ||
+    text.includes("pol:") ||
+    text.includes("mp:") ||
+    text.includes("np:") ||
+    text.includes("missing pole")
+  );
 }
 
 function isChamber(asset: SavedMapAsset): boolean {
   const type = getAssetType(asset);
   const text = getAssetText(asset);
-  return type === "chamber" || text.includes("jc:") || text.includes("ch:") || text.includes("chamber:");
+  return (
+    type === "chamber" ||
+    text.includes("jc:") ||
+    text.includes("ch:") ||
+    text.includes("chamber:")
+  );
 }
 
-function pointVisible(kind: "pole" | "chamber", subtype: ReferenceSubtype, visibleLayers: OpenreachLayerVisibility): boolean {
+function pointVisible(
+  kind: "pole" | "chamber",
+  subtype: ReferenceSubtype,
+  visibleLayers: OpenreachLayerVisibility,
+): boolean {
   if (kind === "pole") {
     if (subtype === "suggested") return visibleLayers.suggestedPoles !== false;
     if (subtype === "np") return visibleLayers.newPoles !== false;
@@ -217,9 +260,16 @@ function pointVisible(kind: "pole" | "chamber", subtype: ReferenceSubtype, visib
   return visibleLayers.chambers !== false;
 }
 
-function routeVisible(subtype: ReferenceSubtype, visibleLayers: OpenreachLayerVisibility): boolean {
+function routeVisible(
+  subtype: ReferenceSubtype,
+  visibleLayers: OpenreachLayerVisibility,
+): boolean {
   if (subtype === "suggested") return visibleLayers.suggestedDucts !== false;
-  return visibleLayers.ducts !== false || visibleLayers.trenches !== false || visibleLayers.spans !== false;
+  return (
+    visibleLayers.ducts !== false ||
+    visibleLayers.trenches !== false ||
+    visibleLayers.spans !== false
+  );
 }
 
 function labelForSubtype(subtype: ReferenceSubtype): string {
@@ -240,12 +290,16 @@ function renderPointPopup(asset: SavedMapAsset, kind: "pole" | "chamber") {
         {labelForSubtype(subtype)} {kind === "duct" ? "duct" : kind} reference
         <br />
         <span style={{ color: "#64748b", fontSize: 12 }}>
-          Read-only · snap target only
+          Read-only geometry · click opens Build / PIA evidence
         </span>
-        {item.importedProperties?.description || item.importedProperties?.Description ? (
+        {item.importedProperties?.description ||
+        item.importedProperties?.Description ? (
           <>
             <br />
-            <span>{item.importedProperties.description || item.importedProperties.Description}</span>
+            <span>
+              {item.importedProperties.description ||
+                item.importedProperties.Description}
+            </span>
           </>
         ) : null}
       </div>
@@ -258,6 +312,7 @@ export default function OpenreachOverlayLayer({
   visibleLayers,
   selectedDuctId = null,
   onSelectDuct,
+  onSelectReferenceAsset,
   ductSelectionEnabled = false,
 }: OpenreachOverlayLayerProps) {
   const [hoveredDuctId, setHoveredDuctId] = useState<string | null>(null);
@@ -305,13 +360,21 @@ export default function OpenreachOverlayLayer({
             positions={points}
             eventHandlers={{
               mouseover: () => setHoveredDuctId(asset.id),
-              mouseout: () => setHoveredDuctId((current) => current === asset.id ? null : current),
+              mouseout: () =>
+                setHoveredDuctId((current) =>
+                  current === asset.id ? null : current,
+                ),
               click: (event: any) => {
-                if (!ductSelectionEnabled) return;
                 if (event?.originalEvent) {
                   L.DomEvent.stopPropagation(event.originalEvent);
                 }
-                onSelectDuct?.(asset);
+
+                if (ductSelectionEnabled) {
+                  onSelectDuct?.(asset);
+                  return;
+                }
+
+                onSelectReferenceAsset?.(asset);
               },
             }}
             pathOptions={{
@@ -323,7 +386,11 @@ export default function OpenreachOverlayLayer({
             }}
           >
             <Tooltip sticky>
-              {isSelected ? "SELECTED DUCT" : ductSelectionEnabled ? "Click to use this duct" : getAssetName(asset)}
+              {isSelected
+                ? "SELECTED DUCT"
+                : ductSelectionEnabled
+                  ? "Click to use this duct"
+                  : getAssetName(asset)}
               <br />
               {getAssetName(asset)}
               <br />
@@ -343,8 +410,18 @@ export default function OpenreachOverlayLayer({
             key={`or-pole-${asset.id}`}
             position={position}
             icon={makePointIcon("pole", subtype)}
+            eventHandlers={{
+              click: (event: any) => {
+                if (event?.originalEvent) {
+                  L.DomEvent.stopPropagation(event.originalEvent);
+                }
+                onSelectReferenceAsset?.(asset);
+              },
+            }}
           >
-            {visibleLayers.labels ? <Tooltip sticky>{getAssetName(asset)}</Tooltip> : null}
+            {visibleLayers.labels ? (
+              <Tooltip sticky>{getAssetName(asset)}</Tooltip>
+            ) : null}
             {renderPointPopup(asset, "pole")}
           </Marker>
         );
@@ -360,8 +437,18 @@ export default function OpenreachOverlayLayer({
             key={`or-chamber-${asset.id}`}
             position={position}
             icon={makePointIcon("chamber", subtype)}
+            eventHandlers={{
+              click: (event: any) => {
+                if (event?.originalEvent) {
+                  L.DomEvent.stopPropagation(event.originalEvent);
+                }
+                onSelectReferenceAsset?.(asset);
+              },
+            }}
           >
-            {visibleLayers.labels ? <Tooltip sticky>{getAssetName(asset)}</Tooltip> : null}
+            {visibleLayers.labels ? (
+              <Tooltip sticky>{getAssetName(asset)}</Tooltip>
+            ) : null}
             {renderPointPopup(asset, "chamber")}
           </Marker>
         );

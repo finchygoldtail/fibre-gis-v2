@@ -39,6 +39,7 @@ export default function PiaKpiPanel({ stats }: { stats: PiaAcceptanceStats<any> 
       </div>
       <p style={intro}>Review poles and chambers, check uploaded evidence, and update the PIA status.</p>
       <div style={grid}>
+        <KpiCard icon="−" label="Not Required" value={formatNumber(stats.notRequired)} status="not_required" />
         <KpiCard icon="▣" label="Photos Uploaded" value={formatNumber(stats.photosUploaded)} status="photo" />
         <KpiCard icon="✓" label="Contractor Pass" value={formatNumber(stats.contractorPass)} status="contractor_pass" />
         <KpiCard icon="◷" label="Awaiting Check" value={formatNumber(stats.awaitingPiaCheck)} status="please_review" />

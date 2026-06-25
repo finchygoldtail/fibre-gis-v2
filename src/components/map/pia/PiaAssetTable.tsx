@@ -20,6 +20,7 @@ function getAssetType(asset: SavedMapAsset | null | undefined): string {
 }
 
 function statusColour(status: PiaAcceptanceStatus): string {
+  if (status === "not_required") return "#64748b";
   if (status === "photos_uploaded") return "#38bdf8";
   if (status === "contractor_pass") return "#f97316";
   if (status === "please_review") return "#a855f7";
@@ -66,6 +67,7 @@ export default function PiaAssetTable({
         <input value={searchTerm} onChange={(event) => onSearchTermChange(event.target.value)} placeholder="Search assets..." style={input} />
         <select value={statusFilter} onChange={(event) => onStatusFilterChange(event.target.value as any)} style={input}>
           <option value="all">All Statuses</option>
+          <option value="not_required">Not Required</option>
           <option value="not_started">Not Started</option>
           <option value="photos_uploaded">Photos Uploaded</option>
           <option value="contractor_pass">Contractor Pass</option>

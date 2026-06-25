@@ -6,6 +6,7 @@
 // =====================================================
 
 export type PiaAcceptanceStatus =
+  | "not_required"
   | "not_started"
   | "photos_uploaded"
   | "contractor_pass"
@@ -30,12 +31,15 @@ export type PiaContractorBreakdown = {
   pleaseReview: number;
   piaPass: number;
   piaFail: number;
+  notRequired: number;
   awaitingPiaCheck: number;
   passPercent: number;
 };
 
 export type PiaAcceptanceStats<TAsset extends Record<string, any> = Record<string, any>> = {
   total: number;
+  requiredTotal: number;
+  notRequired: number;
   notStarted: number;
   photosUploaded: number;
   contractorPass: number;
@@ -60,6 +64,7 @@ export function normalisePiaAcceptanceStatus(value: unknown): PiaAcceptanceStatu
     .toLowerCase()
     .replace(/[\s-]+/g, "_");
 
+  if (text === "not_required" || text === "not_used" || text === "not_applicable" || text === "not_needed" || text === "n/a" || text === "na") return "not_required";
   if (text === "photos_uploaded" || text === "photo_uploaded" || text === "photos") return "photos_uploaded";
   if (text === "contractor_pass" || text === "contractor_passed" || text === "contractor_accepted" || text === "cp") return "contractor_pass";
   if (text === "please_review" || text === "review" || text === "review_required" || text === "awaiting_review" || text === "pr") return "please_review";
@@ -69,6 +74,7 @@ export function normalisePiaAcceptanceStatus(value: unknown): PiaAcceptanceStatu
 }
 
 export function getPiaAcceptanceStatusLabel(status: PiaAcceptanceStatus): string {
+  if (status === "not_required") return "Not Required";
   if (status === "photos_uploaded") return "Photos Uploaded";
   if (status === "contractor_pass") return "Contractor Pass";
   if (status === "please_review") return "Please Review";
@@ -192,6 +198,8 @@ function getAlertPriority(status: PiaAcceptanceStatus): number {
 function blankStats<TAsset extends Record<string, any>>(): PiaAcceptanceStats<TAsset> {
   return {
     total: 0,
+    requiredTotal: 0,
+    notRequired: 0,
     notStarted: 0,
     photosUploaded: 0,
     contractorPass: 0,
@@ -220,7 +228,8 @@ export function buildPiaAcceptanceStats<TAsset extends Record<string, any>>(
     const contractor = getPiaAcceptanceContractor(asset);
 
     stats.total += 1;
-    if (status === "photos_uploaded") stats.photosUploaded += 1;
+    if (status === "not_required") stats.notRequired += 1;
+    else if (status === "photos_uploaded") stats.photosUploaded += 1;
     else if (status === "contractor_pass") stats.contractorPass += 1;
     else if (status === "please_review") stats.pleaseReview += 1;
     else if (status === "pia_pass") stats.piaPass += 1;
@@ -235,12 +244,14 @@ export function buildPiaAcceptanceStats<TAsset extends Record<string, any>>(
       pleaseReview: 0,
       piaPass: 0,
       piaFail: 0,
+      notRequired: 0,
       awaitingPiaCheck: 0,
       passPercent: 0,
     };
 
     row.total += 1;
-    if (status === "photos_uploaded") row.photosUploaded += 1;
+    if (status === "not_required") row.notRequired += 1;
+    else if (status === "photos_uploaded") row.photosUploaded += 1;
     else if (status === "contractor_pass") row.contractorPass += 1;
     else if (status === "please_review") row.pleaseReview += 1;
     else if (status === "pia_pass") row.piaPass += 1;
@@ -260,18 +271,19 @@ export function buildPiaAcceptanceStats<TAsset extends Record<string, any>>(
   });
 
   stats.awaitingPiaCheck = stats.photosUploaded + stats.contractorPass + stats.pleaseReview;
+  stats.requiredTotal = Math.max(0, stats.total - stats.notRequired);
   stats.passed = stats.piaPass;
   stats.failed = stats.piaFail;
-  stats.passPercent = stats.total ? Math.round((stats.piaPass / stats.total) * 100) : 0;
-  stats.failPercent = stats.total ? Math.round((stats.piaFail / stats.total) * 100) : 0;
-  stats.photoPercent = stats.total ? Math.round(((stats.total - stats.notStarted) / stats.total) * 100) : 0;
+  stats.passPercent = stats.requiredTotal ? Math.round((stats.piaPass / stats.requiredTotal) * 100) : 0;
+  stats.failPercent = stats.requiredTotal ? Math.round((stats.piaFail / stats.requiredTotal) * 100) : 0;
+  stats.photoPercent = stats.requiredTotal ? Math.round(((stats.requiredTotal - stats.notStarted) / stats.requiredTotal) * 100) : 0;
   stats.alerts = stats.alerts.sort((a, b) => a.priority - b.priority || a.title.localeCompare(b.title)).slice(0, 50);
 
   stats.contractorBreakdown = Array.from(contractorMap.values())
     .map((row) => ({
       ...row,
       awaitingPiaCheck: row.photosUploaded + row.contractorPass + row.pleaseReview,
-      passPercent: row.total ? Math.round((row.piaPass / row.total) * 100) : 0,
+      passPercent: row.total - row.notRequired ? Math.round((row.piaPass / (row.total - row.notRequired)) * 100) : 0,
     }))
     .sort((a, b) => b.awaitingPiaCheck - a.awaitingPiaCheck || b.piaFail - a.piaFail || a.contractor.localeCompare(b.contractor));
 

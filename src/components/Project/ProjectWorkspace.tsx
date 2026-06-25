@@ -110,8 +110,10 @@ type ProjectWorkspaceProps = {
   onOpenFibreTopology?: () => void;
   onOpenJointEditor?: (asset: SavedMapAsset) => void;
   onExport?: () => void;
+  onUpdateWorkspaceAsset?: (asset: SavedMapAsset) => void;
   projectArea?: SavedMapAsset | null;
   projectAssets?: SavedMapAsset[];
+  openreachAssets?: SavedMapAsset[];
   projectAreas?: SavedMapAsset[];
   activeProjectId?: string | null;
   onSelectProject?: (projectId: string) => void;
@@ -305,6 +307,118 @@ function getWorkspaceAssetLayerText(asset: SavedMapAsset): string {
   ]
     .map((value) => String(value ?? "").toLowerCase())
     .join(" ");
+}
+
+function isWorkspaceOpenreachReferenceAsset(
+  asset: SavedMapAsset | null | undefined,
+): boolean {
+  if (!asset) return false;
+  const text = getWorkspaceAssetLayerText(asset);
+  const item = asset as any;
+
+  return Boolean(
+    item.isOpenreachReference ||
+      item.readOnlyReference ||
+      item.referenceAsset ||
+      text.includes("openreach") ||
+      text.includes("pia") ||
+      text.includes(" or ") ||
+      text.includes("pol:") ||
+      text.includes("jc:") ||
+      text.includes("ch:") ||
+      text.includes("duct") ||
+      text.includes("trench") ||
+      text.includes("span") ||
+      text.includes("suggested"),
+  );
+}
+
+function isWorkspaceOpenreachPiaPointAsset(
+  asset: SavedMapAsset | null | undefined,
+): boolean {
+  if (!asset || !isWorkspaceOpenreachReferenceAsset(asset)) return false;
+  const item = asset as any;
+  const hasPointGeometry =
+    asset.geometry?.type === "Point" ||
+    (typeof item.lat === "number" && typeof item.lng === "number");
+
+  if (!hasPointGeometry) return false;
+
+  const text = getWorkspaceAssetLayerText(asset);
+  return (
+    text.includes("pole") ||
+    text.includes("pol:") ||
+    text.includes("chamber") ||
+    text.includes("manhole") ||
+    text.includes("jc:") ||
+    text.includes("ch:")
+  );
+}
+
+function isPiaReviewableWorkspaceAsset(
+  asset: SavedMapAsset | null | undefined,
+): boolean {
+  if (!asset) return false;
+
+  const item = asset as any;
+  const text = getWorkspaceAssetLayerText(asset);
+  const geometryType = String(asset.geometry?.type || "").toLowerCase();
+
+  // Area polygons are project containers, not build evidence targets.
+  if (
+    item.areaLevel ||
+    text.includes("polygon") ||
+    text.includes("fibrehood") ||
+    text.includes("project boundary")
+  ) {
+    return false;
+  }
+
+  // Premises/homes are managed by the home workflow, not the PIA asset queue.
+  if (isWorkspaceHomeAssetForLayerCount(asset) && !isHomeDropCableAsset(asset)) {
+    return false;
+  }
+
+  return (
+    isPiaAcceptanceAsset(asset as any) ||
+    isWorkspaceOpenreachPiaPointAsset(asset) ||
+    isWorkspaceDistributionPointAsset(asset) ||
+    isDesignCableAsset(asset) ||
+    isHomeDropCableAsset(asset) ||
+    geometryType === "point" ||
+    geometryType === "linestring" ||
+    text.includes("joint") ||
+    text.includes("dp") ||
+    text.includes("cbt") ||
+    text.includes("afn") ||
+    text.includes("street-cab") ||
+    text.includes("street cab") ||
+    text.includes("cab") ||
+    text.includes("fw4") ||
+    text.includes("fw6") ||
+    text.includes("fw10") ||
+    text.includes("chamber") ||
+    text.includes("pole")
+  );
+}
+
+function mergeWorkspaceAssetsById(
+  primaryAssets: SavedMapAsset[],
+  referenceAssets: SavedMapAsset[],
+): SavedMapAsset[] {
+  const byId = new Map<string, SavedMapAsset>();
+
+  primaryAssets.forEach((asset) => {
+    if (asset?.id) byId.set(String(asset.id), asset);
+  });
+
+  referenceAssets.forEach((asset) => {
+    if (!asset?.id) return;
+    const existing = byId.get(String(asset.id));
+    byId.set(String(asset.id), existing ? { ...asset, ...existing } : asset);
+  });
+
+  return Array.from(byId.values());
 }
 
 function syncWorkspaceDpStatus(
@@ -1538,8 +1652,10 @@ export default function ProjectWorkspace({
   onOpenFibreTopology,
   onOpenJointEditor,
   onExport,
+  onUpdateWorkspaceAsset,
   projectArea = null,
   projectAssets = [],
+  openreachAssets = [],
   projectAreas = [],
   activeProjectId = null,
   onSelectProject,
@@ -1671,14 +1787,36 @@ export default function ProjectWorkspace({
     });
   }, [projectAssets, mappingRowsByAssetId, localAssetOverrides]);
 
+  const openreachWorkspaceAssets = useMemo(
+    () =>
+      openreachAssets
+        .filter(isWorkspaceOpenreachReferenceAsset)
+        .map((asset) => {
+          const override = localAssetOverrides[asset.id];
+          return override
+            ? ({
+                ...asset,
+                ...override,
+                geometry: override.geometry || asset.geometry,
+              } as SavedMapAsset)
+            : asset;
+        }),
+    [openreachAssets, localAssetOverrides],
+  );
+
+  const allWorkspaceSelectableAssets = useMemo(
+    () => mergeWorkspaceAssetsById(workspaceAssets, openreachWorkspaceAssets),
+    [workspaceAssets, openreachWorkspaceAssets],
+  );
+
   const canonicalHomeSummary = useMemo(
     () => buildCanonicalHomeSummary(workspaceAssets),
     [workspaceAssets],
   );
 
   const fullSelectedWorkspaceAsset = useMemo(
-    () => resolveFullProjectAsset(selectedWorkspaceAsset, workspaceAssets),
-    [selectedWorkspaceAsset, workspaceAssets],
+    () => resolveFullProjectAsset(selectedWorkspaceAsset, allWorkspaceSelectableAssets),
+    [selectedWorkspaceAsset, allWorkspaceSelectableAssets],
   );
   const [layerMenuOpen, setLayerMenuOpen] = useState(false);
   const [visibleLayers, setVisibleLayers] = useState<WorkspaceLayerVisibility>(
@@ -2122,11 +2260,6 @@ export default function ProjectWorkspace({
     auditIssues.length,
     disconnectedAssets.length,
   ]);
-
-  const piaQaStats = useMemo(
-    () => buildPiaAcceptanceStats(workspaceAssets as any),
-    [workspaceAssets],
-  );
 
   const operationalReadiness = useMemo(
     () =>
@@ -3066,21 +3199,7 @@ export default function ProjectWorkspace({
   }, [projectArea, workspaceAssets]);
 
   const openreachLayerCounts = useMemo(() => {
-    const openreachAssets = workspaceAssets.filter((asset) => {
-      const text = getWorkspaceAssetLayerText(asset);
-      return (
-        text.includes("openreach") ||
-        text.includes("pia") ||
-        text.includes(" or ") ||
-        text.includes("pol:") ||
-        text.includes("jc:") ||
-        text.includes("ch:") ||
-        text.includes("duct") ||
-        text.includes("trench") ||
-        text.includes("span") ||
-        text.includes("suggested")
-      );
-    });
+    const openreachAssets = openreachWorkspaceAssets;
 
     return {
       ducts: openreachAssets.filter(
@@ -3115,7 +3234,7 @@ export default function ProjectWorkspace({
         (asset) => asset.geometry?.type === "LineString",
       ).length,
     } as Record<keyof OpenreachLayerVisibility, number>;
-  }, [workspaceAssets]);
+  }, [openreachWorkspaceAssets]);
 
   const enabledWorkspaceLayerCount = workspaceLayerOptions.filter(
     (item) => visibleLayers[item.key],
@@ -3323,8 +3442,13 @@ export default function ProjectWorkspace({
 
 
   const piaWorkspaceAssets = useMemo(
-    () => workspaceAssets.filter((asset) => isPiaAcceptanceAsset(asset as any)),
-    [workspaceAssets],
+    () => allWorkspaceSelectableAssets.filter(isPiaReviewableWorkspaceAsset),
+    [allWorkspaceSelectableAssets],
+  );
+
+  const piaQaStats = useMemo(
+    () => buildPiaAcceptanceStats(piaWorkspaceAssets as any),
+    [piaWorkspaceAssets],
   );
 
   const piaContractorOptions = useMemo(() => {
@@ -3375,22 +3499,42 @@ export default function ProjectWorkspace({
       ...patch,
       lastUpdatedAt: now,
     };
+    const nextPhotos = Array.isArray(patch.photos)
+      ? patch.photos
+      : Array.isArray(patch.photoEvidence)
+        ? patch.photoEvidence
+        : item.photos || item.poleDetails?.photos || item.chamberDetails?.photos;
+    const nextPhotoEvidence = Array.isArray(patch.photoEvidence)
+      ? patch.photoEvidence
+      : Array.isArray(patch.evidencePhotos)
+        ? patch.evidencePhotos
+        : nextPhotos;
 
     const nextAsset = {
       ...item,
+      photos: nextPhotos,
+      photoEvidence: nextPhotoEvidence,
+      evidencePhotos: Array.isArray(patch.evidencePhotos)
+        ? patch.evidencePhotos
+        : item.evidencePhotos,
+      uploadedEvidence: Array.isArray(patch.uploadedEvidence)
+        ? patch.uploadedEvidence
+        : item.uploadedEvidence,
       piaQa: nextPiaQa,
       piaQaDetails: nextPiaQa,
       properties: {
         ...(item.properties || {}),
+        photos: nextPhotos,
+        photoEvidence: nextPhotoEvidence,
         piaQa: nextPiaQa,
       },
       poleDetails:
         item.assetType === "pole" || item.poleDetails
-          ? { ...(item.poleDetails || {}), piaQa: nextPiaQa }
+          ? { ...(item.poleDetails || {}), photos: nextPhotos, piaQa: nextPiaQa }
           : item.poleDetails,
       chamberDetails:
         item.assetType === "chamber" || item.chamberDetails
-          ? { ...(item.chamberDetails || {}), piaQa: nextPiaQa }
+          ? { ...(item.chamberDetails || {}), photos: nextPhotos, piaQa: nextPiaQa }
           : item.chamberDetails,
     } as SavedMapAsset;
 
@@ -3399,6 +3543,7 @@ export default function ProjectWorkspace({
       [asset.id]: nextAsset,
     }));
     setSelectedWorkspaceAsset(nextAsset);
+    onUpdateWorkspaceAsset?.(nextAsset);
   };
 
   const updatePiaQaStatusInWorkspace = (asset: SavedMapAsset, status: PiaAcceptanceStatus) => {
@@ -3410,7 +3555,7 @@ export default function ProjectWorkspace({
       <PiaOperationsDashboard
         projectName={projectName}
         projectArea={projectArea}
-        assets={workspaceAssets}
+        assets={allWorkspaceSelectableAssets}
         piaAssets={piaWorkspaceAssets}
         filteredPiaAssets={filteredPiaWorkspaceAssets}
         piaQaStats={piaQaStats}
@@ -4072,6 +4217,7 @@ export default function ProjectWorkspace({
                     projectName={projectName}
                     projectArea={projectArea}
                     assets={workspaceAssets}
+                    openreachAssets={openreachWorkspaceAssets}
                     selectedAssetId={
                       fullSelectedWorkspaceAsset?.id ??
                       selectedWorkspaceAsset?.id ??

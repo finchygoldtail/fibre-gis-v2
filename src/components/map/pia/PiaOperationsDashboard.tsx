@@ -82,6 +82,7 @@ function sameAsset(a: SavedMapAsset | null | undefined, b: SavedMapAsset | null 
 }
 
 function statusColour(status: PiaAcceptanceStatus): string {
+  if (status === "not_required") return "#64748b";
   if (status === "photos_uploaded") return "#38bdf8";
   if (status === "contractor_pass") return "#f97316";
   if (status === "please_review") return "#a855f7";
@@ -365,6 +366,7 @@ export default function PiaReviewWorkspace({
   const [reviewer, setReviewer] = useState("");
   const [reviewDate, setReviewDate] = useState("");
   const [reviewNotes, setReviewNotes] = useState("");
+  const [notRequiredReason, setNotRequiredReason] = useState("");
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
   useEffect(() => {
@@ -374,6 +376,7 @@ export default function PiaReviewWorkspace({
     setReviewer(String(nextDetails.piaReviewer || nextDetails.reviewer || ""));
     setReviewDate(String(nextDetails.piaReviewDate || nextDetails.reviewDate || ""));
     setReviewNotes(String(nextDetails.piaReviewNotes || nextDetails.reviewNotes || ""));
+    setNotRequiredReason(String(nextDetails.notRequiredReason || nextDetails.notRequiredNote || ""));
     setViewerIndex(null);
   }, [selectedPiaAssetKey]);
 
@@ -389,6 +392,7 @@ export default function PiaReviewWorkspace({
       reviewDate,
       piaReviewNotes: reviewNotes,
       reviewNotes,
+      notRequiredReason,
     });
   };
 
@@ -407,6 +411,7 @@ export default function PiaReviewWorkspace({
         </div>
         <div style={headerCentre}>
           <span style={headerMetric}>Assets <strong>{formatNumber(piaQaStats.total)}</strong></span>
+          <span style={headerMetric}>Not Required <strong style={{ color: "#94a3b8" }}>{formatNumber(piaQaStats.notRequired)}</strong></span>
           <span style={headerMetric}>Awaiting <strong style={{ color: "#a855f7" }}>{formatNumber(piaQaStats.awaitingPiaCheck)}</strong></span>
           <span style={headerMetric}>Fails <strong style={{ color: "#ef4444" }}>{formatNumber(piaQaStats.piaFail)}</strong></span>
           <span style={headerMetric}>Pass Rate <strong style={{ color: "#22c55e" }}>{formatNumber(piaQaStats.passPercent)}%</strong></span>
@@ -422,6 +427,7 @@ export default function PiaReviewWorkspace({
           <div style={summaryLeft}>
             <div style={sectionKicker}>PIA Workspace Checks</div>
             <div style={kpiGrid}>
+              <KpiTile label="Not Required" value={formatNumber(piaQaStats.notRequired)} tone="default" />
               <KpiTile label="Photos Uploaded" value={formatNumber(piaQaStats.photosUploaded)} tone="info" />
               <KpiTile label="Contractor Pass" value={formatNumber(piaQaStats.contractorPass)} tone="warn" />
               <KpiTile label="Awaiting Review" value={formatNumber(piaQaStats.awaitingPiaCheck)} tone="warn" />
@@ -454,7 +460,8 @@ export default function PiaReviewWorkspace({
             <input value={searchTerm} onChange={(event) => onSearchTermChange(event.target.value)} placeholder="Search asset, reviewer, contractor..." style={input} />
             <select value={statusFilter} onChange={(event) => onStatusFilterChange(event.target.value as PiaAcceptanceStatus | "all")} style={input}>
               <option value="all">All Statuses</option>
-              <option value="not_started">Not Started</option>
+              <option value="not_required">Not Required</option>
+          <option value="not_started">Not Started</option>
               <option value="photos_uploaded">Photos Uploaded</option>
               <option value="contractor_pass">Contractor Pass</option>
               <option value="please_review">Please Review</option>
@@ -509,7 +516,7 @@ export default function PiaReviewWorkspace({
                 </div>
 
                 <div style={statusButtons}>
-                  {(["not_started", "photos_uploaded", "contractor_pass", "please_review", "pia_pass", "pia_fail"] as PiaAcceptanceStatus[]).map((option) => (
+                  {(["not_required", "not_started", "photos_uploaded", "contractor_pass", "please_review", "pia_pass", "pia_fail"] as PiaAcceptanceStatus[]).map((option) => (
                     <button
                       key={option}
                       type="button"
@@ -529,7 +536,8 @@ export default function PiaReviewWorkspace({
                   <label style={field}>Reviewer<input value={reviewer} onChange={(event) => setReviewer(event.target.value)} style={input} /></label>
                   <label style={field}>Review Date<input type="date" value={reviewDate} onChange={(event) => setReviewDate(event.target.value)} style={input} /></label>
                   <label style={field}>PIA Status<select value={status} onChange={(event) => quickStatus(event.target.value as PiaAcceptanceStatus)} style={input}>
-                    <option value="not_started">Not Started</option>
+                    <option value="not_required">Not Required</option>
+          <option value="not_started">Not Started</option>
                     <option value="photos_uploaded">Photos Uploaded</option>
                     <option value="contractor_pass">Contractor Pass</option>
                     <option value="please_review">Please Review</option>
@@ -537,6 +545,22 @@ export default function PiaReviewWorkspace({
                     <option value="pia_fail">PIA Fail</option>
                   </select></label>
                 </div>
+
+
+                {status === "not_required" ? (
+                  <label style={field}>Reason Not Required
+                    <select value={notRequiredReason} onChange={(event) => setNotRequiredReason(event.target.value)} style={input}>
+                      <option value="">Select reason...</option>
+                      <option value="Existing asset untouched">Existing asset untouched</option>
+                      <option value="Outside build scope">Outside build scope</option>
+                      <option value="Existing Openreach asset">Existing Openreach asset</option>
+                      <option value="Existing Netomnia asset">Existing Netomnia asset</option>
+                      <option value="Survey only">Survey only</option>
+                      <option value="Duplicate asset">Duplicate asset</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </label>
+                ) : null}
 
                 <label style={field}>Contractor Notes<textarea value={contractorNotes} onChange={(event) => setContractorNotes(event.target.value)} style={textarea} /></label>
                 <label style={field}>PIA Review Notes<textarea value={reviewNotes} onChange={(event) => setReviewNotes(event.target.value)} style={textarea} /></label>

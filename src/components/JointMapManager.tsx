@@ -162,7 +162,11 @@ import type {
 } from "./map/types";
 // Split storage is disabled during storage-integrity recovery.
 // Main chunks are the only authoritative save/load path.
-import { isOpenreachReferenceAsset } from "../services/orAssetStorage";
+import {
+  isOpenreachReferenceAsset,
+  mergeAndSaveOrAssets,
+  normaliseOpenreachAsset,
+} from "../services/orAssetStorage";
 import { withAreaAssetIndex } from "../services/areaAssetIndex";
 export type SavedJoint = SavedMapAsset;
 export type { SavedMapAsset };
@@ -557,7 +561,11 @@ function buildAssetSearchText(asset: SavedMapAsset): string {
     item.chamberType,
     item.notes,
   ]
-    .map((value) => String(value ?? "").trim().toLowerCase())
+    .map((value) =>
+      String(value ?? "")
+        .trim()
+        .toLowerCase(),
+    )
     .filter(Boolean)
     .join(" ");
 }
@@ -585,7 +593,6 @@ function isAreaVisibleForLevel(
 
   return true;
 }
-
 
 // Firebase stores older/chunked map assets in a flattened shape:
 //   geometryType + geometryCoordinatesJson
@@ -1012,8 +1019,15 @@ export default function JointMapManager({
   }, [hydratedOperationalSavedJoints, normalizedProjectHomes]);
 
   const currentEditingAsset = useMemo(
-    () => allMapAssets.find((asset) => asset.id === editingAssetId) || null,
-    [allMapAssets, editingAssetId],
+    () =>
+      allMapAssets.find((asset) => asset.id === editingAssetId) ||
+      openreachReferenceAssets.find((asset) => asset.id === editingAssetId) ||
+      null,
+    [allMapAssets, openreachReferenceAssets, editingAssetId],
+  );
+
+  const isEditingReferenceAsset = Boolean(
+    currentEditingAsset && isOpenreachReferenceAsset(currentEditingAsset),
   );
 
   const networkGraph = useMemo(
@@ -1188,7 +1202,6 @@ export default function JointMapManager({
     setOpenDistributionPointAsset,
   });
 
-
   const {
     polygonBulkSelectEnabled,
     setPolygonBulkSelectEnabled,
@@ -1311,41 +1324,53 @@ export default function JointMapManager({
     setShowCableModal,
   });
 
-  const [highlightedSearchAssetId, setHighlightedSearchAssetId] = useState<string | null>(null);
+  const [highlightedSearchAssetId, setHighlightedSearchAssetId] = useState<
+    string | null
+  >(null);
   const assetSearchSource = useMemo(() => {
-  if (activeProjectArea) {
-    return [activeProjectArea, ...visibleProjectAssets];
-  }
+    if (activeProjectArea) {
+      return [
+        activeProjectArea,
+        ...visibleProjectAssets,
+        ...visibleOpenreachAssets,
+      ];
+    }
 
-  return allMapAssets;
-}, [activeProjectArea, visibleProjectAssets, allMapAssets]);
+    return [...allMapAssets, ...openreachReferenceAssets];
+  }, [
+    activeProjectArea,
+    visibleProjectAssets,
+    visibleOpenreachAssets,
+    allMapAssets,
+    openreachReferenceAssets,
+  ]);
 
-const assetSearchResults = useMemo(() => {
-  const query = assetSearchQuery.trim().toLowerCase();
-  if (query.length < 2) return [];
+  const assetSearchResults = useMemo(() => {
+    const query = assetSearchQuery.trim().toLowerCase();
+    if (query.length < 2) return [];
 
-  return assetSearchSource
-    .filter((asset) => buildAssetSearchText(asset).includes(query))
-    .slice(0, 12);
-}, [assetSearchSource, assetSearchQuery]);
+    return assetSearchSource
+      .filter((asset) => buildAssetSearchText(asset).includes(query))
+      .slice(0, 12);
+  }, [assetSearchSource, assetSearchQuery]);
 
   const selectAssetSearchResult = (asset: SavedMapAsset) => {
-  handleEditAsset(asset);
-  handleZoomToAsset(asset);
-  setAssetSearchQuery(getAssetSearchLabel(asset));
-  setIsAssetSearchFocused(false);
+    handleEditAsset(asset);
+    handleZoomToAsset(asset);
+    setAssetSearchQuery(getAssetSearchLabel(asset));
+    setIsAssetSearchFocused(false);
 
-  setHighlightedSearchAssetId(asset.id);
+    setHighlightedSearchAssetId(asset.id);
 
-  window.setTimeout(() => {
-    setHighlightedSearchAssetId((currentId) =>
-      currentId === asset.id ? null : currentId,
-    );
-  }, 4500);
-};
-const assetSearchScopeLabel = activeProjectArea
-  ? getAssetSearchLabel(activeProjectArea)
-  : "Whole map";
+    window.setTimeout(() => {
+      setHighlightedSearchAssetId((currentId) =>
+        currentId === asset.id ? null : currentId,
+      );
+    }, 4500);
+  };
+  const assetSearchScopeLabel = activeProjectArea
+    ? getAssetSearchLabel(activeProjectArea)
+    : "Whole map";
   const handleAssetSearchSubmit = () => {
     const firstResult = assetSearchResults[0];
     if (firstResult) {
@@ -1446,42 +1471,94 @@ const assetSearchScopeLabel = activeProjectArea
     writeAssetAuditLog,
   });
 
-  const {
-    handleSaveEdits,
-    handleSaveJoint,
-    handleDeleteAsset,
-  } = useAssetSaveHandlers({
-    activeProjectId,
-    activeProjectAreaName,
-    allocatedInputFibres,
-    areaLevel,
-    assetType,
-    cablePiaNoiNumber,
-    cableType,
-    chamberDetails,
-    currentMappingRows,
-    draftAreaPoints,
-    draftCablePoints,
-    editingAssetId,
-    fibreCount,
-    getChangeReasonForCurrentMode,
-    installMethod,
-    jointName,
-    jointType,
-    notes,
-    parentCableId,
-    pickedLocation,
-    poleDetails,
-    dpDetails,
-    projectHomes,
-    resetEditor,
-    saveMapAssetToState,
-    savedJoints,
-    setProjectHomes,
-    setSavedJoints,
-    stampHomesForActiveArea,
-    writeAssetAuditLog,
-  });
+  const { handleSaveEdits, handleSaveJoint, handleDeleteAsset } =
+    useAssetSaveHandlers({
+      activeProjectId,
+      activeProjectAreaName,
+      allocatedInputFibres,
+      areaLevel,
+      assetType,
+      cablePiaNoiNumber,
+      cableType,
+      chamberDetails,
+      currentMappingRows,
+      draftAreaPoints,
+      draftCablePoints,
+      editingAssetId,
+      fibreCount,
+      getChangeReasonForCurrentMode,
+      installMethod,
+      jointName,
+      jointType,
+      notes,
+      parentCableId,
+      pickedLocation,
+      poleDetails,
+      dpDetails,
+      projectHomes,
+      resetEditor,
+      saveMapAssetToState,
+      savedJoints,
+      setProjectHomes,
+      setSavedJoints,
+      stampHomesForActiveArea,
+      writeAssetAuditLog,
+    });
+  const handleSaveReferenceAssetEvidence = async () => {
+    if (
+      !currentEditingAsset ||
+      !isOpenreachReferenceAsset(currentEditingAsset)
+    ) {
+      handleSaveEdits();
+      return;
+    }
+
+    const nextReferenceAsset = normaliseOpenreachAsset({
+      ...(currentEditingAsset as any),
+      name: currentEditingAsset.name,
+      notes,
+      poleDetails:
+        assetType === "pole"
+          ? {
+              ...((currentEditingAsset as any).poleDetails || {}),
+              ...poleDetails,
+            }
+          : (currentEditingAsset as any).poleDetails,
+      chamberDetails:
+        assetType === "chamber"
+          ? {
+              ...((currentEditingAsset as any).chamberDetails || {}),
+              ...chamberDetails,
+            }
+          : (currentEditingAsset as any).chamberDetails,
+      dpDetails:
+        assetType === "distribution-point"
+          ? {
+              ...((currentEditingAsset as any).dpDetails || {}),
+              ...dpDetails,
+            }
+          : (currentEditingAsset as any).dpDetails,
+      buildEvidence: {
+        ...((currentEditingAsset as any).buildEvidence || {}),
+        updatedAt: new Date().toISOString(),
+      },
+    } as SavedMapAsset);
+
+    try {
+      const merged = await mergeAndSaveOrAssets([nextReferenceAsset], {
+        reason: "save PIA/build evidence on read-only reference asset",
+      });
+      setOrAssets(merged);
+      alert(
+        "Reference asset evidence saved. Geometry and OR details stayed locked.",
+      );
+    } catch (err) {
+      console.error("Failed to save reference asset evidence", err);
+      alert(
+        "Could not save the OR asset evidence. Check the console before refreshing.",
+      );
+    }
+  };
 
   const {
     handleFinishArea,
@@ -1904,23 +1981,20 @@ const assetSearchScopeLabel = activeProjectArea
     setDraftAreaPoints((prev) => [...prev, point]);
   };
 
-  const {
-    handleLoadOsmHomes,
-    loadGeoJsonHomes,
-    loadGeoJsonHomesInView,
-  } = useHomeImportTools({
-    activeProjectId,
-    activeProjectArea,
-    activeProjectAreaName,
-    mapBounds,
-    mapRef,
-    allMapAssets,
-    projectHomes,
-    setProjectHomes,
-    setLoadedHomesProjectId,
-    setIsLoadingOsmHomes,
-    stampHomesForActiveArea,
-  });
+  const { handleLoadOsmHomes, loadGeoJsonHomes, loadGeoJsonHomesInView } =
+    useHomeImportTools({
+      activeProjectId,
+      activeProjectArea,
+      activeProjectAreaName,
+      mapBounds,
+      mapRef,
+      allMapAssets,
+      projectHomes,
+      setProjectHomes,
+      setLoadedHomesProjectId,
+      setIsLoadingOsmHomes,
+      stampHomesForActiveArea,
+    });
 
   const {
     handleExportJson,
@@ -3093,10 +3167,7 @@ const assetSearchScopeLabel = activeProjectArea
       const ring = activeProjectArea.geometry.coordinates?.[0] || [];
       const bounds = L.latLngBounds(
         ring
-          .map(
-            ([lat, lng]: [number, number]) =>
-              [lat, lng] as [number, number],
-          )
+          .map(([lat, lng]: [number, number]) => [lat, lng] as [number, number])
           .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng)),
       );
 
@@ -3123,6 +3194,7 @@ const assetSearchScopeLabel = activeProjectArea
         activeProjectArea={activeProjectArea}
         projectWorkspaceStats={projectWorkspaceStats}
         visibleProjectAssets={visibleProjectAssets}
+        visibleOpenreachAssets={visibleOpenreachAssets}
         projectAreas={projectAreas}
         activeProjectId={activeProjectId}
         onSelectProject={handleSelectProject}
@@ -3241,7 +3313,9 @@ const assetSearchScopeLabel = activeProjectArea
           onRemoveSelectedPolygon={handleAdminRemoveSelectedPolygon}
           onRemoveAllPolygons={handleAdminRemoveAllPolygons}
           onRepairAreaStamps={handleAdminRepairAreaStamps}
-          onDeletePiaOverlayForActiveProject={handleDeletePiaOverlayForActiveProject}
+          onDeletePiaOverlayForActiveProject={
+            handleDeletePiaOverlayForActiveProject
+          }
           onDeleteAllOrReferenceAssets={handleAdminDeleteAllOrReferenceAssets}
         />
 
@@ -3588,6 +3662,25 @@ const assetSearchScopeLabel = activeProjectArea
                 </>
               ) : null}
 
+              {isEditingReferenceAsset ? (
+                <div
+                  style={{
+                    marginTop: 12,
+                    padding: 10,
+                    border: "1px solid #7c3aed",
+                    borderRadius: 10,
+                    background: "rgba(124,58,237,0.12)",
+                    color: "#ddd6fe",
+                    fontSize: 12,
+                    lineHeight: 1.45,
+                  }}
+                >
+                  <strong>Read-only reference asset</strong> — location and core
+                  Openreach details stay locked. Build photos, PIA photos, QA
+                  checks and notes can be saved against this asset.
+                </div>
+              ) : null}
+
               <AssetDetailsSidebarSections
                 assetType={assetType}
                 poleDetails={poleDetails}
@@ -3732,8 +3825,15 @@ const assetSearchScopeLabel = activeProjectArea
                     flexWrap: "wrap",
                   }}
                 >
-                  <button onClick={() => handleSaveEdits()} style={btnPrimary}>
-                    Save Changes
+                  <button
+                    onClick={() =>
+                      isEditingReferenceAsset
+                        ? handleSaveReferenceAssetEvidence()
+                        : handleSaveEdits()
+                    }
+                    style={btnPrimary}
+                  >
+                    {isEditingReferenceAsset ? "Save Evidence" : "Save Changes"}
                   </button>
                   <button onClick={resetEditor} style={btnSecondary}>
                     Cancel Edit
@@ -3888,7 +3988,6 @@ const assetSearchScopeLabel = activeProjectArea
             secondaryButtonStyle={btnSecondary}
           />
         )}
-
       </div>
 
       <div
@@ -4215,6 +4314,17 @@ const assetSearchScopeLabel = activeProjectArea
                     "Selected duct",
                 ),
               );
+            }}
+            onSelectReferenceAsset={(asset) => {
+              setSelectedReferenceDuctId(null);
+              handleEditAsset(asset);
+              setHighlightedSearchAssetId(asset.id);
+              handleZoomToAsset(asset);
+              window.setTimeout(() => {
+                setHighlightedSearchAssetId((currentId) =>
+                  currentId === asset.id ? null : currentId,
+                );
+              }, 3500);
             }}
           />
 
@@ -4554,24 +4664,24 @@ const assetSearchScopeLabel = activeProjectArea
 
       {!showMaintenancePanel && !isFieldResponsiveMode && (
         <MapToolbar
-  showAssetPanelButton={!isPanelOpen}
-  onOpenAssetPanel={() => setIsPanelOpen(true)}
-  searchQuery={assetSearchQuery}
-  setSearchQuery={setAssetSearchQuery}
-  searchResults={assetSearchResults}
-  selectedAssetId={editingAssetId}
-  searchScopeLabel={assetSearchScopeLabel}
-  onSearchSubmit={handleAssetSearchSubmit}
-  onSelectSearchResult={selectAssetSearchResult}
-  isSearchFocused={isAssetSearchFocused}
-  setIsSearchFocused={setIsAssetSearchFocused}
-  canSaveMap={canManageNetworkDesign}
-  isSavingMap={isSavingMapNow}
-  onSaveMap={handleSaveMapNow}
-  onGpsLocate={handleGpsLocate}
-  isLayersOpen={isLayersOpen}
-  onToggleLayers={() => setIsLayersOpen(!isLayersOpen)}
-/>
+          showAssetPanelButton={!isPanelOpen}
+          onOpenAssetPanel={() => setIsPanelOpen(true)}
+          searchQuery={assetSearchQuery}
+          setSearchQuery={setAssetSearchQuery}
+          searchResults={assetSearchResults}
+          selectedAssetId={editingAssetId}
+          searchScopeLabel={assetSearchScopeLabel}
+          onSearchSubmit={handleAssetSearchSubmit}
+          onSelectSearchResult={selectAssetSearchResult}
+          isSearchFocused={isAssetSearchFocused}
+          setIsSearchFocused={setIsAssetSearchFocused}
+          canSaveMap={canManageNetworkDesign}
+          isSavingMap={isSavingMapNow}
+          onSaveMap={handleSaveMapNow}
+          onGpsLocate={handleGpsLocate}
+          isLayersOpen={isLayersOpen}
+          onToggleLayers={() => setIsLayersOpen(!isLayersOpen)}
+        />
       )}
 
       <ResponsiveFieldPolish enabled={isFieldResponsiveMode} />

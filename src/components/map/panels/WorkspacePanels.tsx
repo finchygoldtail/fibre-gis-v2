@@ -10,6 +10,7 @@ type WorkspacePanelsProps = {
   activeProjectArea: SavedMapAsset;
   projectWorkspaceStats: any;
   visibleProjectAssets: SavedMapAsset[];
+  visibleOpenreachAssets?: SavedMapAsset[];
   projectAreas: SavedMapAsset[];
   activeProjectId: string | null;
   onSelectProject: (projectId: string) => void;
@@ -33,6 +34,7 @@ type WorkspacePanelsProps = {
   onApplySbRouteAssignments: (request: any) => void | Promise<void>;
   onAutoSpreadStackedHomes: () => void | Promise<void>;
   onExport: () => void;
+  onUpdateWorkspaceAsset?: (asset: SavedMapAsset) => void;
 };
 
 export default function WorkspacePanels({
@@ -42,6 +44,7 @@ export default function WorkspacePanels({
   activeProjectArea,
   projectWorkspaceStats,
   visibleProjectAssets,
+  visibleOpenreachAssets = [],
   projectAreas,
   activeProjectId,
   onSelectProject,
@@ -57,6 +60,7 @@ export default function WorkspacePanels({
   onApplySbRouteAssignments,
   onAutoSpreadStackedHomes,
   onExport,
+  onUpdateWorkspaceAsset,
 }: WorkspacePanelsProps) {
   const projectName = activeProjectArea.name || "Selected Project";
 
@@ -99,6 +103,7 @@ export default function WorkspacePanels({
       stats={projectWorkspaceStats}
       projectArea={activeProjectArea}
       projectAssets={visibleProjectAssets}
+      openreachAssets={visibleOpenreachAssets}
       projectAreas={projectAreas}
       activeProjectId={activeProjectId}
       onSelectProject={onSelectProject}
@@ -114,6 +119,7 @@ export default function WorkspacePanels({
       onApplySbRouteAssignments={onApplySbRouteAssignments}
       onAutoSpreadStackedHomes={onAutoSpreadStackedHomes}
       onExport={onExport}
+      onUpdateWorkspaceAsset={onUpdateWorkspaceAsset}
     />
   );
 }

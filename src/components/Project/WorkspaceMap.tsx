@@ -55,6 +55,7 @@ type WorkspaceMapProps = {
   projectName: string;
   projectArea?: SavedMapAsset | null;
   assets: SavedMapAsset[];
+  openreachAssets?: SavedMapAsset[];
   selectedAssetId?: string | null;
   showCableDistances?: boolean;
   openreachLayers?: OpenreachLayerVisibility;
@@ -646,6 +647,7 @@ export default function WorkspaceMap({
   projectName,
   projectArea,
   assets,
+  openreachAssets,
   selectedAssetId,
   showCableDistances = false,
   visibleLayers = {
@@ -718,15 +720,16 @@ export default function WorkspaceMap({
     [assets, visibleLayers, viewportBounds, viewportZoom],
   );
 
-  const visibleOpenreachAssets = useMemo(
-    () =>
-      assets.filter(
-        (asset) =>
-          assetInWorkspaceViewport(asset, viewportBounds) &&
-          shouldRenderWorkspaceOpenreachAtZoom(asset, viewportZoom),
-      ),
-    [assets, viewportBounds, viewportZoom],
-  );
+  const visibleOpenreachAssets = useMemo(() => {
+    const sourceAssets =
+      openreachAssets && openreachAssets.length > 0 ? openreachAssets : assets;
+
+    return sourceAssets.filter(
+      (asset) =>
+        assetInWorkspaceViewport(asset, viewportBounds) &&
+        shouldRenderWorkspaceOpenreachAtZoom(asset, viewportZoom),
+    );
+  }, [assets, openreachAssets, viewportBounds, viewportZoom]);
 
   const pointAssets = useMemo(() => visibleAssets.filter((asset) => getPoint(asset)), [visibleAssets]);
   const homePointAssets = useMemo(
@@ -836,7 +839,11 @@ export default function WorkspaceMap({
           )),
         )}
 
-        <OpenreachOverlayLayer assets={visibleOpenreachAssets} visibleLayers={openreachLayers} />
+        <OpenreachOverlayLayer
+          assets={visibleOpenreachAssets}
+          visibleLayers={openreachLayers}
+          onSelectReferenceAsset={(asset) => selectWorkspaceAsset(asset, onAssetSelect)}
+        />
 
         {dropCableAssets.map((asset) => {
           const points = getLinePoints(asset);
