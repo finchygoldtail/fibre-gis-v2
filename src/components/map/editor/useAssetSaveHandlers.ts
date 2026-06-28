@@ -18,6 +18,8 @@ import {
   isDropCable,
   sanitiseCableRouteCoordinates,
 } from "../utils/mapAssetGeometry";
+import { recordLocalEngineeringChange } from "../../../core/engineering";
+
 
 export function normaliseDpOperationalStatus(value: unknown): string {
   const raw = String(value ?? "").trim();
@@ -163,6 +165,56 @@ function getDropHomeKeys(drop: any): string[] {
   return rawHomeId.startsWith("uprn-")
     ? [rawHomeId, rawHomeId.replace(/^uprn-/, "")]
     : [rawHomeId, `uprn-${rawHomeId}`];
+}
+
+function getEngineeringAreaId(
+  activeProjectId: string | null,
+  activeProjectAreaName: string | null | undefined,
+): string {
+  return String(activeProjectId || activeProjectAreaName || "global-map").trim() || "global-map";
+}
+
+function getEngineeringSnapshot(asset?: SavedMapAsset | null): any | null {
+  if (!asset) return null;
+
+  const anyAsset = asset as any;
+  return {
+    ...anyAsset,
+    id: String(anyAsset.id ?? ""),
+    type: anyAsset.assetType || anyAsset.jointType || anyAsset.type,
+    name: anyAsset.name || anyAsset.label || anyAsset.properties?.name,
+    status: anyAsset.status || anyAsset.buildStatus || anyAsset.properties?.status,
+    notes: anyAsset.notes || anyAsset.properties?.notes,
+    geometry: anyAsset.geometry,
+    coordinates: anyAsset.geometry?.coordinates,
+    fibreAllocation: anyAsset.allocatedInputFibres || anyAsset.fibreAllocation || anyAsset.properties?.fibreAllocation,
+    fibres: anyAsset.fibres || anyAsset.fibreCount || anyAsset.properties?.fibres,
+    photos: anyAsset.photos || anyAsset.photoUrls || anyAsset.properties?.photos,
+    commercial: anyAsset.commercial || anyAsset.properties?.commercial,
+  };
+}
+
+function recordEngineeringChangeSafely(args: {
+  before?: SavedMapAsset | null;
+  after?: SavedMapAsset | null;
+  activeProjectId: string | null;
+  activeProjectAreaName: string | null | undefined;
+  reason?: string;
+  source: string;
+}): void {
+  try {
+    recordLocalEngineeringChange({
+      before: getEngineeringSnapshot(args.before),
+      after: getEngineeringSnapshot(args.after),
+      areaId: getEngineeringAreaId(args.activeProjectId, args.activeProjectAreaName),
+      areaName: args.activeProjectAreaName || undefined,
+      createdBy: "Current User",
+      source: args.source,
+      reason: args.reason,
+    });
+  } catch (error) {
+    console.warn("Engineering Core analysis failed; map save continued.", error);
+  }
 }
 
 export function useAssetSaveHandlers({
@@ -362,6 +414,15 @@ export function useAssetSaveHandlers({
         before: beforeAsset,
         after: savedAfterAsset,
       });
+
+      recordEngineeringChangeSafely({
+        before: beforeAsset,
+        after: savedAfterAsset,
+        activeProjectId,
+        activeProjectAreaName,
+        reason,
+        source: "asset-edit-save",
+      });
     }
 
     resetEditor();
@@ -472,6 +533,14 @@ export function useAssetSaveHandlers({
       reason,
       after: savedRecord,
     });
+    recordEngineeringChangeSafely({
+      before: null,
+      after: savedRecord,
+      activeProjectId,
+      activeProjectAreaName,
+      reason,
+      source: "asset-create-save",
+    });
     resetEditor();
   };
 
@@ -558,6 +627,15 @@ export function useAssetSaveHandlers({
         action: "deleted",
         reason,
         before: deletedAsset,
+      });
+
+      recordEngineeringChangeSafely({
+        before: deletedAsset,
+        after: null,
+        activeProjectId,
+        activeProjectAreaName,
+        reason,
+        source: "asset-delete-save",
       });
     }
 

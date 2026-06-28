@@ -4,7 +4,32 @@ import type { PiaQaStatus } from "./piaQaTypes";
 import { getPiaQaStatusMeta } from "./piaQaTypes";
 
 export function isPiaQaAsset(asset: SavedMapAsset | null | undefined): boolean {
-  return asset?.assetType === "pole" || asset?.assetType === "chamber";
+  if (!asset) return false;
+
+  const item = asset as any;
+  const assetType = String(item.assetType || item.type || item.properties?.assetType || item.properties?.type || "").toLowerCase();
+  const nameText = [
+    item.name,
+    item.label,
+    item.assetId,
+    item.id,
+    item.properties?.name,
+    item.properties?.label,
+  ]
+    .map((value) => String(value || "").toLowerCase())
+    .join(" ");
+
+  if (
+    nameText.includes("uprn") ||
+    nameText.includes("drop") ||
+    nameText.includes("home") ||
+    nameText.includes("premise") ||
+    nameText.includes("premises")
+  ) {
+    return false;
+  }
+
+  return assetType === "pole" || assetType === "chamber";
 }
 
 export function getPiaQaDetails(asset: SavedMapAsset | null | undefined) {
@@ -40,8 +65,8 @@ export function shouldShowAssetForPiaQaFilters(
   asset: SavedMapAsset,
   layers: Record<string, any>,
 ): boolean {
-  if (!isPiaQaAsset(asset)) return true;
   if (!isPiaQaModeEnabled(layers)) return true;
+  if (!isPiaQaAsset(asset)) return false;
 
   const status = getPiaQaStatusForAsset(asset);
 

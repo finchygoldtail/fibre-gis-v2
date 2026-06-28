@@ -60,7 +60,6 @@ import DistributionPointDetailsModal from "./map/modals/DistributionPointDetails
 import ChamberDetailsModal, {
   type ChamberDetails,
 } from "./map/modals/ChamberDetailsModal";
-import UserMenu from "./UserMenu";
 import MaintenanceAuditOverlay from "./map/audit/MaintenanceAuditOverlay";
 import { useMaintenanceHistory } from "./map/maintenance/useMaintenanceHistory";
 import type { AssetChangeAction } from "./map/audit/types";
@@ -103,7 +102,6 @@ import {
 } from "./map/utils/mapAssetGeometry";
 import StreetCabDesigner from "./streetcab/StreetCabDesigner";
 import DistributionPointEditor from "./dp/DistributionPointEditor";
-import ProjectAreaSelector from "./map/projects/ProjectAreaSelector";
 import { filterAssetsForProjectArea } from "./map/projects/projectAssetFilter";
 import { useProjectAreaView } from "./map/projects/useProjectAreaView";
 import { useProjectWorkspaceStats } from "./map/workspace/useProjectWorkspaceStats";
@@ -3267,17 +3265,15 @@ export default function JointMapManager({
           transition: "transform 0.3s ease",
         }}
       >
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <ProjectAreaSelector
-            projectAreas={projectAreas}
-            activeProjectId={activeProjectId}
-            onSelectProject={handleSelectProject}
-            onClearProject={() => {
-              activeProjectIdRef.current = null;
-              setActiveProjectId(null);
-              saveMapView({ activeProjectId: null });
-            }}
-          />
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 11, color: "#60a5fa", fontWeight: 900, letterSpacing: 0.5, textTransform: "uppercase" }}>
+              Assets Panel
+            </div>
+            <div style={{ fontSize: 13, color: "#cbd5e1", fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {activeProjectArea ? activeProjectArea.name || "Selected area" : "Whole network"}
+            </div>
+          </div>
 
           <button
             type="button"
@@ -3288,7 +3284,6 @@ export default function JointMapManager({
           </button>
         </div>
 
-        <UserMenu variant="sidebar" />
 
         <AdminPanels
           isAdmin={isAdmin}
@@ -4675,12 +4670,22 @@ export default function JointMapManager({
           onSelectSearchResult={selectAssetSearchResult}
           isSearchFocused={isAssetSearchFocused}
           setIsSearchFocused={setIsAssetSearchFocused}
-          canSaveMap={canManageNetworkDesign}
+          canSaveMap={isAdmin}
           isSavingMap={isSavingMapNow}
           onSaveMap={handleSaveMapNow}
           onGpsLocate={handleGpsLocate}
           isLayersOpen={isLayersOpen}
           onToggleLayers={() => setIsLayersOpen(!isLayersOpen)}
+          areaKey={activeProjectId}
+          areaName={assetSearchScopeLabel}
+          projectAreas={projectAreas}
+          activeProjectId={activeProjectId}
+          onSelectProject={handleSelectProject}
+          onClearProject={() => {
+            activeProjectIdRef.current = null;
+            setActiveProjectId(null);
+            saveMapView({ activeProjectId: null });
+          }}
         />
       )}
 

@@ -105,6 +105,39 @@ export function getPiaAcceptanceStatusLabel(status: PiaAcceptanceStatus): string
 
 export function isPiaAcceptanceAsset(asset: Record<string, any>): boolean {
   const type = String(asset.assetType || asset.type || asset.properties?.assetType || asset.properties?.type || "").toLowerCase();
+  const nameText = [
+    asset.name,
+    asset.label,
+    asset.title,
+    asset.reference,
+    asset.ref,
+    asset.assetId,
+    asset.id,
+    asset.cableType,
+    asset.properties?.name,
+    asset.properties?.label,
+    asset.properties?.title,
+    asset.properties?.reference,
+  ]
+    .map((value) => String(value || "").toLowerCase())
+    .join(" ");
+
+  if (
+    nameText.includes("uprn") ||
+    nameText.includes("drop") ||
+    nameText.includes("home") ||
+    nameText.includes("premise") ||
+    nameText.includes("premises") ||
+    type.includes("drop") ||
+    type.includes("home") ||
+    type.includes("premise") ||
+    type.includes("cable") ||
+    type.includes("distribution") ||
+    type === "dp"
+  ) {
+    return false;
+  }
+
   return type === "pole" || type === "chamber" || type.includes("pole") || type.includes("chamber");
 }
 

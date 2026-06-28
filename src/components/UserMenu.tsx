@@ -73,17 +73,12 @@ export default function UserMenu({ variant = "topbar" }: Props) {
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
-          style={{
-            background: "#111827",
-            color: "white",
-            border: "1px solid #374151",
-            borderRadius: 10,
-            padding: "8px 12px",
-            cursor: "pointer",
-            fontWeight: 800,
-          }}
+          title={`${displayName} · ${roleLabel}`}
+          style={topbarAccountButtonStyle}
         >
-          {displayName} ▾
+          <span style={topbarAvatarStyle}>{getInitials(displayName)}</span>
+          <span style={topbarAccountTextStyle}>Account</span>
+          <span aria-hidden="true">▾</span>
         </button>
 
         {open && (
@@ -156,6 +151,37 @@ function getInitials(value: string) {
   const second = parts.length > 1 ? parts[1]?.[0] : "";
   return `${first}${second}`.toUpperCase();
 }
+
+const topbarAccountButtonStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  background: "rgba(15,23,42,0.92)",
+  color: "white",
+  border: "1px solid rgba(148,163,184,0.4)",
+  borderRadius: 999,
+  padding: "6px 10px 6px 6px",
+  cursor: "pointer",
+  fontWeight: 900,
+  whiteSpace: "nowrap",
+  boxShadow: "0 2px 8px rgba(0,0,0,0.22)",
+};
+
+const topbarAvatarStyle: React.CSSProperties = {
+  width: 28,
+  height: 28,
+  display: "inline-grid",
+  placeItems: "center",
+  borderRadius: 999,
+  background: "#22c55e",
+  color: "#052e16",
+  fontSize: 12,
+  fontWeight: 900,
+};
+
+const topbarAccountTextStyle: React.CSSProperties = {
+  fontSize: 13,
+};
 
 const sidebarShellStyle: React.CSSProperties = {
   marginTop: 12,

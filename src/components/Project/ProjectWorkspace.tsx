@@ -29,6 +29,8 @@ import { createAuditFormLog } from "../../services/auditService";
 import AuditCommercialDashboard from "../audits/AuditCommercialDashboard";
 import AuditPaymentBlockerPanel from "../audits/AuditPaymentBlockerPanel";
 import AuditHistoryPanel from "../audits/AuditHistoryPanel";
+import AreaOperationsCentre from "../operations/AreaOperationsCentre";
+import EngineeringDeliveryWorkspace from "../delivery/EngineeringDeliveryWorkspace";
 import { buildCanonicalHomeSummary } from "./workspace/canonicalHomeStatus";
 import PiaOperationsDashboard from "../map/pia/PiaOperationsDashboard";
 import {
@@ -76,6 +78,8 @@ type WorkspaceTab =
   | "fibre"
   | "reports"
   | "commercial"
+  | "operations"
+  | "delivery"
   | "settings";
 
 type ProjectWorkspaceStats = {
@@ -158,6 +162,8 @@ const tabs: { id: WorkspaceTab; label: string }[] = [
   { id: "fibre", label: "Fibre" },
   { id: "reports", label: "Reports" },
   { id: "commercial", label: "Commercial" },
+  { id: "operations", label: "Operations" },
+  { id: "delivery", label: "Delivery" },
 ];
 
 const defaultWorkspaceLayers: WorkspaceLayerVisibility = {
@@ -362,44 +368,56 @@ function isPiaReviewableWorkspaceAsset(
 
   const item = asset as any;
   const text = getWorkspaceAssetLayerText(asset);
-  const geometryType = String(asset.geometry?.type || "").toLowerCase();
+  const titleText = [
+    item.name,
+    item.jointName,
+    item.label,
+    item.assetId,
+    item.id,
+    item.cableType,
+    item.type,
+    item.assetType,
+    item.properties?.name,
+    item.properties?.label,
+    item.properties?.assetType,
+    item.properties?.type,
+  ]
+    .map((value) => String(value || "").toLowerCase())
+    .join(" ");
+
+  const combinedText = `${text} ${titleText}`;
 
   // Area polygons are project containers, not build evidence targets.
   if (
     item.areaLevel ||
-    text.includes("polygon") ||
-    text.includes("fibrehood") ||
-    text.includes("project boundary")
+    combinedText.includes("polygon") ||
+    combinedText.includes("fibrehood") ||
+    combinedText.includes("project boundary")
   ) {
     return false;
   }
 
-  // Premises/homes are managed by the home workflow, not the PIA asset queue.
-  if (isWorkspaceHomeAssetForLayerCount(asset) && !isHomeDropCableAsset(asset)) {
+  // PIA review is for physical PIA evidence assets only.
+  // Keep homes, premises, UPRN records, service drops and network cables out
+  // of the PIA queue so the PIA dashboard does not list home-drop records.
+  if (
+    combinedText.includes("uprn") ||
+    combinedText.includes("premise") ||
+    combinedText.includes("premises") ||
+    combinedText.includes("home") ||
+    combinedText.includes("drop") ||
+    isWorkspaceHomeAssetForLayerCount(asset) ||
+    isHomeDropCableAsset(asset) ||
+    isDesignCableAsset(asset) ||
+    isWorkspaceDistributionPointAsset(asset)
+  ) {
     return false;
   }
 
-  return (
-    isPiaAcceptanceAsset(asset as any) ||
-    isWorkspaceOpenreachPiaPointAsset(asset) ||
-    isWorkspaceDistributionPointAsset(asset) ||
-    isDesignCableAsset(asset) ||
-    isHomeDropCableAsset(asset) ||
-    geometryType === "point" ||
-    geometryType === "linestring" ||
-    text.includes("joint") ||
-    text.includes("dp") ||
-    text.includes("cbt") ||
-    text.includes("afn") ||
-    text.includes("street-cab") ||
-    text.includes("street cab") ||
-    text.includes("cab") ||
-    text.includes("fw4") ||
-    text.includes("fw6") ||
-    text.includes("fw10") ||
-    text.includes("chamber") ||
-    text.includes("pole")
-  );
+  // PIA QA is intentionally scoped to poles/chambers and OR/PIA point
+  // reference assets that represent poles/chambers/manholes. Do not include
+  // arbitrary points, DPs, joints or cables.
+  return isPiaAcceptanceAsset(asset as any) || isWorkspaceOpenreachPiaPointAsset(asset);
 }
 
 function mergeWorkspaceAssetsById(
@@ -3068,6 +3086,11 @@ export default function ProjectWorkspace({
   );
 
   const handleSaveWalkOffAudit = async (audit: any) => {
+    if (!piaGatePassedForWalkOff) {
+      alert("Walk-Off is locked until PIA has passed in full for this area.");
+      return;
+    }
+
     await createAuditFormLog({
       projectId:
         activeWorkspaceProjectId || activeProjectId || projectArea?.id || null,
@@ -3450,6 +3473,21 @@ export default function ProjectWorkspace({
     () => buildPiaAcceptanceStats(piaWorkspaceAssets as any),
     [piaWorkspaceAssets],
   );
+
+  const piaGatePassedForWalkOff = piaQaStats.requiredTotal === 0 || piaQaStats.piaPass >= piaQaStats.requiredTotal;
+  const piaGateBlockerText = piaGatePassedForWalkOff
+    ? "PIA passed in full. Walk-Off can start."
+    : `PIA not complete: ${piaQaStats.piaPass} / ${piaQaStats.requiredTotal} required assets passed.`;
+
+  const handleOpenWalkOffAudit = () => {
+    if (!piaGatePassedForWalkOff) {
+      alert("Walk-Off is locked until PIA has passed in full for this area.");
+      setWalkOffAuditOpen(false);
+      return;
+    }
+
+    setWalkOffAuditOpen(true);
+  };
 
   const piaContractorOptions = useMemo(() => {
     const contractors = new Set<string>();
@@ -4316,7 +4354,157 @@ export default function ProjectWorkspace({
                 </div>
               </section>
 
-              {fullSelectedWorkspaceAsset && activeTab !== "pia" ? (
+              {activeTab === "commercial" ? (
+                <>
+                  <section style={commercialStatsSidePanel}>
+                    <div style={commercialHeaderRow}>
+                      <div>
+                        <div style={operationKicker}>PHASE 14 COMMERCIAL</div>
+                        <h3 style={commercialTitle}>Commercial Stats Board</h3>
+                        <div style={commercialHint}>
+                          Live area blockers, PIA gate, walk-off readiness and QA risk next to the map.
+                        </div>
+                      </div>
+                      <span style={walkOffStatusPill(walkOffStatus)}>
+                        {walkOffStatus}
+                      </span>
+                    </div>
+
+                    <div style={commercialSideKpiGrid}>
+                      <InfoRow
+                        label="Walk-Off Status"
+                        value={walkOffStatus}
+                        highlight={walkOffStatus === "Approved"}
+                      />
+                      <InfoRow
+                        label="PIA Gate"
+                        value={piaGatePassedForWalkOff ? "Passed" : `${piaQaStats.piaPass} / ${piaQaStats.requiredTotal}`}
+                        highlight={piaGatePassedForWalkOff}
+                      />
+                      <InfoRow
+                        label="Readiness"
+                        value={`${operationalReadiness.score}% · ${operationalReadiness.state}`}
+                        highlight={
+                          operationalReadiness.score >= 85 &&
+                          operationalReadiness.blockers.length === 0
+                        }
+                      />
+                      <InfoRow
+                        label="High QA"
+                        value={issueBuckets.high.length}
+                        highlight={issueBuckets.high.length === 0}
+                      />
+                      <InfoRow
+                        label="Medium QA"
+                        value={issueBuckets.medium.length}
+                        highlight={issueBuckets.medium.length === 0}
+                      />
+                      <InfoRow
+                        label="DP Over Capacity"
+                        value={rolloutKpis.dpOverCapacity}
+                        highlight={rolloutKpis.dpOverCapacity === 0}
+                      />
+                      <InfoRow
+                        label="Homes Live"
+                        value={`${formatNumber(rolloutKpis.homesLive)} / ${formatNumber(rolloutKpis.homesPassed)}`}
+                        highlight={
+                          rolloutKpis.homesPassed > 0 &&
+                          rolloutKpis.homesLive >= rolloutKpis.homesPassed
+                        }
+                      />
+                      <InfoRow
+                        label="Last Walk-Off"
+                        value={walkOffSavedAt || "Not completed"}
+                        highlight={Boolean(walkOffSavedAt)}
+                      />
+                    </div>
+
+                    {!piaGatePassedForWalkOff ? (
+                      <div style={commercialSideLockBox}>
+                        <strong>Walk-Off locked</strong>
+                        <span>PIA must fully pass before the audit can start.</span>
+                      </div>
+                    ) : null}
+                  </section>
+
+                  <section style={commercialBelowMapPanel}>
+                    <AuditCommercialDashboard
+                      projectAssets={workspaceAssets}
+                      scopedToProject
+                      refreshKey={walkOffSavedAt ? 1 : 0}
+                      piaRequiredTotal={piaQaStats.requiredTotal}
+                      piaPassed={piaQaStats.piaPass}
+                      piaGatePassed={piaGatePassedForWalkOff}
+                      walkOffStatus={walkOffStatus}
+                      areaKey={activeWorkspaceProjectId || projectArea?.id || projectName || "commercial-area"}
+                      areaName={projectArea?.name || projectName || "Current area"}
+                      onSelectAssetId={(assetId) => {
+                        const asset = workspaceAssets.find((candidate) =>
+                          getAssetIdentityKeys(candidate).includes(
+                            String(assetId).trim().toLowerCase(),
+                          ),
+                        );
+                        if (asset) {
+                          setSelectedWorkspaceAsset(asset);
+                          setSearchTerm(getWorkspaceAssetTitle(asset));
+                        }
+                      }}
+                    />
+
+                    {selectedWorkspaceAsset ? (
+                      <div style={commercialDetailGrid}>
+                        <div style={commercialDetailCard}>
+                          <div style={commercialDetailTitle}>
+                            Selected Asset Payment Status
+                          </div>
+                          <div style={commercialSelectedAssetName}>
+                            {getWorkspaceAssetTitle(selectedWorkspaceAsset)}
+                          </div>
+                          <AuditPaymentBlockerPanel
+                            assetId={selectedWorkspaceAsset.id}
+                            refreshKey={walkOffSavedAt ? 1 : 0}
+                          />
+                        </div>
+                        <div style={commercialDetailCard}>
+                          <AuditHistoryPanel
+                            assetId={selectedWorkspaceAsset.id}
+                            refreshKey={walkOffSavedAt ? 1 : 0}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={commercialEmptyBox}>
+                        Select a blocker row to inspect asset payment status
+                        and audit history.
+                      </div>
+                    )}
+                  </section>
+                </>
+              ) : activeTab === "operations" ? (
+                <section style={commercialBelowMapPanel}>
+                  <AreaOperationsCentre
+                    areaKey={activeWorkspaceProjectId || projectArea?.id || projectName || "current-area"}
+                    areaName={projectArea?.name || projectName || "Current area"}
+                    projectAssets={workspaceAssets}
+                    onSelectAsset={(asset) => {
+                      setSelectedWorkspaceAsset(asset);
+                      setSearchTerm(getWorkspaceAssetTitle(asset));
+                    }}
+                  />
+                </section>
+              ) : activeTab === "delivery" ? (
+                <section style={commercialBelowMapPanel}>
+                  <EngineeringDeliveryWorkspace
+                    areaKey={activeWorkspaceProjectId || projectArea?.id || projectName || "current-area"}
+                    areaName={projectArea?.name || projectName || "Current area"}
+                    projectAssets={workspaceAssets}
+                    onSelectAsset={(asset) => {
+                      setSelectedWorkspaceAsset(asset);
+                      setSearchTerm(getWorkspaceAssetTitle(asset));
+                    }}
+                  />
+                </section>
+              ) : fullSelectedWorkspaceAsset && activeTab !== "pia" ? (
                 <section style={intelligenceDock}>
                   <AssetIntelligencePanel
                     asset={fullSelectedWorkspaceAsset}
@@ -4344,162 +4532,62 @@ export default function ProjectWorkspace({
                 </section>
               ) : (
                 <>
-                  {activeTab === "commercial" ? (
-
-                    <section style={commercialPanel}>
-                      <div style={commercialHeaderRow}>
-                        <div>
-                          <div style={operationKicker}>PHASE 9E COMMERCIAL</div>
-                          <h3 style={commercialTitle}>Commercial Dashboard</h3>
-                          <div style={commercialHint}>
-                            Failed audits, payment holds, advisory reviews and
-                            walk-off status for this project area.
-                          </div>
-                        </div>
-                        <span style={walkOffStatusPill(walkOffStatus)}>
-                          {walkOffStatus}
-                        </span>
-                      </div>
-
-                      <div style={commercialKpiGrid}>
-                        <InfoRow
-                          label="Walk-Off Status"
-                          value={walkOffStatus}
-                          highlight={walkOffStatus === "Approved"}
-                        />
-                        <InfoRow
-                          label="Readiness"
-                          value={`${operationalReadiness.score}% · ${operationalReadiness.state}`}
-                          highlight={
-                            operationalReadiness.score >= 85 &&
-                            operationalReadiness.blockers.length === 0
-                          }
-                        />
-                        <InfoRow
-                          label="High QA"
-                          value={issueBuckets.high.length}
-                          highlight={issueBuckets.high.length === 0}
-                        />
-                        <InfoRow
-                          label="Medium QA"
-                          value={issueBuckets.medium.length}
-                          highlight={issueBuckets.medium.length === 0}
-                        />
-                        <InfoRow
-                          label="DP Over Capacity"
-                          value={rolloutKpis.dpOverCapacity}
-                          highlight={rolloutKpis.dpOverCapacity === 0}
-                        />
-                        <InfoRow
-                          label="Last Walk-Off"
-                          value={walkOffSavedAt || "Not completed"}
-                          highlight={Boolean(walkOffSavedAt)}
-                        />
-                      </div>
-
-                      <AuditCommercialDashboard
-                        projectAssets={workspaceAssets}
-                        scopedToProject
-                        refreshKey={walkOffSavedAt ? 1 : 0}
-                        onSelectAssetId={(assetId) => {
-                          const asset = workspaceAssets.find((candidate) =>
-                            getAssetIdentityKeys(candidate).includes(
-                              String(assetId).trim().toLowerCase(),
-                            ),
-                          );
-                          if (asset) {
-                            setSelectedWorkspaceAsset(asset);
-                            setSearchTerm(getWorkspaceAssetTitle(asset));
-                          }
-                        }}
-                      />
-
-                      {selectedWorkspaceAsset ? (
-                        <div style={commercialDetailGrid}>
-                          <div style={commercialDetailCard}>
-                            <div style={commercialDetailTitle}>
-                              Selected Asset Payment Status
-                            </div>
-                            <div style={commercialSelectedAssetName}>
-                              {getWorkspaceAssetTitle(selectedWorkspaceAsset)}
-                            </div>
-                            <AuditPaymentBlockerPanel
-                              assetId={selectedWorkspaceAsset.id}
-                              refreshKey={walkOffSavedAt ? 1 : 0}
-                            />
-                          </div>
-                          <div style={commercialDetailCard}>
-                            <AuditHistoryPanel
-                              assetId={selectedWorkspaceAsset.id}
-                              refreshKey={walkOffSavedAt ? 1 : 0}
-                            />
-                          </div>
-                        </div>
-                      ) : (
-                        <div style={commercialEmptyBox}>
-                          Select a blocker row to inspect asset payment status
-                          and audit history.
-                        </div>
-                      )}
-                    </section>
-                  ) : (
-                    <WorkspaceTabContent
-                      activeTab={activeTab}
-                      projectName={projectName}
-                      status={status}
-                      stats={workspaceDisplayStats}
-                      projectAssets={workspaceAssets}
-                      projectArea={projectArea}
-                      auditIssues={auditIssues}
-                      disconnectedAssets={disconnectedAssets}
-                      networkGraph={networkGraph}
-                      managerAreaPoints={managerAreaPoints}
-                      isManagerAreaDrawing={isManagerAreaDrawing}
-                      onStartManagerAreaDrawing={() => {
-                        setActiveTab("build");
-                        setManagerAreaPoints([]);
-                        setIsManagerAreaDrawing(true);
-                      }}
-                      onStopManagerAreaDrawing={() =>
-                        setIsManagerAreaDrawing(false)
-                      }
-                      onClearManagerAreaDrawing={() => {
-                        setManagerAreaPoints([]);
-                        setIsManagerAreaDrawing(false);
-                      }}
-                      areaDistributionPoints={areaDistributionPoints}
-                      onBulkUpdateDpStatus={onBulkUpdateDpStatus}
-                      onBulkUpdateCablePiaNoi={handleBulkCablePiaNoiUpdate}
-                      onClearDpFibreAllocations={
-                        handleClearAreaDpFibreAllocations
-                      }
-                      onResolveDuplicateHomes={onResolveDuplicateHomes}
-                      onAutoSpreadStackedHomes={onAutoSpreadStackedHomes}
-                      onApplyAddressSheetAssignments={
-                        onApplyAddressSheetAssignments
-                      }
-                      onApplySbRouteAssignments={onApplySbRouteAssignments}
-                      onSelectAsset={(asset) => {
-                        setSelectedWorkspaceAsset(asset);
-                        setSearchTerm(getWorkspaceAssetTitle(asset));
-                      }}
-                      onOpenJointEditor={onOpenJointEditor}
-                      onOpenPanel={(panel, tab) =>
-                        openOperationPanel(
-                          panel as WorkspaceOperationPanel,
-                          (tab || activeTab) as WorkspaceTab,
-                        )
-                      }
-                      onOpenTrace={openInternalTraceTool}
-                      onOpenQA={() => {
-                        setActiveTab("qa");
-                        setActiveOperationPanel("none");
-                      }}
-                      onOpenFibreTopology={onOpenFibreTopology || openInternalTraceTool}
-                      onExport={onExport}
-                      onBackToMap={onBackToMap}
-                    />
-                  )}
+                  <WorkspaceTabContent
+                    activeTab={activeTab}
+                    projectName={projectName}
+                    status={status}
+                    stats={workspaceDisplayStats}
+                    projectAssets={workspaceAssets}
+                    projectArea={projectArea}
+                    auditIssues={auditIssues}
+                    disconnectedAssets={disconnectedAssets}
+                    networkGraph={networkGraph}
+                    managerAreaPoints={managerAreaPoints}
+                    isManagerAreaDrawing={isManagerAreaDrawing}
+                    onStartManagerAreaDrawing={() => {
+                      setActiveTab("build");
+                      setManagerAreaPoints([]);
+                      setIsManagerAreaDrawing(true);
+                    }}
+                    onStopManagerAreaDrawing={() =>
+                      setIsManagerAreaDrawing(false)
+                    }
+                    onClearManagerAreaDrawing={() => {
+                      setManagerAreaPoints([]);
+                      setIsManagerAreaDrawing(false);
+                    }}
+                    areaDistributionPoints={areaDistributionPoints}
+                    onBulkUpdateDpStatus={onBulkUpdateDpStatus}
+                    onBulkUpdateCablePiaNoi={handleBulkCablePiaNoiUpdate}
+                    onClearDpFibreAllocations={
+                      handleClearAreaDpFibreAllocations
+                    }
+                    onResolveDuplicateHomes={onResolveDuplicateHomes}
+                    onAutoSpreadStackedHomes={onAutoSpreadStackedHomes}
+                    onApplyAddressSheetAssignments={
+                      onApplyAddressSheetAssignments
+                    }
+                    onApplySbRouteAssignments={onApplySbRouteAssignments}
+                    onSelectAsset={(asset) => {
+                      setSelectedWorkspaceAsset(asset);
+                      setSearchTerm(getWorkspaceAssetTitle(asset));
+                    }}
+                    onOpenJointEditor={onOpenJointEditor}
+                    onOpenPanel={(panel, tab) =>
+                      openOperationPanel(
+                        panel as WorkspaceOperationPanel,
+                        (tab || activeTab) as WorkspaceTab,
+                      )
+                    }
+                    onOpenTrace={openInternalTraceTool}
+                    onOpenQA={() => {
+                      setActiveTab("qa");
+                      setActiveOperationPanel("none");
+                    }}
+                    onOpenFibreTopology={onOpenFibreTopology || openInternalTraceTool}
+                    onExport={onExport}
+                    onBackToMap={onBackToMap}
+                  />
 
                   {activeTab === "overview" && (
                   <section style={areaHandoverPanel}>
@@ -4520,6 +4608,11 @@ export default function ProjectWorkspace({
                       </div>
 
                       <div style={areaHandoverGrid}>
+                        <InfoRow
+                          label="PIA Gate"
+                          value={piaGatePassedForWalkOff ? "Passed" : `${piaQaStats.piaPass} / ${piaQaStats.requiredTotal}`}
+                          highlight={piaGatePassedForWalkOff}
+                        />
                         <InfoRow
                           label="Readiness"
                           value={`${operationalReadiness.score}% · ${operationalReadiness.state}`}
@@ -4561,7 +4654,12 @@ export default function ProjectWorkspace({
                         />
                       </div>
 
-                      {operationalReadiness.blockers.length ? (
+                      {!piaGatePassedForWalkOff ? (
+                        <div style={handoverBlockerBox}>
+                          <strong>PIA gate blocker</strong>
+                          <div style={{ marginTop: 8 }}>{piaGateBlockerText}</div>
+                        </div>
+                      ) : operationalReadiness.blockers.length ? (
                         <div style={handoverBlockerBox}>
                           <strong>Current blockers</strong>
                           <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
@@ -4574,7 +4672,7 @@ export default function ProjectWorkspace({
                         </div>
                       ) : (
                         <div style={handoverGoodBox}>
-                          No hard readiness blockers detected. Area is ready for
+                          No hard readiness blockers detected and PIA has passed in full. Area is ready for
                           final walk-off review.
                         </div>
                       )}
@@ -4582,10 +4680,16 @@ export default function ProjectWorkspace({
                       <div style={areaHandoverActions}>
                         <button
                           type="button"
-                          style={wideButton}
-                          onClick={() => setWalkOffAuditOpen(true)}
+                          style={{
+                            ...wideButton,
+                            opacity: piaGatePassedForWalkOff ? 1 : 0.48,
+                            cursor: piaGatePassedForWalkOff ? "pointer" : "not-allowed",
+                          }}
+                          disabled={!piaGatePassedForWalkOff}
+                          title={piaGateBlockerText}
+                          onClick={handleOpenWalkOffAudit}
                         >
-                          Launch Walk-Off Audit
+                          {piaGatePassedForWalkOff ? "Launch Walk-Off Audit" : "Walk-Off Locked - PIA Not Passed"}
                         </button>
                         <button
                           type="button"
@@ -5197,10 +5301,16 @@ export default function ProjectWorkspace({
 
                       <button
                         type="button"
-                        style={wideButton}
-                        onClick={() => setWalkOffAuditOpen(true)}
+                        style={{
+                          ...wideButton,
+                          opacity: piaGatePassedForWalkOff ? 1 : 0.48,
+                          cursor: piaGatePassedForWalkOff ? "pointer" : "not-allowed",
+                        }}
+                        disabled={!piaGatePassedForWalkOff}
+                        title={piaGateBlockerText}
+                        onClick={handleOpenWalkOffAudit}
                       >
-                        Launch Walk-Off Audit
+                        {piaGatePassedForWalkOff ? "Launch Walk-Off Audit" : "Walk-Off Locked - PIA Not Passed"}
                       </button>
                       <button
                         type="button"
@@ -5498,10 +5608,16 @@ export default function ProjectWorkspace({
                   </button>
                   <button
                     type="button"
-                    style={wideButton}
-                    onClick={() => setWalkOffAuditOpen(true)}
+                    style={{
+                      ...wideButton,
+                      opacity: piaGatePassedForWalkOff ? 1 : 0.48,
+                      cursor: piaGatePassedForWalkOff ? "pointer" : "not-allowed",
+                    }}
+                    disabled={!piaGatePassedForWalkOff}
+                    title={piaGateBlockerText}
+                    onClick={handleOpenWalkOffAudit}
                   >
-                    Launch Walk-Off Audit
+                    {piaGatePassedForWalkOff ? "Launch Walk-Off Audit" : "Walk-Off Locked - PIA Not Passed"}
                   </button>
                 </div>
               )}
@@ -5510,7 +5626,7 @@ export default function ProjectWorkspace({
 
           <AuditModal
             title="Area Walk-Off Audit"
-            open={walkOffAuditOpen}
+            open={walkOffAuditOpen && piaGatePassedForWalkOff}
             onClose={() => setWalkOffAuditOpen(false)}
           >
             <div style={handoverSnapshotBox}>
@@ -5760,7 +5876,7 @@ const workspaceRoot: React.CSSProperties = {
 const topHeader: React.CSSProperties = {
   minHeight: 82,
   display: "grid",
-  gridTemplateColumns: "minmax(300px, 340px) minmax(0, 1fr) auto",
+  gridTemplateColumns: "minmax(260px, 320px) minmax(0, 1fr) auto",
   alignItems: "center",
   gap: 12,
   padding: "8px 14px 8px 16px",
@@ -5782,7 +5898,8 @@ const projectSubtitle: React.CSSProperties = {
 };
 
 const projectHeaderBlock: React.CSSProperties = {
-  minWidth: 300,
+  minWidth: 0,
+  maxWidth: 320,
   display: "flex",
   flexDirection: "column",
   gap: 5,
@@ -5790,7 +5907,7 @@ const projectHeaderBlock: React.CSSProperties = {
 
 const projectSwitcherRow: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "78px minmax(0, 1fr)",
+  gridTemplateColumns: "78px minmax(120px, 220px)",
   alignItems: "center",
   gap: 8,
 };
@@ -5834,11 +5951,14 @@ const projectSwitcherSelect: React.CSSProperties = {
 const projectSwitcherSearchWrap: React.CSSProperties = {
   position: "relative",
   minWidth: 0,
+  maxWidth: 220,
 };
 
 const projectSwitcherSearchInput: React.CSSProperties = {
   ...projectSwitcherSelect,
   cursor: "text",
+  width: "100%",
+  maxWidth: 220,
 };
 
 const projectSwitcherResults: React.CSSProperties = {
@@ -5962,6 +6082,48 @@ const commercialPanel: React.CSSProperties = {
   marginTop: 14,
   display: "grid",
   gap: 14,
+};
+
+const commercialStatsSidePanel: React.CSSProperties = {
+  gridColumn: "span 2",
+  gridRow: "span 2",
+  border: "1px solid rgba(96,165,250,0.32)",
+  background: "linear-gradient(180deg, #0f1b2d 0%, #0b1626 100%)",
+  borderRadius: 14,
+  padding: 16,
+  display: "grid",
+  gap: 14,
+  alignSelf: "stretch",
+  minHeight: 360,
+  boxShadow: "0 18px 44px rgba(0,0,0,0.18)",
+};
+
+const commercialBelowMapPanel: React.CSSProperties = {
+  gridColumn: "1 / -1",
+  border: "1px solid rgba(96,165,250,0.28)",
+  background: "linear-gradient(180deg, #0b1626 0%, #081120 100%)",
+  borderRadius: 14,
+  padding: 14,
+  display: "grid",
+  gap: 14,
+  boxShadow: "0 18px 44px rgba(0,0,0,0.18)",
+};
+
+const commercialSideKpiGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 10,
+};
+
+const commercialSideLockBox: React.CSSProperties = {
+  display: "grid",
+  gap: 4,
+  color: "#fde68a",
+  background: "rgba(251,191,36,0.08)",
+  border: "1px solid rgba(251,191,36,0.35)",
+  borderRadius: 10,
+  padding: 12,
+  fontSize: 13,
 };
 
 const commercialHeaderRow: React.CSSProperties = {
