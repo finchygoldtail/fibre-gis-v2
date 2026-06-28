@@ -353,7 +353,7 @@ export default function CommercialDocumentRegister({
             onClick={() => fileRef.current?.click()}
             title={canManageCommercialDocuments ? "Upload a commercial document" : "Management role required"}
           >
-            Upload Test Document
+            Upload Document
           </button>
           <input
             ref={fileRef}
