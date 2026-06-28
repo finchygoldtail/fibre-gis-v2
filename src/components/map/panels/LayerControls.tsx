@@ -1,7 +1,9 @@
+import { responsiveSafeArea, responsiveMotion, responsiveZ, mobilePanelChrome } from "../responsive/responsiveUiTokens";
 import React from "react";
 import LayersPanel from "../LayersPanel";
 import type { LayerVisibility } from "../hooks/useLayerVisibility";
 import type { BasemapType } from "../hooks/useMapDrawingState";
+import { useDeviceLayout } from "../responsive/useDeviceLayout";
 
 type Props = {
   isOpen: boolean;
@@ -42,18 +44,16 @@ export default function LayerControls({
   onUndoMeasurementPoint,
   onClearMeasurements,
 }: Props) {
+  const { isMobile, isTabletPortrait } = useDeviceLayout();
+  const useSheetLayout = isMobile || isTabletPortrait;
+
   return (
     <div
-      style={{
-        position: "absolute",
-        top: 0,
-        right: 0,
-        height: "100%",
-        zIndex: 1100,
-        transform: isOpen ? "translateX(0)" : "translateX(100%)",
-        transition: "transform 0.3s ease",
-      }}
+      style={layerShellStyle(isOpen, useSheetLayout)}
+      aria-hidden={!isOpen}
     >
+      {useSheetLayout ? <div style={mobileSheetHandleStyle} /> : null}
+
       <LayersPanel
         visibleLayers={visibleLayers}
         setVisibleLayers={setVisibleLayers}
@@ -75,3 +75,46 @@ export default function LayerControls({
     </div>
   );
 }
+
+function layerShellStyle(isOpen: boolean, useSheetLayout: boolean): React.CSSProperties {
+  if (useSheetLayout) {
+    return {
+      position: "absolute",
+      left: 8,
+      right: 8,
+      bottom: `calc(8px + ${responsiveSafeArea.bottom})`,
+      zIndex: responsiveZ.mobileOverlay,
+      maxHeight: "min(76vh, 620px)",
+      overflow: "auto",
+      borderRadius: "22px 22px 18px 18px",
+      ...mobilePanelChrome,
+      transform: isOpen ? "translateY(0)" : "translateY(calc(100% + 28px))",
+      opacity: isOpen ? 1 : 0,
+      pointerEvents: isOpen ? "auto" : "none",
+      transition: `transform ${responsiveMotion.sheet}, opacity ${responsiveMotion.fast}`,
+    };
+  }
+
+  return {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    height: "100%",
+    zIndex: 1100,
+    transform: isOpen ? "translateX(0)" : "translateX(100%)",
+    transition: "transform 0.3s ease",
+  };
+}
+
+const mobileSheetHandleStyle: React.CSSProperties = {
+  position: "absolute",
+  top: 8,
+  left: "50%",
+  transform: "translateX(-50%)",
+  width: 46,
+  height: 5,
+  borderRadius: 999,
+  background: "rgba(148,163,184,0.55)",
+  zIndex: 2,
+  pointerEvents: "none",
+};

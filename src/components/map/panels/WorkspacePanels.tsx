@@ -1,5 +1,5 @@
+import { mobileButtonBase, responsiveSafeArea, mobilePanelChrome } from "../responsive/responsiveUiTokens";
 import React from "react";
-import BuildMobileWorkspaceNotice from "../responsive/mobile/BuildMobileWorkspaceNotice";
 import ProjectWorkspace from "../../Project/ProjectWorkspace";
 import type { SavedMapAsset } from "../types";
 
@@ -85,18 +85,9 @@ export default function WorkspacePanels({
     );
   }
 
-  if (isOpen && isMobile) {
-    return (
-      <BuildMobileWorkspaceNotice
-        projectName={projectName}
-        onBackToMap={onBackToMap}
-      />
-    );
-  }
-
   if (!isOpen) return null;
 
-  return (
+  const workspace = (
     <ProjectWorkspace
       projectName={projectName}
       status="Build Phase"
@@ -122,6 +113,25 @@ export default function WorkspacePanels({
       onUpdateWorkspaceAsset={onUpdateWorkspaceAsset}
     />
   );
+
+  if (isMobile) {
+    return (
+      <div style={mobileWorkspaceOverlayStyle}>
+        <div style={mobileWorkspaceHeaderStyle}>
+          <div>
+            <strong>{projectName}</strong>
+            <span>Field workspace</span>
+          </div>
+          <button type="button" onClick={onBackToMap} style={mobileWorkspaceCloseStyle}>
+            Map
+          </button>
+        </div>
+        <div style={mobileWorkspaceBodyStyle}>{workspace}</div>
+      </div>
+    );
+  }
+
+  return workspace;
 }
 
 const projectWorkspaceLoadingOverlay: React.CSSProperties = {
@@ -160,4 +170,49 @@ const projectWorkspaceProgressBar: React.CSSProperties = {
   width: "72%",
   borderRadius: 999,
   background: "linear-gradient(90deg, #2563eb, #22c55e)",
+};
+
+const mobileWorkspaceOverlayStyle: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 9800,
+  background: "#020617",
+  color: "#f8fafc",
+  display: "flex",
+  flexDirection: "column",
+  overflow: "hidden",
+};
+
+const mobileWorkspaceHeaderStyle: React.CSSProperties = {
+  minHeight: 62,
+  padding: `calc(10px + ${responsiveSafeArea.top}) 12px 10px`,
+  boxSizing: "border-box",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12,
+  ...mobilePanelChrome,
+  borderTop: "none",
+  borderLeft: "none",
+  borderRight: "none",
+};
+
+const mobileWorkspaceCloseStyle: React.CSSProperties = {
+  minWidth: 58,
+  height: 42,
+  borderRadius: 12,
+  border: "1px solid rgba(148,163,184,0.35)",
+  background: "#2563eb",
+  color: "white",
+  fontWeight: 900,
+  cursor: "pointer",
+  ...mobileButtonBase,
+};
+
+const mobileWorkspaceBodyStyle: React.CSSProperties = {
+  flex: 1,
+  minHeight: 0,
+  overflow: "auto",
+  paddingBottom: responsiveSafeArea.bottom,
+  WebkitOverflowScrolling: "touch",
 };

@@ -1,3 +1,4 @@
+import { mobileButtonBase } from "../responsive/responsiveUiTokens";
 import React, { useMemo, useState } from "react";
 import type { SavedMapAsset } from "../types";
 
@@ -6,6 +7,7 @@ type Props = {
   activeProjectId: string | null;
   onSelectProject: (id: string) => void;
   onClearProject: () => void;
+  variant?: "default" | "compact";
 };
 
 export default function ProjectAreaSelector({
@@ -13,7 +15,9 @@ export default function ProjectAreaSelector({
   activeProjectId,
   onSelectProject,
   onClearProject,
+  variant = "default",
 }: Props) {
+  const isCompact = variant === "compact";
   const [search, setSearch] = useState("");
   const [focused, setFocused] = useState(false);
 
@@ -34,22 +38,26 @@ export default function ProjectAreaSelector({
   const showResults = focused || search.length > 0;
 
   return (
-    <div style={{ position: "relative", minWidth: 260, flex: 1 }}>
+    <div style={{ position: "relative", minWidth: isCompact ? 0 : 260, flex: 1, width: "100%" }}>
       <input
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         onFocus={() => setFocused(true)}
-        placeholder={activeProject ? activeProject.name : "Find project area..."}
+        placeholder={activeProject ? `📍 ${activeProject.name}` : "📍 Area"}
         style={{
           width: "100%",
-          padding: "0.65rem 2.2rem 0.65rem 0.75rem",
-          borderRadius: 8,
+          padding: isCompact ? "0 1.7rem 0 0.55rem" : "0.65rem 2.2rem 0.65rem 0.75rem",
+          borderRadius: isCompact ? 12 : 8,
           border: focused ? "1px solid #2563eb" : "1px solid #374151",
           background: "#111827",
           color: "white",
           outline: "none",
           boxSizing: "border-box",
-          fontSize: "0.95rem",
+          fontSize: isCompact ? "0.82rem" : "0.95rem",
+          height: isCompact ? 44 : undefined,
+          minHeight: isCompact ? 44 : undefined,
+          fontWeight: isCompact ? 900 : undefined,
+          textOverflow: "ellipsis",
         }}
       />
 
@@ -68,6 +76,7 @@ export default function ProjectAreaSelector({
             border: "none",
             color: "#9ca3af",
             cursor: "pointer",
+            ...mobileButtonBase,
             fontSize: "1rem",
           }}
         >
@@ -80,13 +89,14 @@ export default function ProjectAreaSelector({
           onMouseDown={(e) => e.preventDefault()}
           style={{
             position: "absolute",
-            top: 44,
+            top: isCompact ? 48 : 44,
             left: 0,
-            right: 0,
+            right: isCompact ? "auto" : 0,
+            width: isCompact ? "min(280px, calc(100vw - 16px))" : undefined,
             zIndex: 3000,
             background: "#111827",
             border: "1px solid #374151",
-            borderRadius: 8,
+            borderRadius: isCompact ? 12 : 8,
             padding: 6,
             boxShadow: "0 4px 12px rgba(0,0,0,0.35)",
           }}
@@ -134,7 +144,7 @@ export default function ProjectAreaSelector({
 const rowButton: React.CSSProperties = {
   display: "block",
   width: "100%",
-  padding: "0.5rem",
+  padding: "0.68rem 0.55rem",
   background: "transparent",
   color: "white",
   border: "none",
