@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from "react";
 
 import type { SavedMapAsset } from "../types";
+import { canAccessArea, useUserRole } from "../../../context/UserRoleContext";
 import type { LayerVisibility } from "../hooks/useLayerVisibility";
 import {
   assetTouchesViewport,
@@ -37,6 +38,21 @@ export function isProjectAreaAsset(asset: SavedMapAsset): boolean {
 }
 
 
+
+function getAreaAccessNames(area: SavedMapAsset): string[] {
+  const item = area as any;
+
+  return [
+    item.areaName,
+    item.projectAreaName,
+    item.name,
+    item.label,
+    item.id,
+  ]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+}
+
 export function useProjectAreaView({
   allMapAssets,
   openreachReferenceAssets,
@@ -45,9 +61,14 @@ export function useProjectAreaView({
   mapZoom,
   visibleLayers,
 }: UseProjectAreaViewArgs) {
+  const { profile } = useUserRole();
+
   const projectAreas = useMemo(
-    () => allMapAssets.filter(isProjectAreaAsset),
-    [allMapAssets],
+    () =>
+      allMapAssets
+        .filter(isProjectAreaAsset)
+        .filter((area) => canAccessArea(profile, getAreaAccessNames(area))),
+    [allMapAssets, profile],
   );
 
   const activeProjectArea = useMemo(

@@ -30,6 +30,11 @@ export type AppUserProfile = {
   email: string;
   role: UserRole;
   permissions: UserPermissions;
+  /**
+   * Area access is stored as project area names/codes, for example BD-BAS-AG1.
+   * ["*"] means unrestricted access.
+   */
+  allowedAreas: string[];
 };
 
 type UserRoleContextValue = {
@@ -120,6 +125,35 @@ function normaliseRole(value: unknown): UserRole {
   return "survey_user";
 }
 
+function normaliseAllowedAreas(value: unknown, fallback: string[]): string[] {
+  if (!Array.isArray(value)) return fallback;
+
+  const cleaned = value
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+
+  return Array.from(new Set(cleaned));
+}
+
+export function hasUnrestrictedAreaAccess(profile: Pick<AppUserProfile, "role" | "allowedAreas"> | null | undefined): boolean {
+  return profile?.role === "admin" || profile?.allowedAreas?.includes("*") === true;
+}
+
+export function canAccessArea(
+  profile: Pick<AppUserProfile, "role" | "allowedAreas"> | null | undefined,
+  areaNames: Array<string | null | undefined>,
+): boolean {
+  if (hasUnrestrictedAreaAccess(profile)) return true;
+
+  const allowed = new Set((profile?.allowedAreas || []).map((item) => item.toLowerCase().trim()));
+  if (allowed.size === 0) return false;
+
+  return areaNames.some((name) => {
+    const clean = String(name || "").toLowerCase().trim();
+    return clean ? allowed.has(clean) : false;
+  });
+}
+
 function normalisePermissions(
   role: UserRole,
   value: unknown,
@@ -163,6 +197,7 @@ function buildFallbackProfileFromUser(user: User): AppUserProfile {
       email,
       role: knownRole,
       permissions: ROLE_PERMISSIONS[knownRole],
+      allowedAreas: ["*"],
     };
   }
 
@@ -172,6 +207,7 @@ function buildFallbackProfileFromUser(user: User): AppUserProfile {
     email,
     role: "survey_user",
     permissions: LOCKED_DOWN_PERMISSIONS,
+    allowedAreas: [],
   };
 }
 
@@ -204,6 +240,7 @@ async function loadFirestoreProfile(user: User): Promise<AppUserProfile> {
           : fallbackProfile.email,
       role,
       permissions,
+      allowedAreas: normaliseAllowedAreas(data.allowedAreas, role === "admin" ? ["*"] : []),
     };
   }
 

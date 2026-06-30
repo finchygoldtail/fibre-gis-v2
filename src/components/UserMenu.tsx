@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import { signOut } from "firebase/auth";
 import { auth } from "../firebase";
 import { ROLE_LABELS, useUserRole } from "../context/UserRoleContext";
@@ -16,6 +17,17 @@ export default function UserMenu({ variant = "topbar" }: Props) {
   const displayName = profile?.name || profile?.email || "User";
   const roleLabel = profile ? ROLE_LABELS[profile.role] : "Loading role";
   const canManageUsers = profile?.role === "admin";
+
+  const userManagementPanel =
+    typeof document !== "undefined"
+      ? createPortal(
+          <UserManagementPanel
+            visible={showUserManagement}
+            onClose={() => setShowUserManagement(false)}
+          />,
+          document.body,
+        )
+      : null;
 
   if (variant === "sidebar") {
     return (
@@ -59,10 +71,7 @@ export default function UserMenu({ variant = "topbar" }: Props) {
           Sign out
         </button>
 
-        <UserManagementPanel
-          visible={showUserManagement}
-          onClose={() => setShowUserManagement(false)}
-        />
+        {userManagementPanel}
       </div>
     );
   }
@@ -137,10 +146,7 @@ export default function UserMenu({ variant = "topbar" }: Props) {
         )}
       </div>
 
-      <UserManagementPanel
-        visible={showUserManagement}
-        onClose={() => setShowUserManagement(false)}
-      />
+      {userManagementPanel}
     </>
   );
 }
