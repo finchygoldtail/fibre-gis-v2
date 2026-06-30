@@ -131,31 +131,59 @@ function writeLocalActivityLog(log: AssetActivityLog) {
   }
 }
 
-function sanitizeActivityValue(value: unknown): unknown {
+function sanitizeActivityValue(value: unknown, insideArray = false): unknown {
   if (value === undefined) return null;
   if (value === null) return null;
+  if (typeof value === "function") return null;
 
-  try {
-    return JSON.parse(
-      JSON.stringify(value, (_key, nestedValue) => {
-        if (typeof nestedValue === "function") return undefined;
-        if (nestedValue === undefined) return null;
-        return nestedValue;
-      }),
-    );
-  } catch {
-    return null;
+  if (value instanceof Date) return value.toISOString();
+
+  if (Array.isArray(value)) {
+    const safeArray = value.map((item) => sanitizeActivityValue(item, true));
+
+    // Firestore rejects nested arrays. Activity logs are audit/history only, so
+    // preserve nested array content as a JSON string instead of failing the save.
+    if (insideArray) {
+      try {
+        return JSON.stringify(safeArray);
+      } catch {
+        return String(safeArray);
+      }
+    }
+
+    return safeArray;
   }
+
+  if (typeof value === "object") {
+    const output: Record<string, unknown> = {};
+
+    Object.entries(value as Record<string, unknown>).forEach(([key, nestedValue]) => {
+      output[key] = sanitizeActivityValue(nestedValue, false);
+    });
+
+    return output;
+  }
+
+  return value;
 }
 
 function sanitizeActivityDetails(
   value?: Record<string, unknown>,
-): Record<string, unknown> | undefined {
-  const sanitized = sanitizeActivityValue(value);
+): Record<string, unknown> | null {
+  const sanitized = sanitizeActivityValue(value ?? null);
   if (!sanitized || typeof sanitized !== "object" || Array.isArray(sanitized)) {
-    return undefined;
+    return null;
   }
   return sanitized as Record<string, unknown>;
+}
+
+function removeUndefinedFields<T extends Record<string, unknown>>(value: T): T {
+  return Object.fromEntries(
+    Object.entries(value).map(([key, fieldValue]) => [
+      key,
+      fieldValue === undefined ? null : fieldValue,
+    ]),
+  ) as T;
 }
 
 export async function createAssetActivityLog(args: {
@@ -191,10 +219,10 @@ export async function createAssetActivityLog(args: {
   try {
     const ref = await addDoc(
       collection(db, "businesses", "fibre-gis-v2", "assetActivityLogs"),
-      {
+      removeUndefinedFields({
         ...log,
         createdAt: serverTimestamp(),
-      },
+      }),
     );
     return { ...log, id: ref.id };
   } catch (err) {

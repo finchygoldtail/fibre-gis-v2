@@ -118,17 +118,38 @@ function saveLocalFallbackLog(log: AssetChangeLog) {
   }
 }
 
-function sanitizeSnapshot(value: unknown) {
-  if (!value) return null;
+function sanitizeSnapshot(value: unknown, insideArray = false): unknown {
+  if (value === undefined) return null;
+  if (value === null) return null;
+  if (typeof value === "function") return null;
 
-  try {
-    return JSON.parse(
-      JSON.stringify(value, (_key, nestedValue) => {
-        if (typeof nestedValue === "function") return undefined;
-        return nestedValue;
-      }),
-    );
-  } catch {
-    return null;
+  if (value instanceof Date) return value.toISOString();
+
+  if (Array.isArray(value)) {
+    const safeArray = value.map((item) => sanitizeSnapshot(item, true));
+
+    // Firestore rejects nested arrays. Change logs are audit/history only, so
+    // keep nested array data as a JSON string instead of failing the write.
+    if (insideArray) {
+      try {
+        return JSON.stringify(safeArray);
+      } catch {
+        return String(safeArray);
+      }
+    }
+
+    return safeArray;
   }
+
+  if (typeof value === "object") {
+    const output: Record<string, unknown> = {};
+
+    Object.entries(value as Record<string, unknown>).forEach(([key, nestedValue]) => {
+      output[key] = sanitizeSnapshot(nestedValue, false);
+    });
+
+    return output;
+  }
+
+  return value;
 }

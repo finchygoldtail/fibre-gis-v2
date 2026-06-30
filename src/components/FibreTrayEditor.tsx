@@ -696,41 +696,23 @@ export const FibreTrayEditor: React.FC = () => {
 
   /* -------------------------------------------------------------
     Save shared project to Firestore
+
+    IMPORTANT:
+    This editor used to autosave the full map asset set whenever savedJoints
+    changed. That caused duplicate chunk writes while JointMapManager and the
+    map save coordinator were also saving the same bucket.
+
+    Manual joint saves are still active through saveCurrentJoint().
+    Mapping-file uploads also perform one explicit metadata save after the
+    joint mapping chunks are written.
   ------------------------------------------------------------- */
   useEffect(() => {
-    if (!firebaseLoaded) return;
-
-    const cleaned = cleanSavedJointsForFirebase(savedJoints);
-    const json = JSON.stringify(cleaned);
-
-    if (json === lastFirebaseJsonRef.current) return;
-
-    if (firebaseSaveTimerRef.current) {
-      clearTimeout(firebaseSaveTimerRef.current);
-    }
-
-    firebaseSaveTimerRef.current = setTimeout(() => {
-      saveMapAssetsViaCoordinator(savedJoints, {
-        reason: "fibre-tray-editor-debounced-save",
-        source: "fibre-tray-editor",
-      })
-        .then((result) => {
-          lastFirebaseJsonRef.current = JSON.stringify(result.assets);
-          console.log(
-            `Saved ${result.assetCount} chunked map assets to Firestore`,
-          );
-        })
-        .catch((err) => {
-          console.error("Firestore chunked map asset save failed:", err);
-        });
-    }, 800);
-
     return () => {
       if (firebaseSaveTimerRef.current) {
         clearTimeout(firebaseSaveTimerRef.current);
       }
     };
-  }, [savedJoints, firebaseLoaded]);
+  }, []);
 
   /* -------------------------------------------------------------
     Persist project
@@ -933,21 +915,14 @@ export const FibreTrayEditor: React.FC = () => {
           return nextAsset as SavedJoint;
         });
 
-        // PERFORMANCE FIX:
-        // The mapping rows have already been saved to:
+        // Mapping rows are saved to:
         //   jointMappings/{jointId}/chunks
         //
-        // Do NOT block the Excel upload by immediately rewriting the full
-        // mapAssets/main chunk set here. setSavedJoints updates the selected
-        // joint summary in memory and the existing debounced Firestore save
-        // effect will persist the small joint metadata change shortly after.
-        //
-        // This keeps the upload responsive and avoids making the operator wait
-        // for:
-        //   1) full mapAssets chunk save
-        //   2) split bucket mirror
-        //   3) workspace / QA recalculation
+        // The old debounced full-map autosave has been disabled to stop
+        // duplicate Firestore writes. Save the selected joint metadata once
+        // here so the upload still persists correctly.
         setSavedJoints(updatedSavedJoints);
+        await saveSavedJointsToFirestoreNow(updatedSavedJoints);
       }
       setAssetType(
         selectedMapJoint?.assetType === "street-cab"
