@@ -2,11 +2,22 @@ import type { LatLngLiteral } from "leaflet";
 
 const EARTH_RADIUS_M = 6371000;
 
+export type LatLngPoint = { lat: number; lng: number };
+export type LatLngTuple = [number, number];
+
 function toRadians(value: number): number {
   return (value * Math.PI) / 180;
 }
 
-export function getDistanceMeters(a: LatLngLiteral, b: LatLngLiteral): number {
+export function tupleToLatLng(point: LatLngTuple): LatLngPoint {
+  return { lat: point[0], lng: point[1] };
+}
+
+export function latLngToTuple(point: LatLngPoint): LatLngTuple {
+  return [point.lat, point.lng];
+}
+
+export function getDistanceMeters(a: LatLngPoint, b: LatLngPoint): number {
   const lat1 = toRadians(a.lat);
   const lat2 = toRadians(b.lat);
   const dLat = toRadians(b.lat - a.lat);
@@ -23,12 +34,27 @@ export function getDistanceMeters(a: LatLngLiteral, b: LatLngLiteral): number {
   return EARTH_RADIUS_M * c;
 }
 
+export function getTupleDistanceMeters(a: LatLngTuple, b: LatLngTuple): number {
+  return getDistanceMeters(tupleToLatLng(a), tupleToLatLng(b));
+}
+
 export function getPathDistanceMeters(points: LatLngLiteral[]): number {
   if (points.length < 2) return 0;
 
   let total = 0;
   for (let i = 1; i < points.length; i++) {
     total += getDistanceMeters(points[i - 1], points[i]);
+  }
+
+  return total;
+}
+
+export function getTuplePathDistanceMeters(points: LatLngTuple[]): number {
+  if (points.length < 2) return 0;
+
+  let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    total += getTupleDistanceMeters(points[i - 1], points[i]);
   }
 
   return total;

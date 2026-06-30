@@ -51,8 +51,8 @@ import {
   cleanSavedJointsForFirebase,
   loadMapAssetsFromFirestore,
   restoreSavedJointsFromFirebase,
-  saveMapAssetsToFirestore,
 } from "../services/mapAssetStorage";
+import { saveMapAssetsViaCoordinator } from "../services/mapSaveCoordinator";
 
 /* -------------------------------------------------------------
   Persistence
@@ -551,10 +551,13 @@ export const FibreTrayEditor: React.FC = () => {
       : 1;
   const saveSavedJointsToFirestoreNow = useCallback(
     async (nextSavedJoints: SavedJoint[]) => {
-      const cleaned = await saveMapAssetsToFirestore(nextSavedJoints);
-      lastFirebaseJsonRef.current = JSON.stringify(cleaned);
+      const result = await saveMapAssetsViaCoordinator(nextSavedJoints, {
+        reason: "fibre-tray-editor-immediate-save",
+        source: "fibre-tray-editor",
+      });
+      lastFirebaseJsonRef.current = JSON.stringify(result.assets);
       console.log(
-        `Saved ${cleaned.length} chunked map assets to Firestore immediately`,
+        `Saved ${result.assetCount} chunked map assets to Firestore immediately`,
       );
     },
     [],
@@ -707,11 +710,14 @@ export const FibreTrayEditor: React.FC = () => {
     }
 
     firebaseSaveTimerRef.current = setTimeout(() => {
-      saveMapAssetsToFirestore(savedJoints)
-        .then((savedCleaned) => {
-          lastFirebaseJsonRef.current = JSON.stringify(savedCleaned);
+      saveMapAssetsViaCoordinator(savedJoints, {
+        reason: "fibre-tray-editor-debounced-save",
+        source: "fibre-tray-editor",
+      })
+        .then((result) => {
+          lastFirebaseJsonRef.current = JSON.stringify(result.assets);
           console.log(
-            `Saved ${savedCleaned.length} chunked map assets to Firestore`,
+            `Saved ${result.assetCount} chunked map assets to Firestore`,
           );
         })
         .catch((err) => {

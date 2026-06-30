@@ -1,5 +1,6 @@
 import React from "react";
 import type { SavedMapAsset } from "../../types";
+import { getAssetDisplayName as getAssetLabel, getAssetTypeLabel } from "../../../../utils/assetDisplay";
 
 type Props = {
   variant: "mobile" | "tablet";
@@ -10,23 +11,6 @@ type Props = {
   onOpenMaintenance?: () => void;
 };
 
-function getAssetLabel(asset: SavedMapAsset): string {
-  return (
-    asset.name ||
-    (asset as any).label ||
-    (asset as any).jointName ||
-    (asset as any).uprn ||
-    "Selected asset"
-  );
-}
-
-function getAssetTypeLabel(asset: SavedMapAsset): string {
-  const raw = String(asset.assetType || asset.jointType || "asset")
-    .replace(/-/g, " ")
-    .trim();
-
-  return raw ? raw.replace(/\b\w/g, (letter) => letter.toUpperCase()) : "Asset";
-}
 
 function getStatusLabel(asset: SavedMapAsset): string | null {
   const status =

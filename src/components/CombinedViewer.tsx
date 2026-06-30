@@ -34,8 +34,8 @@ import { normalizeMapAssets } from "../services/mapAssetAdapter";
 import {
   loadMapAssets,
   loadMapAssetsFromFirestore,
-  saveMapAssetsToFirestore,
 } from "../services/mapAssetStorage";
+import { saveMapAssetsViaCoordinator } from "../services/mapSaveCoordinator";
 import { isOpenreachReferenceAsset } from "../services/orAssetStorage";
 
 // =====================================================
@@ -305,8 +305,9 @@ const CombinedViewer: React.FC = () => {
     if (json === lastSavedJsonRef.current) return;
 
     const timer = window.setTimeout(() => {
-      saveMapAssetsToFirestore(designedNetworkAssets, {
+      saveMapAssetsViaCoordinator(designedNetworkAssets, {
         reason: "CombinedViewer autosave",
+        source: "combined-viewer",
       })
         .then(() => {
           lastSavedJsonRef.current = json;

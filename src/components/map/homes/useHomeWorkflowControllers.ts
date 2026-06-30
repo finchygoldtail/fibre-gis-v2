@@ -3,11 +3,16 @@ import type { AssetChangeAction } from "../audit/types";
 import type { SavedMapAsset } from "../types";
 import { withAssetEditedMetadata } from "../../../services/assetActivityService";
 import { saveProjectHomes } from "../projects/projectHomesStorage";
+import { withAreaAssetIndex } from "../../../services/areaAssetIndex";
+import { getDropHomeKeys, getHomeDropKeys } from "./homeDropHelpers";
 import {
-  createManualDropCable,
-  getDropHomeKeys,
-  getHomeDropKeys,
-} from "./homeDropHelpers";
+  buildManualDropCablesForHomes,
+  getHomeKeySet,
+  getSelectedHomeAssets,
+  isDropCableRelatedToHomeKeys,
+  withHomeAssignedToDp,
+  withManualDropFlags,
+} from "./homeReassignment";
 
 type MapModeLike =
   | "pick"
@@ -51,15 +56,6 @@ type UseHomeWorkflowControllersArgs = {
     after?: unknown;
   }) => void;
 };
-
-function isDropCable(asset: SavedMapAsset): boolean {
-  return (
-    asset.assetType === "cable" &&
-    String((asset as any).cableType || "")
-      .trim()
-      .toLowerCase() === "drop"
-  );
-}
 
 export function useHomeWorkflowControllers({
   mapMode,
@@ -212,9 +208,9 @@ export function useHomeWorkflowControllers({
     if (mapMode !== "move-homes") return;
     if (targetDp.assetType !== "distribution-point") return;
 
-    const selectedHomes = allMapAssets.filter(
-      (asset) =>
-        asset.assetType === "home" && selectedMoveHomeIds.includes(asset.id),
+    const selectedHomes = getSelectedHomeAssets(
+      allMapAssets,
+      selectedMoveHomeIds,
     );
 
     if (selectedHomes.length === 0) {
@@ -228,14 +224,8 @@ export function useHomeWorkflowControllers({
     );
     if (!reason) return;
 
-    const selectedHomeKeySet = new Set<string>();
-    selectedHomes.forEach((home) => {
-      getHomeDropKeys(home).forEach((key) => selectedHomeKeySet.add(key));
-    });
-
-    const newDrops = selectedHomes
-      .map((home) => createManualDropCable(targetDp, home))
-      .filter(Boolean) as SavedMapAsset[];
+    const selectedHomeKeySet = getHomeKeySet(selectedHomes);
+    const newDrops = buildManualDropCablesForHomes(targetDp, selectedHomes);
 
     if (newDrops.length !== selectedHomes.length) {
       alert(
@@ -250,35 +240,7 @@ export function useHomeWorkflowControllers({
       markAssetForLiveSync(
         withAssetEditedMetadata(
           {
-            ...home,
-
-            connectedDpId: targetDpId,
-            dpId: targetDpId,
-            parentDpId: targetDpId,
-            connectedDP: targetDpId,
-            servedByDp: targetDpId,
-
-            connection: "connected",
-            connectionMode: "manual",
-
-            port: undefined,
-            splitterPort: undefined,
-
-            properties: {
-              ...((home as any).properties || {}),
-
-              connectedDpId: targetDpId,
-              dpId: targetDpId,
-              parentDpId: targetDpId,
-              connectedDP: targetDpId,
-              servedByDp: targetDpId,
-
-              connection: "connected",
-              connectionMode: "manual",
-
-              port: undefined,
-              splitterPort: undefined,
-            },
+            ...withHomeAssignedToDp(home, targetDpId),
           } as SavedMapAsset,
           "updated",
           reason,
@@ -288,9 +250,7 @@ export function useHomeWorkflowControllers({
 
     setSavedJoints((prev) => {
       const withoutOldDrops = (prev ?? []).filter((asset: any) => {
-        if (!isDropCable(asset)) return true;
-        const dropKeys = getDropHomeKeys(asset);
-        return !dropKeys.some((key) => selectedHomeKeySet.has(key));
+        return !isDropCableRelatedToHomeKeys(asset, selectedHomeKeySet);
       });
 
       const updatedAssets = withoutOldDrops.map((asset) => {
@@ -300,7 +260,14 @@ export function useHomeWorkflowControllers({
       });
 
       const markedDrops = newDrops.map((drop) =>
-        markAssetForLiveSync(drop, true),
+        markAssetForLiveSync(
+          withAreaAssetIndex(
+            withManualDropFlags(drop),
+            activeProjectId,
+            activeProjectAreaName,
+          ),
+          true,
+        ),
       );
 
       return [...updatedAssets, ...markedDrops];

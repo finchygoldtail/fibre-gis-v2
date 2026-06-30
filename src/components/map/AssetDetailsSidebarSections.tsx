@@ -1,3 +1,4 @@
+import { getDistanceMeters as routeDistanceMeters } from "../../utils/mapMeasure";
 import React, { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { useAppMode } from "../../context/AppModeContext";
@@ -242,19 +243,6 @@ function getCableEndpointPoints(asset: SavedMapAsset | null | undefined): PointL
   return coords
     .map((coord: any) => ({ lat: Number(coord?.[0]), lng: Number(coord?.[1]) }))
     .filter((point: PointLike) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
-}
-
-function routeDistanceMeters(a: PointLike, b: PointLike): number {
-  const radius = 6371000;
-  const toRad = (value: number) => (value * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-  return 2 * radius * Math.asin(Math.sqrt(h));
 }
 
 function isRouteSupportingCableCandidate(asset: SavedMapAsset | null | undefined): boolean {

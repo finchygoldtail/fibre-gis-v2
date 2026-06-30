@@ -1,3 +1,4 @@
+import { getTupleDistanceMeters as getDistanceMeters, getTuplePathDistanceMeters } from "../../utils/mapMeasure";
 import React, { useEffect, useMemo, useState } from "react";
 import L from "leaflet";
 import {
@@ -15,6 +16,7 @@ import { db } from "../../firebase";
 import { getCableUsedFibres } from "./cableUsage";
 import { buildNetworkState } from "../../services/network";
 import { isOpenreachReferenceAsset } from "../../services/orAssetStorage";
+import { getPaddedRenderBounds, isLineStringInsideRenderBounds } from "./utils/renderBounds";
 type Props = {
   assets: SavedMapAsset[];
   cablesVisible: boolean;
@@ -85,34 +87,6 @@ async function loadJointMappingRowsFromFirestore(jointId: string): Promise<any[]
     .filter((row) => Array.isArray(row));
 }
 
-
-function getCableLengthMeters(points: [number, number][]): number {
-  if (points.length < 2) return 0;
-
-  let total = 0;
-
-  for (let i = 1; i < points.length; i++) {
-    const [lat1, lng1] = points[i - 1];
-    const [lat2, lng2] = points[i];
-
-    const toRad = (v: number) => (v * Math.PI) / 180;
-    const R = 6371000;
-
-    const dLat = toRad(lat2 - lat1);
-    const dLng = toRad(lng2 - lng1);
-
-    const a =
-      Math.sin(dLat / 2) ** 2 +
-      Math.cos(toRad(lat1)) *
-        Math.cos(toRad(lat2)) *
-        Math.sin(dLng / 2) ** 2;
-
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    total += R * c;
-  }
-
-  return total;
-}
 
 function formatCableLength(length: number): string {
   if (length < 1000) return `${length.toFixed(1)} m`;
@@ -298,10 +272,6 @@ function getMidpoint(a: [number, number], b: [number, number]): [number, number]
 const ROUTE_EDIT_MIN_INSERT_SPAN_METERS = 20;
 const ROUTE_COORDINATE_DEDUPE_METERS = 0.35;
 
-function getDistanceMeters(a: [number, number], b: [number, number]): number {
-  return getCableLengthMeters([a, b]);
-}
-
 function sanitizeCableCoordinates(coordinates: [number, number][]): [number, number][] {
   if (!Array.isArray(coordinates)) return [];
 
@@ -335,7 +305,7 @@ function getRouteEditHandleIndexes(points: [number, number][]): number[] {
   // Extra vertices stay in the saved geometry but do not create marker clutter.
   if (points.length <= 3) return points.map((_, index) => index);
 
-  const totalLength = getCableLengthMeters(points);
+  const totalLength = getTuplePathDistanceMeters(points);
   const targetMiddleDistance = totalLength / 2;
 
   let walked = 0;
@@ -838,6 +808,9 @@ export default function CableLinesLayer({
   const [editingCableId, setEditingCableId] = useState<string | null>(null);
   const [hoveredCableId, setHoveredCableId] = useState<string | null>(null);
   const [mappingRowsByAssetId, setMappingRowsByAssetId] = useState<MappingRowsByAssetId>({});
+  const [mapViewBounds, setMapViewBounds] = useState(() => map.getBounds());
+  const [mapViewZoom, setMapViewZoom] = useState(() => map.getZoom());
+  const cableCanvasRenderer = useMemo(() => L.canvas({ padding: 0.5 }), []);
 
   const mappingAssetKey = useMemo(
     () =>
@@ -885,9 +858,30 @@ export default function CableLinesLayer({
     click: () => {
       setSelectedCableId(null);
     },
+    moveend: () => {
+      setMapViewBounds(map.getBounds());
+      setMapViewZoom(map.getZoom());
+    },
+    zoomend: () => {
+      setMapViewBounds(map.getBounds());
+      setMapViewZoom(map.getZoom());
+    },
   });
 
+  const renderBounds = useMemo(() => getPaddedRenderBounds(mapViewBounds), [mapViewBounds]);
+
   const networkState = useMemo(() => buildNetworkState(assets as any), [assets]);
+
+  const connectionAssets = useMemo(
+    () =>
+      assets.filter((asset) => {
+        if (asset.assetType === "area") return false;
+        if (asset.assetType === "cable") return false;
+        if (isOpenreachReferenceAsset(asset)) return false;
+        return Boolean(getAssetPoint(asset));
+      }),
+    [assets],
+  );
 
   const allCableLayersVisible = cablesVisible || visibleLayers?.cables !== false;
 
@@ -903,45 +897,52 @@ export default function CableLinesLayer({
     isLayerOn("ulw24") ||
     isLayerOn("ulw12");
 
+  const cableAssets = useMemo(
+    () =>
+      assets.filter((asset) => {
+        if (isOpenreachReferenceAsset(asset)) return false;
+
+        if (
+          asset.assetType !== "cable" ||
+          asset.geometry?.type !== "LineString" ||
+          !Array.isArray(asset.geometry.coordinates)
+        ) {
+          return false;
+        }
+
+        const points = asset.geometry.coordinates as [number, number][];
+        if (!isLineStringInsideRenderBounds(points, renderBounds)) return false;
+
+        if (allCableLayersVisible) return true;
+
+        const cableType = String(asset.cableType || "").toLowerCase();
+        const fibreCount = String(asset.fibreCount || "").toLowerCase();
+        const isDropCable = isDropCableAsset(asset);
+
+        if (isDropCable) return isLayerOn("dropCables");
+
+        const matchesFeeder = cableType.includes("feeder");
+        const matchesLink = cableType.includes("link");
+        const matches96 = fibreCount.includes("96");
+        const matches48 = fibreCount.includes("48");
+        const matches36 = fibreCount.includes("36");
+        const matches24 = fibreCount.includes("24");
+        const matches12 = fibreCount.includes("12");
+
+        return (
+          (matchesFeeder && isLayerOn("feeders")) ||
+          (matchesLink && isLayerOn("links")) ||
+          (matches96 && isLayerOn("ulw96")) ||
+          (matches48 && isLayerOn("ulw48")) ||
+          (matches36 && isLayerOn("ulw36")) ||
+          (matches24 && isLayerOn("ulw24")) ||
+          (matches12 && isLayerOn("ulw12"))
+        );
+      }),
+    [assets, allCableLayersVisible, renderBounds, visibleLayers],
+  );
+
   if (!allCableLayersVisible && !hasAnyIndividualCableLayerOn) return null;
-
-  const cableAssets = assets.filter((asset) => {
-    if (isOpenreachReferenceAsset(asset)) return false;
-
-    if (
-      asset.assetType !== "cable" ||
-      asset.geometry?.type !== "LineString" ||
-      !Array.isArray(asset.geometry.coordinates)
-    ) {
-      return false;
-    }
-
-    if (allCableLayersVisible) return true;
-
-    const cableType = String(asset.cableType || "").toLowerCase();
-    const fibreCount = String(asset.fibreCount || "").toLowerCase();
-    const isDropCable = isDropCableAsset(asset);
-
-    if (isDropCable) return isLayerOn("dropCables");
-
-    const matchesFeeder = cableType.includes("feeder");
-    const matchesLink = cableType.includes("link");
-    const matches96 = fibreCount.includes("96");
-    const matches48 = fibreCount.includes("48");
-    const matches36 = fibreCount.includes("36");
-    const matches24 = fibreCount.includes("24");
-    const matches12 = fibreCount.includes("12");
-
-    return (
-      (matchesFeeder && isLayerOn("feeders")) ||
-      (matchesLink && isLayerOn("links")) ||
-      (matches96 && isLayerOn("ulw96")) ||
-      (matches48 && isLayerOn("ulw48")) ||
-      (matches36 && isLayerOn("ulw36")) ||
-      (matches24 && isLayerOn("ulw24")) ||
-      (matches12 && isLayerOn("ulw12"))
-    );
-  });
 
   const zoomToCable = (points: [number, number][]) => {
     if (points.length < 2) return;
@@ -1010,7 +1011,7 @@ export default function CableLinesLayer({
             ? asset.geometry.coordinates
             : [];
 
-        const length = getCableLengthMeters(points);
+        const length = getTuplePathDistanceMeters(points);
         const isHovered = hoveredCableId === asset.id;
         const isSelected = selectedCableId === asset.id;
         const isEditing = editingCableId === asset.id;
@@ -1023,13 +1024,13 @@ export default function CableLinesLayer({
 
         const startAsset =
           points.length >= 2
-            ? resolveCableEndpointAsset(asset, assets, "from", points[0])
-            : resolveCableEndpointAsset(asset, assets, "from");
+            ? resolveCableEndpointAsset(asset, connectionAssets, "from", points[0])
+            : resolveCableEndpointAsset(asset, connectionAssets, "from");
 
         const endAsset =
           points.length >= 2
-            ? resolveCableEndpointAsset(asset, assets, "to", points[points.length - 1])
-            : resolveCableEndpointAsset(asset, assets, "to");
+            ? resolveCableEndpointAsset(asset, connectionAssets, "to", points[points.length - 1])
+            : resolveCableEndpointAsset(asset, connectionAssets, "to");
 
         
 
@@ -1075,6 +1076,7 @@ export default function CableLinesLayer({
         return (
           <React.Fragment key={asset.id}>
             <Polyline
+              renderer={cableCanvasRenderer}
               positions={points}
               pathOptions={{
                 color: cableColor,
@@ -1184,7 +1186,7 @@ export default function CableLinesLayer({
               </Tooltip>
             </Polyline>
 
-            {showCableDistances === true &&
+            {showCableDistances === true && mapViewZoom >= 17 &&
               points.slice(0, -1).map((coord, i) => {
                 const next = points[i + 1];
                 if (!next) return null;
@@ -1233,6 +1235,7 @@ export default function CableLinesLayer({
 
                 return (
                   <CircleMarker
+                    renderer={cableCanvasRenderer}
                     key={`${asset.id}-mid-${i}`}
                     center={getMidpoint(coord, next)}
                     radius={5}

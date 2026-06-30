@@ -1,5 +1,6 @@
 import React from "react";
 import type { SavedMapAsset } from "../../types";
+import { getAssetDisplayName as getAssetLabel, getAssetTypeLabel } from "../../../../utils/assetDisplay";
 
 type FieldRole = "survey" | "maintenance";
 
@@ -14,22 +15,6 @@ type Props = {
   onClose: () => void;
 };
 
-function getAssetLabel(asset: SavedMapAsset): string {
-  return String(
-    asset.name ||
-      (asset as any).label ||
-      (asset as any).jointName ||
-      (asset as any).id ||
-      "Selected asset",
-  );
-}
-
-function getAssetTypeLabel(asset: SavedMapAsset): string {
-  const raw = String(asset.assetType || asset.jointType || "asset");
-  return raw
-    .replace(/-/g, " ")
-    .replace(/\b\w/g, (match) => match.toUpperCase());
-}
 
 function getAssetStatus(asset: SavedMapAsset): string {
   return String(

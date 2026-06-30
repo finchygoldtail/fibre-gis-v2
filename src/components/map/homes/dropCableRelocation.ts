@@ -1,3 +1,4 @@
+import { getTupleDistanceMeters as distanceMeters } from "../../../utils/mapMeasure";
 import type { LatLngLiteral } from "leaflet";
 import type { SavedMapAsset } from "../types";
 import { isDropCable } from "../utils/mapAssetGeometry";
@@ -58,19 +59,6 @@ function isCoordinateList(value: unknown): value is Coordinate[] {
 function cloneCoords(value: unknown): Coordinate[] | null {
   if (!isCoordinateList(value)) return null;
   return value.map((point) => [Number(point[0]), Number(point[1])] as Coordinate);
-}
-
-function distanceMeters(a: Coordinate, b: Coordinate): number {
-  const radius = 6_371_000;
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-  const dLat = toRad(b[0] - a[0]);
-  const dLng = toRad(b[1] - a[1]);
-  const lat1 = toRad(a[0]);
-  const lat2 = toRad(b[0]);
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-  return 2 * radius * Math.asin(Math.sqrt(h));
 }
 
 function updateDropRoute(asset: any, movedDpId: string, newDpCoord: Coordinate): SavedMapAsset {

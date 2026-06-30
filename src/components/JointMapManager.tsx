@@ -23,6 +23,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet-rotate";
 import { useAppMode } from "../context/AppModeContext";
+import { getAssetDisplayName as getAssetSearchLabel, getAssetSearchText as buildAssetSearchText } from "../utils/assetDisplay";
 import { useUserRole } from "../context/UserRoleContext";
 import { useJointMappings } from "./map/hooks/useJointMappings";
 import { useOpenreachAssets } from "./map/hooks/useOpenreachAssets";
@@ -46,6 +47,7 @@ import { useOrReferenceAdminTools } from "./map/admin/useOrReferenceAdminTools";
 import ExchangeDesigner from "./exchange/ExchangeDesigner";
 import { formatDistance, getPathDistanceMeters } from "../utils/mapMeasure";
 import { getNextAssetName } from "../utils/mapAssetNames";
+import { saveMapAssetsViaCoordinator } from "../services/mapSaveCoordinator";
 import MapContextMenu, { type MapContextAction } from "./map/MapContextMenu";
 import LayerControls from "./map/panels/LayerControls";
 import MapToolbar from "./map/panels/MapToolbar";
@@ -93,6 +95,11 @@ import {
   getHomeConnectionKey,
   getHomeDropKeys,
 } from "./map/homes/homeDropHelpers";
+import {
+  getAssignedDpId,
+  getHomeKeySet,
+  isDropCableRelatedToHomeKeys,
+} from "./map/homes/homeReassignment";
 import {
   findDpAtCableEnd,
   findDpsAlongCable,
@@ -508,65 +515,7 @@ function formatAreaLabel(areaSquareMeters: number): string {
   return `${(areaSquareMeters / 10000).toFixed(2)} ha`;
 }
 
-function getAssetSearchLabel(asset: SavedMapAsset): string {
-  const item = asset as any;
-  return String(
-    item.name ||
-      item.label ||
-      item.jointName ||
-      item.address ||
-      item.properties?.address ||
-      item.uprn ||
-      item.UPRN ||
-      asset.id ||
-      "Asset",
-  );
-}
 
-function getAssetSearchTypeLabel(asset: SavedMapAsset): string {
-  const item = asset as any;
-  const typeText = String(
-    item.assetType || item.type || item.jointType || item.homeType || "asset",
-  );
-
-  return typeText
-    .replace(/-/g, " ")
-    .replace(/\b\w/g, (match) => match.toUpperCase());
-}
-
-function buildAssetSearchText(asset: SavedMapAsset): string {
-  const item = asset as any;
-  return [
-    asset.id,
-    item.assetId,
-    item.name,
-    item.label,
-    item.jointName,
-    item.address,
-    item.properties?.address,
-    item.properties?.Address,
-    item.uprn,
-    item.UPRN,
-    item.properties?.uprn,
-    item.properties?.UPRN,
-    item.piaRef,
-    item.dpType,
-    item.assetType,
-    item.type,
-    item.jointType,
-    item.cableType,
-    item.poleType,
-    item.chamberType,
-    item.notes,
-  ]
-    .map((value) =>
-      String(value ?? "")
-        .trim()
-        .toLowerCase(),
-    )
-    .filter(Boolean)
-    .join(" ");
-}
 
 function normaliseAreaLevel(value: unknown): AreaLevel {
   const level = String(value || "L0").toUpperCase();
@@ -949,15 +898,13 @@ export default function JointMapManager({
     setIsSavingMapNow(true);
 
     try {
-      const { saveMapAssetsToFirestore } =
-        await import("../services/mapAssetStorage");
-
-      await saveMapAssetsToFirestore(operationalSavedJoints, {
+      const result = await saveMapAssetsViaCoordinator(operationalSavedJoints, {
         reason: "manual-save-map-now",
+        source: "joint-map-manager",
       });
 
       alert(
-        `Map saved. ${operationalSavedJoints.length} asset(s) written to Firestore.`,
+        `Map saved. ${result.assetCount} asset(s) written to Firestore.`,
       );
     } catch (err) {
       console.error("MANUAL MAP SAVE FAILED", err);
@@ -4165,15 +4112,12 @@ export default function JointMapManager({
                 ? buildMovedPointAsset(beforeAsset)
                 : null;
               const isMovedHome = movedAsset?.assetType === "home";
-              const movedHomeKeys = movedAsset
-                ? getHomeDropKeys(movedAsset)
-                : [];
-              const connectedDpId = String(
-                (beforeAsset as any)?.connectedDpId ??
-                  (beforeAsset as any)?.properties?.connectedDpId ??
-                  (beforeAsset as any)?.dpId ??
-                  "",
-              );
+              const movedHomeKeySet = movedAsset
+                ? getHomeKeySet([movedAsset])
+                : new Set<string>();
+              const connectedDpId = beforeAsset
+                ? getAssignedDpId(beforeAsset)
+                : "";
               const connectedDp = connectedDpId
                 ? allMapAssets.find(
                     (asset) =>
@@ -4189,17 +4133,11 @@ export default function JointMapManager({
               const shouldRemoveExistingDropForMovedHome = (
                 asset: SavedMapAsset,
               ): boolean => {
-                if (
-                  !isMovedHome ||
-                  movedHomeKeys.length === 0 ||
-                  !isDropCable(asset)
-                ) {
+                if (!isMovedHome || movedHomeKeySet.size === 0) {
                   return false;
                 }
 
-                return getDropHomeKeys(asset).some((key) =>
-                  movedHomeKeys.includes(key),
-                );
+                return isDropCableRelatedToHomeKeys(asset, movedHomeKeySet);
               };
 
               setSavedJoints((prev) => {

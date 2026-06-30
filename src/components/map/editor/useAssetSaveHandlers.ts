@@ -19,71 +19,17 @@ import {
   sanitiseCableRouteCoordinates,
 } from "../utils/mapAssetGeometry";
 import { recordLocalEngineeringChange } from "../../../core/engineering";
+import {
+  getAssetDetailPatch,
+  getDpOperationalStatus,
+  getPointJointType,
+} from "./assetEditCoordinator";
 
-
-export function normaliseDpOperationalStatus(value: unknown): string {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "Planned";
-
-  const lower = raw.toLowerCase();
-  if (lower === "live") return "Live";
-  if (lower === "bwip") return "BWIP";
-  if (lower === "unserviceable") return "Unserviceable";
-  if (lower === "live not ready for service" || lower === "lnrfs") {
-    return "Live not ready for service";
-  }
-  if (lower === "planned") return "Planned";
-  return raw;
-}
-
-export function getDpOperationalStatus(
-  asset: any,
-  fallback: string = "Planned",
-): string {
-  return normaliseDpOperationalStatus(
-    asset?.dpDetails?.buildStatus ||
-      asset?.properties?.dpDetails?.buildStatus ||
-      asset?.buildStatus ||
-      asset?.status ||
-      fallback,
-  );
-}
-
-export function syncDpOperationalStatusOnAsset<T extends Record<string, any>>(
-  asset: T,
-  statusValue?: unknown,
-): T {
-  const nextStatus = normaliseDpOperationalStatus(
-    statusValue ||
-      asset?.dpDetails?.buildStatus ||
-      asset?.properties?.dpDetails?.buildStatus ||
-      asset?.buildStatus ||
-      asset?.status ||
-      "Planned",
-  );
-
-  const nextDpDetails = {
-    ...(asset?.dpDetails || asset?.properties?.dpDetails || {}),
-    buildStatus: nextStatus,
-  };
-
-  return {
-    ...(asset as any),
-    status: nextStatus,
-    buildStatus: nextStatus,
-    dpDetails: nextDpDetails,
-    properties: {
-      ...((asset as any).properties || {}),
-      status: nextStatus,
-      buildStatus: nextStatus,
-      dpDetails: {
-        ...(((asset as any).properties || {}).dpDetails || {}),
-        ...nextDpDetails,
-        buildStatus: nextStatus,
-      },
-    },
-  } as T;
-}
+export {
+  getDpOperationalStatus,
+  normaliseDpOperationalStatus,
+  syncDpOperationalStatusOnAsset,
+} from "./assetEditCoordinator";
 
 type SaveDetailOverrides = {
   poleDetails?: PoleDetails;
@@ -305,64 +251,16 @@ export function useAssetSaveHandlers({
             markAssetForLiveSync({
               ...asset,
               name: jointName.trim() || asset.name,
-              jointType:
-                assetType === "street-cab"
-                  ? "Street Cab"
-                  : assetType === "pole"
-                    ? "Pole"
-                    : assetType === "distribution-point"
-                      ? "Distribution Point"
-                      : assetType === "chamber"
-                        ? "Chamber"
-                        : assetType === "home"
-                          ? "Home"
-                          : jointType,
+              jointType: getPointJointType(assetType, jointType),
               notes: notes.trim(),
               assetType,
-              ...(assetType === "distribution-point"
-                ? {
-                    status: getDpOperationalStatus({
-                      ...(asset as any),
-                      dpDetails: nextDpDetails,
-                    }),
-                    buildStatus: getDpOperationalStatus({
-                      ...(asset as any),
-                      dpDetails: nextDpDetails,
-                    }),
-                    properties: {
-                      ...((asset as any).properties || {}),
-                      status: getDpOperationalStatus({
-                        ...(asset as any),
-                        dpDetails: nextDpDetails,
-                      }),
-                      buildStatus: getDpOperationalStatus({
-                        ...(asset as any),
-                        dpDetails: nextDpDetails,
-                      }),
-                      dpDetails: {
-                        ...(((asset as any).properties || {}).dpDetails || {}),
-                        ...nextDpDetails,
-                        buildStatus: getDpOperationalStatus({
-                          ...(asset as any),
-                          dpDetails: nextDpDetails,
-                        }),
-                      },
-                    },
-                  }
-                : {}),
-              poleDetails: assetType === "pole" ? nextPoleDetails : undefined,
-              dpDetails:
-                assetType === "distribution-point"
-                  ? ({
-                      ...nextDpDetails,
-                      buildStatus: getDpOperationalStatus({
-                        ...(asset as any),
-                        dpDetails: nextDpDetails,
-                      }),
-                    } as DistributionPointDetails)
-                  : undefined,
-              chamberDetails:
-                assetType === "chamber" ? nextChamberDetails : undefined,
+              ...getAssetDetailPatch({
+                assetType,
+                existingAsset: asset,
+                poleDetails: nextPoleDetails,
+                dpDetails: nextDpDetails,
+                chamberDetails: nextChamberDetails,
+              }),
               geometry: {
                 type: "Point",
                 coordinates: [pickedLocation.lat, pickedLocation.lng],
@@ -473,18 +371,7 @@ export function useAssetSaveHandlers({
       id: crypto.randomUUID(),
       name: jointName.trim(),
       assetType,
-      jointType:
-        assetType === "street-cab"
-          ? "Street Cab"
-          : assetType === "pole"
-            ? "Pole"
-            : assetType === "distribution-point"
-              ? "Distribution Point"
-              : assetType === "chamber"
-                ? "Chamber"
-                : assetType === "home"
-                  ? "Home"
-                  : jointType,
+      jointType: getPointJointType(assetType, jointType),
       notes: notes.trim(),
       mappingRows: assetType === "ag-joint" ? currentMappingRows : [],
       mappingRowsCount:
@@ -495,31 +382,12 @@ export function useAssetSaveHandlers({
             mappingRowsSummary: { rowCount: currentMappingRows.length },
           }
         : {}),
-      ...(assetType === "distribution-point"
-        ? {
-            status: getDpOperationalStatus({ dpDetails: nextDpDetails }),
-            buildStatus: getDpOperationalStatus({ dpDetails: nextDpDetails }),
-            properties: {
-              status: getDpOperationalStatus({ dpDetails: nextDpDetails }),
-              buildStatus: getDpOperationalStatus({ dpDetails: nextDpDetails }),
-              dpDetails: {
-                ...nextDpDetails,
-                buildStatus: getDpOperationalStatus({
-                  dpDetails: nextDpDetails,
-                }),
-              },
-            },
-          }
-        : {}),
-      poleDetails: assetType === "pole" ? nextPoleDetails : undefined,
-      dpDetails:
-        assetType === "distribution-point"
-          ? ({
-              ...nextDpDetails,
-              buildStatus: getDpOperationalStatus({ dpDetails: nextDpDetails }),
-            } as DistributionPointDetails)
-          : undefined,
-      chamberDetails: assetType === "chamber" ? nextChamberDetails : undefined,
+      ...getAssetDetailPatch({
+        assetType,
+        poleDetails: nextPoleDetails,
+        dpDetails: nextDpDetails,
+        chamberDetails: nextChamberDetails,
+      }),
       geometry: {
         type: "Point",
         coordinates: [pickedLocation.lat, pickedLocation.lng],

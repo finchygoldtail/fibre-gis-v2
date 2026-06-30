@@ -18,6 +18,12 @@ import {
   type UserRole,
   useUserRole,
 } from "../../context/UserRoleContext";
+import {
+  hasUnrestrictedAreaAccess,
+  normaliseAllowedAreas,
+  normaliseAllowedAreasForRole,
+  normaliseUserRole,
+} from "../../utils/areaPermissions";
 
 type Props = {
   visible: boolean;
@@ -76,11 +82,8 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
 
         snapshot.docs.forEach((item) => {
           const data = item.data();
-          const role = normaliseRole(data.role);
-          const allowedAreas = normaliseAllowedAreas(
-            data.allowedAreas,
-            role === "admin" ? ["*"] : [],
-          );
+          const role = normaliseUserRole(data.role);
+          const allowedAreas = normaliseAllowedAreasForRole(role, data.allowedAreas, []);
 
           profileDocs.set(item.id, {
             uid: item.id,
@@ -188,17 +191,14 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
     const cleanUid = uid.trim();
     const cleanEmail = (patch.email || "").trim().toLowerCase();
     const permissions = ROLE_PERMISSIONS[patch.role];
-    const allowedAreas = normaliseAllowedAreas(
-      patch.allowedAreas,
-      patch.role === "admin" ? ["*"] : [],
-    );
+    const allowedAreas = normaliseAllowedAreasForRole(patch.role, patch.allowedAreas, []);
     const payload = {
       uid: cleanUid,
       name: (patch.name || "").trim(),
       email: cleanEmail,
       role: patch.role,
       permissions,
-      allowedAreas: patch.role === "admin" ? ["*"] : allowedAreas,
+      allowedAreas,
       updatedAt: serverTimestamp(),
     };
 
@@ -481,8 +481,7 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
               <div style={existingUsersListStyle}>
                 {users.map((user) => {
                   const areaAccessOpen = openAreaUserUid === user.uid;
-                  const unrestricted =
-                    user.role === "admin" || user.allowedAreas.includes("*");
+                  const unrestricted = hasUnrestrictedAreaAccess(user);
                   const selectedAreaKeys = new Set(
                     normaliseAllowedAreas(user.allowedAreas, []).map((item) =>
                       item.toLowerCase(),
@@ -617,30 +616,6 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
       </section>
     </div>
   );
-}
-
-function normaliseRole(value: unknown): UserRole {
-  if (
-    value === "admin" ||
-    value === "super_user" ||
-    value === "maintenance_user" ||
-    value === "build_user" ||
-    value === "survey_user"
-  ) {
-    return value;
-  }
-
-  return "survey_user";
-}
-
-function normaliseAllowedAreas(value: unknown, fallback: string[]): string[] {
-  if (!Array.isArray(value)) return fallback;
-
-  const cleaned = value
-    .map((item) => String(item || "").trim())
-    .filter(Boolean);
-
-  return Array.from(new Set(cleaned));
 }
 
 function isProjectAreaAsset(asset: any): boolean {

@@ -14,6 +14,17 @@ import {
 
 export type DpCapacityRisk = "OK" | "WARN" | "FULL" | "OVER";
 
+export type DpCapacityState = DpCapacityRisk | "NO CAPACITY";
+
+export type DpCapacitySummary = {
+  used: number;
+  capacity: number;
+  free: number;
+  percent: number;
+  state: DpCapacityState;
+  warning: string;
+};
+
 export type DpIntelligence = {
   assetId: string;
   assetName: string;
@@ -421,6 +432,94 @@ function getExplicitCapacity(asset: SavedMapAsset | null | undefined): number {
   return explicit || 0;
 }
 
+
+export function getDpCapacitySummary(
+  dp: SavedMapAsset | null | undefined,
+  allAssets: SavedMapAsset[] = [],
+  options: {
+    connectedHomeCount?: number;
+    splitterInputCount?: number;
+    splitterOutputsPerInput?: number;
+  } = {},
+): DpCapacitySummary {
+  const item = dp as any;
+  const dpType = getDpType(dp);
+  const lowerType = dpType.toLowerCase();
+  const isAfn = lowerType.includes("sb") || lowerType.includes("afn");
+  const isCbt = lowerType.includes("cbt");
+  const isMdu = lowerType.includes("mdu");
+  const connectedHomes =
+    typeof options.connectedHomeCount === "number" && Number.isFinite(options.connectedHomeCount)
+      ? Math.max(0, Math.floor(options.connectedHomeCount))
+      : getDpConnectedHomeCount(dp, allAssets);
+  const used = connectedHomes;
+  const splitterOutputs =
+    typeof options.splitterOutputsPerInput === "number" && options.splitterOutputsPerInput > 0
+      ? options.splitterOutputsPerInput
+      : getSplitterOutputs(dp);
+  const storedInputFibres = getExplicitInputFibres(dp);
+  const optionInputCount =
+    typeof options.splitterInputCount === "number" && Number.isFinite(options.splitterInputCount)
+      ? Math.max(0, Math.floor(options.splitterInputCount))
+      : 0;
+  const requiredInputCount = isAfn && used > 0 ? Math.max(1, Math.ceil(used / splitterOutputs)) : 0;
+  const inputFibreCount = isAfn
+    ? Math.max(storedInputFibres.length, optionInputCount, requiredInputCount)
+    : Math.max(storedInputFibres.length, optionInputCount);
+  const explicitCapacity = getExplicitCapacity(dp);
+  const splitterCapacity = isAfn && inputFibreCount > 0 ? inputFibreCount * splitterOutputs : 0;
+  const mdu = getMduDetails(item);
+  const mduFeedFibres = Number(
+    mdu.mduFibres ||
+      mdu.totalReservedFibres ||
+      mdu.feedFibres ||
+      mdu.inputFibreCount ||
+      storedInputFibres.length ||
+      0,
+  );
+  const fallbackCapacity = isCbt ? 12 : used;
+  const capacity = isMdu
+    ? Math.max(
+        Number.isFinite(mduFeedFibres) ? mduFeedFibres : 0,
+        explicitCapacity,
+        storedInputFibres.length,
+        used,
+      )
+    : Math.max(explicitCapacity, splitterCapacity, fallbackCapacity, used);
+  const free = Math.max(capacity - used, 0);
+  const percent = capacity > 0 ? Math.round((used / capacity) * 100) : 0;
+  const state: DpCapacityState =
+    capacity <= 0
+      ? "NO CAPACITY"
+      : used > capacity
+        ? "OVER"
+        : used === capacity
+          ? "FULL"
+          : percent >= 80
+            ? "WARN"
+            : "OK";
+  const warning =
+    state === "NO CAPACITY"
+      ? "No capacity set"
+      : state === "OVER"
+        ? "Over capacity"
+        : state === "FULL"
+          ? "Full"
+          : state === "WARN"
+            ? "Near capacity"
+            : "Capacity OK";
+
+  return { used, capacity, free, percent, state, warning };
+}
+
+export function getDpCapacityStateColour(state: string): string {
+  if (state === "OVER") return "#c084fc";
+  if (state === "FULL") return "#fb7185";
+  if (state === "WARN") return "#fbbf24";
+  if (state === "NO CAPACITY") return "#94a3b8";
+  return "#4ade80";
+}
+
 export function getDpIntelligence(dp: SavedMapAsset | null | undefined, allAssets: SavedMapAsset[] = []): DpIntelligence {
   const item = dp as any;
   const assetId = getAssetId(item);
@@ -434,13 +533,6 @@ export function getDpIntelligence(dp: SavedMapAsset | null | undefined, allAsset
   const usedPorts = connectedHomes;
   const splitterOutputs = getSplitterOutputs(dp);
   const storedInputFibres = getExplicitInputFibres(dp);
-  const mdu = getMduDetails(item);
-  const mduFeedFibres = Number(
-    mdu.mduFibres ||
-      mdu.totalReservedFibres ||
-      storedInputFibres.length ||
-      0,
-  );
   const requiredInputCount = isAfn && usedPorts > 0 ? Math.max(1, Math.ceil(usedPorts / splitterOutputs)) : 0;
   const inputFibreCount = isAfn
     ? Math.max(storedInputFibres.length, requiredInputCount)
@@ -450,44 +542,20 @@ export function getDpIntelligence(dp: SavedMapAsset | null | undefined, allAsset
     : inputFibreCount > 0
       ? Array.from({ length: inputFibreCount }, (_, index) => index + 1)
       : [];
-  const explicitCapacity = getExplicitCapacity(dp);
-  const splitterCapacity = isAfn && inputFibreCount > 0 ? inputFibreCount * splitterOutputs : 0;
-  const fallbackCapacity = isCbt ? 12 : usedPorts;
-  // For MDU Direct Feed / MDU + Splitter, capacity means live feed fibres
-  // wrapped up ready for splicing into the building, not CBT-style output ports.
-  const capacity = isMdu
-    ? Math.max(mduFeedFibres, storedInputFibres.length, usedPorts)
-    : Math.max(explicitCapacity, splitterCapacity, fallbackCapacity, usedPorts);
-  const freePorts = Math.max(capacity - usedPorts, 0);
-  const capacityPercent = capacity > 0 ? Math.round((usedPorts / capacity) * 100) : 0;
+  const capacitySummary = getDpCapacitySummary(dp, allAssets, {
+    connectedHomeCount: usedPorts,
+    splitterInputCount: inputFibreCount,
+    splitterOutputsPerInput: splitterOutputs,
+  });
+  const capacity = capacitySummary.capacity;
+  const freePorts = capacitySummary.free;
+  const capacityPercent = capacitySummary.percent;
   const capacityRisk: DpCapacityRisk =
-    capacity <= 0
-      ? "WARN"
-      : usedPorts > capacity
-        ? "OVER"
-        : usedPorts === capacity
-          ? "FULL"
-          : capacityPercent >= 80
-            ? "WARN"
-            : "OK";
-  const capacityWarning =
-    capacity <= 0
-      ? "No capacity set"
-      : capacityRisk === "OVER"
-        ? "Over capacity"
-        : capacityRisk === "FULL"
-          ? "Full"
-          : capacityRisk === "WARN"
-            ? "Near capacity"
-            : "Capacity OK";
+    capacitySummary.state === "NO CAPACITY" ? "WARN" : capacitySummary.state;
+  const capacityWarning = capacitySummary.warning;
 
   const incomingCable = findDpIncomingCable(dp, allAssets);
   const incomingCableFibreCount = getCableFibreCount(incomingCable);
-  const passthroughFibreCount = incomingCableFibreCount > 0 ? Math.max(incomingCableFibreCount - inputFibreCount, 0) : 0;
-  const passthroughFibres = passthroughFibreCount > 0
-    ? Array.from({ length: passthroughFibreCount }, (_, index) => inputFibreCount + index + 1)
-    : [];
-
   return {
     assetId,
     assetName,

@@ -9,6 +9,7 @@
 //             scaling only. No storage/editing logic changed.
 // =====================================================
 
+import { getDistanceMeters as distanceBetweenWorkspacePointsMeters, getPathDistanceMeters } from "../../utils/mapMeasure";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   MapContainer,
@@ -276,20 +277,6 @@ type WorkspaceHomeStack = {
 
 const WORKSPACE_HOME_STACK_DISTANCE_METERS = 1.75;
 
-function distanceBetweenWorkspacePointsMeters(a: LatLngLiteral, b: LatLngLiteral): number {
-  const radius = 6371000;
-  const toRad = (value: number) => (value * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-
-  return 2 * radius * Math.asin(Math.sqrt(h));
-}
-
 function getWorkspaceHomeDisplayName(home: SavedMapAsset): string {
   const item = home as any;
   return String(
@@ -500,16 +487,6 @@ function getAssetMarkerIcon(
     iconSize: [hitSize, hitSize],
     iconAnchor: [hitSize / 2, hitSize / 2],
   });
-}
-
-function distanceMeters(points: LatLngLiteral[]): number {
-  let total = 0;
-  for (let index = 1; index < points.length; index += 1) {
-    total += L.latLng(points[index - 1].lat, points[index - 1].lng).distanceTo(
-      L.latLng(points[index].lat, points[index].lng),
-    );
-  }
-  return total;
 }
 
 function formatDistance(meters: number): string {
@@ -865,7 +842,7 @@ export default function WorkspaceMap({
                 eventHandlers={{ click: (event) => selectWorkspaceAsset(asset, onAssetSelect, event) }}
               >
                 <Tooltip sticky>
-                  {getAssetName(asset)} · drop · {formatDistance(distanceMeters(points))}
+                  {getAssetName(asset)} · drop · {formatDistance(getPathDistanceMeters(points))}
                   {cableState ? ` · ${cableState.usedFibres}/${cableState.capacity || "?"}F` : ""}
                 </Tooltip>
               </Polyline>
@@ -876,7 +853,7 @@ export default function WorkspaceMap({
                   interactive={false}
                   icon={L.divIcon({
                     className: "alistra-workspace-drop-label",
-                    html: `<div style="background:#052e16;color:#bbf7d0;border:1px solid rgba(34,197,94,0.8);border-radius:999px;padding:3px 7px;font-size:11px;font-weight:800;white-space:nowrap;box-shadow:0 4px 10px rgba(0,0,0,0.35);">DROP ${formatDistance(distanceMeters(points))}</div>`,
+                    html: `<div style="background:#052e16;color:#bbf7d0;border:1px solid rgba(34,197,94,0.8);border-radius:999px;padding:3px 7px;font-size:11px;font-weight:800;white-space:nowrap;box-shadow:0 4px 10px rgba(0,0,0,0.35);">DROP ${formatDistance(getPathDistanceMeters(points))}</div>`,
                     iconSize: [1, 1],
                     iconAnchor: [0, 0],
                   })}
@@ -917,7 +894,7 @@ export default function WorkspaceMap({
                 eventHandlers={{ click: (event) => selectWorkspaceAsset(asset, onAssetSelect, event) }}
               >
                 <Tooltip sticky>
-                  {getAssetName(asset)} · {formatDistance(distanceMeters(points))}
+                  {getAssetName(asset)} · {formatDistance(getPathDistanceMeters(points))}
                   {cableState ? ` · ${cableState.usedFibres}/${cableState.capacity || "?"}F · ${cableState.utilisationPercent}%` : ""}
                 </Tooltip>
               </Polyline>
@@ -928,7 +905,7 @@ export default function WorkspaceMap({
                   interactive={false}
                   icon={L.divIcon({
                     className: "alistra-workspace-cable-label",
-                    html: `<div style="background:#020617;color:#f8fafc;border:1px solid rgba(96,165,250,0.8);border-radius:999px;padding:3px 7px;font-size:11px;font-weight:800;white-space:nowrap;box-shadow:0 4px 10px rgba(0,0,0,0.35);">${formatDistance(distanceMeters(points))}</div>`,
+                    html: `<div style="background:#020617;color:#f8fafc;border:1px solid rgba(96,165,250,0.8);border-radius:999px;padding:3px 7px;font-size:11px;font-weight:800;white-space:nowrap;box-shadow:0 4px 10px rgba(0,0,0,0.35);">${formatDistance(getPathDistanceMeters(points))}</div>`,
                     iconSize: [1, 1],
                     iconAnchor: [0, 0],
                   })}

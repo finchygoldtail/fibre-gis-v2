@@ -1,25 +1,6 @@
 import type { LatLngLiteral } from "leaflet";
+import { getDistanceMeters } from "../../../utils/mapMeasure";
 import type { SavedMapAsset } from "../types";
-
-function getDistanceMeters(a: LatLngLiteral, b: LatLngLiteral): number {
-  const toRad = (v: number) => (v * Math.PI) / 180;
-  const R = 6371000;
-
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
-
-  const x =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1) *
-      Math.cos(lat2) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2);
-
-  return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
-}
 
 function normalise(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();

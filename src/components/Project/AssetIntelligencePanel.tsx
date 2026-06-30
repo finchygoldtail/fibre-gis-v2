@@ -7,7 +7,8 @@
 //             No intelligence calculation logic changed.
 // =====================================================
 
-import React, { useMemo, useState } from "react";
+import { getDistanceMeters as haversineMeters } from "../../utils/mapMeasure";
+import React, { useDeferredValue, useMemo, useState } from "react";
 import type { SavedMapAsset } from "../map/types";
 import { auditAreaAssets, type AuditIssue, type AuditSeverity } from "../../services/areaAudit";
 import {
@@ -256,32 +257,49 @@ function linePoints(asset: SavedMapAsset | null): { lat: number; lng: number }[]
     .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
 }
 
-function haversineMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
-  const radius = 6371000;
-  const toRad = (degrees: number) => (degrees * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
-  const sinLat = Math.sin(dLat / 2);
-  const sinLng = Math.sin(dLng / 2);
-  const h = sinLat * sinLat + Math.cos(lat1) * Math.cos(lat2) * sinLng * sinLng;
-  return 2 * radius * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
-}
+
+type CablePathIntelligence = {
+  upstreamAsset: SavedMapAsset | null;
+  downstreamAsset: SavedMapAsset | null;
+  parentCable: SavedMapAsset | null;
+  branchCables: SavedMapAsset[];
+  connectedJoints: SavedMapAsset[];
+  connectedDps: SavedMapAsset[];
+  connectedHomes: SavedMapAsset[];
+  nearbyRouteAssets: SavedMapAsset[];
+  upstreamChain: SavedMapAsset[];
+  downstreamChain: SavedMapAsset[];
+  terminalAssets: SavedMapAsset[];
+  passThroughJoints: SavedMapAsset[];
+  fibreCapacity: number | null;
+  usedFibres: number | null;
+  remainingFibres: number | null;
+  utilisationPercent: number | null;
+  routeLengthMeters: number | null;
+  spanCount: number;
+  longestSpanMeters: number | null;
+  averageSpanMeters: number | null;
+  endpointGapStartMeters: number | null;
+  endpointGapEndMeters: number | null;
+  endpointSnapStatus: string;
+  pathHealth: string;
+  routeWarnings: string[];
+};
 
 function routeLength(asset: SavedMapAsset | null): number | null {
   const explicit = read(asset as any, ["routeLengthMeters", "lengthMeters", "distanceMeters", "measuredLengthMeters"], null);
   const explicitNumber = toNumber(explicit);
 
-  // A few legacy cable records carry a stored length of 0 even though the
-  // LineString geometry is valid. Treat 0 as "missing" and calculate from the
-  // route points so Trace/Cable Intelligence does not show 0 m incorrectly.
   if (explicitNumber !== null && explicitNumber > 0) return explicitNumber;
 
   const points = linePoints(asset);
   if (points.length < 2) return null;
+
   let total = 0;
-  for (let index = 1; index < points.length; index += 1) total += haversineMeters(points[index - 1], points[index]);
+  for (let index = 1; index < points.length; index += 1) {
+    total += haversineMeters(points[index - 1], points[index]);
+  }
+
   return total > 0 ? total : null;
 }
 
@@ -293,6 +311,7 @@ function cableName(asset: SavedMapAsset | null): string {
 function relatedByName(asset: SavedMapAsset | null, assets: SavedMapAsset[]): SavedMapAsset[] {
   const selectedName = cableName(asset).toLowerCase();
   if (!selectedName) return [];
+
   return assets
     .filter((candidate) => candidate.id !== asset?.id)
     .filter((candidate) => {
@@ -301,7 +320,7 @@ function relatedByName(asset: SavedMapAsset | null, assets: SavedMapAsset[]): Sa
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
-      return haystack.includes(selectedName) || selectedName.includes(haystack);
+      return Boolean(haystack && (haystack.includes(selectedName) || selectedName.includes(haystack)));
     })
     .slice(0, 5);
 }
@@ -324,91 +343,6 @@ function nearbyPointAssets(asset: SavedMapAsset | null, assets: SavedMapAsset[],
     .slice(0, 6);
 }
 
-
-
-type DpIntelligence = {
-  dpType: RowValue;
-  connectedHomes: RowValue;
-  capacity: RowValue;
-  usedPorts: RowValue;
-  freePorts: RowValue;
-  status: RowValue;
-  throughCable: RowValue;
-  fibres: RowValue;
-  capacityPercent: RowValue;
-  capacityWarning: RowValue;
-  splitterRatio: RowValue;
-};
-
-function isDropCable(asset: SavedMapAsset | null): boolean {
-  const item = asset as any;
-  const haystack = [
-    item?.name,
-    item?.cableId,
-    item?.cableName,
-    item?.assetType,
-    item?.cableType,
-    item?.type,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  return haystack.includes("drop") || haystack.includes("uprn");
-}
-
-function buildDpIntelligence(
-  asset: SavedMapAsset | null,
-  projectAssets: SavedMapAsset[],
-  relatedAssets: SavedMapAsset[],
-): DpIntelligence {
-  if (asset && isDpLikeAsset(asset)) {
-    const intelligence = getCentralDpIntelligence(asset, projectAssets || []);
-
-    return {
-      dpType: intelligence.dpType,
-      connectedHomes: intelligence.connectedHomes,
-      capacity: intelligence.capacity,
-      usedPorts: intelligence.usedPorts,
-      freePorts: intelligence.freePorts,
-      status: intelligence.status,
-      throughCable: intelligence.incomingCableName || "—",
-      fibres: intelligence.incomingCableFibreCount
-        ? `${intelligence.incomingCableFibreCount}F incoming`
-        : "—",
-      capacityPercent: `${intelligence.capacityPercent}%`,
-      capacityWarning: intelligence.capacityWarning,
-      splitterRatio: intelligence.splitterRatio,
-    };
-  }
-
-  const nearbyCables = relatedAssets.filter((candidate) => isCable(candidate));
-  const throughCableAsset = nearbyCables.find((candidate) => !isDropCable(candidate)) || null;
-
-  return {
-    dpType: read(asset as any, ["dpType", "distributionPointType", "cbtType", "afnType", "type", "assetType"], "distribution-point"),
-    connectedHomes: "—",
-    capacity: "—",
-    usedPorts: "—",
-    freePorts: "—",
-    status: read(asset as any, ["status", "dpStatus", "serviceStatus", "buildStatus"], "OK"),
-    throughCable: throughCableAsset ? getAssetName(throughCableAsset) : "—",
-    fibres: "—",
-    capacityPercent: "—",
-    capacityWarning: "Capacity unknown",
-    splitterRatio: "—",
-  };
-}
-
-
-// =====================================================
-// SB LOCAL BRANCH FIBRE DISPLAY GUARD
-// Some SBs are fed as a shoot-off from an upstream SB/joint mapping.
-// Example: upstream SB04 fibre 12 can become local branch cable fibre 1
-// into SB01.  The imported CMJ continuity still contains the upstream
-// fibre references, so the workspace intelligence table must prefer the
-// DP's saved local input fibres when they exist.
-// =====================================================
 function normaliseNumberList(value: unknown): number[] {
   if (Array.isArray(value)) {
     return value
@@ -461,8 +395,8 @@ function readCableCapacity(asset: SavedMapAsset | null | undefined): number | nu
   const fromRaw = Number(String(raw ?? "").replace(/[^0-9.]/g, ""));
   if (Number.isFinite(fromRaw) && fromRaw > 0) return Math.floor(fromRaw);
 
-  const coords = normaliseNumberList(item.fibres || item.fibreRange || item.allocatedInputFibres);
-  return coords.length ? Math.max(...coords) : null;
+  const fibres = normaliseNumberList(item.fibres || item.fibreRange || item.allocatedInputFibres);
+  return fibres.length ? Math.max(...fibres) : null;
 }
 
 function findThroughCableAssetForDp(asset: SavedMapAsset | null, projectAssets: SavedMapAsset[]): SavedMapAsset | null {
@@ -489,13 +423,7 @@ function findThroughCableAssetForDp(asset: SavedMapAsset | null, projectAssets: 
 
   return projectAssets.find((candidate) => {
     const cable = candidate as any;
-    const values = [
-      candidate.id,
-      cable.name,
-      cable.cableId,
-      cable.cableName,
-      cable.label,
-    ]
+    const values = [candidate.id, cable.name, cable.cableId, cable.cableName, cable.label]
       .map((value) => String(value ?? "").trim().toLowerCase())
       .filter(Boolean);
 
@@ -517,14 +445,8 @@ function normaliseSbAllocationToLocalBranch(
   const throughCableAsset = findThroughCableAssetForDp(asset, projectAssets);
   const localCableCapacity = readCableCapacity(throughCableAsset) || allocation.fibreCapacity || Math.max(...localInputFibres);
 
-  // Only override when the saved DP inputs clearly describe local branch fibres.
-  // This prevents upstream CMJ/joint continuity rows from making a shoot-off SB
-  // display parent-cable fibres like 27, 28, 32 instead of local 1, 2, 3.
   const existingLocalFibres = normaliseNumberList((allocation as any).localFibres);
-  const hasMismatch =
-    !existingLocalFibres.length ||
-    existingLocalFibres.some((fibre) => !localInputFibres.includes(fibre));
-
+  const hasMismatch = !existingLocalFibres.length || existingLocalFibres.some((fibre) => !localInputFibres.includes(fibre));
   if (!hasMismatch) return allocation;
 
   const existingLocalRows = Array.isArray((allocation as any).localRows)
@@ -577,25 +499,6 @@ function normaliseSbAllocationToLocalBranch(
   } as SbFibreAllocation;
 }
 
-
-function buildQaFlags(asset: SavedMapAsset | null): string[] {
-  if (!asset) return [];
-  const item = asset as any;
-  const flags: string[] = [];
-
-  if (isCable(asset)) {
-    if (!read(item, ["name", "cableId", "cableName"], null)) flags.push("Cable has no cable ID/name");
-    if (!read(item, ["fibreCount", "fiberCount", "coreCount", "size"], null)) flags.push("Fibre count missing");
-    if (!read(item, ["installMethod", "method", "routeType"], null)) flags.push("Install method missing");
-  }
-
-  if (isJoint(asset) && !read(item, ["jointType", "assetType", "type"], null)) flags.push("Joint type missing");
-  if (isDp(asset) && !read(item, ["status", "dpStatus", "serviceStatus"], null)) flags.push("DP status missing");
-  if ((isPole(asset) || isChamber(asset)) && !pointFor(asset)) flags.push("No valid map position found");
-
-  return flags;
-}
-
 function severityRank(severity: AuditIssue["severity"]): number {
   if (severity === "high") return 0;
   if (severity === "medium") return 1;
@@ -614,20 +517,11 @@ function severityStyle(severity: AuditIssue["severity"]): React.CSSProperties {
   return lowSeverityPill;
 }
 
-function assetIdMatches(issueAssetId: string, asset: SavedMapAsset | null): boolean {
-  if (!asset) return false;
-  const current = String((asset as any).id || (asset as any).assetId || "");
-  return Boolean(current && String(issueAssetId) === current);
-}
-
-
 function copyText(value: string) {
   if (!value) return;
 
   if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(value).catch(() => {
-      // Clipboard can fail in non-secure/local contexts. Keep action safe.
-    });
+    navigator.clipboard.writeText(value).catch(() => undefined);
   }
 }
 
@@ -643,34 +537,6 @@ function getAssetCopyText(asset: SavedMapAsset | null): string {
     .filter((line) => !line.endsWith(": "))
     .join("\n");
 }
-
-type CablePathIntelligence = {
-  upstreamAsset: SavedMapAsset | null;
-  downstreamAsset: SavedMapAsset | null;
-  parentCable: SavedMapAsset | null;
-  branchCables: SavedMapAsset[];
-  connectedJoints: SavedMapAsset[];
-  connectedDps: SavedMapAsset[];
-  connectedHomes: SavedMapAsset[];
-  nearbyRouteAssets: SavedMapAsset[];
-  upstreamChain: SavedMapAsset[];
-  downstreamChain: SavedMapAsset[];
-  terminalAssets: SavedMapAsset[];
-  passThroughJoints: SavedMapAsset[];
-  fibreCapacity: number | null;
-  usedFibres: number | null;
-  remainingFibres: number | null;
-  utilisationPercent: number | null;
-  routeLengthMeters: number | null;
-  spanCount: number;
-  longestSpanMeters: number | null;
-  averageSpanMeters: number | null;
-  endpointGapStartMeters: number | null;
-  endpointGapEndMeters: number | null;
-  endpointSnapStatus: string;
-  pathHealth: string;
-  routeWarnings: string[];
-};
 
 function normaliseId(value: unknown): string {
   return String(value ?? "").trim();
@@ -697,6 +563,13 @@ function assetMatchesAnyId(asset: SavedMapAsset | null, ids: string[]): boolean 
   const candidates = getCandidateIds(asset).map((id) => id.toLowerCase());
   const lookup = ids.map((id) => normaliseId(id).toLowerCase()).filter(Boolean);
   return candidates.some((candidate) => lookup.includes(candidate));
+}
+
+function assetIdMatches(issueAssetId: string, asset: SavedMapAsset | null): boolean {
+  if (!asset) return false;
+  const issueId = normaliseId(issueAssetId).toLowerCase();
+  if (!issueId) return false;
+  return getCandidateIds(asset).some((id) => id.toLowerCase() === issueId);
 }
 
 function findAssetByAnyId(assets: SavedMapAsset[], ids: string[]): SavedMapAsset | null {
@@ -1039,6 +912,85 @@ function buildCablePathIntelligence(asset: SavedMapAsset | null, projectAssets: 
 }
 
 
+
+function isDropCable(asset: SavedMapAsset | null): boolean {
+  const item = asset as any;
+  const haystack = [
+    item?.name,
+    item?.cableId,
+    item?.cableName,
+    item?.assetType,
+    item?.cableType,
+    item?.type,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return haystack.includes("drop") || haystack.includes("uprn");
+}
+
+function buildDpIntelligence(
+  asset: SavedMapAsset | null,
+  projectAssets: SavedMapAsset[],
+  relatedAssets: SavedMapAsset[],
+) {
+  if (asset && isDpLikeAsset(asset)) {
+    const intelligence = getCentralDpIntelligence(asset, projectAssets || []);
+
+    return {
+      dpType: intelligence.dpType,
+      connectedHomes: intelligence.connectedHomes,
+      capacity: intelligence.capacity,
+      usedPorts: intelligence.usedPorts,
+      freePorts: intelligence.freePorts,
+      status: intelligence.status,
+      throughCable: intelligence.incomingCableName || "—",
+      fibres: intelligence.incomingCableFibreCount
+        ? `${intelligence.incomingCableFibreCount}F incoming`
+        : "—",
+      capacityPercent: `${intelligence.capacityPercent}%`,
+      capacityWarning: intelligence.capacityWarning,
+      splitterRatio: intelligence.splitterRatio,
+    };
+  }
+
+  const nearbyCables = relatedAssets.filter((candidate) => isCable(candidate));
+  const throughCableAsset = nearbyCables.find((candidate) => !isDropCable(candidate)) || null;
+
+  return {
+    dpType: read(asset as any, ["dpType", "distributionPointType", "cbtType", "afnType", "type", "assetType"], "distribution-point"),
+    connectedHomes: "—",
+    capacity: "—",
+    usedPorts: "—",
+    freePorts: "—",
+    status: read(asset as any, ["status", "dpStatus", "serviceStatus", "buildStatus"], "OK"),
+    throughCable: throughCableAsset ? getAssetName(throughCableAsset) : "—",
+    fibres: "—",
+    capacityPercent: "—",
+    capacityWarning: "Capacity unknown",
+    splitterRatio: "—",
+  };
+}
+
+function buildQaFlags(asset: SavedMapAsset | null): string[] {
+  if (!asset) return [];
+  const item = asset as any;
+  const flags: string[] = [];
+
+  if (isCable(asset)) {
+    if (!read(item, ["name", "cableId", "cableName"], null)) flags.push("Cable has no cable ID/name");
+    if (!read(item, ["fibreCount", "fiberCount", "coreCount", "size"], null)) flags.push("Fibre count missing");
+    if (!read(item, ["installMethod", "method", "routeType"], null)) flags.push("Install method missing");
+  }
+
+  if (isJoint(asset) && !read(item, ["jointType", "assetType", "type"], null)) flags.push("Joint type missing");
+  if (isDp(asset) && !read(item, ["status", "dpStatus", "serviceStatus"], null)) flags.push("DP status missing");
+  if ((isPole(asset) || isChamber(asset)) && !pointFor(asset)) flags.push("No valid map position found");
+
+  return flags;
+}
+
 function buildEngineeringRecommendations(asset: SavedMapAsset | null, cablePath: CablePathIntelligence, dpInfo: any, selectedQaIssues: AuditIssue[]): string[] {
   const recommendations: string[] = [];
 
@@ -1090,13 +1042,32 @@ export default function AssetIntelligencePanel({
   const item = asset as any;
   const [auditOpen, setAuditOpen] = useState(false);
   const [auditHistoryRefreshKey, setAuditHistoryRefreshKey] = useState(0);
-  const canChangeDpStatus = isDp(asset) && Boolean(onUpdateDpStatus);
 
-  const selectedAuditTemplate = isPole(asset)
+  // PERF PHASE 5
+  // Project Workspace can pass thousands of assets into this intelligence panel.
+  // Defer and memoise the heavy derived lookups so search/selection stays responsive
+  // while React catches up with route, QA and fibre intelligence calculations.
+  const projectAssetsSafe = useMemo(() => projectAssets || [], [projectAssets]);
+  const deferredProjectAssets = useDeferredValue(projectAssetsSafe);
+  const selectedAssetType = useMemo(
+    () => ({
+      cable: isCable(asset),
+      joint: isJoint(asset),
+      dp: isDp(asset),
+      pole: isPole(asset),
+      chamber: isChamber(asset),
+      cabinet: isCabinet(asset),
+    }),
+    [asset],
+  );
+
+  const canChangeDpStatus = selectedAssetType.dp && Boolean(onUpdateDpStatus);
+
+  const selectedAuditTemplate = selectedAssetType.pole
     ? poleAuditTemplate
-    : isChamber(asset)
+    : selectedAssetType.chamber
       ? chamberAuditTemplate
-      : isJoint(asset)
+      : selectedAssetType.joint
         ? jointAuditTemplate
         : null;
 
@@ -1115,10 +1086,10 @@ export default function AssetIntelligencePanel({
 
   const relatedAssets = useMemo(() => {
     if (!asset) return [];
-    if (isCable(asset)) return [...nearbyPointAssets(asset, projectAssets), ...relatedByName(asset, projectAssets)].slice(0, 6);
+    if (selectedAssetType.cable) return [...nearbyPointAssets(asset, deferredProjectAssets), ...relatedByName(asset, deferredProjectAssets)].slice(0, 6);
     const selectedPoint = pointFor(asset);
-    if (!selectedPoint) return relatedByName(asset, projectAssets);
-    return projectAssets
+    if (!selectedPoint) return relatedByName(asset, deferredProjectAssets);
+    return deferredProjectAssets
       .filter((candidate) => candidate.id !== asset.id)
       .map((candidate) => {
         const point = pointFor(candidate);
@@ -1134,17 +1105,21 @@ export default function AssetIntelligencePanel({
       .sort((a, b) => a.distance - b.distance)
       .map(({ candidate }) => candidate)
       .slice(0, 6);
-  }, [asset, projectAssets]);
+  }, [asset, deferredProjectAssets, selectedAssetType.cable]);
 
   const qaFlags = useMemo(() => buildQaFlags(asset), [asset]);
+
+  const areaAuditIssues = useMemo(() => {
+    return auditAreaAssets(deferredProjectAssets);
+  }, [deferredProjectAssets]);
 
   const selectedQaIssues = useMemo(() => {
     if (!asset) return [];
 
-    return auditAreaAssets(projectAssets || [])
+    return areaAuditIssues
       .filter((issue) => assetIdMatches(issue.assetId, asset))
       .sort((a, b) => severityRank(a.severity) - severityRank(b.severity) || a.issue.localeCompare(b.issue));
-  }, [asset, projectAssets]);
+  }, [asset, areaAuditIssues]);
 
   const severityCounts = useMemo<SeverityCounts>(() => {
     return selectedQaIssues.reduce(
@@ -1158,17 +1133,19 @@ export default function AssetIntelligencePanel({
 
 
   const cablePath = useMemo(() => {
-    return buildCablePathIntelligence(asset, projectAssets || []);
-  }, [asset, projectAssets]);
+    if (!selectedAssetType.cable) return buildCablePathIntelligence(null, []);
+    return buildCablePathIntelligence(asset, deferredProjectAssets);
+  }, [asset, deferredProjectAssets, selectedAssetType.cable]);
 
   const dpInfo = useMemo(() => {
-    return buildDpIntelligence(asset, projectAssets || [], relatedAssets);
-  }, [asset, projectAssets, relatedAssets]);
+    return buildDpIntelligence(asset, deferredProjectAssets, relatedAssets);
+  }, [asset, deferredProjectAssets, relatedAssets]);
 
   const sbFibreAllocation = useMemo(() => {
-    const allocation = buildSbFibreAllocation(asset, projectAssets || []);
-    return normaliseSbAllocationToLocalBranch(asset, projectAssets || [], allocation);
-  }, [asset, projectAssets]);
+    if (!selectedAssetType.dp && !selectedAssetType.cable) return null;
+    const allocation = buildSbFibreAllocation(asset, deferredProjectAssets);
+    return normaliseSbAllocationToLocalBranch(asset, deferredProjectAssets, allocation);
+  }, [asset, deferredProjectAssets, selectedAssetType.dp, selectedAssetType.cable]);
 
   const jointInfo = useMemo(() => {
     return getJointIntelligence(asset);

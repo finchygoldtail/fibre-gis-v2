@@ -4,8 +4,10 @@
 //          QA summary, topology health, asset search, and CSV export.
 // =====================================================
 
+import { getTupleDistanceMeters as distanceMeters } from "../../utils/mapMeasure";
 import React, { useMemo, useState } from "react";
 import type { SavedMapAsset } from "./types";
+import { getAssetTypeLabel } from "../../utils/assetDisplay";
 import { auditAreaAssets, type AuditIssue, type AuditSeverity } from "../../services/areaAudit";
 import { exportToCSV } from "../../services/csvExport";
 import AuditModal from "../audits/AuditModal";
@@ -179,10 +181,6 @@ function getAssetStatus(asset: SavedMapAsset): string {
   return String(raw);
 }
 
-function getAssetTypeLabel(asset: SavedMapAsset): string {
-  return String(asset.assetType || asset.jointType || "asset");
-}
-
 function getAssetFibreCount(asset: SavedMapAsset): string {
   if (asset.assetType === "cable") {
     return String((asset as any).fibreCount || "");
@@ -296,20 +294,6 @@ function parseFibreCount(value: string): number {
 function formatPercent(value: number): string {
   if (!Number.isFinite(value)) return "0%";
   return `${Math.round(value)}%`;
-}
-
-function distanceMeters(a: LatLngTuple, b: LatLngTuple): number {
-  const radius = 6371000;
-  const lat1 = (a[0] * Math.PI) / 180;
-  const lat2 = (b[0] * Math.PI) / 180;
-  const dLat = ((b[0] - a[0]) * Math.PI) / 180;
-  const dLng = ((b[1] - a[1]) * Math.PI) / 180;
-
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-
-  return 2 * radius * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
 function routeLengthMeters(asset: SavedMapAsset): number {

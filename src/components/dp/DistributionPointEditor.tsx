@@ -6,9 +6,11 @@
 // PHASE 8B — DP Operational Fibre Routing.
 // =====================================================
 
+import { getDistanceMeters as distanceMeters } from "../../utils/mapMeasure";
 import React, { useEffect, useMemo, useState } from "react";
 import type { DistributionPointDetails, SavedMapAsset } from "../map/types";
 import { buildDpRoutingState, buildNetworkState } from "../../services/network";
+import { getDpCapacityStateColour, getDpCapacitySummary } from "../../services/dpIntelligence";
 import CapacityPanel from "./dp/CapacityPanel";
 import RoutePanel from "./dp/RoutePanel";
 import ConnectedHomesPanel from "./dp/ConnectedHomesPanel";
@@ -235,19 +237,6 @@ function getCableLinePoints(asset: SavedMapAsset | null | undefined): AssetPoint
   return coords
     .map((coord: any) => ({ lat: Number(coord?.[0]), lng: Number(coord?.[1]) }))
     .filter((point: AssetPoint) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
-}
-
-function distanceMeters(a: AssetPoint, b: AssetPoint): number {
-  const radius = 6371000;
-  const toRad = (value: number) => (value * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-  return 2 * radius * Math.asin(Math.sqrt(h));
 }
 
 function findParentDpForBranchCable(
@@ -843,85 +832,15 @@ function getCapacity(
   splitterInputCount = 0,
   splitterOutputsPerInput = 8,
 ) {
-  const item = asset as any;
-  const details = getDpDetails(asset);
-  const closure = getClosureType(asset);
-  const afnDetails = details.afnDetails || {};
-  const mduDetails = details.mduDetails || {};
-
-  const storedInputFibres = Array.isArray(afnDetails.inputFibres)
-    ? afnDetails.inputFibres
-    : Array.isArray(mduDetails.inputFibres)
-      ? mduDetails.inputFibres
-      : [];
-
-  const inputCount = Math.max(
-    splitterInputCount,
-    storedInputFibres.map(Number).filter(Number.isFinite).length,
-  );
-
-  const outputsPerInput =
-    Number.isFinite(splitterOutputsPerInput) && splitterOutputsPerInput > 0
-      ? splitterOutputsPerInput
-      : 8;
-
-  const splitterCapacity = inputCount > 0 ? inputCount * outputsPerInput : 0;
-
-  const explicitCapacity = Number(
-    item?.capacity ||
-      item?.dpCapacity ||
-      item?.ports ||
-      details.capacity ||
-      details.portCapacity ||
-      0,
-  );
-
-  const baseCapacity =
-    Number.isFinite(explicitCapacity) && explicitCapacity > 0
-      ? explicitCapacity
-      : closure.includes("CBT")
-        ? 12
-        : closure.includes("AFN")
-          ? 8
-          : closure.includes("MDU")
-            ? Math.max(Number(details.connectionsToHomes || 0), 1)
-            : Number(details.connectionsToHomes || 0);
-
-  const capacity = Math.max(
-    baseCapacity,
-    splitterCapacity,
+  return getDpCapacitySummary(asset, [], {
     connectedHomeCount,
-    closure.includes("AFN") && inputCount > 0 ? 8 : 0,
-  );
-
-  const storedConnectedHomes = Number(details.connectedHomes || item?.connectedHomes || 0);
-  const used = connectedHomeCount > 0
-    ? connectedHomeCount
-    : Number.isFinite(storedConnectedHomes)
-      ? storedConnectedHomes
-      : 0;
-  const percent = capacity > 0 ? Math.round((used / capacity) * 100) : 0;
-  const free = Math.max(capacity - used, 0);
-  const state =
-    capacity <= 0
-      ? "NO CAPACITY"
-      : used > capacity
-        ? "OVER"
-        : used === capacity
-          ? "FULL"
-          : percent >= 80
-            ? "WARN"
-            : "OK";
-
-  return { used, capacity, free, percent, state };
+    splitterInputCount,
+    splitterOutputsPerInput,
+  });
 }
 
 function getStateColour(state: string): string {
-  if (state === "OVER") return "#c084fc";
-  if (state === "FULL") return "#fb7185";
-  if (state === "WARN") return "#fbbf24";
-  if (state === "NO CAPACITY") return "#94a3b8";
-  return "#4ade80";
+  return getDpCapacityStateColour(state);
 }
 
 function smallLabelStyle(): React.CSSProperties {

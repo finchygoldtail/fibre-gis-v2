@@ -15,6 +15,7 @@ import type {
   SavedMapAsset,
 } from "../types";
 import type { ChamberDetails } from "../modals/ChamberDetailsModal";
+import { getDpOperationalStatus } from "./assetEditCoordinator";
 
 type AreaLevel = "L0" | "L1" | "L2" | "L3";
 type MapMode = "pick" | "measure" | "draw-cable" | "draw-area" | "move-homes" | "survey-delete-homes";
@@ -29,31 +30,6 @@ function normaliseAreaLevel(value: unknown): AreaLevel {
   }
 
   return "L0";
-}
-
-function normaliseDpOperationalStatus(value: unknown): string {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "Planned";
-
-  const lower = raw.toLowerCase();
-  if (lower === "live") return "Live";
-  if (lower === "bwip") return "BWIP";
-  if (lower === "unserviceable") return "Unserviceable";
-  if (lower === "live not ready for service" || lower === "lnrfs") {
-    return "Live not ready for service";
-  }
-  if (lower === "planned") return "Planned";
-  return raw;
-}
-
-function getDpOperationalStatus(asset: any, fallback: string = "Planned"): string {
-  return normaliseDpOperationalStatus(
-    asset?.dpDetails?.buildStatus ||
-      asset?.properties?.dpDetails?.buildStatus ||
-      asset?.buildStatus ||
-      asset?.status ||
-      fallback,
-  );
 }
 
 type UseAssetSelectionArgs = {

@@ -9,6 +9,12 @@ import React, {
 import type { User } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../firebase";
+import {
+  canAccessArea,
+  hasUnrestrictedAreaAccess,
+  normaliseAllowedAreasForRole,
+  normaliseUserRole,
+} from "../utils/areaPermissions";
 
 export type UserRole =
   | "admin"
@@ -111,48 +117,8 @@ const LOCKED_DOWN_PERMISSIONS: UserPermissions = {
 
 const UserRoleContext = createContext<UserRoleContextValue | null>(null);
 
-function normaliseRole(value: unknown): UserRole {
-  if (
-    value === "admin" ||
-    value === "super_user" ||
-    value === "maintenance_user" ||
-    value === "build_user" ||
-    value === "survey_user"
-  ) {
-    return value;
-  }
 
-  return "survey_user";
-}
-
-function normaliseAllowedAreas(value: unknown, fallback: string[]): string[] {
-  if (!Array.isArray(value)) return fallback;
-
-  const cleaned = value
-    .map((item) => String(item || "").trim())
-    .filter(Boolean);
-
-  return Array.from(new Set(cleaned));
-}
-
-export function hasUnrestrictedAreaAccess(profile: Pick<AppUserProfile, "role" | "allowedAreas"> | null | undefined): boolean {
-  return profile?.role === "admin" || profile?.allowedAreas?.includes("*") === true;
-}
-
-export function canAccessArea(
-  profile: Pick<AppUserProfile, "role" | "allowedAreas"> | null | undefined,
-  areaNames: Array<string | null | undefined>,
-): boolean {
-  if (hasUnrestrictedAreaAccess(profile)) return true;
-
-  const allowed = new Set((profile?.allowedAreas || []).map((item) => item.toLowerCase().trim()));
-  if (allowed.size === 0) return false;
-
-  return areaNames.some((name) => {
-    const clean = String(name || "").toLowerCase().trim();
-    return clean ? allowed.has(clean) : false;
-  });
-}
+export { canAccessArea, hasUnrestrictedAreaAccess };
 
 function normalisePermissions(
   role: UserRole,
@@ -225,7 +191,7 @@ async function loadFirestoreProfile(user: User): Promise<AppUserProfile> {
     if (!snapshot.exists()) continue;
 
     const data = snapshot.data();
-    const role = normaliseRole(data.role);
+    const role = normaliseUserRole(data.role);
     const permissions = normalisePermissions(role, data.permissions);
 
     return {
@@ -240,7 +206,7 @@ async function loadFirestoreProfile(user: User): Promise<AppUserProfile> {
           : fallbackProfile.email,
       role,
       permissions,
-      allowedAreas: normaliseAllowedAreas(data.allowedAreas, role === "admin" ? ["*"] : []),
+      allowedAreas: normaliseAllowedAreasForRole(role, data.allowedAreas, []),
     };
   }
 

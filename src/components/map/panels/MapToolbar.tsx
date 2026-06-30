@@ -1,6 +1,7 @@
 import { mobileButtonBase, responsiveSafeArea, responsiveZ, mobilePanelChrome } from "../responsive/responsiveUiTokens";
 import React, { useEffect, useMemo, useState } from "react";
 import type { SavedMapAsset } from "../types";
+import { getAssetDisplayName as getAssetSearchLabel, getAssetTypeLabel as getAssetSearchTypeLabel } from "../../../utils/assetDisplay";
 import UserMenu from "../../UserMenu";
 import ProjectAreaSelector from "../projects/ProjectAreaSelector";
 import { useDeviceLayout } from "../responsive/useDeviceLayout";
@@ -35,31 +36,6 @@ type Props = {
   onClearProject?: () => void;
 };
 
-function getAssetSearchLabel(asset: SavedMapAsset): string {
-  const item = asset as any;
-  return String(
-    item.name ||
-      item.label ||
-      item.jointName ||
-      item.address ||
-      item.properties?.address ||
-      item.uprn ||
-      item.UPRN ||
-      asset.id ||
-      "Asset",
-  );
-}
-
-function getAssetSearchTypeLabel(asset: SavedMapAsset): string {
-  const item = asset as any;
-  const typeText = String(
-    item.assetType || item.type || item.jointType || item.homeType || "asset",
-  );
-
-  return typeText
-    .replace(/-/g, " ")
-    .replace(/\b\w/g, (match) => match.toUpperCase());
-}
 
 export default function MapToolbar({
   showAssetPanelButton,

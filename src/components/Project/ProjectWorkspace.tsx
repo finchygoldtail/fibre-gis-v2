@@ -1,3 +1,4 @@
+import { getTuplePathDistanceMeters } from "../../utils/mapMeasure";
 import React, { useEffect, useMemo, useState } from "react";
 import WorkspaceMap, { type WorkspaceLayerVisibility } from "./WorkspaceMap";
 import type { OpenreachLayerVisibility } from "../map/OpenreachOverlayLayer";
@@ -5,6 +6,7 @@ import AssetIntelligencePanel from "./AssetIntelligencePanel";
 import TraceTopologyPanel from "../topology/TraceTopologyPanel";
 import WorkspaceTabContent from "./workspace/WorkspaceTabContent";
 import type { SavedMapAsset } from "../map/types";
+import { getAssetSearchText as assetSearchText } from "../../utils/assetDisplay";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../firebase";
 import { auditAreaAssets, type AuditIssue } from "../../services/areaAudit";
@@ -1043,27 +1045,6 @@ function getWorkspaceAssetType(
   );
 }
 
-function assetSearchText(asset: SavedMapAsset): string {
-  const item = asset as any;
-  return [
-    item.id,
-    item.assetId,
-    item.name,
-    item.jointName,
-    item.label,
-    item.cableId,
-    item.cableName,
-    item.assetType,
-    item.type,
-    item.jointType,
-    item.cableType,
-    item.address,
-    item.uprn,
-    item.status,
-  ]
-    .map((value) => String(value ?? "").toLowerCase())
-    .join(" ");
-}
 
 type MappingRowsByAssetId = Record<string, any[][]>;
 
@@ -1245,38 +1226,7 @@ function formatDistance(meters: number | undefined) {
 
 
 function getLineDistanceMeters(points: [number, number][]): number {
-  if (!Array.isArray(points) || points.length < 2) return 0;
-
-  const toRad = (value: number) => (value * Math.PI) / 180;
-  const earthRadiusMeters = 6371000;
-  let total = 0;
-
-  for (let index = 1; index < points.length; index += 1) {
-    const [lat1, lng1] = points[index - 1];
-    const [lat2, lng2] = points[index];
-
-    if (
-      !Number.isFinite(lat1) ||
-      !Number.isFinite(lng1) ||
-      !Number.isFinite(lat2) ||
-      !Number.isFinite(lng2)
-    ) {
-      continue;
-    }
-
-    const dLat = toRad(lat2 - lat1);
-    const dLng = toRad(lng2 - lng1);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(toRad(lat1)) *
-        Math.cos(toRad(lat2)) *
-        Math.sin(dLng / 2) *
-        Math.sin(dLng / 2);
-
-    total += earthRadiusMeters * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  }
-
-  return total;
+  return getTuplePathDistanceMeters(points);
 }
 
 function getWorkspaceAssetRouteLengthMeters(asset: SavedMapAsset): number {

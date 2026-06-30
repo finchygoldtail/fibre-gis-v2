@@ -14,7 +14,7 @@ const MIN_ZOOM_CABLES = 14;
 const MIN_ZOOM_OR_ROUTES = 15;
 const MIN_ZOOM_OR_POINTS = 16;
 const MIN_ZOOM_HOMES = 17;
-const MIN_ZOOM_DROP_CABLES = 18;
+const MIN_ZOOM_DROP_CABLES = 17;
 
 function boundsWithPadding(bounds: OsmBounds | null, padding = VIEWPORT_PADDING_DEGREES): OsmBounds | null {
   if (!bounds) return null;

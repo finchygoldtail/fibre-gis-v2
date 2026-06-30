@@ -1,8 +1,12 @@
+import { getTupleDistanceMeters as distanceBetweenLatLngMeters } from "../../utils/mapMeasure";
 import React, { useMemo, useState } from "react";
 import { Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
+import { getPaddedRenderBounds, isLatLngInsideRenderBounds } from "./utils/renderBounds";
 import type { SavedMapAsset } from "./types";
+import { getAssetTypeLabel } from "../../utils/assetDisplay";
 import { buildNetworkState } from "../../services/network";
+import { getDpCapacitySummary } from "../../services/dpIntelligence";
 import {
   getPiaQaIconForAsset,
   getPiaQaStatusLabel,
@@ -335,25 +339,6 @@ function isVisible(asset: SavedMapAsset, visibleLayers: LayerVisibility): boolea
   }
 }
 
-function getAssetTypeLabel(asset: SavedMapAsset): string {
-  switch (asset.assetType) {
-    case "street-cab":
-      return "Street Cab";
-    case "pole":
-      return "Pole";
-    case "distribution-point":
-      return "Distribution Point";
-    case "chamber":
-      return "Chamber";
-    case "home":
-      return "Home";
-    case "cable":
-      return asset.cableType || "Cable";
-    default:
-      return asset.jointType || "AG Joint";
-  }
-}
-
 function infoRow(label: string, value?: string | number | null) {
   if (value === undefined || value === null || value === "") return null;
 
@@ -509,10 +494,16 @@ function getHomeConnectionStatus(
   return dropStatus === "live" ? "live" : "connected";
 }
 
+const homeLiveIcon = createHomeIcon("#16a34a", "#064e3b", "rgba(22, 163, 74, 0.85)");
+const homeConnectedIcon = createHomeIcon("#f59e0b", "#92400e", "rgba(245, 158, 11, 0.85)");
+const homeUnconnectedIcon = createHomeIcon("#ef4444", "#7f1d1d", "rgba(239, 68, 68, 0.95)");
+const homeMoveSelectedIcon = createHomeIcon("#38bdf8", "#075985");
+const homePositionMoveIcon = createHomeIcon("#38bdf8", "#075985", "rgba(56, 189, 248, 0.95)");
+
 function getHomeIconForStatus(status: "unconnected" | "connected" | "live") {
-  if (status === "live") return createHomeIcon("#16a34a", "#064e3b", "rgba(22, 163, 74, 0.85)");
-  if (status === "connected") return createHomeIcon("#f59e0b", "#92400e", "rgba(245, 158, 11, 0.85)");
-  return createHomeIcon("#ef4444", "#7f1d1d", "rgba(239, 68, 68, 0.95)");
+  if (status === "live") return homeLiveIcon;
+  if (status === "connected") return homeConnectedIcon;
+  return homeUnconnectedIcon;
 }
 
 function getHomeConnectedDp(home: SavedMapAsset, allAssets: SavedMapAsset[]): SavedMapAsset | null {
@@ -545,6 +536,96 @@ function getDistributionPoints(allAssets: SavedMapAsset[]): SavedMapAsset[] {
   return allAssets
     .filter((asset) => asset.assetType === "distribution-point")
     .sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
+}
+
+
+type HomeRenderIndexes = {
+  homeStatusById: Map<string, "unconnected" | "connected" | "live">;
+  connectedDpByHomeId: Map<string, SavedMapAsset | null>;
+};
+
+function getDropEndpointIds(drop: any): { fromId: string; toId: string } {
+  return {
+    fromId: String(drop?.fromAssetId || drop?.fromId || drop?.sourceAssetId || drop?.sourceId || "").trim(),
+    toId: String(drop?.toAssetId || drop?.toId || drop?.targetAssetId || drop?.targetId || "").trim(),
+  };
+}
+
+function buildHomeRenderIndexes(allAssets: SavedMapAsset[]): HomeRenderIndexes {
+  const homeIds = new Set<string>();
+  const dpById = new Map<string, SavedMapAsset>();
+  const liveDropHomeIds = new Set<string>();
+  const connectedDpIdByHomeId = new Map<string, string>();
+
+  allAssets.forEach((asset) => {
+    if (asset.assetType === "home") {
+      homeIds.add(asset.id);
+      return;
+    }
+
+    if (asset.assetType === "distribution-point") {
+      dpById.set(asset.id, asset);
+      return;
+    }
+  });
+
+  allAssets.forEach((asset) => {
+    if (!isDropCable(asset)) return;
+
+    const { fromId, toId } = getDropEndpointIds(asset as any);
+    if (!fromId || !toId) return;
+
+    const fromIsHome = homeIds.has(fromId);
+    const toIsHome = homeIds.has(toId);
+    const fromIsDp = dpById.has(fromId);
+    const toIsDp = dpById.has(toId);
+
+    const homeId = fromIsHome ? fromId : toIsHome ? toId : "";
+    const dpId = fromIsDp ? fromId : toIsDp ? toId : "";
+    if (!homeId) return;
+
+    if (dpId && !connectedDpIdByHomeId.has(homeId)) {
+      connectedDpIdByHomeId.set(homeId, dpId);
+    }
+
+    const dropStatus = normaliseStatus(
+      (asset as any).customerStatus || (asset as any).homeStatus || (asset as any).status,
+    );
+
+    if (dropStatus === "live") {
+      liveDropHomeIds.add(homeId);
+    }
+  });
+
+  const homeStatusById = new Map<string, "unconnected" | "connected" | "live">();
+  const connectedDpByHomeId = new Map<string, SavedMapAsset | null>();
+
+  allAssets.forEach((asset) => {
+    if (asset.assetType !== "home") return;
+
+    const ownStatus = normaliseStatus(
+      (asset as any).customerStatus ||
+        (asset as any).homeStatus ||
+        (asset as any).status ||
+        (asset as any).buildStatus,
+    );
+
+    const manualDpId = String((asset as any).connectedDpId || "").trim();
+    const metadataConnection = String((asset as any).connection || "").toLowerCase();
+    const dropDpId = connectedDpIdByHomeId.get(asset.id) || "";
+    const connectedDpId = manualDpId || dropDpId;
+
+    const status = ownStatus === "live" || liveDropHomeIds.has(asset.id)
+      ? "live"
+      : connectedDpId || metadataConnection === "connected"
+        ? "connected"
+        : "unconnected";
+
+    homeStatusById.set(asset.id, status);
+    connectedDpByHomeId.set(asset.id, connectedDpId ? dpById.get(connectedDpId) || null : null);
+  });
+
+  return { homeStatusById, connectedDpByHomeId };
 }
 
 function normaliseAssetRef(value: unknown): string {
@@ -842,31 +923,21 @@ function getDpUsage(
       "",
   ).toUpperCase();
 
-  const isAfn = closureType.includes("AFN");
   const isMdu = closureType.includes("MDU");
-  const savedCapacity = getSavedDpCapacity(dp as any, dpDetails, matchingDpState);
   const savedUsed = getSavedDpUsedPorts(dp as any, dpDetails, matchingDpState);
-  const mduFeedFibres = readPositiveNumber(
-    mduDetails?.mduFibres,
-    mduDetails?.feedFibres,
-    mduDetails?.inputFibreCount,
-    dpDetails?.mduFibres,
-    (dp as any)?.mduFibres,
-  );
-
-  // AFN/SB capacity is local splitter inputs × 8 where the route is present.
-  // MDU Direct Feed capacity is not a port count: it is the number of live
-  // feed fibres wrapped up ready for splicing into the MDU building.
-  const capacity = isMdu
-    ? mduFeedFibres || savedCapacity || connectedHomeKeys.size || 0
-    : isAfn && splitterFibres.length
-      ? splitterFibres.length * 8
-      : savedCapacity || connectedHomeKeys.size || 16;
 
   // Prefer actual loaded homes/drop endpoints. If the main map has not loaded
   // homes for the project, fall back to the saved workspace/intelligence count.
+  // Capacity is now calculated through the shared DP intelligence service so
+  // popups, editor panels and workspace panels stay aligned.
   const used = connectedHomeKeys.size || savedUsed;
-  const free = Math.max(0, capacity - used);
+  const capacitySummary = getDpCapacitySummary(dp, allAssets, {
+    connectedHomeCount: used,
+    splitterInputCount: splitterFibres.length,
+    splitterOutputsPerInput: 8,
+  });
+  const capacity = capacitySummary.capacity;
+  const free = capacitySummary.free;
 
   return {
     capacity,
@@ -936,7 +1007,12 @@ function buildParentSbPopupSummary(
 }
 
 
-function getIconForAsset(asset: SavedMapAsset, allAssets: SavedMapAsset[], visibleLayers?: LayerVisibility) {
+function getIconForAsset(
+  asset: SavedMapAsset,
+  allAssets: SavedMapAsset[],
+  visibleLayers?: LayerVisibility,
+  cachedHomeStatus?: "unconnected" | "connected" | "live",
+) {
   if (asset.assetType === "distribution-point") {
     return createSquareIcon(getDistributionPointColor(asset), "#ffffff");
   }
@@ -946,15 +1022,21 @@ function getIconForAsset(asset: SavedMapAsset, allAssets: SavedMapAsset[], visib
   }
   if (asset.assetType === "chamber") return chamberIcon;
   if (asset.assetType === "pole") return poleIcon;
-  if (asset.assetType === "home") return getHomeIconForStatus(getHomeConnectionStatus(asset, allAssets));
+  if (asset.assetType === "home") return getHomeIconForStatus(cachedHomeStatus || getHomeConnectionStatus(asset, allAssets));
   return agJointIcon;
 }
 
 
+const homeClusterIconCache = new Map<string, L.DivIcon>();
+const homeStackIconCache = new Map<string, L.DivIcon>();
+
 function createHomeClusterIcon(count: number) {
   const size = count >= 100 ? 44 : count >= 25 ? 38 : 32;
+  const cacheKey = `${size}:${count}`;
+  const cached = homeClusterIconCache.get(cacheKey);
+  if (cached) return cached;
 
-  return L.divIcon({
+  const icon = L.divIcon({
     className: "",
     html: `
       <div style="
@@ -975,6 +1057,9 @@ function createHomeClusterIcon(count: number) {
     iconAnchor: [size / 2, size / 2],
     popupAnchor: [0, -size / 2],
   });
+
+  homeClusterIconCache.set(cacheKey, icon);
+  return icon;
 }
 
 type HomeCluster = {
@@ -992,24 +1077,13 @@ type HomeStack = {
 
 const HOME_STACK_DISTANCE_METERS = 1.75;
 
-function distanceBetweenLatLngMeters(a: [number, number], b: [number, number]): number {
-  const radius = 6371000;
-  const toRad = (value: number) => (value * Math.PI) / 180;
-  const dLat = toRad(b[0] - a[0]);
-  const dLng = toRad(b[1] - a[1]);
-  const lat1 = toRad(a[0]);
-  const lat2 = toRad(b[0]);
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-
-  return 2 * radius * Math.asin(Math.sqrt(h));
-}
-
 function createHomeStackIcon(count: number) {
   const size = count >= 10 ? 42 : 36;
+  const cacheKey = `${size}:${count}`;
+  const cached = homeStackIconCache.get(cacheKey);
+  if (cached) return cached;
 
-  return L.divIcon({
+  const icon = L.divIcon({
     className: "",
     html: `
       <div style="
@@ -1030,6 +1104,9 @@ function createHomeStackIcon(count: number) {
     iconAnchor: [size / 2, size / 2],
     popupAnchor: [0, -size / 2],
   });
+
+  homeStackIconCache.set(cacheKey, icon);
+  return icon;
 }
 
 function getHomeDisplayName(home: SavedMapAsset): string {
@@ -1048,33 +1125,64 @@ function getHomeDisplayName(home: SavedMapAsset): string {
 }
 
 function groupStackedHomeAssets(homes: SavedMapAsset[]): HomeStack[] {
-  const remaining = [...homes];
+  const positionsById = new Map<string, [number, number]>();
+  const buckets = new Map<string, SavedMapAsset[]>();
+  const cellSizeMeters = HOME_STACK_DISTANCE_METERS;
+  const metersPerDegreeLat = 111_320;
+
+  homes.forEach((home) => {
+    const position = getPointLatLng(home);
+    if (!position) return;
+
+    positionsById.set(home.id, position);
+    const [lat, lng] = position;
+    const metersPerDegreeLng = Math.max(1, metersPerDegreeLat * Math.cos((lat * Math.PI) / 180));
+    const x = Math.floor((lng * metersPerDegreeLng) / cellSizeMeters);
+    const y = Math.floor((lat * metersPerDegreeLat) / cellSizeMeters);
+    const key = `${x}:${y}`;
+    const bucket = buckets.get(key) || [];
+    bucket.push(home);
+    buckets.set(key, bucket);
+  });
+
+  const visited = new Set<string>();
   const stacks: HomeStack[] = [];
 
-  while (remaining.length) {
-    const seed = remaining.shift()!;
-    const seedPosition = getPointLatLng(seed);
-    if (!seedPosition) continue;
+  homes.forEach((seed) => {
+    if (visited.has(seed.id)) return;
 
-    const group = [seed];
+    const seedPosition = positionsById.get(seed.id);
+    if (!seedPosition) return;
 
-    for (let index = remaining.length - 1; index >= 0; index -= 1) {
-      const candidate = remaining[index];
-      const candidatePosition = getPointLatLng(candidate);
-      if (!candidatePosition) continue;
+    const [seedLat, seedLng] = seedPosition;
+    const metersPerDegreeLng = Math.max(1, metersPerDegreeLat * Math.cos((seedLat * Math.PI) / 180));
+    const seedX = Math.floor((seedLng * metersPerDegreeLng) / cellSizeMeters);
+    const seedY = Math.floor((seedLat * metersPerDegreeLat) / cellSizeMeters);
+    const group: SavedMapAsset[] = [seed];
+    visited.add(seed.id);
 
-      if (distanceBetweenLatLngMeters(seedPosition, candidatePosition) <= HOME_STACK_DISTANCE_METERS) {
-        group.push(candidate);
-        remaining.splice(index, 1);
+    for (let dx = -1; dx <= 1; dx += 1) {
+      for (let dy = -1; dy <= 1; dy += 1) {
+        const bucket = buckets.get(`${seedX + dx}:${seedY + dy}`) || [];
+        bucket.forEach((candidate) => {
+          if (candidate.id === seed.id || visited.has(candidate.id)) return;
+          const candidatePosition = positionsById.get(candidate.id);
+          if (!candidatePosition) return;
+
+          if (distanceBetweenLatLngMeters(seedPosition, candidatePosition) <= HOME_STACK_DISTANCE_METERS) {
+            group.push(candidate);
+            visited.add(candidate.id);
+          }
+        });
       }
     }
 
-    if (group.length < 2) continue;
+    if (group.length < 2) return;
 
     let latTotal = 0;
     let lngTotal = 0;
     group.forEach((home) => {
-      const position = getPointLatLng(home);
+      const position = positionsById.get(home.id);
       if (!position) return;
       latTotal += position[0];
       lngTotal += position[1];
@@ -1085,7 +1193,7 @@ function groupStackedHomeAssets(homes: SavedMapAsset[]): HomeStack[] {
       assets: group,
       position: [latTotal / group.length, lngTotal / group.length],
     });
-  }
+  });
 
   return stacks;
 }
@@ -1232,7 +1340,19 @@ React.useEffect(() => {
     style.remove();
   };
 }, []);
+  const renderBounds = useMemo(() => getPaddedRenderBounds(mapView.bounds), [mapView.bounds]);
   const networkState = useMemo(() => buildNetworkState(assets as any), [assets]);
+
+  // =====================================================
+  // PERFORMANCE PHASE 3 — MARKER RENDER INDEXES
+  // Build expensive lookup data once per asset change instead of re-scanning
+  // the full asset list for every visible marker/popup render.
+  // =====================================================
+  const distributionPoints = useMemo(() => getDistributionPoints(assets), [assets]);
+
+  const homeRenderIndexes = useMemo(() => buildHomeRenderIndexes(assets), [assets]);
+  const homeStatusById = homeRenderIndexes.homeStatusById;
+  const homeConnectedDpById = homeRenderIndexes.connectedDpByHomeId;
 
   useMapEvents({
     moveend: () => setMapView({ zoom: map.getZoom(), bounds: map.getBounds() }),
@@ -1253,6 +1373,10 @@ React.useEffect(() => {
   return assets.filter((asset) => {
     if (asset.geometry?.type !== "Point") return false;
 
+    const latLng = getPointLatLng(asset);
+    if (!latLng) return false;
+    if (!isLatLngInsideRenderBounds(latLng, renderBounds)) return false;
+
     // Openreach / PIA reference assets render in OpenreachOverlayLayer only.
     // They must never appear as editable blue/default map markers here.
     if (isReadOnlyOpenreachAsset(asset)) return false;
@@ -1261,10 +1385,7 @@ React.useEffect(() => {
     if (asset.assetType === "home") {
       if (!homesEnabled) return false;
 
-      const latLng = getPointLatLng(asset);
-      if (!latLng) return false;
-
-      const homeStatus = getHomeConnectionStatus(asset, assets);
+      const homeStatus = homeStatusById.get(asset.id) || "unconnected";
       if (homeStatus === "live" && layers.homesLive === false) return false;
       if (homeStatus === "connected" && layers.homesConnected === false) return false;
       if (homeStatus === "unconnected" && layers.homesUnconnected === false) return false;
@@ -1285,12 +1406,33 @@ React.useEffect(() => {
 
     return true;
   });
-}, [assets, visibleLayers, mapView]);
+}, [assets, visibleLayers, mapView.zoom, renderBounds, homeStatusById]);
 
   const nonHomePointAssets = useMemo(
     () => pointAssets.filter((asset) => asset.assetType !== "home"),
     [pointAssets]
   );
+
+  const visibleDpAssets = useMemo(
+    () => nonHomePointAssets.filter((asset) => asset.assetType === "distribution-point"),
+    [nonHomePointAssets],
+  );
+
+  const dpUsageById = useMemo(() => {
+    const next = new Map<string, ReturnType<typeof getDpUsage>>();
+    visibleDpAssets.forEach((dp) => {
+      next.set(dp.id, getDpUsage(dp, assets, networkState));
+    });
+    return next;
+  }, [visibleDpAssets, assets, networkState]);
+
+  const parentSbSummaryById = useMemo(() => {
+    const next = new Map<string, ParentSbPopupSummary | null>();
+    visibleDpAssets.forEach((dp) => {
+      next.set(dp.id, buildParentSbPopupSummary(dp, assets));
+    });
+    return next;
+  }, [visibleDpAssets, assets]);
 
   const homePointAssets = useMemo(
     () => pointAssets.filter((asset) => asset.assetType === "home"),
@@ -1324,20 +1466,20 @@ React.useEffect(() => {
     const isSelectedMoveHome = moveHomesMode && asset.assetType === "home" && selectedMoveHomeIds.includes(asset.id);
     const isPositionMoveHome = asset.assetType === "home" && positionMoveHomeId === asset.id;
     const isSelectedSurveyDeleteHome = surveyDeleteHomesMode && asset.assetType === "home" && selectedSurveyDeleteHomeIds.includes(asset.id);
+    const cachedHomeStatus = asset.assetType === "home" ? homeStatusById.get(asset.id) : undefined;
     const baseIcon = isSelectedSurveyDeleteHome
-  ? createHomeIcon("#ef4444", "#7f1d1d")
+  ? homeUnconnectedIcon
   : isPositionMoveHome
-    ? createHomeIcon("#38bdf8", "#075985", "rgba(56, 189, 248, 0.95)")
+    ? homePositionMoveIcon
     : isSelectedMoveHome
-      ? createHomeIcon("#38bdf8", "#075985")
-      : getIconForAsset(asset, assets, visibleLayers);
+      ? homeMoveSelectedIcon
+      : getIconForAsset(asset, assets, visibleLayers, cachedHomeStatus);
 
 const icon =
   asset.id === highlightedAssetId ? createHighlightedIcon(baseIcon as L.DivIcon) : baseIcon;
-    const distributionPoints = getDistributionPoints(assets);
-    const connectedDp = asset.assetType === "home" ? getHomeConnectedDp(asset, assets) : null;
-    const dpUsage = asset.assetType === "distribution-point" ? getDpUsage(asset, assets, networkState) : null;
-    const parentSbSummary = asset.assetType === "distribution-point" ? buildParentSbPopupSummary(asset, assets) : null;
+    const connectedDp = asset.assetType === "home" ? homeConnectedDpById.get(asset.id) || null : null;
+    const dpUsage = asset.assetType === "distribution-point" ? dpUsageById.get(asset.id) || null : null;
+    const parentSbSummary = asset.assetType === "distribution-point" ? parentSbSummaryById.get(asset.id) || null : null;
     const connectionMode = String((asset as any).connectionMode || "auto").toLowerCase() === "manual" ? "manual" : "auto";
 
     return (
@@ -1635,7 +1777,7 @@ const icon =
             </div>
             <div style={{ ...sectionStyle, maxHeight: 260, overflowY: "auto" }}>
               {stack.assets.map((home, index) => {
-                const status = getHomeConnectionStatus(home, assets);
+                const status = homeStatusById.get(home.id) || "unconnected";
                 const position = getPointLatLng(home);
                 const isSelectedMoveHome = moveHomesMode && selectedMoveHomeIds.includes(home.id);
                 const isPositionMoveHome = positionMoveHomeId === home.id;
