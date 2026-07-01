@@ -41,6 +41,7 @@ import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import AreaPolygonsLayer from "./map/AreaPolygonsLayer";
 import AdminPanels from "./map/panels/AdminPanels";
 import WorkspacePanels from "./map/panels/WorkspacePanels";
+import TopologyPanel from "./topology/TopologyPanel";
 import { usePolygonAdminTools } from "./map/admin/usePolygonAdminTools";
 import { useAreaRepairTools } from "./map/admin/useAreaRepairTools";
 import { useOrReferenceAdminTools } from "./map/admin/useOrReferenceAdminTools";
@@ -115,6 +116,7 @@ import { useProjectWorkspaceStats } from "./map/workspace/useProjectWorkspaceSta
 import { useLayerCounts } from "./map/layers/useLayerCounts";
 import { useCableAllocationOptions } from "./map/cables/useCableAllocationOptions";
 import { useCableWorkflow } from "./map/cables/useCableWorkflow";
+import { findCableEndpointAssets } from "./map/cableUsage";
 import {
   useMapDrawingState,
   type BasemapType,
@@ -175,6 +177,22 @@ import {
 import { withAreaAssetIndex } from "../services/areaAssetIndex";
 export type SavedJoint = SavedMapAsset;
 export type { SavedMapAsset };
+
+function exchangeToNetworkAsset(exchange: ExchangeAsset): SavedMapAsset {
+  return {
+    id: exchange.id,
+    name: exchange.name || exchange.code || "Exchange",
+    assetType: "exchange" as any,
+    jointType: "Exchange",
+    code: exchange.code,
+    notes: exchange.notes,
+    projectId: exchange.projectId,
+    geometry: {
+      type: "Point",
+      coordinates: [exchange.lat, exchange.lng],
+    },
+  } as SavedMapAsset;
+}
 
 /* Fix default leaflet icons */
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -723,6 +741,11 @@ export default function JointMapManager({
     handleDeleteExchange,
   } = useExchangeController();
 
+  const exchangeNetworkAssets = useMemo(
+    () => savedExchanges.map(exchangeToNetworkAsset),
+    [savedExchanges],
+  );
+
   // =====================================================
   // MODE AWARE AUDIT SYSTEM
   // =====================================================
@@ -854,7 +877,7 @@ export default function JointMapManager({
     [normalizedSavedJoints],
   );
 
-  const { hydratedOperationalSavedJoints } = useJointMappings(
+  const { hydratedOperationalSavedJoints, isLoadingJointMappings } = useJointMappings(
     operationalSavedJoints,
   );
 
@@ -1059,6 +1082,21 @@ export default function JointMapManager({
     visibleLayers,
   });
 
+  const networkSnapCandidateAssets = useMemo(
+    () => [...snapCandidateAssets, ...exchangeNetworkAssets],
+    [snapCandidateAssets, exchangeNetworkAssets],
+  );
+
+  const renderProjectAssetsWithExchanges = useMemo(
+    () => [...renderProjectAssets, ...exchangeNetworkAssets],
+    [renderProjectAssets, exchangeNetworkAssets],
+  );
+
+  const allNetworkAssetsWithExchanges = useMemo(
+    () => [...allMapAssets, ...exchangeNetworkAssets],
+    [allMapAssets, exchangeNetworkAssets],
+  );
+
   const offlineFieldMode = useOfflineFieldMode({
     projectId: activeProjectId,
     assets: visibleProjectAssets,
@@ -1212,7 +1250,7 @@ export default function JointMapManager({
   } = useCableWorkflow({
     jointName,
     savedJoints,
-    snapCandidateAssets,
+    snapCandidateAssets: networkSnapCandidateAssets,
     snapEnabled,
     setEditingAssetId,
     setAssetType,
@@ -1542,7 +1580,7 @@ export default function JointMapManager({
           ? traceReferenceDuctRouteBetweenPoints(
               draftCablePoints[0],
               draftCablePoints[draftCablePoints.length - 1],
-              snapCandidateAssets,
+              networkSnapCandidateAssets,
               25,
               selectedReferenceDuctId,
             )
@@ -1563,6 +1601,12 @@ export default function JointMapManager({
         ductTracePoints ?? (await routePointsToRoads(draftCablePoints)),
       );
 
+      const endpointAssets = findCableEndpointAssets(
+        allNetworkAssetsWithExchanges,
+        routedCoordinates.map(([lat, lng]) => ({ lat, lng })),
+        25,
+      );
+
       const cableRecord = {
         id: crypto.randomUUID(),
         name: cableName,
@@ -1574,6 +1618,14 @@ export default function JointMapManager({
         fibreCount,
         installMethod,
         parentCableId,
+        fromAssetId: endpointAssets.fromAssetId,
+        toAssetId: endpointAssets.toAssetId,
+        startAssetId: endpointAssets.fromAssetId,
+        endAssetId: endpointAssets.toAssetId,
+        fromAssetType: (endpointAssets.fromAsset as any)?.assetType,
+        toAssetType: (endpointAssets.toAsset as any)?.assetType,
+        fromAssetName: (endpointAssets.fromAsset as any)?.name,
+        toAssetName: (endpointAssets.toAsset as any)?.name,
         allocatedInputFibres,
         routeMode: ductTracePoints ? "selected-or-duct" : "road",
         referenceDuctId: ductTracePoints
@@ -1675,9 +1727,19 @@ export default function JointMapManager({
       });
 
       setSavedJoints((prev) => {
-        const markedCableRecord = markAssetForLiveSync(cableRecord, true);
+        // Keep newly drawn cables inside the active Project Workspace view.
+        // Without the area index stamp the cable is saved to state, but the
+        // project-area filter can hide it immediately after Finish Cable/reset,
+        // which makes it look like the cable has been removed from the map.
+        const markedCableRecord = markAssetForLiveSync(
+          withAreaAssetIndex(cableRecord, activeProjectId, activeProjectAreaName),
+          true,
+        );
         const markedAutoDrops = autoDrops.map((asset) =>
-          markAssetForLiveSync(asset, true),
+          markAssetForLiveSync(
+            withAreaAssetIndex(asset, activeProjectId, activeProjectAreaName),
+            true,
+          ),
         );
 
         const updatedExistingAssets = prev.map((asset) => {
@@ -3289,6 +3351,12 @@ export default function JointMapManager({
             : "Whole network"}
         </div>
 
+        <TopologyPanel
+          assets={allNetworkAssetsWithExchanges}
+          selectedAsset={currentEditingAsset}
+          isLoadingJointMappings={isLoadingJointMappings}
+        />
+
         {canUseSurveyTools && (
           <details style={card}>
             <summary style={sectionSummary}>Survey Cleanup</summary>
@@ -3991,7 +4059,7 @@ export default function JointMapManager({
 
           <MapClickHandler
             mode={mapMode}
-            assets={snapCandidateAssets}
+            assets={networkSnapCandidateAssets}
             snapEnabled={snapEnabled}
             onPick={setPickedLocation}
             onMeasurePoint={(point) =>
@@ -4266,7 +4334,7 @@ export default function JointMapManager({
               Openreach poles/chambers appear as blue editable map pins. */}
 
           <CableLinesLayer
-            assets={renderProjectAssets}
+            assets={renderProjectAssetsWithExchanges}
             cablesVisible={visibleLayers.cables}
             visibleLayers={visibleLayers}
             showCableDistances={visibleLayers.cableDistances}

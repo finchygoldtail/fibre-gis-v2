@@ -77,6 +77,11 @@ const SNAP_TARGET_TYPES = [
   "street-cabinet",
   "street-cab",
   "cabinet",
+  "exchange",
+  "meet-me-chamber",
+  "meet-me-lmj",
+  "meet-me",
+  "odf",
 ] as const;
 
 function getPointPosition(asset: SavedMapAsset): LatLngLiteral | null {

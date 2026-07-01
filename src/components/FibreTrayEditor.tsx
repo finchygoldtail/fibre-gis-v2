@@ -40,6 +40,7 @@ import { getBuildStatusColor } from "../services/statusColors";
 import { ContinuityViewer } from "./ContinuityViewer";
 import { LMJContinuityViewer } from "./LMJContinuityViewer";
 import LMJTrayView from "./LMJTrayView";
+import MeetMeTrayView from "./MeetMeTrayView";
 import MapView from "./MapView";
 import NetworkTreeView from "./NetworkTreeView";
 import JointMapManager, { type SavedJoint } from "./JointMapManager";
@@ -178,9 +179,12 @@ function safeJsonParse(value: any, fallback: any) {
   }
 }
 
+type EditorAssetType = "ag-joint" | "street-cab" | "meet-me";
+type EditorJointType = JointTypeLabel | "Meet Me Chamber";
+
 type PersistedProject = {
-  assetType: "ag-joint" | "street-cab";
-  jointType: JointTypeLabel;
+  assetType: EditorAssetType;
+  jointType: EditorJointType;
   model: FibreCell[];
   mappingRows: any[][];
   savedJoints: SavedJoint[];
@@ -188,12 +192,17 @@ type PersistedProject = {
   loadedFileName: string;
 };
 
-function isValidJointType(value: any): value is JointTypeLabel {
+function isValidJointType(value: any): value is EditorJointType {
   return (
     value === "CMJ (12 trays)" ||
     value === "MMJ (20 trays)" ||
-    value === "LMJ (40 trays)"
+    value === "LMJ (40 trays)" ||
+    value === "Meet Me Chamber"
   );
+}
+
+function isStandardJointType(value: EditorJointType): value is JointTypeLabel {
+  return value === "CMJ (12 trays)" || value === "MMJ (20 trays)" || value === "LMJ (40 trays)";
 }
 
 
@@ -400,8 +409,34 @@ function looksLikeStandardLmjRows(rows: any[][]): boolean {
   });
 }
 
-function detectJointTypeFromRows(rows: any[][]): JointTypeLabel {
+function looksLikeMeetMeRows(rows: any[][]): boolean {
   const text = extractAllText(rows).join(" ").toUpperCase();
+  const hasMeetMeName = text.includes("MEET ME") || text.includes("MEET-ME") || text.includes("MEETME");
+
+  const hasFibreToFibreRows = rows.some((row) => {
+    if (!Array.isArray(row)) return false;
+    const cableId = cleanCell(row[5]).toUpperCase();
+    const inputFibre = parseFibreNumber(row[6]);
+    const feederCable = cleanCell(row[7]).toUpperCase();
+    const outputFibre = parseFibreNumber(row[8]);
+
+    return Boolean(
+      (cableId.includes("EBCL") || cableId.includes("E-BCL") || cableId.includes("BCL")) &&
+        inputFibre !== null &&
+        feederCable &&
+        outputFibre !== null,
+    );
+  });
+
+  return hasMeetMeName || hasFibreToFibreRows;
+}
+
+function detectJointTypeFromRows(rows: any[][]): EditorJointType {
+  const text = extractAllText(rows).join(" ").toUpperCase();
+
+  if (looksLikeMeetMeRows(rows)) {
+    return "Meet Me Chamber";
+  }
 
   if (text.includes("LMJ") || looksLikeStandardLmjRows(rows)) {
     return "LMJ (40 trays)";
@@ -411,11 +446,15 @@ function detectJointTypeFromRows(rows: any[][]): JointTypeLabel {
   return "CMJ (12 trays)";
 }
 
-function detectAssetTypeFromRows(rows: any[][]): "ag-joint" | "street-cab" {
+function detectAssetTypeFromRows(rows: any[][]): EditorAssetType {
   const text = extractAllText(rows).join(" ").toUpperCase();
 
   if (text.includes("(PATCHING SC)") || text.includes("PATCHING SC")) {
     return "street-cab";
+  }
+
+  if (looksLikeMeetMeRows(rows)) {
+    return "meet-me";
   }
 
   return "ag-joint";
@@ -497,9 +536,7 @@ export const FibreTrayEditor: React.FC = () => {
     "editor" | "map" | "network" | "joint-map" | "changes"
   >("joint-map");
 
-  const [assetType, setAssetType] = useState<"ag-joint" | "street-cab">(
-    "ag-joint",
-  );
+  const [assetType, setAssetType] = useState<EditorAssetType>("ag-joint");
   const [loadedFileName, setLoadedFileName] = useState("");
   const [originalFile, setOriginalFile] = useState<File | null>(null);
 
@@ -511,7 +548,7 @@ export const FibreTrayEditor: React.FC = () => {
     null,
   );
 
-  const [jointType, setJointType] = useState<JointTypeLabel>("CMJ (12 trays)");
+  const [jointType, setJointType] = useState<EditorJointType>("CMJ (12 trays)");
   const [model, setModel] = useState<FibreCell[]>(() =>
     buildJoint("CMJ (12 trays)"),
   );
@@ -544,7 +581,8 @@ export const FibreTrayEditor: React.FC = () => {
   const updateModel = (fn: (prev: FibreCell[]) => FibreCell[]) =>
     setModel((prev) => fn(prev.map((f) => ({ ...f }))));
 
-  const cfg = JOINT_TYPES[jointType];
+  const standardJointType: JointTypeLabel = isStandardJointType(jointType) ? jointType : "LMJ (40 trays)";
+  const cfg = JOINT_TYPES[standardJointType];
   const mobileEditorScale =
     isMobileEditor && typeof window !== "undefined"
       ? Math.min(0.8, Math.max(0.48, window.innerWidth / 1500))
@@ -800,8 +838,12 @@ export const FibreTrayEditor: React.FC = () => {
     });
 
     const jt = (
-      joint.jointType in JOINT_TYPES ? joint.jointType : "CMJ (12 trays)"
-    ) as JointTypeLabel;
+      joint.jointType === "Meet Me Chamber"
+        ? "Meet Me Chamber"
+        : joint.jointType in JOINT_TYPES
+          ? joint.jointType
+          : "CMJ (12 trays)"
+    ) as EditorJointType;
 
     const persistedTrayModel = isPersistedTrayModel((joint as any).trayModel)
       ? cloneTrayModel((joint as any).trayModel)
@@ -809,6 +851,11 @@ export const FibreTrayEditor: React.FC = () => {
 
     if (isStreetCab) {
       setAssetType("street-cab");
+      setActiveView("editor");
+    } else if (jt === "Meet Me Chamber") {
+      setAssetType("meet-me");
+      setJointType(jt);
+      setModel(persistedTrayModel || buildJointForRows("LMJ (40 trays)", []));
       setActiveView("editor");
     } else {
       setAssetType("ag-joint");
@@ -830,7 +877,7 @@ export const FibreTrayEditor: React.FC = () => {
       setLoadedFileName(rows.length ? joint.name || "" : "");
       setMappingRows(rows);
 
-      if (!isStreetCab) {
+      if (!isStreetCab && jt !== "Meet Me Chamber") {
         if (persistedTrayModel) {
           const expandedPersistedModel = expandTrayModelToFibreCount(
             persistedTrayModel,
@@ -881,6 +928,7 @@ export const FibreTrayEditor: React.FC = () => {
           const isStreetCabAsset =
             asset.assetType === "street-cab" ||
             detectedAssetType === "street-cab";
+          const isMeetMeAsset = detectedAssetType === "meet-me" || detectedJointType === "Meet Me Chamber";
 
           const nextAsset: any = {
             ...asset,
@@ -888,7 +936,7 @@ export const FibreTrayEditor: React.FC = () => {
             // Do not overwrite from spreadsheet contents.
             name: asset.name,
             assetType: isStreetCabAsset ? "street-cab" : "ag-joint",
-            jointType: isStreetCabAsset ? "Street Cab" : detectedJointType,
+            jointType: isStreetCabAsset ? "Street Cab" : isMeetMeAsset ? "Meet Me Chamber" : detectedJointType,
             mappingRowsRef: true,
             mappingRowsCount: rows.length,
             mappingRowsSummary: {
@@ -935,7 +983,11 @@ export const FibreTrayEditor: React.FC = () => {
       setMoveSrc(null);
       setSearchTerm("");
 
-      if (detectedJointType === "LMJ (40 trays)") {
+      if (detectedJointType === "Meet Me Chamber") {
+        const base = buildJointForRows("LMJ (40 trays)", rows);
+        setJointType("Meet Me Chamber");
+        setModel(base);
+      } else if (detectedJointType === "LMJ (40 trays)") {
         const base = buildJoint(detectedJointType);
         applyLmjRowsToModel(rows, base, (row) => extractChain(row).join(" → "));
         setJointType(detectedJointType);
@@ -1225,9 +1277,10 @@ export const FibreTrayEditor: React.FC = () => {
     Joint type change
   ------------------------------------------------------------- */
   const handleJointTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const jt = e.target.value as JointTypeLabel;
+    const jt = e.target.value as EditorJointType;
     setJointType(jt);
-    setModel(buildJoint(jt));
+    setAssetType(jt === "Meet Me Chamber" ? "meet-me" : "ag-joint");
+    setModel(jt === "Meet Me Chamber" ? buildJointForRows("LMJ (40 trays)", mappingRows) : buildJoint(jt));
     setMoveSrc(null);
     setSelectedFibre(null);
     setSearchTerm("");
@@ -1413,16 +1466,25 @@ export const FibreTrayEditor: React.FC = () => {
         </div>
         <select
           value={assetType}
-          onChange={(e) =>
-            setAssetType(e.target.value as "ag-joint" | "street-cab")
-          }
+          onChange={(e) => {
+            const nextAssetType = e.target.value as EditorAssetType;
+            setAssetType(nextAssetType);
+            if (nextAssetType === "meet-me") {
+              setJointType("Meet Me Chamber");
+              setModel(buildJointForRows("LMJ (40 trays)", mappingRows));
+            } else if (nextAssetType === "ag-joint" && jointType === "Meet Me Chamber") {
+              setJointType("CMJ (12 trays)");
+              setModel(buildJoint("CMJ (12 trays)"));
+            }
+          }}
           style={{ width: "100%", padding: "0.35rem" }}
         >
           <option value="ag-joint">AG Joint</option>
           <option value="street-cab">Street Cab</option>
+          <option value="meet-me">Meet Me Chamber</option>
         </select>
 
-        {assetType === "ag-joint" && (
+        {assetType !== "street-cab" && (
           <>
             <label>Joint Type</label>
             <select
@@ -1433,9 +1495,10 @@ export const FibreTrayEditor: React.FC = () => {
               {(Object.keys(JOINT_TYPES) as JointTypeLabel[]).map((t) => (
                 <option key={t}>{t}</option>
               ))}
+              <option value="Meet Me Chamber">Meet Me Chamber</option>
             </select>
 
-            {jointType !== "LMJ (40 trays)" && (
+            {assetType === "ag-joint" && jointType !== "LMJ (40 trays)" && (
               <>
                 <label>Tray View</label>
                 <select
@@ -1587,7 +1650,7 @@ export const FibreTrayEditor: React.FC = () => {
 
         <small>Matches: {searchMatches.size}</small>
 
-        {assetType === "ag-joint" && (
+        {assetType !== "street-cab" && (
           <div style={{ display: "flex", gap: 8 }}>
             <button style={btnSecondary} onClick={() => setSearchTerm("")}>
               Clear Search
@@ -1609,7 +1672,7 @@ export const FibreTrayEditor: React.FC = () => {
           </div>
         )}
 
-        {assetType === "ag-joint" && (
+        {assetType !== "street-cab" && (
           <button style={btnDanger} onClick={handleClear}>
             Clear All Labels
           </button>
@@ -1619,7 +1682,7 @@ export const FibreTrayEditor: React.FC = () => {
           Clear Saved Project
         </button>
 
-        {assetType === "ag-joint" && moveMode && (
+        {assetType !== "street-cab" && moveMode && (
           <div
             style={{
               fontSize: "0.9rem",
@@ -1635,7 +1698,7 @@ export const FibreTrayEditor: React.FC = () => {
           </div>
         )}
 
-        {assetType === "ag-joint" && selectedFibre !== null && (
+        {assetType !== "street-cab" && selectedFibre !== null && (
           <div
             style={{
               fontSize: "0.9rem",
@@ -1698,7 +1761,14 @@ export const FibreTrayEditor: React.FC = () => {
               WebkitOverflowScrolling: "touch",
             }}
           >
-            {jointType === "LMJ (40 trays)" ? (
+            {jointType === "Meet Me Chamber" ? (
+              <MeetMeTrayView
+                mappingRows={mappingRows}
+                searchMatches={searchMatches}
+                selectedFibre={selectedFibre}
+                onSelectFibre={setSelectedFibre}
+              />
+            ) : jointType === "LMJ (40 trays)" ? (
               <LMJTrayView
                 model={model}
                 searchMatches={searchMatches}

@@ -11,6 +11,59 @@ type PolygonAsset = SavedMapAsset & {
 
 const DEFAULT_PADDING_METERS = 30;
 
+function normText(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function isLineCableAsset(asset: SavedMapAsset): boolean {
+  const item = asset as any;
+  const text = [
+    item.assetType,
+    item.type,
+    item.cableType,
+    item.category,
+    item.properties?.assetType,
+    item.properties?.type,
+    item.properties?.cableType,
+  ]
+    .map(normText)
+    .filter(Boolean)
+    .join(" ");
+
+  return asset.geometry?.type === "LineString" && (
+    text.includes("cable") ||
+    text.includes("feeder") ||
+    text.includes("link") ||
+    Boolean(item.fibreCount || item.fiberCount || item.installMethod)
+  );
+}
+
+function isDropCableAsset(asset: SavedMapAsset): boolean {
+  const item = asset as any;
+  const text = [
+    item.assetType,
+    item.type,
+    item.cableType,
+    item.category,
+    item.name,
+    item.label,
+    item.properties?.assetType,
+    item.properties?.type,
+    item.properties?.cableType,
+  ]
+    .map(normText)
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    text.includes("drop") ||
+    item.isDropCable === true ||
+    item.generatedBy === "dp-home-drop" ||
+    Boolean(item.connectedHomeId || item.homeId || item.properties?.connectedHomeId)
+  );
+}
+
+
 function toPoint(coord: [number, number]): LatLngLiteral {
   return { lat: coord[0], lng: coord[1] };
 }
@@ -147,10 +200,13 @@ export function filterAssetsForProjectArea(
 
   const bounds = getPolygonBounds(polygon);
 
-  return candidateAssets.filter((asset) => {
+  return assets.filter((asset) => {
     if (asset.assetType === "area") return false;
 
+    const isAssignedToThisArea = isAssetAssignedToProjectArea(asset, activeProjectArea);
+
     if (asset.geometry?.type === "Point") {
+      if (!isAssignedToThisArea) return false;
       const point = toPoint(asset.geometry.coordinates as [number, number]);
       return pointInBounds(point, bounds) && pointInPolygon(point, polygon);
     }
@@ -158,7 +214,18 @@ export function filterAssetsForProjectArea(
     if (asset.geometry?.type === "LineString") {
       const line = asset.geometry.coordinates as [number, number][];
       const inBounds = line.some((coord) => pointInBounds(toPoint(coord), bounds));
-      return inBounds && lineTouchesPolygon(line, polygon);
+      const touchesThisArea = inBounds && lineTouchesPolygon(line, polygon);
+
+      // Network feeder/link cables are allowed to cross AG boundaries.
+      // They should be visible in every workspace they pass through so the
+      // topology engine can trace BAS -> BAW -> exchange without duplicating
+      // the same cable. Drop cables remain area-scoped because they are tied
+      // to individual homes and DPs.
+      if (isLineCableAsset(asset) && !isDropCableAsset(asset)) {
+        return touchesThisArea;
+      }
+
+      return isAssignedToThisArea && touchesThisArea;
     }
 
     return false;
