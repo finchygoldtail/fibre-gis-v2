@@ -701,10 +701,14 @@ export const FibreTrayEditor: React.FC = () => {
         try {
           const restored = await loadMapAssetsFromFirestore();
 
-          lastFirebaseJsonRef.current = JSON.stringify(
+          const restoredJson = JSON.stringify(
             cleanSavedJointsForFirebase(restored),
           );
-          setSavedJoints(restored);
+          lastFirebaseJsonRef.current = restoredJson;
+          setSavedJoints((prev) => {
+            const prevJson = JSON.stringify(cleanSavedJointsForFirebase(prev));
+            return prevJson === restoredJson ? prev : restored;
+          });
         } catch (err) {
           console.error("Firestore map asset load failed:", err);
         } finally {
@@ -717,10 +721,14 @@ export const FibreTrayEditor: React.FC = () => {
         // Try one direct load before giving up, useful when rules/listener timing is odd.
         try {
           const restored = await loadMapAssetsFromFirestore();
-          lastFirebaseJsonRef.current = JSON.stringify(
+          const restoredJson = JSON.stringify(
             cleanSavedJointsForFirebase(restored),
           );
-          setSavedJoints(restored);
+          lastFirebaseJsonRef.current = restoredJson;
+          setSavedJoints((prev) => {
+            const prevJson = JSON.stringify(cleanSavedJointsForFirebase(prev));
+            return prevJson === restoredJson ? prev : restored;
+          });
         } catch (loadErr) {
           console.error("Firestore fallback map asset load failed:", loadErr);
         } finally {

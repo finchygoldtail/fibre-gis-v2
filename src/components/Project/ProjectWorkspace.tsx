@@ -1712,7 +1712,9 @@ export default function ProjectWorkspace({
     );
 
     if (!assetsWithSharedMappings.length) {
-      setMappingRowsByAssetId({});
+      setMappingRowsByAssetId((prev) =>
+        Object.keys(prev).length === 0 ? prev : {},
+      );
       return;
     }
 
@@ -1731,13 +1733,31 @@ export default function ProjectWorkspace({
       }),
     ).then((entries) => {
       if (cancelled) return;
-      setMappingRowsByAssetId(Object.fromEntries(entries));
+
+      const next = Object.fromEntries(entries);
+      const nextKey = entries
+        .map(([assetId, rows]) => `${assetId}:${rows.length}`)
+        .sort()
+        .join("|");
+
+      setMappingRowsByAssetId((prev) => {
+        const prevKey = Object.entries(prev)
+          .map(([assetId, rows]) => `${assetId}:${rows.length}`)
+          .sort()
+          .join("|");
+
+        return prevKey === nextKey ? prev : next;
+      });
     });
 
     return () => {
       cancelled = true;
     };
-  }, [mappingAssetKey, projectAssets]);
+    // Depend on the stable mapping key only. projectAssets can be a new array
+    // every render, and including it here caused the mapping load effect to
+    // set state repeatedly and trip React's maximum update depth guard.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mappingAssetKey]);
 
   const workspaceAssets = useMemo(() => {
     const enrichedAssets = enrichProjectAssetsWithMappings(projectAssets, mappingRowsByAssetId);
