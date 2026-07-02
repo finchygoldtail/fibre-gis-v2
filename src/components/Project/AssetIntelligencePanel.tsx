@@ -107,6 +107,10 @@ function isCable(asset: SavedMapAsset | null): boolean {
   return type.includes("cable") || asset?.geometry?.type === "LineString";
 }
 
+function isDesignCable(asset: SavedMapAsset | null): boolean {
+  return isCable(asset) && !isDropCable(asset);
+}
+
 function isJoint(asset: SavedMapAsset | null): boolean {
   const type = getAssetType(asset);
   return type.includes("joint") || type.includes("lmj") || type.includes("cmj") || type.includes("ag");
@@ -748,7 +752,7 @@ function findCableChain(
     const lookupPoint = direction === "upstream" ? firstPoint(current) : lastPoint(current);
 
     const nextCable = projectAssets.find((candidate) => {
-      if (!isCable(candidate) || seen.has(String(candidate.id))) return false;
+      if (!isDesignCable(candidate) || seen.has(String(candidate.id))) return false;
       const candidateEndpoints = getCableEndpointIds(candidate);
       const candidateOppositeIds = direction === "upstream" ? candidateEndpoints.toIds : candidateEndpoints.fromIds;
       const explicitTouch = lookupIds.length && candidateOppositeIds.some((id) => lookupIds.map((value) => value.toLowerCase()).includes(id.toLowerCase()));
@@ -797,7 +801,7 @@ function buildCablePathIntelligence(asset: SavedMapAsset | null, projectAssets: 
     routeWarnings: [],
   };
 
-  if (!asset || !isCable(asset)) return empty;
+  if (!asset || !isDesignCable(asset)) return empty;
 
   const cableIds = getCandidateIds(asset);
   const { fromIds, toIds } = getCableEndpointIds(asset);
@@ -855,7 +859,7 @@ function buildCablePathIntelligence(asset: SavedMapAsset | null, projectAssets: 
 
   const branchCables = uniqueAssets([
     ...projectAssets
-      .filter((candidate) => candidate.id !== asset.id && isCable(candidate))
+      .filter((candidate) => candidate.id !== asset.id && isDesignCable(candidate))
       .filter((candidate) => {
         const data = candidate as any;
         if (assetMatchesAnyId(asset, [data.parentCableId, data.parentCableName, data.throughCableId, data.sourceCable, data.inCable].map(normaliseId))) return true;
@@ -1274,7 +1278,7 @@ export default function AssetIntelligencePanel({
         </PanelSection>
       )}
 
-      {isCable(asset) && (
+      {isDesignCable(asset) && (
         <PanelSection title="Cable Path Intelligence">
           <InfoRow label="Path Health" value={cablePath.pathHealth} />
           <InfoRow label="Upstream" value={cablePath.upstreamAsset ? getAssetName(cablePath.upstreamAsset) : "—"} />

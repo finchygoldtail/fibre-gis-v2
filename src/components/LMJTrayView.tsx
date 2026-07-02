@@ -37,46 +37,53 @@ export default function LMJTrayView({
   const totalFibres = model.length;
   const totalTrays = Math.ceil(totalFibres / 8);
 
-  const trayH = 34;
-  const trayGap = 10;
-  const left = 110;
+  const trayH = 44;
+  const trayGap = 14;
+  const left = 132;
   const top = 24;
 
-  const fibreGap = 28;
-  const splitterGap = 42;
+  const fibreGap = 40;
+  const splitterGap = 62;
 
-  const svgWidth = 520;
-  const svgHeight = top + totalTrays * (trayH + trayGap) + 40;
+  const trayWidth = 4 * fibreGap * 2 + splitterGap + 34;
+  const columnWidth = left + trayWidth + 70;
+  const columns = totalTrays > 1 ? 2 : 1;
+  const rowCount = Math.ceil(totalTrays / columns);
+  const svgWidth = columns * columnWidth + 30;
+  const svgHeight = top + rowCount * (trayH + trayGap) + 40;
 
   return (
-    <div style={{ padding: "1rem", overflow: "auto" }}>
+    <div style={{ padding: 4, overflow: "auto" }}>
       <svg width={svgWidth} height={svgHeight}>
         {Array.from({ length: totalTrays }, (_, trayIndex) => {
           const trayNo = trayIndex + 1;
-          const y = top + trayIndex * (trayH + trayGap);
+          const columnIndex = trayIndex % columns;
+          const rowIndex = Math.floor(trayIndex / columns);
+          const xOffset = columnIndex * columnWidth;
+          const y = top + rowIndex * (trayH + trayGap);
 
           const trayStart = trayIndex * 8 + 1;
 
           return (
             <g key={trayNo}>
-              <text x={18} y={y + trayH / 2 + 4} fill="white" fontSize={11}>
+              <text x={xOffset + 18} y={y + trayH / 2 + 4} fill="#cbd5e1" fontSize={11} fontWeight={800}>
                 Tray {trayNo}
               </text>
 
               <rect
-                x={left - 14}
+                x={xOffset + left - 14}
                 y={y}
-                width={330}
+                width={trayWidth}
                 height={trayH}
                 fill={TRAY_COLOR}
                 stroke={TRAY_OUTLINE}
-                rx={6}
+                rx={8}
               />
 
-              <text x={left + 34} y={y - 4} fill="#cbd5e1" fontSize={10} textAnchor="middle">
+              <text x={xOffset + left + 58} y={y - 5} fill="#93c5fd" fontSize={11} fontWeight={800} textAnchor="middle">
                 Splitter {trayIndex * 2 + 1}
               </text>
-              <text x={left + 188} y={y - 4} fill="#cbd5e1" fontSize={10} textAnchor="middle">
+              <text x={xOffset + left + 58 + 4 * fibreGap + splitterGap} y={y - 5} fill="#93c5fd" fontSize={11} fontWeight={800} textAnchor="middle">
                 Splitter {trayIndex * 2 + 2}
               </text>
 
@@ -91,6 +98,7 @@ export default function LMJTrayView({
                 const posWithinSplitter = localIndex % 4;
 
                 const fx =
+                  xOffset +
                   left +
                   splitterOffset * (4 * fibreGap + splitterGap) +
                   posWithinSplitter * fibreGap;
@@ -113,7 +121,7 @@ export default function LMJTrayView({
                   : isMatch
                   ? "#f59e0b"
                   : isUsed
-                  ? "white"
+                  ? "#38bdf8"
                   : "#333";
 
                 const strokeWidth = isMoveSource
@@ -125,12 +133,12 @@ export default function LMJTrayView({
                   : 1;
 
                 const radius = isMoveSource
-                  ? 14
+                  ? 18
                   : isMatch
-                  ? 13
+                  ? 17
                   : isUsed
-                  ? 12
-                  : 10;
+                  ? 16
+                  : 13;
 
                 return (
                   <g
@@ -143,11 +151,23 @@ export default function LMJTrayView({
                       <circle
                         cx={fx}
                         cy={fy}
-                        r={17}
+                        r={22}
                         fill="none"
                         stroke="#fff7ae"
                         strokeWidth={3}
                         opacity={0.95}
+                      />
+                    )}
+
+                    {isUsed && !isMoveSource && !isMatch && (
+                      <circle
+                        cx={fx}
+                        cy={fy}
+                        r={radius + 3}
+                        fill="none"
+                        stroke="#020617"
+                        strokeWidth={3}
+                        opacity={0.9}
                       />
                     )}
 
@@ -164,8 +184,8 @@ export default function LMJTrayView({
                       x={fx}
                       y={fy + 3}
                       textAnchor="middle"
-                      fontSize={isMatch ? 9 : 8}
-                      fontWeight="700"
+                      fontSize={isMatch ? 11 : 10}
+                      fontWeight="800"
                       fill={isMatch ? "#111827" : getTextColour(fillColour)}
                       pointerEvents="none"
                     >

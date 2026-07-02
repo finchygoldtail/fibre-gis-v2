@@ -1384,11 +1384,11 @@ export const FibreTrayEditor: React.FC = () => {
   /* -------------------------------------------------------------
     Main editor layout
   ------------------------------------------------------------- */
-  const trayH = 26;
-  const trayGap = 6;
-  const left = 90;
-  const gap = 26;
-  const top = 20;
+  const trayH = 42;
+  const trayGap = 12;
+  const left = 118;
+  const gap = 42;
+  const top = 30;
 
   const renderedTrayCount = Math.max(
     cfg.trays,
@@ -1400,19 +1400,19 @@ export const FibreTrayEditor: React.FC = () => {
       ? Array.from({ length: renderedTrayCount }, (_, i) => i)
       : [trayFilter];
 
-  const svgWidth = left + cfg.fibresPerTray * gap + 60;
-  const svgHeight = top + visibleTrays.length * (trayH + trayGap) + 40;
+  const svgWidth = left + cfg.fibresPerTray * gap + 96;
+  const svgHeight = top + visibleTrays.length * (trayH + trayGap) + 54;
 
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "320px minmax(760px, 1fr) 420px",
+        gridTemplateColumns: "304px minmax(720px, 1fr) 392px",
         width: isMobileEditor ? 1500 : "100%",
         minWidth: isMobileEditor ? 1500 : undefined,
         height: isMobileEditor ? `${100 / mobileEditorScale}dvh` : "100vh",
         overflow: "hidden",
-        background: "#111827",
+        background: "#07111f",
         color: "white",
         zoom: isMobileEditor ? mobileEditorScale : 1,
         WebkitOverflowScrolling: "touch",
@@ -1433,18 +1433,37 @@ export const FibreTrayEditor: React.FC = () => {
       {/* LEFT PANEL */}
       <div
         style={{
-          borderRight: "1px solid #374151",
+          borderRight: "1px solid rgba(148, 163, 184, 0.16)",
           borderBottom: "none",
-          padding: "1rem",
+          padding: 14,
           display: "flex",
           flexDirection: "column",
-          gap: "1rem",
+          gap: 10,
           overflowY: "auto",
-          background: "#111827",
+          background: "#08111f",
           flex: undefined,
           maxHeight: undefined,
         }}
       >
+        <div style={editorHeroPanel}>
+          <div style={editorKicker}>FIBRE OPERATIONS</div>
+          <h1 style={editorTitle}>Fibre Tray Editor</h1>
+          <div style={editorSubtleText}>
+            {selectedMapJoint?.name || "No joint selected"}
+          </div>
+          <div style={editorPillRow}>
+            <span style={editorStatusPill}>{jointType}</span>
+            <span
+              style={{
+                ...editorStatusPill,
+                borderColor: getBuildStatusColor((selectedMapJoint as any)?.buildStatus || "0-Backlog"),
+                color: getBuildStatusColor((selectedMapJoint as any)?.buildStatus || "0-Backlog"),
+              }}
+            >
+              {(selectedMapJoint as any)?.buildStatus || "0-Backlog"}
+            </span>
+          </div>
+        </div>
 
         {canSeeFullOperations && (
           <button style={btnSecondary} onClick={() => setActiveView("network")}>
@@ -1468,8 +1487,9 @@ export const FibreTrayEditor: React.FC = () => {
           </div>
         )}
 
-        <label>Asset Type</label>
-        <div style={{ fontSize: "0.9rem", color: "#cbd5e1" }}>
+        <div style={formSectionTitle}>Joint Setup</div>
+        <label style={formLabel}>Asset Type</label>
+        <div style={fieldNote}>
           <strong>Selected joint:</strong> {selectedMapJoint?.name || "None"}
         </div>
         <select
@@ -1485,7 +1505,7 @@ export const FibreTrayEditor: React.FC = () => {
               setModel(buildJoint("CMJ (12 trays)"));
             }
           }}
-          style={{ width: "100%", padding: "0.35rem" }}
+          style={formControl}
         >
           <option value="ag-joint">AG Joint</option>
           <option value="street-cab">Street Cab</option>
@@ -1494,11 +1514,11 @@ export const FibreTrayEditor: React.FC = () => {
 
         {assetType !== "street-cab" && (
           <>
-            <label>Joint Type</label>
+            <label style={formLabel}>Joint Type</label>
             <select
               value={jointType}
               onChange={handleJointTypeChange}
-              style={{ width: "100%", padding: "0.35rem" }}
+              style={formControl}
             >
               {(Object.keys(JOINT_TYPES) as JointTypeLabel[]).map((t) => (
                 <option key={t}>{t}</option>
@@ -1508,14 +1528,14 @@ export const FibreTrayEditor: React.FC = () => {
 
             {assetType === "ag-joint" && jointType !== "LMJ (40 trays)" && (
               <>
-                <label>Tray View</label>
+                <label style={formLabel}>Tray View</label>
                 <select
                   value={trayFilter}
                   onChange={(e) => {
                     const value = e.target.value;
                     setTrayFilter(value === "all" ? "all" : Number(value));
                   }}
-                  style={{ width: "100%", padding: "0.35rem" }}
+                  style={formControl}
                 >
                   <option value="all">All Trays</option>
                   {Array.from({ length: renderedTrayCount }, (_, i) => (
@@ -1529,7 +1549,8 @@ export const FibreTrayEditor: React.FC = () => {
           </>
         )}
 
-        <label>Location Description</label>
+        <div style={formSectionTitle}>Location</div>
+        <label style={formLabel}>Location Description</label>
 
 <input
   value={(selectedMapJoint as any)?.locationDescription || ""}
@@ -1539,16 +1560,10 @@ export const FibreTrayEditor: React.FC = () => {
     })
   }
   placeholder="e.g. Footway outside 12 High Street"
-  style={{
-    width: "100%",
-    padding: 8,
-    borderRadius: 4,
-    border: "1px solid #4b5563",
-    boxSizing: "border-box",
-  }}
+  style={formControl}
 />
 
-        <label>Postcode</label>
+        <label style={formLabel}>Postcode</label>
         <input
           value={selectedPostcode}
           disabled={!selectedJointId}
@@ -1559,9 +1574,9 @@ export const FibreTrayEditor: React.FC = () => {
             })
           }
           placeholder="e.g. AB12 3CD"
-          style={{ width: "100%", padding: "0.35rem" }}
+          style={formControl}
         />
-<label>Build Status</label>
+<label style={formLabel}>Build Status</label>
 <select
   value={(selectedMapJoint as any)?.buildStatus || "0-Backlog"}
   onChange={(e) =>
@@ -1570,13 +1585,7 @@ export const FibreTrayEditor: React.FC = () => {
       status: e.target.value,
     })
   }
-  style={{
-    width: "100%",
-    padding: 8,
-    borderRadius: 4,
-    border: "1px solid #4b5563",
-    boxSizing: "border-box",
-  }}
+  style={formControl}
 >
   <option value="0-Backlog">0-Backlog</option>
   <option value="1-Plan">1-Plan</option>
@@ -1588,11 +1597,13 @@ export const FibreTrayEditor: React.FC = () => {
   <option value="7-Build Done">7-Build Done</option>
   <option value="8-RFS">8-RFS</option>
 </select>
-        <label>Load Mapping File</label>
+        <div style={formSectionTitle}>Mapping</div>
+        <label style={formLabel}>Load Mapping File</label>
         <input
           type="file"
           accept=".csv,.xls,.xlsx,.xlsm,.xlm"
           onChange={handleLoadFile}
+          style={fileInputStyle}
         />
         <button
           style={btnSecondary}
@@ -1602,21 +1613,16 @@ export const FibreTrayEditor: React.FC = () => {
         >
           Save Joint
         </button>
-        <label>Convert LMJ Sheet</label>
+        <label style={formLabel}>Convert LMJ Sheet</label>
         <input
           type="file"
           accept=".csv,.xls,.xlsx,.xlsm,.xlm"
           onChange={handleConvertLmjFile}
+          style={fileInputStyle}
         />
 
         <div
-          style={{
-            fontSize: "0.8rem",
-            color: "#cbd5e1",
-            background: "#1f2937",
-            padding: "0.5rem",
-            borderRadius: 6,
-          }}
+          style={helperCard}
         >
           Use this for supplier LMJ sheets with different layouts. It downloads
           a clean LMJ file. Then upload that converted file using Load Mapping
@@ -1648,18 +1654,19 @@ export const FibreTrayEditor: React.FC = () => {
           Export Excel
         </button>
 
-        <label>Search</label>
+        <div style={formSectionTitle}>Find & Edit</div>
+        <label style={formLabel}>Search</label>
         <input
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           placeholder="48FULW01, MIDJ04..."
-          style={{ padding: "0.35rem", width: "100%" }}
+          style={formControl}
         />
 
-        <small>Matches: {searchMatches.size}</small>
+        <small style={fieldNote}>Matches: {searchMatches.size}</small>
 
         {assetType !== "street-cab" && (
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             <button style={btnSecondary} onClick={() => setSearchTerm("")}>
               Clear Search
             </button>
@@ -1671,7 +1678,8 @@ export const FibreTrayEditor: React.FC = () => {
               }}
               style={{
                 ...btnSecondary,
-                background: moveMode ? "#f97316" : "#3b82f6",
+                background: moveMode ? "#f97316" : "#14345f",
+                borderColor: moveMode ? "rgba(251, 146, 60, 0.8)" : "rgba(96, 165, 250, 0.36)",
                 color: "white",
               }}
             >
@@ -1692,13 +1700,7 @@ export const FibreTrayEditor: React.FC = () => {
 
         {assetType !== "street-cab" && moveMode && (
           <div
-            style={{
-              fontSize: "0.9rem",
-              color: "#ddd",
-              background: "#333",
-              padding: "0.6rem",
-              borderRadius: 6,
-            }}
+            style={noticeCard}
           >
             {moveSrc
               ? `Selected source slot ${moveSrc.globalNo}. Click destination slot.`
@@ -1709,11 +1711,7 @@ export const FibreTrayEditor: React.FC = () => {
         {assetType !== "street-cab" && selectedFibre !== null && (
           <div
             style={{
-              fontSize: "0.9rem",
-              color: "#ddd",
-              background: "#333",
-              padding: "0.6rem",
-              borderRadius: 6,
+              ...selectedSummaryCard,
               whiteSpace: "pre-wrap",
             }}
           >
@@ -1726,11 +1724,7 @@ export const FibreTrayEditor: React.FC = () => {
         {assetType === "street-cab" && (
           <div
             style={{
-              fontSize: "0.9rem",
-              color: "#ddd",
-              background: "#333",
-              padding: "0.6rem",
-              borderRadius: 6,
+              ...selectedSummaryCard,
               whiteSpace: "pre-wrap",
             }}
           >
@@ -1761,117 +1755,156 @@ export const FibreTrayEditor: React.FC = () => {
           <div
             ref={trayContainerRef}
             style={{
-              padding: "1rem",
+              padding: 16,
               overflow: "auto",
-              background: "#111827",
+              background: "#07111f",
               minHeight: undefined,
               flex: undefined,
               WebkitOverflowScrolling: "touch",
             }}
           >
-            {jointType === "Meet Me Chamber" ? (
-              <MeetMeTrayView
-                mappingRows={mappingRows}
-                searchMatches={searchMatches}
-                selectedFibre={selectedFibre}
-                onSelectFibre={setSelectedFibre}
-              />
-            ) : jointType === "LMJ (40 trays)" ? (
-              <LMJTrayView
-                model={model}
-                searchMatches={searchMatches}
-                moveMode={moveMode}
-                moveSrc={moveSrc}
-                onFibreClick={handleFibreClick}
-              />
-            ) : (
-              <svg width={svgWidth} height={svgHeight} style={{ minWidth: svgWidth }}>
-                {visibleTrays.map((tray, visibleIndex) => {
-                  const y = top + visibleIndex * (trayH + trayGap);
+            <div style={trayWorkspacePanel}>
+              <div style={trayWorkspaceHeader}>
+                <div>
+                  <div style={editorKicker}>TRAY CANVAS</div>
+                  <h2 style={trayWorkspaceTitle}>{currentJointName}</h2>
+                </div>
+                <div style={trayStatsGrid}>
+                  <InfoBadge label="Trays" value={renderedTrayCount} />
+                  <InfoBadge label="Fibres" value={model.length} />
+                  <InfoBadge label="Mapped" value={mappingRows.length} />
+                </div>
+              </div>
 
-                  return (
-                    <g key={tray}>
-                      <text
-                        x={15}
-                        y={y + trayH / 2 + 3}
-                        fill="white"
-                        fontSize={10}
-                      >
-                        Tray {tray + 1}
-                      </text>
+              <div style={trayCanvasSurface}>
+                {jointType === "Meet Me Chamber" ? (
+                  <MeetMeTrayView
+                    mappingRows={mappingRows}
+                    searchMatches={searchMatches}
+                    selectedFibre={selectedFibre}
+                    onSelectFibre={setSelectedFibre}
+                  />
+                ) : jointType === "LMJ (40 trays)" ? (
+                  <LMJTrayView
+                    model={model}
+                    searchMatches={searchMatches}
+                    moveMode={moveMode}
+                    moveSrc={moveSrc}
+                    onFibreClick={handleFibreClick}
+                  />
+                ) : (
+                  <svg width={svgWidth} height={svgHeight} style={{ minWidth: svgWidth }}>
+                    {visibleTrays.map((tray, visibleIndex) => {
+                      const y = top + visibleIndex * (trayH + trayGap);
 
-                      <rect
-                        x={left - 10}
-                        y={y}
-                        width={cfg.fibresPerTray * gap + 20}
-                        height={trayH}
-                        fill={TRAY_COLOR}
-                        stroke={TRAY_OUTLINE}
-                        rx={4}
-                      />
-
-                      {Array.from({ length: cfg.fibresPerTray }, (_, pos) => {
-                        const cell = findCell(tray, pos);
-                        if (!cell) return null;
-
-                        const fx = left + pos * gap;
-                        const fy = y + trayH / 2;
-
-                        const isUsed = !!cell.label.trim();
-                        const highlight = searchMatches.has(cell.globalNo);
-                        const isMoveSource =
-                          moveMode && moveSrc?.globalNo === cell.globalNo;
-
-                        const fillColour = isMoveSource
-                          ? "#f97316"
-                          : highlight
-                            ? SEARCH_HIGHLIGHT
-                            : getColourForFibre(pos);
-
-                        return (
-                          <g
-                            key={pos}
-                            style={{ cursor: "pointer" }}
-                            onClick={() => handleFibreClick(cell)}
+                      return (
+                        <g key={tray}>
+                          <text
+                            x={15}
+                            y={y + trayH / 2 + 3}
+                            fill="#cbd5e1"
+                            fontSize={12}
+                            fontWeight={800}
                           >
-                            <circle
-                              cx={fx}
-                              cy={fy}
-                              r={isUsed ? 16 : 8}
-                              fill={fillColour}
-                              stroke={isUsed ? "white" : "#333"}
-                              strokeWidth={isMoveSource ? 4 : isUsed ? 3 : 1}
-                            />
+                            Tray {tray + 1}
+                          </text>
 
-                            <text
-                              x={fx}
-                              y={fy + 3}
-                              textAnchor="middle"
-                              fontSize={isUsed ? 10 : 8}
-                              fontWeight="600"
-                              fill={getTextColour(fillColour)}
-                              pointerEvents="none"
-                            >
-                              {cell.globalNo}
-                            </text>
-                          </g>
-                        );
-                      })}
-                    </g>
-                  );
-                })}
-              </svg>
-            )}
+                          <rect
+                            x={left - 10}
+                            y={y}
+                            width={(cfg.fibresPerTray - 1) * gap + 42}
+                            height={trayH}
+                            fill={TRAY_COLOR}
+                            stroke={TRAY_OUTLINE}
+                            rx={7}
+                          />
+
+                          {Array.from({ length: cfg.fibresPerTray }, (_, pos) => {
+                            const cell = findCell(tray, pos);
+                            if (!cell) return null;
+
+                            const fx = left + pos * gap;
+                            const fy = y + trayH / 2;
+
+                            const isUsed = !!cell.label.trim();
+                            const highlight = searchMatches.has(cell.globalNo);
+                            const isMoveSource =
+                              moveMode && moveSrc?.globalNo === cell.globalNo;
+
+                            const fillColour = isMoveSource
+                              ? "#f97316"
+                              : highlight
+                                ? SEARCH_HIGHLIGHT
+                                : getColourForFibre(pos);
+
+                            return (
+                              <g
+                                key={pos}
+                                style={{ cursor: "pointer" }}
+                                onClick={() => handleFibreClick(cell)}
+                              >
+                                {highlight && (
+                                  <circle
+                                    cx={fx}
+                                    cy={fy}
+                                    r={22}
+                                    fill="none"
+                                    stroke="#fde68a"
+                                    strokeWidth={3}
+                                    opacity={0.9}
+                                  />
+                                )}
+                                {isUsed && !isMoveSource && !highlight && (
+                                  <circle
+                                    cx={fx}
+                                    cy={fy}
+                                    r={23}
+                                    fill="none"
+                                    stroke="#020617"
+                                    strokeWidth={3}
+                                    opacity={0.9}
+                                  />
+                                )}
+                                <circle
+                                  cx={fx}
+                                  cy={fy}
+                                  r={isUsed ? 20 : 12}
+                                  fill={fillColour}
+                                  stroke={isMoveSource ? "#ffffff" : isUsed ? "#38bdf8" : "#334155"}
+                                  strokeWidth={isMoveSource ? 4 : isUsed ? 3 : 1}
+                                />
+
+                                <text
+                                  x={fx}
+                                  y={fy + 3}
+                                  textAnchor="middle"
+                                  fontSize={isUsed ? 12 : 10}
+                                  fontWeight="800"
+                                  fill={getTextColour(fillColour)}
+                                  pointerEvents="none"
+                                >
+                                  {cell.globalNo}
+                                </text>
+                              </g>
+                            );
+                          })}
+                        </g>
+                      );
+                    })}
+                  </svg>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* RIGHT PANEL */}
           <div
             style={{
-              borderLeft: "1px solid #374151",
+              borderLeft: "1px solid rgba(148, 163, 184, 0.16)",
               borderTop: "none",
-              padding: "1rem",
+              padding: 14,
               overflow: "auto",
-              background: "#111827",
+              background: "#08111f",
               minHeight: undefined,
               WebkitOverflowScrolling: "touch",
             }}
@@ -1891,20 +1924,202 @@ export const FibreTrayEditor: React.FC = () => {
   );
 };
 
-const btnSecondary: React.CSSProperties = {
-  padding: "0.4rem",
-  border: "1px solid #1e3a8a",
-  background: "#3b82f6",
-  color: "white",
-  borderRadius: 4,
+function InfoBadge({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div style={infoBadge}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+const editorHeroPanel: React.CSSProperties = {
+  border: "1px solid rgba(96, 165, 250, 0.34)",
+  background: "linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.72))",
+  borderRadius: 10,
+  padding: 12,
+  display: "grid",
+  gap: 7,
+};
+
+const editorKicker: React.CSSProperties = {
+  color: "#93c5fd",
+  fontSize: 10,
+  fontWeight: 950,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+};
+
+const editorTitle: React.CSSProperties = {
+  margin: 0,
+  color: "#f8fafc",
+  fontSize: 22,
+  fontWeight: 950,
+  lineHeight: 1.1,
+};
+
+const editorSubtleText: React.CSSProperties = {
+  color: "#cbd5e1",
+  fontSize: 12,
+  fontWeight: 800,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const editorPillRow: React.CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 6,
+};
+
+const editorStatusPill: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  minHeight: 22,
+  border: "1px solid rgba(96, 165, 250, 0.36)",
+  borderRadius: 999,
+  padding: "3px 8px",
+  color: "#bfdbfe",
+  background: "rgba(37, 99, 235, 0.12)",
+  fontSize: 11,
+  fontWeight: 900,
+};
+
+const formSectionTitle: React.CSSProperties = {
+  color: "#93c5fd",
+  fontSize: 10,
+  fontWeight: 950,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+  marginTop: 6,
+};
+
+const formLabel: React.CSSProperties = {
+  color: "#e5e7eb",
+  fontSize: 12,
+  fontWeight: 850,
+};
+
+const formControl: React.CSSProperties = {
+  width: "100%",
+  minHeight: 34,
+  padding: "8px 10px",
+  borderRadius: 8,
+  border: "1px solid rgba(148, 163, 184, 0.24)",
+  background: "#020617",
+  color: "#f8fafc",
+  boxSizing: "border-box",
+  outline: "none",
+};
+
+const fileInputStyle: React.CSSProperties = {
+  ...formControl,
+  padding: "7px 9px",
   cursor: "pointer",
 };
 
-const btnDanger: React.CSSProperties = {
-  padding: "0.4rem",
-  border: "1px solid #991b1b",
-  background: "#dc2626",
+const fieldNote: React.CSSProperties = {
+  color: "#94a3b8",
+  fontSize: 12,
+  lineHeight: 1.35,
+};
+
+const helperCard: React.CSSProperties = {
+  fontSize: 12,
+  lineHeight: 1.45,
+  color: "#cbd5e1",
+  background: "#0f1b2d",
+  border: "1px solid rgba(148, 163, 184, 0.14)",
+  padding: 10,
+  borderRadius: 8,
+};
+
+const noticeCard: React.CSSProperties = {
+  ...helperCard,
+  color: "#fed7aa",
+  background: "rgba(124, 45, 18, 0.28)",
+  border: "1px solid rgba(251, 146, 60, 0.36)",
+};
+
+const selectedSummaryCard: React.CSSProperties = {
+  ...helperCard,
+  color: "#e0f2fe",
+  background: "rgba(30, 64, 175, 0.22)",
+  border: "1px solid rgba(96, 165, 250, 0.34)",
+};
+
+const trayWorkspacePanel: React.CSSProperties = {
+  minHeight: "100%",
+  display: "grid",
+  gridTemplateRows: "auto minmax(0, 1fr)",
+  gap: 12,
+};
+
+const trayWorkspaceHeader: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 12,
+  border: "1px solid rgba(148, 163, 184, 0.16)",
+  background: "#0f1b2d",
+  borderRadius: 10,
+  padding: "12px 14px",
+};
+
+const trayWorkspaceTitle: React.CSSProperties = {
+  margin: "3px 0 0",
+  color: "#f8fafc",
+  fontSize: 20,
+  fontWeight: 950,
+};
+
+const trayStatsGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, minmax(76px, 1fr))",
+  gap: 8,
+};
+
+const infoBadge: React.CSSProperties = {
+  display: "grid",
+  gap: 2,
+  minWidth: 76,
+  border: "1px solid rgba(96, 165, 250, 0.24)",
+  background: "#07111f",
+  borderRadius: 8,
+  padding: "7px 9px",
+  color: "#94a3b8",
+  fontSize: 11,
+};
+
+const trayCanvasSurface: React.CSSProperties = {
+  overflow: "auto",
+  minHeight: 0,
+  border: "1px solid rgba(148, 163, 184, 0.16)",
+  background: "#0b1424",
+  borderRadius: 10,
+  padding: 14,
+  boxShadow: "inset 0 0 0 1px rgba(255, 255, 255, 0.02)",
+};
+
+const btnSecondary: React.CSSProperties = {
+  minHeight: 34,
+  padding: "8px 10px",
+  border: "1px solid rgba(96, 165, 250, 0.34)",
+  background: "#14345f",
   color: "white",
-  borderRadius: 4,
+  borderRadius: 8,
   cursor: "pointer",
+  fontWeight: 850,
+};
+
+const btnDanger: React.CSSProperties = {
+  minHeight: 34,
+  padding: "8px 10px",
+  border: "1px solid rgba(248, 113, 113, 0.42)",
+  background: "#7f1d1d",
+  color: "white",
+  borderRadius: 8,
+  cursor: "pointer",
+  fontWeight: 850,
 };

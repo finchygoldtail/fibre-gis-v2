@@ -155,17 +155,19 @@ export const LMJContinuityViewer: React.FC<Props> = ({
   return (
     <div
       style={{
-        padding: "1rem",
         display: "flex",
         flexDirection: "column",
-        gap: "1rem",
+        gap: 12,
         color: "white",
       }}
     >
-      <h2 style={{ margin: 0 }}>LMJ Continuity Viewer</h2>
+      <div style={viewerHeader}>
+        <div style={kicker}>CONTINUITY INSPECTOR</div>
+        <h2 style={title}>LMJ Continuity Viewer</h2>
+      </div>
 
       <div>
-        <label style={{ display: "block", marginBottom: 6 }}>Filter</label>
+        <label style={labelStyle}>Filter</label>
         <input
           value={filterText}
           onChange={(e) => setFilterText(e.target.value)}
@@ -175,7 +177,7 @@ export const LMJContinuityViewer: React.FC<Props> = ({
       </div>
 
       <div>
-        <label style={{ display: "block", marginBottom: 6 }}>Search</label>
+        <label style={labelStyle}>Search</label>
         <input
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
@@ -186,9 +188,10 @@ export const LMJContinuityViewer: React.FC<Props> = ({
 
       <div
         style={{
-          background: "#172554",
+          background: "rgba(30, 64, 175, 0.22)",
+          border: "1px solid rgba(96, 165, 250, 0.28)",
           borderRadius: 10,
-          padding: "1rem",
+          padding: 14,
           minHeight: 180,
         }}
       >
@@ -218,9 +221,9 @@ export const LMJContinuityViewer: React.FC<Props> = ({
       <div
         style={{
           background: "#0f172a",
-          border: "1px solid #334155",
+          border: "1px solid rgba(148, 163, 184, 0.16)",
           borderRadius: 10,
-          padding: "0.75rem",
+          padding: 12,
         }}
       >
         <div style={{ fontWeight: 700, marginBottom: 10 }}>
@@ -263,12 +266,12 @@ export const LMJContinuityViewer: React.FC<Props> = ({
 
       <div
         style={{
-          border: "1px solid #374151",
+          border: "1px solid rgba(148, 163, 184, 0.16)",
           borderRadius: 10,
           maxHeight: 420,
           overflowY: "auto",
-          padding: "0.5rem",
-          background: "#0f172a",
+          padding: 8,
+          background: "#07111f",
         }}
       >
         {filteredCells.length === 0 ? (
@@ -291,11 +294,11 @@ export const LMJContinuityViewer: React.FC<Props> = ({
                   borderRadius: 8,
                   marginBottom: 8,
                   background: isSelected
-                    ? "#1d4ed8"
+                    ? "#1e40af"
                     : isHighlighted
                     ? "#334155"
-                    : "#172554",
-                  border: "1px solid #334155",
+                    : "#0f1b2d",
+                  border: isSelected ? "1px solid #60a5fa" : "1px solid rgba(148, 163, 184, 0.16)",
                 }}
               >
                 <div style={{ fontWeight: 700 }}>
@@ -318,10 +321,41 @@ export const LMJContinuityViewer: React.FC<Props> = ({
 
 const inputStyle: React.CSSProperties = {
   width: "100%",
-  padding: "0.6rem",
+  minHeight: 34,
+  padding: "8px 10px",
   borderRadius: 8,
-  border: "1px solid #4b5563",
-  background: "#1f2937",
+  border: "1px solid rgba(148, 163, 184, 0.24)",
+  background: "#020617",
   color: "white",
   boxSizing: "border-box",
+  outline: "none",
+};
+
+const viewerHeader: React.CSSProperties = {
+  border: "1px solid rgba(148, 163, 184, 0.16)",
+  borderRadius: 10,
+  background: "#0f1b2d",
+  padding: 12,
+};
+
+const kicker: React.CSSProperties = {
+  color: "#93c5fd",
+  fontSize: 10,
+  fontWeight: 950,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+};
+
+const title: React.CSSProperties = {
+  margin: "3px 0 0",
+  fontSize: 20,
+  fontWeight: 950,
+};
+
+const labelStyle: React.CSSProperties = {
+  display: "block",
+  marginBottom: 5,
+  color: "#e5e7eb",
+  fontSize: 12,
+  fontWeight: 850,
 };

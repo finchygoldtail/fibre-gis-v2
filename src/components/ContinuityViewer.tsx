@@ -65,30 +65,34 @@ export const ContinuityViewer: React.FC<Props> = ({
       style={{
         display: "flex",
         flexDirection: "column",
-        gap: "0.75rem",
+        gap: 12,
         height: "100%",
+        color: "#f8fafc",
       }}
     >
-      <h3 style={{ margin: 0 }}>Continuity Viewer</h3>
+      <div style={viewerHeader}>
+        <div style={kicker}>CONTINUITY INSPECTOR</div>
+        <h3 style={title}>Continuity Viewer</h3>
+      </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+      <div style={filterPanel}>
         <div>
-          <label style={{ display: "block", marginBottom: 4 }}>Filter</label>
+          <label style={label}>Filter</label>
           <input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="Filter by fibre, tray, pos, label..."
-            style={{ width: "100%", padding: "0.4rem" }}
+            style={inputStyle}
           />
         </div>
 
         <div>
-          <label style={{ display: "block", marginBottom: 4 }}>Search</label>
+          <label style={label}>Search</label>
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Highlight matching rows..."
-            style={{ width: "100%", padding: "0.4rem" }}
+            style={inputStyle}
           />
         </div>
       </div>
@@ -96,10 +100,11 @@ export const ContinuityViewer: React.FC<Props> = ({
       {selectedRow ? (
         <div
           style={{
-            background: "#1f2937",
+            background: "#0f1b2d",
             color: "white",
-            padding: "0.75rem",
-            borderRadius: 6,
+            padding: 12,
+            borderRadius: 8,
+            border: "1px solid rgba(96, 165, 250, 0.28)",
             whiteSpace: "pre-wrap",
           }}
         >
@@ -114,10 +119,11 @@ export const ContinuityViewer: React.FC<Props> = ({
       ) : (
         <div
           style={{
-            background: "#1f2937",
+            background: "rgba(30, 64, 175, 0.22)",
             color: "#d1d5db",
-            padding: "0.75rem",
-            borderRadius: 6,
+            padding: 12,
+            borderRadius: 8,
+            border: "1px solid rgba(96, 165, 250, 0.22)",
           }}
         >
           Select a fibre to view its continuity chain.
@@ -128,10 +134,10 @@ export const ContinuityViewer: React.FC<Props> = ({
         style={{
           flex: 1,
           overflow: "auto",
-          border: "1px solid #444",
-          borderRadius: 6,
-          padding: "0.5rem",
-          background: "#111827",
+          border: "1px solid rgba(148, 163, 184, 0.16)",
+          borderRadius: 10,
+          padding: 8,
+          background: "#07111f",
         }}
       >
         {filteredRows.length === 0 ? (
@@ -145,16 +151,16 @@ export const ContinuityViewer: React.FC<Props> = ({
               <div
                 key={r.fibre}
                 style={{
-                  padding: "0.65rem",
-                  marginBottom: "0.5rem",
-                  borderRadius: 6,
+                  padding: "10px 11px",
+                  marginBottom: 8,
+                  borderRadius: 8,
                   background: isSelected
-                    ? "#1d4ed8"
+                    ? "#1e40af"
                     : isHighlighted
                     ? "#374151"
-                    : "#1f2937",
+                    : "#0f1b2d",
                   color: "white",
-                  border: "1px solid #374151",
+                  border: isSelected ? "1px solid #60a5fa" : "1px solid rgba(148, 163, 184, 0.16)",
                 }}
               >
                 <div style={{ fontWeight: 700 }}>
@@ -168,4 +174,50 @@ export const ContinuityViewer: React.FC<Props> = ({
       </div>
     </div>
   );
+};
+
+const viewerHeader: React.CSSProperties = {
+  border: "1px solid rgba(148, 163, 184, 0.16)",
+  borderRadius: 10,
+  background: "#0f1b2d",
+  padding: 12,
+};
+
+const kicker: React.CSSProperties = {
+  color: "#93c5fd",
+  fontSize: 10,
+  fontWeight: 950,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+};
+
+const title: React.CSSProperties = {
+  margin: "3px 0 0",
+  fontSize: 20,
+  fontWeight: 950,
+};
+
+const filterPanel: React.CSSProperties = {
+  display: "grid",
+  gap: 10,
+};
+
+const label: React.CSSProperties = {
+  display: "block",
+  marginBottom: 5,
+  color: "#e5e7eb",
+  fontSize: 12,
+  fontWeight: 850,
+};
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  minHeight: 34,
+  padding: "8px 10px",
+  borderRadius: 8,
+  border: "1px solid rgba(148, 163, 184, 0.24)",
+  background: "#020617",
+  color: "#f8fafc",
+  boxSizing: "border-box",
+  outline: "none",
 };
