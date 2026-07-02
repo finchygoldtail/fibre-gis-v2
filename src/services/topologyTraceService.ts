@@ -12,6 +12,7 @@
 import type { AuditIssue } from "./areaAudit";
 import type { NetworkGraph, GraphEdge, GraphNode } from "./networkGraph";
 import type { SavedMapAsset } from "../components/map/types";
+import { getCableUsedFibres } from "../components/map/cableUsage";
 
 export type TraceDirection = "selected" | "upstream" | "downstream" | "branch" | "home" | "qa";
 
@@ -145,6 +146,31 @@ function parseCapacity(asset: any): number {
     if (match) return Number(match[1]);
   }
   return Number(asset?.capacity || asset?.ports || asset?.dpDetails?.connectionsToHomes || 0) || 0;
+}
+
+function parseCount(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 0;
+}
+
+function getCableUsedCount(asset: any, assets: SavedMapAsset[]): number {
+  const direct = Math.max(
+    parseCount(asset?.usedFibres),
+    parseCount(asset?.usedFibers),
+    parseCount(asset?.usedCoreCount),
+    parseCount(asset?.fibresUsed),
+    parseCount(asset?.allocatedFibres),
+    parseCount(asset?.properties?.usedFibres),
+    parseCount(asset?.properties?.usedFibers),
+    parseCount(asset?.properties?.usedCoreCount),
+    parseCount(asset?.properties?.fibresUsed),
+    parseCount(asset?.properties?.allocatedFibres),
+  );
+
+  if (direct > 0) return direct;
+
+  const derived = getCableUsedFibres(asset, assets);
+  return Number.isFinite(derived) && derived > 0 ? Math.floor(derived) : 0;
 }
 
 function getDpThroughCableId(asset: any): string {
@@ -368,11 +394,28 @@ export function buildTopologyTrace(input: BuildTopologyTraceInput): TopologyTrac
     });
   }
 
-  const reservedFibres = isDesignCable(selectedAsset)
+  const cableReservationFibres = isDesignCable(selectedAsset)
     ? dpsOnCable(selectedAsset, assets).reduce((sum, dp) => sum + getReservedFibres(dp), 0)
+    : 0;
+  const cableUsedFibres = isDesignCable(selectedAsset)
+    ? getCableUsedCount(selectedAsset, assets)
+    : 0;
+  const reservedFibres = isDesignCable(selectedAsset)
+    ? Math.max(cableReservationFibres, cableUsedFibres)
     : getReservedFibres(selectedAsset);
   const capacity = parseCapacity(selectedAsset);
   const utilisationPercent = capacity > 0 ? Math.round((reservedFibres / capacity) * 100) : null;
+
+  if (isDesignCable(selectedAsset) && cableUsedFibres > 0 && result.fibre.length === 0) {
+    result.fibre.push({
+      id: `${selectedAsset.id || assetTitle(selectedAsset)}-cable-usage`,
+      title: "Cable fibre usage",
+      subtitle: "Used fibres derived from cable mapping / network state",
+      direction: "selected",
+      asset: selectedAsset,
+      fibreText: `${cableUsedFibres}${capacity ? `/${capacity}` : ""}F used`,
+    });
+  }
 
   result.upstream = uniqueSteps(result.upstream).slice(0, 12);
   result.downstream = uniqueSteps(result.downstream).slice(0, 12);
