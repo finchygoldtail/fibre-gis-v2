@@ -81,7 +81,7 @@ function detectAgPair(row: any[]): {
  * LMJ sheet mapping into Fibre Tray model.
  *
  * Standard converted columns:
- * C  = Splitter Fibre in      index 2
+ * C  = Feed Fibre in          index 2
  * N  = 1:4W Splitter ID       index 13
  * O  = Splitter Fibre         index 14
  * Q  = Output Fibre token     index 16
@@ -104,14 +104,14 @@ export function applyLmjRowsToModel(
   rows.forEach((row: any[]) => {
     if (!Array.isArray(row)) return;
 
-    const inputFibre = cleanLmjValue(row[2]);
+    const feederFibre = cleanLmjValue(row[2]);
     const splitterId = cleanLmjValue(row[13]);
     const splitterOut = cleanLmjValue(row[14]);
     const outputFibre = cleanLmjValue(row[16]);
 
     const { ag, agFibreNo } = detectAgPair(row);
 
-    if (inputFibre) currentInputFibre = inputFibre;
+    if (feederFibre) currentInputFibre = feederFibre;
     if (splitterId) currentSplitterId = splitterId;
     if (ag) currentAg = ag;
 

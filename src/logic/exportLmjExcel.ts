@@ -179,7 +179,7 @@ export function downloadLmjJointTemplate() {
   const columns: TemplateColumn[] = [
     { key: "LMJ Name", required: true, description: "LMJ joint name as it appears on the map.", example: "BD-BAE-LMJ01" },
     { key: "Joint Tray", required: true, description: "Tray number inside the LMJ.", example: 1 },
-    { key: "Splitter Fibre In", description: "Incoming splitter fibre number.", example: 1 },
+    { key: "Feed Fibre In", description: "Incoming feed fibre feeding the 1:4 splitter.", example: 1 },
     { key: "1:4W Splitter", description: "Splitter identifier.", example: "SPL1" },
     { key: "Splitter Fibre", description: "Splitter output fibre / port number.", example: 1 },
     { key: "Cable ID", required: true, description: "Outgoing cable ID from the LMJ.", example: "ULW12-001" },

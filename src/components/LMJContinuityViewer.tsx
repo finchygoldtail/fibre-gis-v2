@@ -203,7 +203,7 @@ export const LMJContinuityViewer: React.FC<Props> = ({
 
             <div style={{ marginBottom: 6 }}>Tray: {getTrayNumber(selectedCell.globalNo)}</div>
             <div style={{ marginBottom: 6 }}>Splitter: {parsedSelected.splitter}</div>
-            <div style={{ marginBottom: 6 }}>Input Fibre: {parsedSelected.inputFibre}</div>
+            <div style={{ marginBottom: 6 }}>Feed Fibre In: {parsedSelected.inputFibre}</div>
             <div style={{ marginBottom: 6 }}>
               Splitter ID: {parsedSelected.splitterId || `Splitter ${parsedSelected.splitter}`}
             </div>

@@ -204,7 +204,7 @@ function extractFibreNumber(row: any): number | null {
   const values = rowToValues(row);
 
   // Meet-me spreadsheet rows are normally:
-  // LMJ, tray, splitter in, splitter, splitter fibre, input cable, input fibre, output cable, output fibre, status, notes.
+  // LMJ, tray, feed fibre in, splitter, splitter fibre, input cable, input fibre, output cable, output fibre, status, notes.
   // Prefer the actual input/output fibre columns before tray number.
   for (const index of [8, 6, 4, 2, 1]) {
     const value = parseFibreNumber(values[index]);
@@ -395,4 +395,3 @@ export function getCableUsedFibres(cable: any, allAssets: any[] = []): number {
 
   return derived.usedFibres;
 }
-

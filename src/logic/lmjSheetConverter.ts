@@ -20,7 +20,7 @@ type LmjDetectedLayout = {
 const LEGACY_HEADER_ROW: LmjStandardRow = [
   "",
   "",
-  "Splitter Fibre In",
+  "Feed Fibre In",
   "",
   "",
   "",
@@ -66,6 +66,10 @@ function parsePositiveNumber(value: unknown): number | null {
 
   if (!Number.isFinite(numberValue) || numberValue <= 0) return null;
   return numberValue;
+}
+
+function getFeedFibreIn(agFibreNo: number): number {
+  return Math.ceil(agFibreNo / 4);
 }
 
 function buildHeaderMap(row: any[]): HeaderMap {
@@ -169,15 +173,28 @@ function detectLayout(rows: any[][]): LmjDetectedLayout | null {
 
   const splitterFibreIndexes = getHeaderIndexes(headers, "Splitter Fibre");
   const fibreIndexes = getHeaderIndexes(headers, "FIBRE");
+  const feederInputIndex =
+    getHeaderIndex(headers, "Feed Fibre In") ??
+    getHeaderIndex(headers, "Feed Fibre") ??
+    getHeaderIndex(headers, "Feeder Fibre In") ??
+    getHeaderIndex(headers, "Feeder Fibre") ??
+    getHeaderIndex(headers, "Feeder Fiber In") ??
+    getHeaderIndex(headers, "Feeder Fiber") ??
+    getHeaderIndex(headers, "Input Fibre") ??
+    getHeaderIndex(headers, "Input Fiber") ??
+    getHeaderIndex(headers, "Splitter Fibre In");
 
   return {
     headerRowIndex,
     headers,
-    inputFibreIndex: splitterFibreIndexes[0] ?? null,
+    inputFibreIndex: feederInputIndex ?? splitterFibreIndexes[0] ?? null,
     splitterIdIndex:
       getHeaderIndex(headers, "1:4W SPLITTER", 1) ??
       getHeaderIndex(headers, "1:4W SPLITTER", 0),
-    splitterOutIndex: splitterFibreIndexes[1] ?? null,
+    splitterOutIndex:
+      feederInputIndex !== null
+        ? splitterFibreIndexes[0] ?? null
+        : splitterFibreIndexes[1] ?? null,
     outputFibreIndex: fibreIndexes[1] ?? fibreIndexes[0] ?? null,
     cableIdIndex: getHeaderIndex(headers, "Cable ID"),
     jointTrayIndex: getHeaderIndex(headers, "Joint Tray"),
@@ -212,7 +229,6 @@ export function convertLmjSheetToStandardRows(rows: any[][]): LmjStandardRow[] {
     );
   }
 
-  let currentInputFibre = "";
   let currentSplitterId = "";
   let currentCableId = "";
   let currentJointTray = "";
@@ -224,14 +240,12 @@ export function convertLmjSheetToStandardRows(rows: any[][]): LmjStandardRow[] {
     const sourceRow = rows[rowIndex] || [];
     if (!hasUsefulData(sourceRow)) continue;
 
-    const inputFibre = getCell(sourceRow, layout.inputFibreIndex);
     const splitterId = getCell(sourceRow, layout.splitterIdIndex);
     const cableId = getCell(sourceRow, layout.cableIdIndex);
     const jointTray = getCell(sourceRow, layout.jointTrayIndex);
     const ag = cleanValue(sourceRow[layout.agColumnIndex]);
     const agFibreNo = parsePositiveNumber(sourceRow[layout.agFibreColumnIndex]);
 
-    if (inputFibre) currentInputFibre = inputFibre;
     if (splitterId) currentSplitterId = splitterId;
     if (cableId) currentCableId = cableId;
     if (jointTray) currentJointTray = jointTray;
@@ -241,7 +255,7 @@ export function convertLmjSheetToStandardRows(rows: any[][]): LmjStandardRow[] {
 
     const standardRow: LmjStandardRow = [];
 
-    setLegacyCell(standardRow, 2, currentInputFibre);
+    setLegacyCell(standardRow, 2, getFeedFibreIn(agFibreNo));
     setLegacyCell(standardRow, 12, currentJointTray);
     setLegacyCell(standardRow, 13, currentSplitterId);
     setLegacyCell(standardRow, 14, getCell(sourceRow, layout.splitterOutIndex));
