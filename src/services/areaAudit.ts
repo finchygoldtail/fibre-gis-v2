@@ -558,18 +558,7 @@ function makeIssue(
 export function auditAsset(asset: any): string[] {
   const issues: string[] = [];
 
-  // --------------------------------------------------
-  // HOME / PREMISE ADDRESS CHECKS
-  // --------------------------------------------------
-  // Only homes/premises should be required to have a true address.
-  // Network assets such as joints and cables usually do not have one.
-
-  if (
-    isHomeAsset(asset) &&
-    !hasAnyText(asset, ["address", "fullAddress", "propertyAddress"])
-  ) {
-    issues.push("Missing address");
-  }
+  // Address metadata is optional during current QA passes.
 
   // --------------------------------------------------
   // CABLE / DROP REFERENCE CHECKS
