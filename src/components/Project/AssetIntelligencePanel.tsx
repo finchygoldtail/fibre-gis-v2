@@ -671,6 +671,23 @@ function getEndpointReferenceIds(asset: SavedMapAsset | null): string[] {
   return [...endpoints.fromIds, ...endpoints.toIds];
 }
 
+
+function isOverheadCable(asset: SavedMapAsset | null): boolean {
+  const item = asset as any;
+  const raw = String(read(item, [
+    "installMethod",
+    "method",
+    "routeType",
+    "installType",
+    "cableInstallMethod",
+    "installationMethod",
+  ], "")).trim().toLowerCase();
+
+  if (!raw) return false;
+  if (raw.includes("underground") || raw === "ug" || raw.includes("duct") || raw.includes("direct bury") || raw.includes("buried")) return false;
+  return raw === "oh" || raw.includes("overhead") || raw.includes("aerial") || raw.includes("pole") || raw.includes("span");
+}
+
 function routeStats(asset: SavedMapAsset | null): { spanCount: number; longestSpanMeters: number | null; averageSpanMeters: number | null } {
   const points = linePoints(asset);
   if (points.length < 2) return { spanCount: 0, longestSpanMeters: null, averageSpanMeters: null };
@@ -863,7 +880,7 @@ function buildCablePathIntelligence(asset: SavedMapAsset | null, projectAssets: 
   if (!upstreamAsset) routeWarnings.push("Upstream endpoint not linked");
   if (!downstreamAsset) routeWarnings.push("Downstream endpoint not linked");
   if (!connectedJoints.length && !connectedDps.length) routeWarnings.push("No route assets detected on cable path");
-  if (stats.longestSpanMeters !== null && stats.longestSpanMeters > 85) routeWarnings.push("Longest span is over 85m");
+  if (isOverheadCable(asset) && stats.longestSpanMeters !== null && stats.longestSpanMeters > 85) routeWarnings.push("Longest OH span is over 85m");
   if (fibreCapacity !== null && usedFibres !== null && usedFibres > fibreCapacity) routeWarnings.push("Used fibres exceed cable capacity");
 
   let endpointSnapStatus = "No endpoint references";
@@ -1001,7 +1018,7 @@ function buildEngineeringRecommendations(asset: SavedMapAsset | null, cablePath:
     if (!cablePath.downstreamAsset) recommendations.push("Snap or name the downstream endpoint so the next joint / DP can be resolved.");
     if (cablePath.usedFibres === null) recommendations.push("Add used-fibre count from the joint mapping so utilisation can be trusted.");
     if (cablePath.fibreCapacity !== null && cablePath.usedFibres !== null && cablePath.usedFibres > cablePath.fibreCapacity) recommendations.push("Used fibres exceed cable capacity — check tray allocation and cable size.");
-    if (cablePath.longestSpanMeters !== null && cablePath.longestSpanMeters > 85) recommendations.push("Longest span is over 85m — review OH route, pole dip or chamber option.");
+    if (isOverheadCable(asset) && cablePath.longestSpanMeters !== null && cablePath.longestSpanMeters > 85) recommendations.push("Longest OH span is over 85m — review pole dip, route or chamber option.");
     if (!cablePath.connectedDps.length && !cablePath.connectedJoints.length) recommendations.push("No DPs or joints detected along this cable path within tolerance.");
   }
 

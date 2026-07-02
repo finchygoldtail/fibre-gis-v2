@@ -279,6 +279,23 @@ function getEndpointReferenceIds(asset: SavedMapAsset | null): string[] {
   return [...endpoints.fromIds, ...endpoints.toIds];
 }
 
+
+function isOverheadCable(asset: SavedMapAsset | null): boolean {
+  const item = asset as any;
+  const raw = String(read(item, [
+    "installMethod",
+    "method",
+    "routeType",
+    "installType",
+    "cableInstallMethod",
+    "installationMethod",
+  ], "")).trim().toLowerCase();
+
+  if (!raw) return false;
+  if (raw.includes("underground") || raw === "ug" || raw.includes("duct") || raw.includes("direct bury") || raw.includes("buried")) return false;
+  return raw === "oh" || raw.includes("overhead") || raw.includes("aerial") || raw.includes("pole") || raw.includes("span");
+}
+
 function routeStats(asset: SavedMapAsset | null): { spanCount: number; longestSpanMeters: number | null; averageSpanMeters: number | null } {
   const points = linePoints(asset);
   if (points.length < 2) return { spanCount: 0, longestSpanMeters: null, averageSpanMeters: null };
@@ -471,7 +488,7 @@ export function buildCablePathIntelligence(asset: SavedMapAsset | null, projectA
   if (!upstreamAsset) routeWarnings.push("Upstream endpoint not linked");
   if (!downstreamAsset) routeWarnings.push("Downstream endpoint not linked");
   if (!connectedJoints.length && !connectedDps.length) routeWarnings.push("No route assets detected on cable path");
-  if (stats.longestSpanMeters !== null && stats.longestSpanMeters > 85) routeWarnings.push("Longest span is over 85m");
+  if (isOverheadCable(asset) && stats.longestSpanMeters !== null && stats.longestSpanMeters > 85) routeWarnings.push("Longest OH span is over 85m");
   if (fibreCapacity !== null && usedFibres !== null && usedFibres > fibreCapacity) routeWarnings.push("Used fibres exceed cable capacity");
 
   let endpointSnapStatus = "No endpoint references";

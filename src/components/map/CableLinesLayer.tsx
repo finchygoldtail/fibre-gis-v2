@@ -22,8 +22,11 @@ type Props = {
   cablesVisible: boolean;
   visibleLayers?: Record<string, boolean>;
   showCableDistances?: boolean;
+  cableDrawingMode?: boolean;
+  endpointAssetOptions?: SavedMapAsset[];
   onDeleteAsset: (id: string) => void;
   onEditAsset: (asset: SavedMapAsset) => void;
+  onUpdateAsset?: (asset: SavedMapAsset) => void;
 };
 
 type MappingRowsByAssetId = Record<string, any[][]>;
@@ -129,6 +132,24 @@ function getCableFibreCount(asset: SavedMapAsset): number | null {
   }
 
   return null;
+}
+
+function isEngineeringDrawingTrunkCable(asset: SavedMapAsset): boolean {
+  if (isDropCableAsset(asset)) return false;
+
+  const fibreCount = getCableFibreCount(asset);
+  return fibreCount === 96 || fibreCount === 144 || fibreCount === 288;
+}
+
+function isCoreNetworkCable(asset: SavedMapAsset): boolean {
+  if (isDropCableAsset(asset)) return false;
+
+  const cableType = normaliseCableText((asset as any).cableType || (asset as any).type || (asset as any).assetType);
+  const fibreCount = getCableFibreCount(asset) || 0;
+
+  // Core network is role-led, not size-led. 48F/96F can be distribution,
+  // so only Feeder/Link cables are allowed into the global core system.
+  return fibreCount >= 48 && (cableType.includes("feeder") || cableType.includes("link"));
 }
 
 
@@ -430,12 +451,16 @@ function getCableDistanceLabelIcon(label: string, angleDegrees: number) {
 }
 
 function getAssetPoint(asset: SavedMapAsset): [number, number] | null {
-  if (asset.geometry?.type !== "Point") return null;
+  if (asset.geometry?.type === "Point" && Array.isArray(asset.geometry.coordinates)) {
+    const [lat, lng] = asset.geometry.coordinates;
+    if (typeof lat === "number" && typeof lng === "number") return [lat, lng];
+  }
 
-  const [lat, lng] = asset.geometry.coordinates;
-  if (typeof lat !== "number" || typeof lng !== "number") return null;
+  const lat = Number((asset as any).lat);
+  const lng = Number((asset as any).lng);
+  if (Number.isFinite(lat) && Number.isFinite(lng)) return [lat, lng];
 
-  return [lat, lng];
+  return null;
 }
 
 function findConnectedAssetAtCableEnd(
@@ -467,6 +492,92 @@ function getAssetDisplayName(asset?: SavedMapAsset | null): string {
   if (!asset) return "Not connected";
   const item = asset as any;
   return String(item.name || item.jointName || item.label || item.assetId || item.id || "Connected asset");
+}
+
+function getAssetTypeLabel(asset?: SavedMapAsset | null): string {
+  if (!asset) return "asset";
+  const item = asset as any;
+  const raw = String(item.assetType || item.jointType || "asset")
+    .replace(/-/g, " ")
+    .trim();
+  return raw || "asset";
+}
+
+function getEndpointOptionLabel(asset: SavedMapAsset): string {
+  return `${getAssetDisplayName(asset)} · ${getAssetTypeLabel(asset)}`;
+}
+
+function isCableEndpointSelectableAsset(asset: SavedMapAsset): boolean {
+  if (asset.assetType === "area") return false;
+  if (asset.assetType === "cable") return false;
+  if (asset.assetType === "home") return false;
+  if (asset.assetType === "distribution-point") return false;
+  if (asset.assetType === "dp") return false;
+  if (isOpenreachReferenceAsset(asset)) return false;
+  return Boolean(getAssetPoint(asset));
+}
+
+function getEndpointOptionPriority(asset: SavedMapAsset): number {
+  const text = normaliseCableText(
+    `${(asset as any).assetType || ""} ${(asset as any).jointType || ""} ${(asset as any).name || ""}`,
+  );
+
+  if (text.includes("joint") || text.includes("cmj") || text.includes("mmj") || text.includes("lmj") || text.includes("midj")) return 0;
+  if (text.includes("chamber") || text.includes("fw")) return 1;
+  if (text.includes("pole")) return 2;
+  if (text.includes("street") || text.includes("cab")) return 3;
+  if (text.includes("exchange")) return 4;
+  return 9;
+}
+
+function buildCableWithEndpoint(
+  cable: SavedMapAsset,
+  side: "from" | "to",
+  endpointAsset: SavedMapAsset | null,
+): SavedMapAsset {
+  const endpointId = endpointAsset?.id ? String(endpointAsset.id) : "";
+  const endpointName = endpointAsset ? getAssetDisplayName(endpointAsset) : "";
+  const endpointType = endpointAsset ? String((endpointAsset as any).assetType || "") : "";
+
+  const next: any = { ...cable };
+  const endpointPoint = endpointAsset ? getAssetPoint(endpointAsset) : null;
+
+  if (endpointPoint && next.geometry?.type === "LineString" && Array.isArray(next.geometry.coordinates)) {
+    const coordinates = [...next.geometry.coordinates];
+
+    if (coordinates.length > 0) {
+      if (side === "from") {
+        coordinates[0] = endpointPoint;
+      } else {
+        coordinates[coordinates.length - 1] = endpointPoint;
+      }
+
+      next.geometry = {
+        ...next.geometry,
+        coordinates,
+      };
+    }
+  }
+
+  if (side === "from") {
+    next.fromAssetId = endpointId || undefined;
+    next.startAssetId = endpointId || undefined;
+    next.fromAssetName = endpointName || undefined;
+    next.fromAssetType = endpointType || undefined;
+    next.fromJointId = endpointId || undefined;
+    next.fromJoint = endpointName || undefined;
+    next.startJoint = endpointName || undefined;
+  } else {
+    next.toAssetId = endpointId || undefined;
+    next.endAssetId = endpointId || undefined;
+    next.toAssetName = endpointName || undefined;
+    next.toAssetType = endpointType || undefined;
+    next.toJointId = endpointId || undefined;
+    next.toJoint = endpointName || undefined;
+    next.endJoint = endpointName || undefined;
+  }
+
+  return next as SavedMapAsset;
 }
 
 function normaliseAssetLookupKey(value: unknown): string {
@@ -594,6 +705,57 @@ function findNearestConnectedAssetAtCableEnd(
   return candidates[0]?.asset || null;
 }
 
+function getAssetKindPriority(asset: SavedMapAsset): number {
+  const text = normaliseCableText(
+    `${(asset as any).assetType || ""} ${(asset as any).jointType || ""} ${(asset as any).name || ""}`,
+  );
+
+  if (text.includes("joint") || text.includes("cmj") || text.includes("mmj") || text.includes("lmj") || text.includes("midj")) return 0;
+  if (text.includes("exchange")) return 1;
+  if (text.includes("street") || text.includes("cab")) return 2;
+  if (text.includes("chamber") || text.includes("fw")) return 3;
+  if (text.includes("pole")) return 4;
+  return 9;
+}
+
+function findBestAssetNearCableSide(
+  cable: SavedMapAsset,
+  assets: SavedMapAsset[],
+  side: "from" | "to",
+  maxDistanceMeters = 55,
+): SavedMapAsset | null {
+  const points = getCableLinePoints(cable);
+  if (points.length < 2) return null;
+
+  const sidePoints = side === "from"
+    ? points.slice(0, Math.max(2, Math.ceil(points.length * 0.25)))
+    : points.slice(Math.max(0, points.length - Math.max(2, Math.ceil(points.length * 0.25))));
+
+  const endpoint = side === "from" ? points[0] : points[points.length - 1];
+
+  const candidates = assets
+    .filter((asset) => {
+      if (asset.assetType === "area") return false;
+      if (asset.assetType === "cable") return false;
+      if (asset.assetType === "home") return false;
+      return Boolean(getAssetPoint(asset));
+    })
+    .map((asset) => {
+      const assetPoint = getAssetPoint(asset)!;
+      const routeDistance = distancePointToRouteMeters(assetPoint, sidePoints);
+      const endpointDistance = getDistanceMeters(endpoint, assetPoint);
+      return { asset, routeDistance, endpointDistance, priority: getAssetKindPriority(asset) };
+    })
+    .filter(({ routeDistance, endpointDistance }) => routeDistance <= maxDistanceMeters || endpointDistance <= maxDistanceMeters)
+    .sort((a, b) =>
+      a.priority - b.priority ||
+      a.routeDistance - b.routeDistance ||
+      a.endpointDistance - b.endpointDistance,
+    );
+
+  return candidates[0]?.asset || null;
+}
+
 function resolveCableEndpointAsset(
   cable: SavedMapAsset,
   assets: SavedMapAsset[],
@@ -608,11 +770,12 @@ function resolveCableEndpointAsset(
   if (point) {
     return (
       findConnectedAssetAtCableEnd(assets, point) ||
-      findNearestConnectedAssetAtCableEnd(assets, point)
+      findNearestConnectedAssetAtCableEnd(assets, point) ||
+      findBestAssetNearCableSide(cable, assets, side)
     );
   }
 
-  return null;
+  return findBestAssetNearCableSide(cable, assets, side);
 }
 
 function normaliseCableRef(value: unknown): string {
@@ -725,26 +888,76 @@ function countRowsMatching(
   return keys.size;
 }
 
-function clampToCableCapacity(cable: SavedMapAsset, value: number): number {
-  const capacity = getNumberFromFibreCount(cable.fibreCount);
-  if (!capacity) return value;
-  return Math.min(value, capacity);
+function getValidFibreNumber(value: unknown): number | null {
+  const direct = Number(value);
+  if (Number.isFinite(direct) && direct > 0 && direct <= 432) return direct;
+
+  const match = String(value ?? "").match(/\b(\d{1,3})\b/);
+  if (!match) return null;
+
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) && parsed > 0 && parsed <= 432 ? parsed : null;
 }
 
-function getFibreNumberFromMappingRow(row: any[]): number | null {
-  const preferred = Number(row?.[1]);
-  if (Number.isFinite(preferred) && preferred > 0) return preferred;
+function getCableMentionCellIndex(row: any[], cable: SavedMapAsset): number | null {
+  const aliases = getCableAliases(cable).sort((a, b) => b.length - a.length);
+  if (!aliases.length) return null;
 
-  for (const cell of row || []) {
-    const match = String(cell ?? "").match(/\b(\d{1,3})\b/);
-    if (!match) continue;
-    const fibreNumber = Number(match[1]);
-    if (Number.isFinite(fibreNumber) && fibreNumber > 0 && fibreNumber <= 288) {
-      return fibreNumber;
-    }
+  for (let index = 0; index < row.length; index += 1) {
+    const cellText = normaliseCableRef(String(row[index] ?? ""));
+    if (!cellText) continue;
+    if (aliases.some((alias) => cellText.includes(alias))) return index;
   }
 
   return null;
+}
+
+function getFibreNumberFromMappingRow(row: any[], cable?: SavedMapAsset): number | null {
+  if (cable) {
+    const cableCellIndex = getCableMentionCellIndex(row, cable);
+
+    if (cableCellIndex !== null) {
+      // Meet-me imports are normally: input cable, input fibre, output cable, output fibre.
+      // Prefer the fibre number next to the cable name so tray numbers are not counted as fibres.
+      for (const offset of [1, 2, -1, -2]) {
+        const candidate = getValidFibreNumber(row[cableCellIndex + offset]);
+        if (candidate !== null) return candidate;
+      }
+    }
+  }
+
+  // Generic LMJ/meet-me rows often store the usable fibre number in output/input
+  // columns later in the row. Keep tray number (index 1) as the last fallback.
+  for (const index of [8, 6, 4, 2, 1]) {
+    const candidate = getValidFibreNumber(row?.[index]);
+    if (candidate !== null) return candidate;
+  }
+
+  for (const cell of row || []) {
+    const candidate = getValidFibreNumber(cell);
+    if (candidate !== null) return candidate;
+  }
+
+  return null;
+}
+
+
+function expandMeetMeTrayEndMarkers(fibres: number[], cable?: SavedMapAsset): number[] {
+  const unique = Array.from(new Set((fibres || []).filter((f) => Number.isFinite(f) && f > 0))).sort((a, b) => a - b);
+  if (unique.length < 2) return unique;
+
+  // Meet-me chamber uploads can be stored as one rendered splice row per tray.
+  // In that case the saved row carries the last fibre on each 12F tray
+  // (12, 24, 36 ... 240), not every live fibre.  For cable utilisation and
+  // popup display this must be treated as the continuous range F1-F240.
+  const looksLikeTrayEndMarkers = unique.every((f, index) => f === (index + 1) * 12);
+  if (!looksLikeTrayEndMarkers) return unique;
+
+  const capacity = getNumberFromFibreCount((cable as any)?.fibreCount || (cable as any)?.size || (cable as any)?.capacity);
+  const maxFibre = unique[unique.length - 1];
+  if (capacity > 0 && maxFibre > capacity) return unique;
+
+  return Array.from({ length: maxFibre }, (_, index) => index + 1);
 }
 
 function collectUsedFibreNumbersForCable(
@@ -763,12 +976,12 @@ function collectUsedFibreNumbersForCable(
       if (!Array.isArray(row)) return;
       if (!rowMentionsCable(row, cable)) return;
 
-      const fibreNumber = getFibreNumberFromMappingRow(row);
+      const fibreNumber = getFibreNumberFromMappingRow(row, cable);
       if (fibreNumber !== null) fibreNumbers.add(fibreNumber);
     });
   });
 
-  return Array.from(fibreNumbers).sort((a, b) => a - b);
+  return expandMeetMeTrayEndMarkers(Array.from(fibreNumbers), cable);
 }
 
 function formatFibreRanges(fibres: number[]): string {
@@ -794,14 +1007,223 @@ function formatFibreRanges(fibres: number[]): string {
   return ranges.join(", ");
 }
 
+function getCableLinePoints(asset: SavedMapAsset): [number, number][] {
+  return asset.geometry?.type === "LineString" && Array.isArray(asset.geometry.coordinates)
+    ? (asset.geometry.coordinates as [number, number][]).filter(
+        (point) =>
+          Array.isArray(point) &&
+          point.length >= 2 &&
+          Number.isFinite(Number(point[0])) &&
+          Number.isFinite(Number(point[1])),
+      )
+    : [];
+}
+
+function getCableTypeKey(asset: SavedMapAsset): string {
+  const cableType = normaliseCableText((asset as any).cableType || "cable");
+  if (cableType.includes("feeder")) return "feeder";
+  if (cableType.includes("link")) return "link";
+  if (cableType.includes("ulw")) return "ulw";
+  return cableType || "cable";
+}
+
+function distancePointToSegmentMeters(
+  point: [number, number],
+  a: [number, number],
+  b: [number, number],
+): number {
+  const meanLat = ((point[0] + a[0] + b[0]) / 3) * (Math.PI / 180);
+  const toXY = (coord: [number, number]) => ({
+    x: coord[1] * 111320 * Math.cos(meanLat),
+    y: coord[0] * 111320,
+  });
+
+  const p = toXY(point);
+  const start = toXY(a);
+  const end = toXY(b);
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+
+  if (!lengthSquared) return getDistanceMeters(point, a);
+
+  const t = Math.max(0, Math.min(1, ((p.x - start.x) * dx + (p.y - start.y) * dy) / lengthSquared));
+  const projected = {
+    x: start.x + t * dx,
+    y: start.y + t * dy,
+  };
+
+  return Math.sqrt((p.x - projected.x) ** 2 + (p.y - projected.y) ** 2);
+}
+
+function distancePointToRouteMeters(point: [number, number], route: [number, number][]): number {
+  if (!route.length) return Number.POSITIVE_INFINITY;
+  if (route.length === 1) return getDistanceMeters(point, route[0]);
+
+  let best = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < route.length - 1; index += 1) {
+    best = Math.min(best, distancePointToSegmentMeters(point, route[index], route[index + 1]));
+  }
+  return best;
+}
+
+function minDistanceBetweenCableRoutes(a: SavedMapAsset, b: SavedMapAsset): number {
+  const aPoints = getCableLinePoints(a);
+  const bPoints = getCableLinePoints(b);
+  if (!aPoints.length || !bPoints.length) return Number.POSITIVE_INFINITY;
+
+  let best = Number.POSITIVE_INFINITY;
+
+  aPoints.forEach((point) => {
+    best = Math.min(best, distancePointToRouteMeters(point, bPoints));
+  });
+
+  bPoints.forEach((point) => {
+    best = Math.min(best, distancePointToRouteMeters(point, aPoints));
+  });
+
+  return best;
+}
+
+function findPhysicalTrunkCableGroup(
+  allAssets: SavedMapAsset[],
+  selectedCable: SavedMapAsset,
+  maxJoinMeters = 24,
+): SavedMapAsset[] {
+  const selectedFibreCount = getCableFibreCount(selectedCable);
+  const selectedIsCore = isCoreNetworkCable(selectedCable);
+
+  if (!selectedFibreCount || !selectedIsCore) return [selectedCable];
+
+  const selectedCableType = getCableTypeKey(selectedCable);
+  const trunkCables = allAssets.filter((candidate) => {
+    if (candidate.id === selectedCable.id) return true;
+    if (candidate.assetType !== "cable") return false;
+    if (!isCoreNetworkCable(candidate)) return false;
+    if (getCableFibreCount(candidate) !== selectedFibreCount) return false;
+
+    const candidateType = getCableTypeKey(candidate);
+    return candidateType === selectedCableType;
+  });
+
+  const byId = new Map(trunkCables.map((candidate) => [candidate.id, candidate]));
+  const connectedIds = new Set<string>([selectedCable.id]);
+  const queue: SavedMapAsset[] = [selectedCable];
+
+  while (queue.length && connectedIds.size < 40) {
+    const current = queue.shift()!;
+
+    trunkCables.forEach((candidate) => {
+      if (connectedIds.has(candidate.id)) return;
+      if (minDistanceBetweenCableRoutes(current, candidate) > maxJoinMeters) return;
+
+      connectedIds.add(candidate.id);
+      queue.push(candidate);
+    });
+  }
+
+  return Array.from(connectedIds)
+    .map((id) => byId.get(id))
+    .filter((asset): asset is SavedMapAsset => Boolean(asset));
+}
+
+function getCableAreaLabel(cable: SavedMapAsset): string {
+  const raw = String((cable as any).name || cable.id || "Cable").trim();
+  const match = raw.match(/^([A-Z]{1,4}-[A-Z0-9]{2,5})(?:-|$)/i);
+  return match ? match[1].toUpperCase() : raw;
+}
+
+type RouteGroupUsage = {
+  totalUsed: number;
+  usedFibreNumbers: number[];
+  source: string;
+  breakdown: { label: string; cableName: string; count: number; ranges: string }[];
+};
+
+function countRowsForCable(
+  allAssets: SavedMapAsset[],
+  mappingRowsByAssetId: MappingRowsByAssetId,
+  cable: SavedMapAsset,
+): { count: number; fibres: number[] } {
+  const rowKeys = new Set<string>();
+  const fibres = new Set<number>();
+
+  allAssets.forEach((asset) => {
+    const localRows = Array.isArray(asset.mappingRows) ? asset.mappingRows : [];
+    const sharedRows = mappingRowsByAssetId[asset.id] || [];
+    const rows = sharedRows.length ? sharedRows : localRows;
+
+    rows.forEach((row: any[], rowIndex: number) => {
+      if (!Array.isArray(row)) return;
+      if (!rowMentionsCable(row, cable)) return;
+
+      const rowText = getRowText(row).trim();
+      if (!rowText) return;
+
+      rowKeys.add(`${asset.id}:${rowIndex}:${normaliseCableRef(rowText)}`);
+
+      const fibreNumber = getFibreNumberFromMappingRow(row, cable);
+      if (fibreNumber !== null) fibres.add(fibreNumber);
+    });
+  });
+
+  const expandedFibres = expandMeetMeTrayEndMarkers(Array.from(fibres), cable);
+
+  return {
+    count: expandedFibres.length || fibres.size || rowKeys.size,
+    fibres: expandedFibres,
+  };
+}
+
+function getRouteGroupUsage(
+  allAssets: SavedMapAsset[],
+  mappingRowsByAssetId: MappingRowsByAssetId,
+  selectedCable: SavedMapAsset,
+): RouteGroupUsage {
+  const group = findPhysicalTrunkCableGroup(allAssets, selectedCable);
+  const breakdown = group
+    .map((cable) => {
+      const usage = countRowsForCable(allAssets, mappingRowsByAssetId, cable);
+      return {
+        label: getCableAreaLabel(cable),
+        cableName: String((cable as any).name || cable.id || "Cable"),
+        count: usage.count,
+        ranges: formatFibreRanges(usage.fibres),
+        fibres: usage.fibres,
+      };
+    })
+    .filter((entry) => entry.count > 0);
+
+  const routeFibreNumbers = Array.from(
+    new Set(breakdown.flatMap((entry) => entry.fibres))
+  ).sort((a, b) => a - b);
+  const totalUsed = routeFibreNumbers.length || breakdown.reduce((sum, entry) => sum + entry.count, 0);
+  const selectedUsage = countRowsForCable(allAssets, mappingRowsByAssetId, selectedCable);
+
+  return {
+    totalUsed,
+    usedFibreNumbers: routeFibreNumbers.length ? routeFibreNumbers : selectedUsage.fibres,
+    source:
+      group.length > 1 && totalUsed > 0
+        ? "physical-route-joint-mapping-engine"
+        : selectedUsage.count > 0
+          ? "joint-mapping-engine"
+          : "network-state",
+    breakdown: breakdown.map(({ fibres, ...entry }) => entry),
+  };
+}
+
 
 export default function CableLinesLayer({
   assets,
   cablesVisible,
   visibleLayers = {},
   showCableDistances,
+  cableDrawingMode = false,
+  endpointAssetOptions,
   onDeleteAsset,
   onEditAsset,
+  onUpdateAsset,
 }: Props) {
   const map = useMap();
   const [selectedCableId, setSelectedCableId] = useState<string | null>(null);
@@ -812,20 +1234,41 @@ export default function CableLinesLayer({
   const [mapViewZoom, setMapViewZoom] = useState(() => map.getZoom());
   const cableCanvasRenderer = useMemo(() => L.canvas({ padding: 0.5 }), []);
 
+  const networkAnalysisAssets = useMemo(() => {
+    const sourceAssets = endpointAssetOptions?.length ? endpointAssetOptions : assets;
+    const byId = new Map<string, SavedMapAsset>();
+
+    sourceAssets.forEach((asset) => {
+      const id = String(asset.id || "").trim();
+      if (!id) return;
+      byId.set(id, asset);
+    });
+
+    // Ensure the visible/editing cable is always present even if the global
+    // option set is still loading or filtered by the workspace.
+    assets.forEach((asset) => {
+      const id = String(asset.id || "").trim();
+      if (!id || byId.has(id)) return;
+      byId.set(id, asset);
+    });
+
+    return Array.from(byId.values());
+  }, [assets, endpointAssetOptions]);
+
   const mappingAssetKey = useMemo(
     () =>
-      assets
+      networkAnalysisAssets
         .filter((asset) => Boolean((asset as any).mappingRowsRef || (asset as any).mappingRowsCount))
         .map((asset) => `${asset.id}:${(asset as any).mappingRowsCount || 0}:${(asset as any).updatedAt || ""}`)
         .sort()
         .join("|"),
-    [assets]
+    [networkAnalysisAssets]
   );
 
   useEffect(() => {
     let cancelled = false;
 
-    const assetsWithSharedMappings = assets.filter((asset) =>
+    const assetsWithSharedMappings = networkAnalysisAssets.filter((asset) =>
       Boolean((asset as any).mappingRowsRef || (asset as any).mappingRowsCount)
     );
 
@@ -852,7 +1295,7 @@ export default function CableLinesLayer({
     return () => {
       cancelled = true;
     };
-  }, [mappingAssetKey]);
+  }, [mappingAssetKey, networkAnalysisAssets]);
 
   useMapEvents({
     click: () => {
@@ -870,18 +1313,25 @@ export default function CableLinesLayer({
 
   const renderBounds = useMemo(() => getPaddedRenderBounds(mapViewBounds), [mapViewBounds]);
 
-  const networkState = useMemo(() => buildNetworkState(assets as any), [assets]);
+  const networkState = useMemo(() => buildNetworkState(networkAnalysisAssets as any), [networkAnalysisAssets]);
 
-  const connectionAssets = useMemo(
-    () =>
-      assets.filter((asset) => {
-        if (asset.assetType === "area") return false;
-        if (asset.assetType === "cable") return false;
-        if (isOpenreachReferenceAsset(asset)) return false;
-        return Boolean(getAssetPoint(asset));
-      }),
-    [assets],
-  );
+  const connectionAssets = useMemo(() => {
+    const sourceAssets = endpointAssetOptions?.length ? endpointAssetOptions : assets;
+    const byId = new Map<string, SavedMapAsset>();
+
+    sourceAssets.forEach((asset) => {
+      if (!isCableEndpointSelectableAsset(asset)) return;
+      const id = String(asset.id || "").trim();
+      if (!id) return;
+      byId.set(id, asset);
+    });
+
+    return Array.from(byId.values()).sort(
+      (a, b) =>
+        getEndpointOptionPriority(a) - getEndpointOptionPriority(b) ||
+        getAssetDisplayName(a).localeCompare(getAssetDisplayName(b)),
+    );
+  }, [assets, endpointAssetOptions]);
 
   const allCableLayersVisible = cablesVisible || visibleLayers?.cables !== false;
 
@@ -913,6 +1363,8 @@ export default function CableLinesLayer({
         const points = asset.geometry.coordinates as [number, number][];
         if (!isLineStringInsideRenderBounds(points, renderBounds)) return false;
 
+        if (cableDrawingMode) return isEngineeringDrawingTrunkCable(asset);
+
         if (allCableLayersVisible) return true;
 
         const cableType = String(asset.cableType || "").toLowerCase();
@@ -939,10 +1391,10 @@ export default function CableLinesLayer({
           (matches12 && isLayerOn("ulw12"))
         );
       }),
-    [assets, allCableLayersVisible, renderBounds, visibleLayers],
+    [assets, allCableLayersVisible, renderBounds, visibleLayers, cableDrawingMode],
   );
 
-  if (!allCableLayersVisible && !hasAnyIndividualCableLayerOn) return null;
+  if (!cableDrawingMode && !allCableLayersVisible && !hasAnyIndividualCableLayerOn) return null;
 
   const zoomToCable = (points: [number, number][]) => {
     if (points.length < 2) return;
@@ -1034,8 +1486,14 @@ export default function CableLinesLayer({
 
         
 
+        const routeGroupUsage = getRouteGroupUsage(
+          networkAnalysisAssets,
+          mappingRowsByAssetId,
+          asset,
+        );
+
         const usedFibreNumbersFromMappings = collectUsedFibreNumbersForCable(
-          assets,
+          networkAnalysisAssets,
           mappingRowsByAssetId,
           asset,
         );
@@ -1043,35 +1501,63 @@ export default function CableLinesLayer({
         const usedFibresFromSharedMappings = usedFibreNumbersFromMappings.length
           ? usedFibreNumbersFromMappings.length
           : countRowsMatching(
-              assets,
+              networkAnalysisAssets,
               mappingRowsByAssetId,
               (row) => rowMentionsCable(row, asset),
             );
 
         const cableState = networkState.cableStates[asset.id];
 
-        const localLegacyUsedFibres = getCableUsedFibres(asset, assets);
-        const usedFibres = clampToCableCapacity(
-          asset,
-          Math.max(
-            cableState?.usedFibres ?? 0,
-            localLegacyUsedFibres,
-            usedFibresFromSharedMappings,
-          ),
+        const localLegacyUsedFibres = getCableUsedFibres(asset, networkAnalysisAssets);
+        const usedFibres = Math.max(
+          cableState?.usedFibres ?? 0,
+          localLegacyUsedFibres,
+          usedFibresFromSharedMappings,
+          routeGroupUsage.totalUsed,
         );
 
         const usedFibreNumbers = usedFibreNumbersFromMappings.length
           ? usedFibreNumbersFromMappings
-          : cableState?.usedFibreNumbers || [];
+          : routeGroupUsage.usedFibreNumbers.length
+            ? routeGroupUsage.usedFibreNumbers
+            : cableState?.usedFibreNumbers || [];
 
-        const networkStateSource = usedFibreNumbersFromMappings.length || usedFibresFromSharedMappings > 0
-          ? "joint-mapping-engine"
-          : cableState?.source || (localLegacyUsedFibres > 0 ? "network-state-cable-usage" : "network-state");
+        const networkStateSource = routeGroupUsage.totalUsed > usedFibresFromSharedMappings
+          ? routeGroupUsage.source
+          : usedFibreNumbersFromMappings.length || usedFibresFromSharedMappings > 0
+            ? "joint-mapping-engine"
+            : cableState?.source || (localLegacyUsedFibres > 0 ? "network-state-cable-usage" : "network-state");
 
         const usedFibreRangeLabel = formatFibreRanges(usedFibreNumbers);
         const capacityWarning = cableState?.warnings?.length
           ? cableState.warnings.join(" • ")
           : getCableCapacityWarning(asset, usedFibres);
+
+        const selectedFromId = String((asset as any).fromAssetId || (asset as any).startAssetId || startAsset?.id || "");
+        const selectedToId = String((asset as any).toAssetId || (asset as any).endAssetId || endAsset?.id || "");
+
+        const handleEndpointChange = (side: "from" | "to", endpointId: string) => {
+          const cleanEndpointId = String(endpointId || "").trim();
+          const otherEndpointId = side === "from" ? selectedToId : selectedFromId;
+
+          if (cleanEndpointId && otherEndpointId && cleanEndpointId === otherEndpointId) {
+            alert("Start and end asset cannot be the same.");
+            return;
+          }
+
+          const endpointAsset = cleanEndpointId
+            ? connectionAssets.find((candidate) => String(candidate.id) === cleanEndpointId) || null
+            : null;
+
+          const updatedCable = buildCableWithEndpoint(asset, side, endpointAsset);
+
+          if (onUpdateAsset) {
+            onUpdateAsset(updatedCable);
+            return;
+          }
+
+          onEditAsset(updatedCable);
+        };
 
         return (
           <React.Fragment key={asset.id}>
@@ -1088,6 +1574,7 @@ export default function CableLinesLayer({
               eventHandlers={{
                 click: (e) => {
                   L.DomEvent.stopPropagation(e);
+                  if (cableDrawingMode) return;
                   setSelectedCableId(asset.id);
                   zoomToCable(points);
                 },
@@ -1095,6 +1582,7 @@ export default function CableLinesLayer({
                 mouseout: () => setHoveredCableId(null),
               }}
             >
+              {!cableDrawingMode ? (
               <Popup>
                 <div style={{ minWidth: 240 }}>
                   <div style={{ fontWeight: 700, fontSize: "1rem" }}>
@@ -1126,6 +1614,20 @@ export default function CableLinesLayer({
                     <b>Fibre numbers:</b> {usedFibreRangeLabel}
                   </div>
 
+                  {routeGroupUsage.breakdown.length > 1 ? (
+                    <div style={{ marginTop: 6, fontSize: 12 }}>
+                      <b>Route breakdown:</b>
+                      <div style={{ marginTop: 2 }}>
+                        {routeGroupUsage.breakdown.map((entry) => (
+                          <div key={`${asset.id}-${entry.cableName}`}>
+                            {entry.label}: {entry.count}F
+                            {entry.ranges !== "None found" ? ` (${entry.ranges})` : ""}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
                   <div style={{ marginTop: 4, color: "#64748b", fontSize: 12 }}>
                     <b>Network state:</b> {networkStateSource}
                   </div>
@@ -1142,6 +1644,41 @@ export default function CableLinesLayer({
 
                   <div>
                     <b>To:</b> {getAssetDisplayName(endAsset)}
+                  </div>
+
+                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #e5e7eb" }}>
+                    <div style={{ fontWeight: 700, marginBottom: 4 }}>Connections</div>
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 700, marginBottom: 2 }}>
+                      From
+                    </label>
+                    <select
+                      value={selectedFromId}
+                      onChange={(e) => handleEndpointChange("from", e.target.value)}
+                      style={{ width: "100%", marginBottom: 6 }}
+                    >
+                      <option value="">Auto / not set</option>
+                      {connectionAssets.map((candidate) => (
+                        <option key={`from-${asset.id}-${candidate.id}`} value={candidate.id}>
+                          {getEndpointOptionLabel(candidate)}
+                        </option>
+                      ))}
+                    </select>
+
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 700, marginBottom: 2 }}>
+                      To
+                    </label>
+                    <select
+                      value={selectedToId}
+                      onChange={(e) => handleEndpointChange("to", e.target.value)}
+                      style={{ width: "100%" }}
+                    >
+                      <option value="">Auto / not set</option>
+                      {connectionAssets.map((candidate) => (
+                        <option key={`to-${asset.id}-${candidate.id}`} value={candidate.id}>
+                          {getEndpointOptionLabel(candidate)}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   {asset.notes ? (
@@ -1179,11 +1716,14 @@ export default function CableLinesLayer({
                   </div>
                 </div>
               </Popup>
+              ) : null}
 
+              {!cableDrawingMode ? (
               <Tooltip sticky>
                 {asset.name || "Cable"} · {asset.fibreCount || "N/A"} ·{" "}
                 {formatCableLength(length)}
               </Tooltip>
+              ) : null}
             </Polyline>
 
             {showCableDistances === true && mapViewZoom >= 17 &&

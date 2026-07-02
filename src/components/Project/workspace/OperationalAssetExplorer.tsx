@@ -27,6 +27,68 @@ function norm(value: unknown): string {
   return text(value).toLowerCase();
 }
 
+
+const CORE_CABLE_FIBRE_COUNTS = new Set([12, 24, 36, 48, 96, 144, 288]);
+
+function parseCableFibreCount(asset: SavedMapAsset): number | null {
+  const item = asset as any;
+  const candidates = [
+    item.fibreCount,
+    item.fiberCount,
+    item.coreCount,
+    item.size,
+    item.cableSize,
+    item.cableFibreCount,
+    item.properties?.fibreCount,
+    item.properties?.fiberCount,
+    item.properties?.coreCount,
+    item.properties?.size,
+    assetName(asset),
+    item.cableId,
+    item.cableName,
+    item.label,
+  ];
+
+  for (const candidate of candidates) {
+    const raw = text(candidate);
+    if (!raw) continue;
+    const match = raw.match(/\b(12|24|36|48|96|144|288)\s*(?:f|fibre|fiber|core|cores|ulw|fulw)?\b/i);
+    if (match) return Number(match[1]);
+  }
+
+  return null;
+}
+
+function isCoreNetworkCable(asset: SavedMapAsset): boolean {
+  const item = asset as any;
+  const raw = [
+    item.assetType,
+    item.type,
+    item.cableType,
+    item.routeType,
+    item.name,
+    item.label,
+    item.cableId,
+    item.cableName,
+  ].map(norm).join(" ");
+
+  const isLineOrCable = asset.geometry?.type === "LineString" || raw.includes("cable") || raw.includes("ulw") || raw.includes("fulw") || raw.includes("feeder") || raw.includes("link");
+  if (!isLineOrCable) return false;
+
+  const looksLikeServiceDrop =
+    raw.includes("uprn") ||
+    raw.includes("drop") ||
+    raw.includes("service drop") ||
+    raw.includes("drop cable") ||
+    raw.includes("home drop") ||
+    raw.includes("premise drop");
+
+  const fibreCount = parseCableFibreCount(asset);
+  if (looksLikeServiceDrop && (!fibreCount || fibreCount <= 1)) return false;
+  if (!fibreCount) return false;
+  return CORE_CABLE_FIBRE_COUNTS.has(fibreCount);
+}
+
 function assetName(asset: SavedMapAsset): string {
   const item = asset as any;
   return text(item.name || item.jointName || item.label || item.cableId || item.assetId || item.id || "Unnamed asset");
@@ -43,15 +105,9 @@ function assetType(asset: SavedMapAsset): string {
     "other"
   );
 
-  // CABLES FIRST
-  if (
-    asset.geometry?.type === "LineString" ||
-    raw.includes("cable") ||
-    raw.includes("ulw") ||
-    raw.includes("fulw") ||
-    raw.includes("feeder") ||
-    raw.includes("link")
-  ) {
+  // CABLES FIRST — only core network cables belong in this explorer.
+  // UPRN/service drops stay out of the core engineering list.
+  if (isCoreNetworkCable(asset)) {
     return "cable";
   }
 
@@ -307,7 +363,16 @@ export default function OperationalAssetExplorer({
   const [filters, setFilters] = useState<AssetExplorerFiltersState>(DEFAULT_ASSET_EXPLORER_FILTERS);
   const [selectedBulkCableIds, setSelectedBulkCableIds] = useState<string[]>([]);
 
-  const allRows = useMemo(() => (projectAssets || []).map((asset) => toRow(asset, projectAssets || [])), [projectAssets]);
+    const explorerAssets = useMemo(() => {
+    return (projectAssets || []).filter((asset) => {
+      const item = asset as any;
+      const raw = [item.assetType, item.type, item.cableType, item.name, item.label, item.cableId, item.cableName].map(norm).join(" ");
+      const isLineOrCable = asset.geometry?.type === "LineString" || raw.includes("cable") || raw.includes("ulw") || raw.includes("fulw") || raw.includes("feeder") || raw.includes("link");
+      return !isLineOrCable || isCoreNetworkCable(asset);
+    });
+  }, [projectAssets]);
+
+  const allRows = useMemo(() => explorerAssets.map((asset) => toRow(asset, explorerAssets)), [explorerAssets]);
   const filteredRows = useMemo(() => sortRows(allRows.filter((row) => matchesFilters(row, filters)), filters.sort), [allRows, filters]);
 
   const riskCount = allRows.filter((row) => row.risk === "WARN" || row.risk === "FULL" || row.risk === "OVER").length;

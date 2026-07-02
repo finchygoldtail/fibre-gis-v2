@@ -56,6 +56,8 @@ type Props = {
   assets: SavedMapAsset[];
   visibleLayers: LayerVisibility;
   highlightedAssetId?: string | null;
+  cableDrawingMode?: boolean;
+  onCablePointAsset?: (asset: SavedMapAsset) => void;
   onOpenAsset: (asset: SavedMapAsset) => void;
   onDeleteAsset: (id: string) => void;
   onEditAsset: (asset: SavedMapAsset) => void;
@@ -250,6 +252,23 @@ function getPointLatLng(asset: SavedMapAsset): [number, number] | null {
   if (Number.isFinite(lat) && Number.isFinite(lng)) return [lat, lng];
 
   return null;
+}
+
+function isEngineeringDrawingJointAsset(asset: SavedMapAsset): boolean {
+  const assetType = String((asset as any).assetType || "").toLowerCase();
+  const jointType = String((asset as any).jointType || "").toLowerCase();
+  const name = String((asset as any).name || "").toLowerCase();
+
+  return (
+    assetType === "ag-joint" ||
+    assetType === "joint" ||
+    assetType.includes("joint") ||
+    jointType.includes("joint") ||
+    name.includes("cmj") ||
+    name.includes("mmj") ||
+    name.includes("lmj") ||
+    name.includes("midj")
+  );
 }
 
 
@@ -1232,6 +1251,42 @@ function createHighlightedIcon(baseIcon: L.DivIcon) {
     popupAnchor: [0, -19],
   });
 }
+
+function createCableDrawIcon(baseIcon: L.DivIcon) {
+  const html = baseIcon.options.html || "";
+
+  return L.divIcon({
+    className: "",
+    html: `
+      <div style="
+        position: relative;
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+      ">
+        <div style="
+          position: absolute;
+          inset: 1px;
+          border-radius: 999px;
+          border: 3px solid #38bdf8;
+          box-shadow: 0 0 0 5px rgba(56,189,248,0.25), 0 0 20px rgba(56,189,248,0.85);
+          animation: alistra-cable-draw-pulse 1.1s ease-in-out infinite;
+        "></div>
+        <div style="
+          position: relative;
+          z-index: 2;
+        ">
+          ${html}
+        </div>
+      </div>
+    `,
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
+    popupAnchor: [0, -17],
+  });
+}
+
 function getHomeClusterBounds(cluster: HomeCluster): L.LatLngBounds | null {
   const positions = cluster.assets
     .map((home) => getPointLatLng(home))
@@ -1292,6 +1347,8 @@ export default function AssetMarkersLayer({
   assets,
   visibleLayers,
   highlightedAssetId,
+  cableDrawingMode = false,
+  onCablePointAsset,
   onOpenAsset,
   onDeleteAsset,
   onEditAsset,
@@ -1319,6 +1376,21 @@ React.useEffect(() => {
   style.id = "alistra-search-pulse-style";
   style.innerHTML = `
     @keyframes alistra-search-pulse {
+      0% {
+        transform: scale(0.75);
+        opacity: 0.45;
+      }
+      50% {
+        transform: scale(1.15);
+        opacity: 1;
+      }
+      100% {
+        transform: scale(0.75);
+        opacity: 0.45;
+      }
+    }
+
+    @keyframes alistra-cable-draw-pulse {
       0% {
         transform: scale(0.75);
         opacity: 0.45;
@@ -1381,6 +1453,12 @@ React.useEffect(() => {
     // They must never appear as editable blue/default map markers here.
     if (isReadOnlyOpenreachAsset(asset)) return false;
 
+    // Engineering drawing mode keeps the global map uncluttered while drawing
+    // long feeder/link routes: show only joints as cable snap targets.
+    if (cableDrawingMode) {
+      return isEngineeringDrawingJointAsset(asset);
+    }
+
     // Handle homes separately so SDU/MDU/Flats filters don't accidentally hide them
     if (asset.assetType === "home") {
       if (!homesEnabled) return false;
@@ -1406,7 +1484,7 @@ React.useEffect(() => {
 
     return true;
   });
-}, [assets, visibleLayers, mapView.zoom, renderBounds, homeStatusById]);
+}, [assets, visibleLayers, mapView.zoom, renderBounds, homeStatusById, cableDrawingMode]);
 
   const nonHomePointAssets = useMemo(
     () => pointAssets.filter((asset) => asset.assetType !== "home"),
@@ -1475,8 +1553,16 @@ React.useEffect(() => {
       ? homeMoveSelectedIcon
       : getIconForAsset(asset, assets, visibleLayers, cachedHomeStatus);
 
-const icon =
-  asset.id === highlightedAssetId ? createHighlightedIcon(baseIcon as L.DivIcon) : baseIcon;
+const shouldCableHighlight =
+  cableDrawingMode &&
+  asset.assetType !== "home" &&
+  asset.assetType !== "area";
+
+const icon = asset.id === highlightedAssetId
+  ? createHighlightedIcon(baseIcon as L.DivIcon)
+  : shouldCableHighlight
+    ? createCableDrawIcon(baseIcon as L.DivIcon)
+    : baseIcon;
     const connectedDp = asset.assetType === "home" ? homeConnectedDpById.get(asset.id) || null : null;
     const dpUsage = asset.assetType === "distribution-point" ? dpUsageById.get(asset.id) || null : null;
     const parentSbSummary = asset.assetType === "distribution-point" ? parentSbSummaryById.get(asset.id) || null : null;
@@ -1496,7 +1582,15 @@ const icon =
 
             onMoveAsset?.(asset.id, position.lat, position.lng);
           },
-          click: () => {
+          click: (event) => {
+  if (cableDrawingMode) {
+    event.originalEvent?.stopPropagation();
+    if (asset.assetType !== "home" && asset.assetType !== "area") {
+      onCablePointAsset?.(asset);
+    }
+    return;
+  }
+
   if (surveyDeleteHomesMode) {
     if (asset.assetType === "home") {
       onToggleSurveyDeleteHome?.(asset);
@@ -1521,6 +1615,7 @@ const icon =
 },
         }}
       >
+        {!cableDrawingMode ? (
         <Popup minWidth={260}>
           <div style={popupCardStyle}>
             <div style={titleStyle}>{asset.name}</div>
@@ -1757,6 +1852,7 @@ const icon =
             </div>
           </div>
         </Popup>
+        ) : null}
       </Marker>
     );
   };

@@ -1,3 +1,5 @@
+import { getDistanceMeters } from "../../utils/mapMeasure";
+
 /**
  * Cable fibre usage helper.
  *
@@ -159,9 +161,24 @@ function rowHasMeaningfulAllocation(row: any): boolean {
   return values.some((value) => value !== "" && value !== "-" && value.toLowerCase() !== "spare");
 }
 
+function parseFibreNumber(value: any): number | null {
+  const direct = Number(value);
+  if (Number.isFinite(direct) && direct > 0 && direct <= 432) return direct;
+
+  const match = String(value ?? "").match(/\b(\d{1,3})\b/);
+  if (!match) return null;
+
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) && parsed > 0 && parsed <= 432 ? parsed : null;
+}
+
 function extractFibreNumber(row: any): number | null {
   if (row && !Array.isArray(row) && typeof row === "object") {
     const preferredKeys = [
+      "outputFibre",
+      "outputFiber",
+      "fibreOut",
+      "fiberOut",
       "inputFibre",
       "inputFiber",
       "inFibre",
@@ -179,16 +196,24 @@ function extractFibreNumber(row: any): number | null {
     ];
 
     for (const key of preferredKeys) {
-      const value = Number((row as any)[key]);
-      if (Number.isFinite(value) && value > 0) return value;
+      const value = parseFibreNumber((row as any)[key]);
+      if (value !== null) return value;
     }
   }
 
-  for (const value of rowToValues(row)) {
-    const match = String(value ?? "").match(/\b(\d{1,3})\b/);
-    if (!match) continue;
-    const parsed = Number(match[1]);
-    if (Number.isFinite(parsed) && parsed > 0 && parsed <= 432) return parsed;
+  const values = rowToValues(row);
+
+  // Meet-me spreadsheet rows are normally:
+  // LMJ, tray, splitter in, splitter, splitter fibre, input cable, input fibre, output cable, output fibre, status, notes.
+  // Prefer the actual input/output fibre columns before tray number.
+  for (const index of [8, 6, 4, 2, 1]) {
+    const value = parseFibreNumber(values[index]);
+    if (value !== null) return value;
+  }
+
+  for (const value of values) {
+    const parsed = parseFibreNumber(value);
+    if (parsed !== null) return parsed;
   }
 
   return null;
@@ -369,5 +394,5 @@ export function getCableUsedFibres(cable: any, allAssets: any[] = []): number {
   });
 
   return derived.usedFibres;
-}import { getDistanceMeters } from "../../utils/mapMeasure";
+}
 

@@ -5,9 +5,13 @@ import { visualizer } from "rollup-plugin-visualizer";
 export default defineConfig({
   plugins: [
     react(),
-    visualizer({
-      open: true,
-      filename: "stats.html",
-    }),
+    ...(process.env.ANALYZE === "true"
+      ? [
+          visualizer({
+            open: true,
+            filename: "stats.html",
+          }),
+        ]
+      : []),
   ],
 });

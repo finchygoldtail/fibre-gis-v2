@@ -113,6 +113,21 @@ function isDropAsset(asset: any): boolean {
   );
 }
 
+function isFeederOrLinkCable(asset: any): boolean {
+  if (!isCableAsset(asset) || isDropAsset(asset)) return false;
+
+  const cableType = String(
+    asset?.cableType ||
+      asset?.type ||
+      asset?.routeType ||
+      asset?.properties?.cableType ||
+      asset?.properties?.type ||
+      "",
+  ).toLowerCase();
+
+  return cableType.includes("feeder") || cableType.includes("link");
+}
+
 function isJointAsset(asset: any): boolean {
   const type = getAssetType(asset);
   const jointType = String(
@@ -665,14 +680,204 @@ function findNearestNodeDistance(point: Coordinate, nodes: any[]): number {
   return best;
 }
 
+function normaliseEndpointLookupKey(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[–—]/g, "-")
+    .replace(/\s+/g, "")
+    .replace(/[^a-z0-9-]/g, "");
+}
+
+function getEndpointLookupKeysForAsset(asset: any): string[] {
+  const values = [
+    asset?.id,
+    asset?.assetId,
+    asset?.jointId,
+    asset?.jointName,
+    asset?.dpId,
+    asset?.poleId,
+    asset?.chamberId,
+    asset?.cabinetId,
+    asset?.name,
+    asset?.assetName,
+    asset?.label,
+    asset?.nodeId,
+    asset?.properties?.id,
+    asset?.properties?.assetId,
+    asset?.properties?.jointId,
+    asset?.properties?.jointName,
+    asset?.properties?.name,
+  ];
+
+  const keys = new Set<string>();
+
+  values.forEach((value) => {
+    const key = normaliseEndpointLookupKey(value);
+    if (!key) return;
+
+    keys.add(key);
+
+    const withoutJointSuffix = key.replace(/-(cmj|mmj|lmj|midj)\d{1,4}$/i, "");
+    if (withoutJointSuffix) keys.add(withoutJointSuffix);
+
+    const nodeMatches = key.match(/(?:ag|lmj|mmj|cmj|midj|lc|sb|sc)\d{1,4}/gi);
+    nodeMatches?.forEach((match) => keys.add(normaliseEndpointLookupKey(match)));
+  });
+
+  return Array.from(keys).filter((key) => key.length >= 2);
+}
+
+function getCableEndpointReferences(cable: any, side: "from" | "to"): unknown[] {
+  const props = cable?.properties || {};
+
+  if (side === "from") {
+    return [
+      cable?.fromAssetId,
+      cable?.fromId,
+      cable?.fromJointId,
+      cable?.fromJoint,
+      cable?.fromName,
+      cable?.fromAssetName,
+      cable?.startAssetId,
+      cable?.startJoint,
+      cable?.aAssetId,
+      cable?.aEnd,
+      cable?.aEndAssetId,
+      cable?.sourceAssetId,
+      cable?.sourceJointId,
+      cable?.sourceJoint,
+      cable?.sourceName,
+      cable?.upstreamAssetId,
+      cable?.upstreamJoint,
+      props?.fromAssetId,
+      props?.fromId,
+      props?.fromJointId,
+      props?.fromJoint,
+      props?.fromAssetName,
+      props?.startAssetId,
+      props?.startJoint,
+      props?.aAssetId,
+      props?.aEnd,
+      props?.aEndAssetId,
+      props?.sourceAssetId,
+      props?.sourceJointId,
+      props?.sourceJoint,
+    ];
+  }
+
+  return [
+    cable?.toAssetId,
+    cable?.toId,
+    cable?.toJointId,
+    cable?.toJoint,
+    cable?.toName,
+    cable?.toAssetName,
+    cable?.endAssetId,
+    cable?.endJoint,
+    cable?.bAssetId,
+    cable?.zEnd,
+    cable?.zEndAssetId,
+    cable?.targetAssetId,
+    cable?.targetJointId,
+    cable?.targetJoint,
+    cable?.targetName,
+    cable?.downstreamAssetId,
+    cable?.downstreamJoint,
+    props?.toAssetId,
+    props?.toId,
+    props?.toJointId,
+    props?.toJoint,
+    props?.toAssetName,
+    props?.endAssetId,
+    props?.endJoint,
+    props?.bAssetId,
+    props?.zEnd,
+    props?.zEndAssetId,
+    props?.targetAssetId,
+    props?.targetJointId,
+    props?.targetJoint,
+  ];
+}
+
+function hasMatchingEndpointReference(reference: unknown, nodeLookupKeys: Set<string>): boolean {
+  const lookup = normaliseEndpointLookupKey(reference);
+  if (!lookup) return false;
+
+  if (nodeLookupKeys.has(lookup)) return true;
+
+  for (const key of nodeLookupKeys) {
+    if (key.length < 3) continue;
+    if (key.includes(lookup) || lookup.includes(key)) return true;
+  }
+
+  return false;
+}
+
+function hasValidCableEndpoint(cable: any, side: "from" | "to", nodeLookupKeys: Set<string>): boolean {
+  return getCableEndpointReferences(cable, side).some((reference) =>
+    hasMatchingEndpointReference(reference, nodeLookupKeys),
+  );
+}
+
+function findReferencedEndpointNode(cable: any, side: "from" | "to", nodes: any[]): any | null {
+  const references = getCableEndpointReferences(cable, side);
+
+  return (
+    nodes.find((node) =>
+      references.some((reference) =>
+        getEndpointLookupKeysForAsset(node).some((key) =>
+          hasMatchingEndpointReference(reference, new Set([key])),
+        ),
+      ),
+    ) || null
+  );
+}
+
+function hasCableEndpointSnap(
+  cable: any,
+  side: "from" | "to",
+  endpointPoint: Coordinate,
+  oppositeEndpointPoint: Coordinate,
+  nodes: any[],
+  nodeLookupKeys: Set<string>,
+  maxSnapDistanceM: number,
+): boolean {
+  if (hasValidCableEndpoint(cable, side, nodeLookupKeys)) return true;
+
+  const referencedNode = findReferencedEndpointNode(cable, side, nodes);
+  const referencedPoint = referencedNode ? getPointCoordinate(referencedNode) : null;
+
+  return Boolean(
+    referencedPoint &&
+      Math.min(
+        haversineMeters(endpointPoint, referencedPoint),
+        haversineMeters(oppositeEndpointPoint, referencedPoint),
+      ) <= maxSnapDistanceM,
+  );
+}
+
+function buildAssetIdLookup(assets: any[]): Set<string> {
+  const ids = new Set<string>();
+
+  for (const asset of assets) {
+    getEndpointLookupKeysForAsset(asset).forEach((key) => ids.add(key));
+  }
+
+  return ids;
+}
+
 function addCableEndpointSnappingIssues(
   assets: any[],
   issues: AuditIssue[],
+  allNetworkAssets: any[] = assets,
 ): void {
   const cables = assets.filter(
-    (asset) => isCableAsset(asset) && !isDropAsset(asset),
+    (asset) => isCableAsset(asset) && !isDropAsset(asset) && !isFeederOrLinkCable(asset),
   );
-  const nodes = assets.filter(isNetworkNodeAsset);
+  const networkAssets = allNetworkAssets.length ? allNetworkAssets : assets;
+  const nodes = networkAssets.filter(isNetworkNodeAsset);
+  const nodeIds = buildAssetIdLookup(nodes);
 
   if (!cables.length || !nodes.length) return;
 
@@ -680,13 +885,20 @@ function addCableEndpointSnappingIssues(
     const coords = getAssetCoordinates(cable);
     if (coords.length < 2) continue;
 
-    const start = coords[0];
-    const end = coords[coords.length - 1];
-    const startDistance = findNearestNodeDistance(start, nodes);
-    const endDistance = findNearestNodeDistance(end, nodes);
     const maxSnapDistanceM = 15;
 
-    if (!Number.isFinite(startDistance) || startDistance > maxSnapDistanceM) {
+    const start = coords[0];
+    const end = coords[coords.length - 1];
+    const hasLinkedStart = hasCableEndpointSnap(cable, "from", start, end, nodes, nodeIds, maxSnapDistanceM);
+    const hasLinkedEnd = hasCableEndpointSnap(cable, "to", end, start, nodes, nodeIds, maxSnapDistanceM);
+    const startDistance = hasLinkedStart
+      ? 0
+      : findNearestNodeDistance(start, nodes);
+    const endDistance = hasLinkedEnd
+      ? 0
+      : findNearestNodeDistance(end, nodes);
+
+    if (!hasLinkedStart && (!Number.isFinite(startDistance) || startDistance > maxSnapDistanceM)) {
       issues.push(
         makeIssue(
           cable,
@@ -696,7 +908,7 @@ function addCableEndpointSnappingIssues(
       );
     }
 
-    if (!Number.isFinite(endDistance) || endDistance > maxSnapDistanceM) {
+    if (!hasLinkedEnd && (!Number.isFinite(endDistance) || endDistance > maxSnapDistanceM)) {
       issues.push(
         makeIssue(
           cable,
@@ -881,7 +1093,7 @@ function addFibreAllocationIssues(assets: any[], issues: AuditIssue[]): void {
   }
 }
 
-export function auditAreaAssets(assets: any[] = []): AuditIssue[] {
+export function auditAreaAssets(assets: any[] = [], allNetworkAssets: any[] = assets): AuditIssue[] {
   const issues: AuditIssue[] = [];
   const validAssets = assets.filter(Boolean).filter((asset) => !isReferenceInfrastructureAsset(asset));
 
@@ -945,7 +1157,7 @@ export function auditAreaAssets(assets: any[] = []): AuditIssue[] {
   // CABLE ENDPOINT SNAP QA
   // --------------------------------------------------
 
-  addCableEndpointSnappingIssues(validAssets, issues);
+  addCableEndpointSnappingIssues(validAssets, issues, allNetworkAssets);
 
   // --------------------------------------------------
   // FIBRE ALLOCATION QA

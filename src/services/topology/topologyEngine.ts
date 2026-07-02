@@ -59,6 +59,114 @@ function getLine(asset: SavedMapAsset): [number, number][] {
     .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
 }
 
+function normaliseEndpointLookupKey(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[–—]/g, "-")
+    .replace(/\s+/g, "")
+    .replace(/[^a-z0-9-]/g, "");
+}
+
+function getEndpointLookupKeysForNode(node: TopologyNode): string[] {
+  const asset = node.asset as any;
+  const values = [
+    node.id,
+    node.name,
+    asset?.id,
+    asset?.assetId,
+    asset?.jointId,
+    asset?.jointName,
+    asset?.dpId,
+    asset?.poleId,
+    asset?.chamberId,
+    asset?.cabinetId,
+    asset?.name,
+    asset?.assetName,
+    asset?.label,
+    asset?.nodeId,
+    asset?.properties?.id,
+    asset?.properties?.assetId,
+    asset?.properties?.jointId,
+    asset?.properties?.jointName,
+    asset?.properties?.name,
+  ];
+
+  const keys = new Set<string>();
+
+  values.forEach((value) => {
+    const key = normaliseEndpointLookupKey(value);
+    if (!key) return;
+
+    keys.add(key);
+
+    const withoutJointSuffix = key.replace(/-(cmj|mmj|lmj|midj)\d{1,4}$/i, "");
+    if (withoutJointSuffix) keys.add(withoutJointSuffix);
+
+    const nodeMatches = key.match(/(?:ag|lmj|mmj|cmj|midj|lc|sb|sc)\d{1,4}/gi);
+    nodeMatches?.forEach((match) => keys.add(normaliseEndpointLookupKey(match)));
+  });
+
+  return Array.from(keys).filter((key) => key.length >= 2);
+}
+
+function getCableEndpointReferences(asset: SavedMapAsset, side: "from" | "to"): unknown[] {
+  const cable = asset as any;
+  const props = cable?.properties || {};
+
+  if (side === "from") {
+    return [
+      cable?.fromAssetId, cable?.fromId, cable?.fromJointId, cable?.fromJoint, cable?.fromName, cable?.fromAssetName,
+      cable?.startAssetId, cable?.startJoint, cable?.aAssetId, cable?.aEnd, cable?.aEndAssetId,
+      cable?.sourceAssetId, cable?.sourceJointId, cable?.sourceJoint, cable?.sourceName, cable?.upstreamAssetId, cable?.upstreamJoint,
+      props?.fromAssetId, props?.fromId, props?.fromJointId, props?.fromJoint, props?.fromAssetName,
+      props?.startAssetId, props?.startJoint, props?.aAssetId, props?.aEnd, props?.aEndAssetId,
+      props?.sourceAssetId, props?.sourceJointId, props?.sourceJoint,
+    ];
+  }
+
+  return [
+    cable?.toAssetId, cable?.toId, cable?.toJointId, cable?.toJoint, cable?.toName, cable?.toAssetName,
+    cable?.endAssetId, cable?.endJoint, cable?.bAssetId, cable?.zEnd, cable?.zEndAssetId,
+    cable?.targetAssetId, cable?.targetJointId, cable?.targetJoint, cable?.targetName, cable?.downstreamAssetId, cable?.downstreamJoint,
+    props?.toAssetId, props?.toId, props?.toJointId, props?.toJoint, props?.toAssetName,
+    props?.endAssetId, props?.endJoint, props?.bAssetId, props?.zEnd, props?.zEndAssetId,
+    props?.targetAssetId, props?.targetJointId, props?.targetJoint,
+  ];
+}
+
+function findManualEndpointNode(
+  cableNode: TopologyNode,
+  side: "from" | "to",
+  nodeList: TopologyNode[],
+): TopologyNode | null {
+  const references = getCableEndpointReferences(cableNode.asset, side)
+    .map(normaliseEndpointLookupKey)
+    .filter(Boolean);
+
+  if (!references.length) return null;
+
+  const candidates = nodeList.filter((node) => node.id !== cableNode.id && node.kind !== "cable");
+
+  for (const reference of references) {
+    const exact = candidates.find((node) =>
+      getEndpointLookupKeysForNode(node).some((key) => key === reference),
+    );
+    if (exact) return exact;
+  }
+
+  for (const reference of references) {
+    const fuzzy = candidates.find((node) =>
+      getEndpointLookupKeysForNode(node).some(
+        (key) => key.length >= 3 && (key.includes(reference) || reference.includes(key)),
+      ),
+    );
+    if (fuzzy) return fuzzy;
+  }
+
+  return null;
+}
+
 function isCable(asset: SavedMapAsset): boolean {
   return (
     asset.assetType === "cable" ||
@@ -200,17 +308,23 @@ export function buildTopologyGraph(assets: SavedMapAsset[]): TopologyGraph {
       const start = line[0];
       const end = line[line.length - 1];
 
-      const startNode = pointNodes
-        .filter((item) => item.node.id !== cableNode.id)
-        .map((item) => ({ ...item, distance: distanceMeters(start, item.point) }))
-        .filter((item) => item.distance <= POINT_CABLE_MATCH_TOLERANCE_METRES)
-        .sort((a, b) => a.distance - b.distance)[0];
+      const manualStartNode = findManualEndpointNode(cableNode, "from", nodeList);
+      const startNode = manualStartNode
+        ? { node: manualStartNode, point: getPoint(manualStartNode.asset) || start, distance: 0 }
+        : pointNodes
+            .filter((item) => item.node.id !== cableNode.id)
+            .map((item) => ({ ...item, distance: distanceMeters(start, item.point) }))
+            .filter((item) => item.distance <= POINT_CABLE_MATCH_TOLERANCE_METRES)
+            .sort((a, b) => a.distance - b.distance)[0];
 
-      const endNode = pointNodes
-        .filter((item) => item.node.id !== cableNode.id && item.node.id !== startNode?.node.id)
-        .map((item) => ({ ...item, distance: distanceMeters(end, item.point) }))
-        .filter((item) => item.distance <= POINT_CABLE_MATCH_TOLERANCE_METRES)
-        .sort((a, b) => a.distance - b.distance)[0];
+      const manualEndNode = findManualEndpointNode(cableNode, "to", nodeList);
+      const endNode = manualEndNode
+        ? { node: manualEndNode, point: getPoint(manualEndNode.asset) || end, distance: 0 }
+        : pointNodes
+            .filter((item) => item.node.id !== cableNode.id && item.node.id !== startNode?.node.id)
+            .map((item) => ({ ...item, distance: distanceMeters(end, item.point) }))
+            .filter((item) => item.distance <= POINT_CABLE_MATCH_TOLERANCE_METRES)
+            .sort((a, b) => a.distance - b.distance)[0];
 
       if (!startNode || !endNode) return;
 

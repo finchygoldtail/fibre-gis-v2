@@ -2003,7 +2003,7 @@ export default function ProjectWorkspace({
   }, [activeProjectId, projectArea, projectName, workspaceAssets]);
 
   const auditIssues = useMemo(() => {
-    const rawIssues = auditAreaAssets(qaWorkspaceAssets);
+    const rawIssues = auditAreaAssets(qaWorkspaceAssets, workspaceAssets);
 
     return rawIssues.filter((issue) => {
       const issueText = String(
@@ -2035,7 +2035,7 @@ export default function ProjectWorkspace({
 
       return true;
     });
-  }, [qaWorkspaceAssets]);
+  }, [qaWorkspaceAssets, workspaceAssets]);
   const networkState = useMemo(
     () => buildNetworkState(workspaceAssets),
     [workspaceAssets],
