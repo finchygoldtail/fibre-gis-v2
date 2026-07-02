@@ -79,7 +79,7 @@ export default function WorkspaceMaintenance({ auditIssues = [], stats, projectA
     <section style={wide}>
       <h3 style={title}>Workspace Activity Feed</h3>
       <p style={{ color: "#94a3b8", fontSize: 12, marginTop: -4 }}>
-        Read-only operational feed for Phase 9A. Full audited Firestore activity logging can be wired in Phase 9D.
+        Read-only operational feed. Audited activity logging can be enabled from the maintenance workflow.
       </p>
 
       {rows.length ? rows.map((item, index) => (

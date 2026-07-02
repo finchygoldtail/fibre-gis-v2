@@ -235,7 +235,6 @@ export default function WorkspaceBuild({
 
   const applyBuildBulkPiaNoi = async () => {
     if (!onBulkUpdateCablePiaNoi) {
-      alert("Bulk PIA NOI update is not wired into this workspace yet.");
       return;
     }
 
@@ -540,6 +539,20 @@ export default function WorkspaceBuild({
             background: "#14532d",
             borderColor: "rgba(74,222,128,0.42)",
             marginTop: 12,
+            cursor:
+              filteredPiaCables.length &&
+              onBulkUpdateCablePiaNoi &&
+              piaNoiNumber.trim() &&
+              piaAuditNote.trim()
+                ? "pointer"
+                : "not-allowed",
+            opacity:
+              filteredPiaCables.length &&
+              onBulkUpdateCablePiaNoi &&
+              piaNoiNumber.trim() &&
+              piaAuditNote.trim()
+                ? 1
+                : 0.55,
           }}
           onClick={applyBuildBulkPiaNoi}
           disabled={!filteredPiaCables.length || !onBulkUpdateCablePiaNoi || !piaNoiNumber.trim() || !piaAuditNote.trim()}

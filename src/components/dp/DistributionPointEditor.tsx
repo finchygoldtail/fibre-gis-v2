@@ -3,7 +3,7 @@
 // PURPOSE: Dedicated operational editor for DPs / CBTs / AFNs / MDUs.
 //          This is NOT the FibreTrayEditor. FibreTrayEditor remains for
 //          CMJ / LMJ / MMJ splice continuity only.
-// PHASE 8B — DP Operational Fibre Routing.
+// DP Operational Fibre Routing.
 // =====================================================
 
 import { getDistanceMeters as distanceMeters } from "../../utils/mapMeasure";

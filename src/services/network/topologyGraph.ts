@@ -2,7 +2,7 @@
 // FILE: src/services/network/topologyGraph.ts
 // PURPOSE: Network State wrapper around the existing graph builder.
 //          Keeps the old services/networkGraph API intact while giving
-//          Phase 8C a single topology entry point.
+//          a single topology entry point.
 // =====================================================
 
 import {

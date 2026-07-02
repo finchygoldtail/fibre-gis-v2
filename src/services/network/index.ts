@@ -1,6 +1,6 @@
 // =====================================================
 // FILE: src/services/network/index.ts
-// PURPOSE: Phase 8C network state public API.
+// PURPOSE: Network state public API.
 // =====================================================
 
 export * from "./types";

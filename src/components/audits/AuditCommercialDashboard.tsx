@@ -223,7 +223,7 @@ export default function AuditCommercialDashboard({
   const [statuses, setStatuses] = useState<CommercialAuditStatus[]>([]);
   const [documentValues, setDocumentValues] = useState<CommercialRegisterValues | null>(null);
 
-  // Phase 14 commercial security gate. Existing roles are preserved; no
+  // Commercial security gate. Existing roles are preserved; no
   // Firestore schema/backend change is required. Sensitive money values are
   // only exposed to build managers / higher-ups, represented in the current
   // role model by Super User and Administrator accounts. Build Partner, Survey

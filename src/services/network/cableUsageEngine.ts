@@ -1,6 +1,6 @@
 // =====================================================
 // FILE: src/services/network/cableUsageEngine.ts
-// PURPOSE: Central read-only cable utilisation engine for Phase 8C.
+// PURPOSE: Central read-only cable utilisation engine.
 //          Supports downstream propagation from DP routing while keeping
 //          legacy/joint mapping behaviour as a safe compatibility fallback.
 // =====================================================

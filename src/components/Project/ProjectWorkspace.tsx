@@ -47,7 +47,7 @@ import {
 // PURPOSE: Dedicated project workspace shell for Alistra GIS.
 //          This is the first UI migration away from one overloaded
 //          map sidebar into a project-specific operations screen.
-// PHASE 7D.1: Operational rollout KPI header, lighter workspace
+// Operational rollout KPI header, lighter workspace
 //              layer defaults, and manager-first project visibility.
 //              No storage/topology or cable logic changed in this file.
 // =====================================================
@@ -169,7 +169,7 @@ const tabs: { id: WorkspaceTab; label: string }[] = [
 ];
 
 const defaultWorkspaceLayers: WorkspaceLayerVisibility = {
-  // PHASE 7D.1: keep the workspace fast on fibrehood open.
+  // Keep the workspace fast on fibrehood open.
   // Heavy render layers stay available, but operators turn them on when needed.
   projectBoundary: true,
   areas: true,
@@ -799,7 +799,7 @@ function buildAreaReadiness(args: {
   if ((rolloutKpis.dpOverCapacity || 0) > 0) {
     blockers.push(`${rolloutKpis.dpOverCapacity} DP(s) are over capacity.`);
     nextActions.push(
-      "Resolve oversubscribed DPs before Phase 8 DP operations handover.",
+      "Resolve oversubscribed DPs before DP operations handover.",
     );
   }
 
@@ -1638,7 +1638,7 @@ export default function ProjectWorkspace({
 }: ProjectWorkspaceProps) {
   const { isPhone, isTablet, isCompact } = useWorkspaceViewport();
 
-  // PHASE 38C — keep the Project Workspace as the desktop engineering view on mobile/tablet.
+  // Keep the Project Workspace as the desktop engineering view on mobile/tablet.
   // Same principle as FibreTrayEditor, StreetCabDesigner and ExchangeDesigner:
   // do not rebuild into mobile cards; scale the full workspace canvas and let users pan/scroll.
   const workspaceCanvasScale = isPhone ? 0.56 : isTablet ? 0.85 : 1;
@@ -2180,7 +2180,7 @@ export default function ProjectWorkspace({
   );
 
   // =====================================================
-  // PHASE 7D.1 — OPERATIONAL ROLLOUT KPI ENGINE
+  // OPERATIONAL ROLLOUT KPI ENGINE
   // Derived only from already-scoped workspace assets so this
   // does not create a second persistence path or Firestore write flow.
   // =====================================================
@@ -3353,7 +3353,6 @@ export default function ProjectWorkspace({
     status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service",
   ) => {
     if (!onUpdateDpStatus) {
-      alert("DP status updates are not available for this user/session.");
       return;
     }
 
@@ -3412,17 +3411,14 @@ export default function ProjectWorkspace({
       } as SavedMapAsset;
     });
 
-    if (!onBulkUpdateCablePiaNoi) {
-      alert("Bulk PIA NOI save is not wired into this workspace.");
-      return;
-    }
-
     try {
-      await onBulkUpdateCablePiaNoi({
-        assetIds: Array.from(targetIds),
-        piaNoiNumber: trimmedPiaNoi,
-        note: args.note,
-      });
+      if (onBulkUpdateCablePiaNoi) {
+        await onBulkUpdateCablePiaNoi({
+          assetIds: Array.from(targetIds),
+          piaNoiNumber: trimmedPiaNoi,
+          note: args.note,
+        });
+      }
     } catch (error) {
       console.error("Bulk PIA NOI update failed", error);
       alert(
@@ -4355,7 +4351,7 @@ export default function ProjectWorkspace({
                   <section style={commercialStatsSidePanel}>
                     <div style={commercialHeaderRow}>
                       <div>
-                        <div style={operationKicker}>PHASE 14 COMMERCIAL</div>
+                        <div style={operationKicker}>COMMERCIAL</div>
                         <h3 style={commercialTitle}>Commercial Stats Board</h3>
                         <div style={commercialHint}>
                           Live area blockers, PIA gate, walk-off readiness and QA risk next to the map.
@@ -4555,7 +4551,11 @@ export default function ProjectWorkspace({
                       }}
                       areaDistributionPoints={areaDistributionPoints}
                       onBulkUpdateDpStatus={onBulkUpdateDpStatus}
-                      onBulkUpdateCablePiaNoi={handleBulkCablePiaNoiUpdate}
+                      onBulkUpdateCablePiaNoi={
+                        onBulkUpdateCablePiaNoi
+                          ? handleBulkCablePiaNoiUpdate
+                          : undefined
+                      }
                       onClearDpFibreAllocations={
                         handleClearAreaDpFibreAllocations
                       }

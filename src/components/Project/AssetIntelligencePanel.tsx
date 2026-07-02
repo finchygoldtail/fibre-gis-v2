@@ -3,7 +3,7 @@
 // PURPOSE: Right-side engineering intelligence panel for
 //          the Project Workspace. This keeps map rendering
 //          separate from operational FTTP intelligence.
-// PHASE 7 UI: Cleaner operational styling and spacing only.
+// Cleaner operational styling and spacing only.
 //             No intelligence calculation logic changed.
 // =====================================================
 
@@ -1064,7 +1064,7 @@ export default function AssetIntelligencePanel({
   const [auditOpen, setAuditOpen] = useState(false);
   const [auditHistoryRefreshKey, setAuditHistoryRefreshKey] = useState(0);
 
-  // PERF PHASE 5
+  // PERF: indexed matching
   // Project Workspace can pass thousands of assets into this intelligence panel.
   // Defer and memoise the heavy derived lookups so search/selection stays responsive
   // while React catches up with route, QA and fibre intelligence calculations.

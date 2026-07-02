@@ -1416,7 +1416,7 @@ React.useEffect(() => {
   const networkState = useMemo(() => buildNetworkState(assets as any), [assets]);
 
   // =====================================================
-  // PERFORMANCE PHASE 3 — MARKER RENDER INDEXES
+  // MARKER RENDER INDEXES
   // Build expensive lookup data once per asset change instead of re-scanning
   // the full asset list for every visible marker/popup render.
   // =====================================================

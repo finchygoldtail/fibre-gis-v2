@@ -1551,7 +1551,7 @@ export default function JointMapManager({
   };
 
   // =====================================================
-  // PHASE 7A.4 — REBUILD THROUGH-CABLE RESERVATIONS
+  // REBUILD THROUGH-CABLE RESERVATIONS
   // Applies service-calculated AFN / MDU reservation updates to every
   // DP on the selected through-cable chain. Storage/save mechanics stay
   // unchanged: this only updates the same savedJoints state path used by
@@ -1868,8 +1868,6 @@ export default function JointMapManager({
         ),
         maxDistanceM: 68,
       }) as SavedMapAsset[];
-
-      console.log("AUTO DROPS", autoDrops);
 
       const getHomeConnectionKey = (asset: any): string =>
         String(
@@ -4410,7 +4408,7 @@ export default function JointMapManager({
                 (asset as any).assetType || (asset as any).type || "",
               ).toLowerCase();
 
-              // PHASE 7A WORKSPACE WIRING:
+              // WORKSPACE WIRING:
               // Open operational editors directly where possible.
               // This deliberately does not touch storage, cable drawing, drops, AFN/MDU logic,
               // or Firestore chunk persistence.
@@ -4451,7 +4449,7 @@ export default function JointMapManager({
             }}
             onDeleteAsset={handleDeleteAsset}
             onEditAsset={(asset) => {
-              // PHASE 8B.2 — Keep Edit Details as metadata editing.
+              // Keep Edit Details as metadata editing.
               // The dedicated DP Operations editor is opened via the map Open/Operations path
               // and the side-panel "Open DP Operations Editor" button.
               // Do not route Edit Details into DistributionPointEditor.
@@ -5108,7 +5106,6 @@ export default function JointMapManager({
           onClose={() => setIsFieldPhotoPanelOpen(false)}
           onFilesSelected={(files) => {
             if (!files.length) return;
-            console.log("Selected field photos", files);
           }}
         />
       )}

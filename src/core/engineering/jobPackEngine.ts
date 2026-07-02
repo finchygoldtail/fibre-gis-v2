@@ -5,7 +5,7 @@ import type {
 import { generateBuildPartnerJobPack } from '../jobpack/jobPackGenerator';
 
 /**
- * Phase 15C
+ * Build Partner job pack generator
  * The Engineering Core Job Pack now delegates to the Build Partner Job Pack
  * generator. This keeps the existing Delivery Workspace API stable while
  * producing a proper multi-section pack with schedules, FAS draft, QA checks,

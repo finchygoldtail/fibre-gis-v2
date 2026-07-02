@@ -73,10 +73,8 @@ export function useExchangeController() {
     });
 
     try {
-      console.log("Saving exchange:", exchange);
       await saveExchange(exchange);
       setOpenExchangeAsset(exchange);
-      console.log("Exchange saved successfully");
     } catch (err) {
       console.error("Failed to save exchange", err);
       alert("Exchange failed to save. Check console.");

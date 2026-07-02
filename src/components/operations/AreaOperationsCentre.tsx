@@ -406,7 +406,7 @@ export default function AreaOperationsCentre({
     <section style={shellStyle}>
       <div style={headerStyle}>
         <div>
-          <div style={kickerStyle}>PHASE 14D OPERATIONS CENTRE</div>
+          <div style={kickerStyle}>OPERATIONS CENTRE</div>
           <h3 style={titleStyle}>{areaName} Operations</h3>
           <p style={hintStyle}>
             Area timeline, messages, tasks, blockers, decisions and handover notes tied directly to the project workspace.

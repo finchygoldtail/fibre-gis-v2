@@ -17,10 +17,6 @@ export function startPerfMark(label: string): () => PerfMarkResult {
       durationMs: Math.round((endedAt - startedAt) * 100) / 100,
     };
 
-    if (import.meta.env.DEV) {
-      console.log(`[Alistra GIS PERF] ${label}: ${result.durationMs}ms`);
-    }
-
     return result;
   };
 }

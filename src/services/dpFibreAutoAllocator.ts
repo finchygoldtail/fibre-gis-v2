@@ -981,7 +981,7 @@ export function allocateDpFibresForPlan(
 }
 
 // =====================================================
-// PHASE 7A.4 — THROUGH-CABLE CHAIN REBUILD
+// THROUGH-CABLE CHAIN REBUILD
 // Recalculates every AFN / MDU / MDU_SPLITTER reservation on one
 // selected through cable from the downstream end of the run backwards.
 // This fixes duplicate fibre reservations without manually editing

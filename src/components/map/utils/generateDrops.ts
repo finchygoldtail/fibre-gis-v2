@@ -96,12 +96,6 @@ export function createDropCableRecordsFromDPs(params: {
     maxDistanceM = MAX_OH_DROP_METRES,
   } = params ?? {};
 
-  console.log("DROP GEN DEBUG", {
-    dps: dps.length,
-    homes: homes.length,
-    existingDrops: existingDrops.length,
-  });
-
   const alreadyConnectedHomeIds = new Set<string>();
 
   for (const drop of existingDrops.filter(Boolean)) {
@@ -173,8 +167,6 @@ export function createDropCableRecordsFromDPs(params: {
       allocatedHomeIds.add(item.homeId);
     }
   }
-
-  console.log("DROP GEN CREATED", generated.length, generated);
 
   return generated;
 }

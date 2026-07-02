@@ -398,11 +398,6 @@ export default function OperationalAssetExplorer({
   const clearBulkCableSelection = () => setSelectedBulkCableIds([]);
 
   const applyBulkPiaNoi = async () => {
-    if (!onBulkUpdateCablePiaNoi) {
-      alert("Bulk PIA NOI update is not wired into this workspace yet.");
-      return;
-    }
-
     if (!selectedBulkCableIds.length) {
       alert("Select one or more cables first.");
       return;
@@ -473,7 +468,21 @@ export default function OperationalAssetExplorer({
           <button type="button" style={{ border: "1px solid rgba(148,163,184,0.24)", background: "#111827", color: "#f8fafc", borderRadius: 8, padding: "8px 10px", fontWeight: 900, cursor: "pointer" }} onClick={clearBulkCableSelection}>
             Clear
           </button>
-          <button type="button" style={{ border: "1px solid rgba(34,197,94,0.45)", background: "#14532d", color: "#dcfce7", borderRadius: 8, padding: "8px 10px", fontWeight: 900, cursor: "pointer" }} onClick={applyBulkPiaNoi}>
+          <button
+            type="button"
+            style={{
+              border: "1px solid rgba(34,197,94,0.45)",
+              background: "#14532d",
+              color: "#dcfce7",
+              borderRadius: 8,
+              padding: "8px 10px",
+              fontWeight: 900,
+              cursor: onBulkUpdateCablePiaNoi ? "pointer" : "not-allowed",
+              opacity: onBulkUpdateCablePiaNoi ? 1 : 0.55,
+            }}
+            onClick={applyBulkPiaNoi}
+            disabled={!onBulkUpdateCablePiaNoi}
+          >
             Apply PIA NOI
           </button>
         </div>

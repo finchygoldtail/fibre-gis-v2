@@ -1,6 +1,6 @@
 // =====================================================
 // FILE: src/services/network/networkState.ts
-// PURPOSE: Single read-only computed network state for Phase 8C.
+// PURPOSE: Single read-only computed network state.
 //          Storage remains the existing asset records/chunks; this file
 //          computes operational state in memory only.
 // =====================================================

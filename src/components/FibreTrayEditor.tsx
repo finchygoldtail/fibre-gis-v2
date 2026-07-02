@@ -594,9 +594,6 @@ export const FibreTrayEditor: React.FC = () => {
         source: "fibre-tray-editor",
       });
       lastFirebaseJsonRef.current = JSON.stringify(result.assets);
-      console.log(
-        `Saved ${result.assetCount} chunked map assets to Firestore immediately`,
-      );
     },
     [],
   );

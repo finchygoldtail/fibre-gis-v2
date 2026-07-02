@@ -498,7 +498,7 @@ export default function EngineeringDeliveryWorkspace({
     <div style={shell}>
       <header style={header}>
         <div>
-          <div style={eyebrow}>Phase 15 · Engineering Delivery Workspace</div>
+          <div style={eyebrow}>Engineering Delivery Workspace</div>
           <h2 style={title}>{areaName}</h2>
           <p style={subtitle}>
             Controlled survey review, job pack revisions, engineering change control and IFC release.
@@ -684,18 +684,18 @@ export default function EngineeringDeliveryWorkspace({
 
       {activeTab === "jobPacks" ? (
         <section style={panel}>
-          <div style={panelTitle}>Job Pack Editor</div>
-          <div style={comingSoonHero}>
+          <div style={panelTitle}>Job Pack Summary</div>
+          <div style={readinessHero}>
             <div>
-              <div style={eyebrow}>Phase 16 · Coming Soon</div>
-              <h3 style={comingSoonTitle}>Production Job Pack Editor</h3>
-              <p style={comingSoonText}>
-                The one-click Job Pack prototype has been parked while the dedicated production editor is built.
-                This keeps tonight&apos;s delivery workspace stable and prevents unfinished FAS, UPRN and route data from
-                being issued before engineering review.
+              <div style={eyebrow}>Controlled Build Pack</div>
+              <h3 style={readinessTitle}>Engineering Pack Readiness</h3>
+              <p style={readinessText}>
+                Review the current IFC status, asset coverage, FAS reference and issued-pack position before releasing work to build.
               </p>
             </div>
-            <span style={comingSoonBadge}>Coming Soon</span>
+            <span style={readinessBadge}>
+              {issuedJobPack ? "Issued" : currentIfcRevision ? "Ready" : "Locked"}
+            </span>
           </div>
 
           <div style={kpiGrid}>
@@ -741,7 +741,7 @@ export default function EngineeringDeliveryWorkspace({
               ["Digital Twin", "Complete"],
               ["PIA QA", "Complete"],
               ["Commercial Reporting", "Complete"],
-              ["Job Pack Editor", "Coming Soon"],
+              ["Job Pack Control", currentIfcRevision ? "Ready" : "Locked"],
             ].map(([label, value]) => (
               <div key={label} style={statusTimelineItem}>
                 <span>{label}</span>
@@ -750,8 +750,13 @@ export default function EngineeringDeliveryWorkspace({
             ))}
           </div>
 
-          <button type="button" style={disabledComingSoonButton} disabled>
-            Job Pack Editor Coming Soon
+          <button
+            type="button"
+            style={currentIfcRevision ? primaryButton : disabledActionButton}
+            disabled={!currentIfcRevision}
+            onClick={() => setActiveTab("buildPartner")}
+          >
+            {currentIfcRevision ? "Open Build Partner Pack" : "Complete approvals before release"}
           </button>
         </section>
       ) : null}
@@ -991,7 +996,7 @@ function Info({ label, value }: { label: string; value: React.ReactNode }) {
 
 
 
-const comingSoonHero: React.CSSProperties = {
+const readinessHero: React.CSSProperties = {
   border: "1px solid rgba(56, 189, 248, 0.35)",
   borderRadius: 20,
   padding: 18,
@@ -1003,20 +1008,20 @@ const comingSoonHero: React.CSSProperties = {
   marginBottom: 14,
 };
 
-const comingSoonTitle: React.CSSProperties = {
+const readinessTitle: React.CSSProperties = {
   margin: "6px 0 8px",
   fontSize: 24,
   color: "#f8fafc",
 };
 
-const comingSoonText: React.CSSProperties = {
+const readinessText: React.CSSProperties = {
   margin: 0,
   color: "#cbd5e1",
   maxWidth: 880,
   lineHeight: 1.5,
 };
 
-const comingSoonBadge: React.CSSProperties = {
+const readinessBadge: React.CSSProperties = {
   border: "1px solid rgba(250, 204, 21, 0.45)",
   borderRadius: 999,
   padding: "7px 12px",
@@ -1063,7 +1068,7 @@ const statusTimelineItem: React.CSSProperties = {
   gap: 4,
 };
 
-const disabledComingSoonButton: React.CSSProperties = {
+const disabledActionButton: React.CSSProperties = {
   marginTop: 14,
   border: "1px solid rgba(148, 163, 184, 0.28)",
   borderRadius: 12,

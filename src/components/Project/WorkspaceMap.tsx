@@ -5,7 +5,7 @@
 //          operational workspace shell. It deliberately does NOT
 //          own Firestore storage, autosave, asset editing, home-drop
 //          generation, or Fibre Tray parsing.
-// PHASE 7 UI: Larger operational map canvas and clearer visual
+// Larger operational map canvas and clearer visual
 //             scaling only. No storage/editing logic changed.
 // =====================================================
 

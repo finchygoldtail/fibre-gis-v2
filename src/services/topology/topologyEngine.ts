@@ -333,7 +333,7 @@ export function buildTopologyGraph(assets: SavedMapAsset[]): TopologyGraph {
         sourceAssetName: cableNode.name,
       };
 
-      // Phase 2: make the drawn cable a real graph node.
+      // Make the drawn cable a real graph node.
       // This means selecting the cable itself can trace both ways, and routes
       // read as SB → cable → CMJ/LMJ instead of jumping across the cable.
       addLink(graph, {

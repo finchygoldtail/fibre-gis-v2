@@ -58,7 +58,7 @@ export type DistributionPointDetails = {
   closureType: DistributionArchitecture;
 
   /**
-   * PHASE 7A.1
+   * Debug/QA metadata
    * Network-level serving architecture for this DP/chain.
    * This allows the planner to keep CBT, AFN and MDU logic consistent
    * instead of mixing closure types randomly per DP.
@@ -77,7 +77,7 @@ export type DistributionPointDetails = {
     reservedFibres: number;
     capacity: number;
 
-    // PHASE 7A.3 — debug/QA visibility for auto fibre allocation.
+    // Debug/QA visibility for auto fibre allocation.
     throughCableId?: string;
     throughCableName?: string;
     inputFibres?: number[];

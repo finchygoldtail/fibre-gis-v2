@@ -260,8 +260,6 @@ export default function MapToolbar({
               <button style={mobileMenuRowStyle} onClick={() => { setMoreMenuOpen(false); onGpsLocate(); }}>GPS</button>
               <button style={mobileMenuRowStyle} onClick={() => { setMoreMenuOpen(false); onToggleLayers(); }}>{isLayersOpen ? "Hide Layers" : "Layers"}</button>
               <button style={mobileMenuRowStyle} onClick={() => { setMoreMenuOpen(false); setMessagesOpen((value) => !value); }}>Messages {areaMessages.length ? `(${areaMessages.length})` : ""}</button>
-              <button style={mobileMenuRowStyle} type="button" onClick={() => setMoreMenuOpen(false)}>Notifications</button>
-              <button style={mobileMenuRowStyle} type="button" onClick={() => setMoreMenuOpen(false)}>Settings</button>
               {canSaveMap && <button style={mobileMenuRowStyle} onClick={() => { setMoreMenuOpen(false); onSaveMap(); }} disabled={isSavingMap}>{isSavingMap ? "Saving..." : "Save Map"}</button>}
               <div style={mobileUserMenuWrapStyle}><UserMenu variant="topbar" /></div>
             </div>

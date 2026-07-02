@@ -294,6 +294,7 @@ export default function LayersPanel({
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     openreachReference: true,
   });
+  const [measurementToolsOpen, setMeasurementToolsOpen] = useState(false);
 
   const displayedLayerGroups =
     qaMode === "piaQa"
@@ -504,80 +505,94 @@ export default function LayersPanel({
       </div>
 
       <div style={{ ...card, padding: "0.7rem" }}>
-        <div style={label}>Measure Distance</div>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 6,
-            marginTop: 7,
-          }}
+        <button
+          type="button"
+          onClick={() => setMeasurementToolsOpen((value) => !value)}
+          style={layerButton}
+          aria-expanded={measurementToolsOpen}
         >
-          <button
-            type="button"
-            onClick={onStartMeasurement}
-            style={isMeasuring ? btnPrimary : btnSecondary}
-            disabled={!onStartMeasurement}
-          >
-            {isMeasuring ? "Measuring" : "Start"}
-          </button>
+          <span>Measure Distance</span>
+          <span aria-hidden="true" style={{ fontSize: "0.85rem", lineHeight: 1 }}>
+            {measurementToolsOpen ? "▲" : "▼"}
+          </span>
+        </button>
 
-          <button
-            type="button"
-            onClick={onStopMeasurement}
-            style={btnSecondary}
-            disabled={!onStopMeasurement || !isMeasuring}
-          >
-            Stop
-          </button>
-        </div>
+        {measurementToolsOpen && (
+          <>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 6,
+                marginTop: 7,
+              }}
+            >
+              <button
+                type="button"
+                onClick={onStartMeasurement}
+                style={isMeasuring ? btnPrimary : btnSecondary}
+                disabled={!onStartMeasurement}
+              >
+                {isMeasuring ? "Measuring" : "Start"}
+              </button>
 
-        <div style={{ marginTop: 8, color: "#cbd5e1", fontSize: "0.82rem" }}>
-          Click points on the map to measure distance.
-        </div>
+              <button
+                type="button"
+                onClick={onStopMeasurement}
+                style={btnSecondary}
+                disabled={!onStopMeasurement || !isMeasuring}
+              >
+                Stop
+              </button>
+            </div>
 
-        <div
-          style={{
-            marginTop: 8,
-            fontWeight: 800,
-            color: "#93c5fd",
-            fontSize: "0.88rem",
-          }}
-        >
-          Total: {formatDistance(measurementDistance)}
-        </div>
+            <div style={{ marginTop: 8, color: "#cbd5e1", fontSize: "0.82rem" }}>
+              Click points on the map to measure distance.
+            </div>
 
-        <div style={{ marginTop: 3, color: "#cbd5e1", fontSize: "0.8rem" }}>
-          Points: {measurementPointCount}
-        </div>
+            <div
+              style={{
+                marginTop: 8,
+                fontWeight: 800,
+                color: "#93c5fd",
+                fontSize: "0.88rem",
+              }}
+            >
+              Total: {formatDistance(measurementDistance)}
+            </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 6,
-            marginTop: 9,
-          }}
-        >
-          <button
-            type="button"
-            onClick={onUndoMeasurementPoint}
-            style={btnSecondary}
-            disabled={!onUndoMeasurementPoint || measurementPointCount === 0}
-          >
-            Undo
-          </button>
+            <div style={{ marginTop: 3, color: "#cbd5e1", fontSize: "0.8rem" }}>
+              Points: {measurementPointCount}
+            </div>
 
-          <button
-            type="button"
-            onClick={onClearMeasurements}
-            style={btnDanger}
-            disabled={!onClearMeasurements || measurementPointCount === 0}
-          >
-            Clear
-          </button>
-        </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 6,
+                marginTop: 9,
+              }}
+            >
+              <button
+                type="button"
+                onClick={onUndoMeasurementPoint}
+                style={btnSecondary}
+                disabled={!onUndoMeasurementPoint || measurementPointCount === 0}
+              >
+                Undo
+              </button>
+
+              <button
+                type="button"
+                onClick={onClearMeasurements}
+                style={btnDanger}
+                disabled={!onClearMeasurements || measurementPointCount === 0}
+              >
+                Clear
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       <div style={{ ...card, padding: "0.7rem" }}>

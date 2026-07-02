@@ -100,7 +100,7 @@ export interface JobPackDocumentModel {
   summary: JobPackSummary;
 
   /**
-   * Optional generated files used by the Phase 15C Build Partner Job Pack generator.
+   * Optional generated files used by the Build Partner Job Pack generator.
    * Kept optional so older locally cached Job Packs remain compatible.
    */
   exportFiles?: JobPackExportFile[];
