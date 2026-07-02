@@ -28,6 +28,7 @@ import { useUserRole } from "../context/UserRoleContext";
 import { useJointMappings } from "./map/hooks/useJointMappings";
 import { useOpenreachAssets } from "./map/hooks/useOpenreachAssets";
 import {
+  DEFAULT_VISIBLE_LAYERS,
   useLayerVisibility,
   type LayerVisibility,
 } from "./map/hooks/useLayerVisibility";
@@ -41,7 +42,6 @@ import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import AreaPolygonsLayer from "./map/AreaPolygonsLayer";
 import AdminPanels from "./map/panels/AdminPanels";
 import WorkspacePanels from "./map/panels/WorkspacePanels";
-import TopologyPanel from "./topology/TopologyPanel";
 import { usePolygonAdminTools } from "./map/admin/usePolygonAdminTools";
 import { useAreaRepairTools } from "./map/admin/useAreaRepairTools";
 import { useOrReferenceAdminTools } from "./map/admin/useOrReferenceAdminTools";
@@ -303,6 +303,41 @@ type Props = {
   onClose: () => void;
   onOpenJoint: (joint: SavedMapAsset) => void;
   onOpenAutoNetwork?: (areaAsset?: SavedMapAsset | null) => void;
+};
+
+type MainMapQaMode = "qa" | "piaQa";
+
+const QA_MAP_LAYER_PRESET: LayerVisibility = {
+  ...DEFAULT_VISIBLE_LAYERS,
+  agJoints: true,
+  distributionPoints: true,
+};
+
+const PIA_QA_LAYER_PRESET: LayerVisibility = {
+  ...DEFAULT_VISIBLE_LAYERS,
+  agJoints: false,
+  distributionPoints: false,
+  poles: true,
+  chambers: true,
+  cables: true,
+  dropCables: false,
+  feeders: true,
+  links: true,
+  ulw96: true,
+  ulw48: true,
+  ulw36: true,
+  ulw24: true,
+  ulw12: true,
+  orPoles: true,
+  orChambers: true,
+  orDucts: true,
+  orLabels: true,
+  newPoles: true,
+  suggestedPoles: true,
+  suggestedChambers: true,
+  suggestedDucts: true,
+  piaQaView: true,
+  piaContractorView: true,
 };
 
 function requestChangeReason(
@@ -931,6 +966,7 @@ export default function JointMapManager({
   });
 
   const { visibleLayers, setVisibleLayers } = useLayerVisibility();
+  const [mainMapQaMode, setMainMapQaMode] = useState<MainMapQaMode>("qa");
   const [assetSearchQuery, setAssetSearchQuery] = useState("");
   const [isAssetSearchFocused, setIsAssetSearchFocused] = useState(false);
 
@@ -976,9 +1012,7 @@ export default function JointMapManager({
     [normalizedSavedJoints],
   );
 
-  const { hydratedOperationalSavedJoints, isLoadingJointMappings } = useJointMappings(
-    operationalSavedJoints,
-  );
+  const { hydratedOperationalSavedJoints } = useJointMappings(operationalSavedJoints);
 
   const {
     orAssets,
@@ -1173,6 +1207,14 @@ export default function JointMapManager({
   const draftCableDistance = useMemo(() => {
     return getPathDistanceMeters(draftCablePoints);
   }, [draftCablePoints]);
+
+  const handleMainMapQaModeChange = (mode: MainMapQaMode) => {
+    setMainMapQaMode(mode);
+    setVisibleLayers(mode === "piaQa" ? PIA_QA_LAYER_PRESET : QA_MAP_LAYER_PRESET);
+    if (mode === "qa" && isEditingReferenceAsset) {
+      resetEditor();
+    }
+  };
 
   useEffect(() => {
     activeProjectIdRef.current = activeProjectId;
@@ -3618,12 +3660,6 @@ export default function JointMapManager({
             : "Whole network"}
         </div>
 
-        <TopologyPanel
-          assets={allNetworkAssetsWithExchanges}
-          selectedAsset={currentEditingAsset}
-          isLoadingJointMappings={isLoadingJointMappings}
-        />
-
         {canUseSurveyTools && (
           <details style={card}>
             <summary style={sectionSummary}>Survey Cleanup</summary>
@@ -3808,13 +3844,19 @@ export default function JointMapManager({
 
               {assetType === "cable" ? (
                 <>
-                  <div style={{ ...label, marginTop: 10 }}>PIA NOI Number</div>
-                  <input
-                    value={cablePiaNoiNumber}
-                    onChange={(e) => setCablePiaNoiNumber(e.target.value)}
-                    style={input}
-                    placeholder="e.g. NOI-123456"
-                  />
+                  {mainMapQaMode === "piaQa" ? (
+                    <>
+                      <div style={{ ...label, marginTop: 10 }}>
+                        PIA NOI Number
+                      </div>
+                      <input
+                        value={cablePiaNoiNumber}
+                        onChange={(e) => setCablePiaNoiNumber(e.target.value)}
+                        style={input}
+                        placeholder="e.g. NOI-123456"
+                      />
+                    </>
+                  ) : null}
 
                   <div style={{ ...label, marginTop: 10 }}>Cable Type</div>
                   <select
@@ -3976,6 +4018,7 @@ export default function JointMapManager({
                 allDistributionPoints={allDistributionPointsForAfnAllocation}
                 allAssets={allMapAssets}
                 currentDpId={editingAssetId}
+                visibleLayers={visibleLayers}
                 inputStyle={input}
                 labelStyle={{ ...label, marginTop: 10 }}
                 secondaryButtonStyle={btnSecondary}
@@ -4958,6 +5001,7 @@ export default function JointMapManager({
 
       <LayerControls
         isOpen={isLayersOpen}
+        qaMode={mainMapQaMode}
         visibleLayers={visibleLayers}
         setVisibleLayers={setVisibleLayers}
         basemap={basemap}
@@ -4980,6 +5024,8 @@ export default function JointMapManager({
         <MapToolbar
           showAssetPanelButton={!isPanelOpen}
           onOpenAssetPanel={() => setIsPanelOpen(true)}
+          qaMode={mainMapQaMode}
+          onQaModeChange={handleMainMapQaModeChange}
           searchQuery={assetSearchQuery}
           setSearchQuery={setAssetSearchQuery}
           searchResults={assetSearchResults}

@@ -5,6 +5,7 @@ import { PIA_QA_LAYER_GROUP } from "./pia/piaQaLayerGroup";
 type BasemapType = "street" | "satellite" | "hybrid" | "dark";
 
 type Props = {
+  qaMode?: "qa" | "piaQa";
   visibleLayers: Record<string, boolean>;
   setVisibleLayers: React.Dispatch<React.SetStateAction<any>>;
   basemap: BasemapType;
@@ -272,6 +273,7 @@ function LayerCheckbox({
 }
 
 export default function LayersPanel({
+  qaMode = "qa",
   visibleLayers,
   setVisibleLayers,
   basemap,
@@ -290,9 +292,17 @@ export default function LayersPanel({
   onClearMeasurements,
 }: Props) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
-    measurements: true,
     openreachReference: true,
   });
+
+  const displayedLayerGroups =
+    qaMode === "piaQa"
+      ? layerGroups.filter((group) =>
+          ["poles", "chambers", "cables", "piaQa", "measurements"].includes(
+            group.id,
+          ),
+        )
+      : layerGroups.filter((group) => group.id !== "piaQa");
 
   const toggleLayer = (key: string) =>
     setVisibleLayers((prev: Record<string, boolean>) => {
@@ -391,7 +401,7 @@ export default function LayersPanel({
           letterSpacing: 0.3,
         }}
       >
-        Map View
+        {qaMode === "piaQa" ? "PIA QA View" : "QA Map View"}
       </h3>
 
       <div style={{ ...card, padding: "0.7rem" }}>
@@ -446,7 +456,7 @@ export default function LayersPanel({
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-        {layerGroups.map((group) => {
+        {displayedLayerGroups.map((group) => {
           const isOpen = !!openGroups[group.id];
 
           return (

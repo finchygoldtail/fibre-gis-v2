@@ -55,7 +55,7 @@ export type LayerVisibility = {
   piaFail: boolean;
 };
 
-const LAYER_PREFERENCE_STORAGE_KEY = "alistra-gis-layer-preferences-v2";
+const LAYER_PREFERENCE_STORAGE_KEY = "alistra-gis-layer-preferences-v3";
 
 export const DEFAULT_VISIBLE_LAYERS: LayerVisibility = {
   agJoints: true,
@@ -65,17 +65,17 @@ export const DEFAULT_VISIBLE_LAYERS: LayerVisibility = {
   chambers: false,
   cables: false,
   dropCables: false,
-  areas: true,
-  measurements: true,
+  areas: false,
+  measurements: false,
   cableDistances: false,
   homes: false,
   homesConnected: true,
   homesUnconnected: true,
   homesLive: true,
-  l0: true,
-  l1: true,
-  l2: true,
-  l3: true,
+  l0: false,
+  l1: false,
+  l2: false,
+  l3: false,
   newPoles: false,
   orPoles: false,
   orChambers: false,

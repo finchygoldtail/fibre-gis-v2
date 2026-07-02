@@ -1365,8 +1365,6 @@ export default function CableLinesLayer({
 
         if (cableDrawingMode) return isEngineeringDrawingTrunkCable(asset);
 
-        if (allCableLayersVisible) return true;
-
         const cableType = String(asset.cableType || "").toLowerCase();
         const fibreCount = String(asset.fibreCount || "").toLowerCase();
         const isDropCable = isDropCableAsset(asset);
@@ -1380,6 +1378,20 @@ export default function CableLinesLayer({
         const matches36 = fibreCount.includes("36");
         const matches24 = fibreCount.includes("24");
         const matches12 = fibreCount.includes("12");
+
+        if (
+          (matchesFeeder && !isLayerOn("feeders")) ||
+          (matchesLink && !isLayerOn("links")) ||
+          (matches96 && !isLayerOn("ulw96")) ||
+          (matches48 && !isLayerOn("ulw48")) ||
+          (matches36 && !isLayerOn("ulw36")) ||
+          (matches24 && !isLayerOn("ulw24")) ||
+          (matches12 && !isLayerOn("ulw12"))
+        ) {
+          return false;
+        }
+
+        if (allCableLayersVisible) return true;
 
         return (
           (matchesFeeder && isLayerOn("feeders")) ||

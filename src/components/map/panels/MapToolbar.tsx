@@ -9,6 +9,8 @@ import { useDeviceLayout } from "../responsive/useDeviceLayout";
 type Props = {
   showAssetPanelButton: boolean;
   onOpenAssetPanel: () => void;
+  qaMode?: "qa" | "piaQa";
+  onQaModeChange?: (mode: "qa" | "piaQa") => void;
 
   searchQuery: string;
   setSearchQuery: React.Dispatch<React.SetStateAction<string>>;
@@ -40,6 +42,8 @@ type Props = {
 export default function MapToolbar({
   showAssetPanelButton,
   onOpenAssetPanel,
+  qaMode = "qa",
+  onQaModeChange,
   searchQuery,
   setSearchQuery,
   isSearchFocused,
@@ -303,6 +307,25 @@ export default function MapToolbar({
       {searchCard}
 
       <div style={topRightActionsStyle}>
+        {onQaModeChange ? (
+          <div style={qaModeSwitchStyle} aria-label="QA map mode">
+            <button
+              type="button"
+              onClick={() => onQaModeChange("qa")}
+              style={qaModeButtonStyle(qaMode === "qa")}
+            >
+              QA Map
+            </button>
+            <button
+              type="button"
+              onClick={() => onQaModeChange("piaQa")}
+              style={qaModeButtonStyle(qaMode === "piaQa")}
+            >
+              PIA QA
+            </button>
+          </div>
+        ) : null}
+
         <div style={messageButtonWrapStyle}>
           <button
             type="button"
@@ -581,6 +604,28 @@ const topRightActionsStyle: React.CSSProperties = {
   justifyContent: "flex-end",
   minWidth: 0,
 };
+
+const qaModeSwitchStyle: React.CSSProperties = {
+  display: "inline-grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 3,
+  padding: 3,
+  borderRadius: 12,
+  border: "1px solid rgba(96,165,250,0.34)",
+  background: "rgba(15,23,42,0.78)",
+  boxShadow: "0 2px 8px rgba(0,0,0,0.22)",
+};
+
+const qaModeButtonStyle = (active: boolean): React.CSSProperties => ({
+  border: "none",
+  borderRadius: 9,
+  padding: "8px 10px",
+  background: active ? "#2563eb" : "transparent",
+  color: active ? "#ffffff" : "#bfdbfe",
+  cursor: "pointer",
+  fontWeight: 900,
+  whiteSpace: "nowrap",
+});
 
 const messageButtonWrapStyle: React.CSSProperties = {
   position: "relative",

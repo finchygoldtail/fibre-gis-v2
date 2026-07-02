@@ -7,6 +7,7 @@ import { useDeviceLayout } from "../responsive/useDeviceLayout";
 
 type Props = {
   isOpen: boolean;
+  qaMode?: "qa" | "piaQa";
   visibleLayers: LayerVisibility;
   setVisibleLayers: React.Dispatch<React.SetStateAction<LayerVisibility>>;
   basemap: BasemapType;
@@ -27,6 +28,7 @@ type Props = {
 
 export default function LayerControls({
   isOpen,
+  qaMode = "qa",
   visibleLayers,
   setVisibleLayers,
   basemap,
@@ -55,6 +57,7 @@ export default function LayerControls({
       {useSheetLayout ? <div style={mobileSheetHandleStyle} /> : null}
 
       <LayersPanel
+        qaMode={qaMode}
         visibleLayers={visibleLayers}
         setVisibleLayers={setVisibleLayers}
         basemap={basemap}
