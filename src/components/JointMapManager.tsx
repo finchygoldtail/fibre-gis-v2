@@ -2303,6 +2303,130 @@ export default function JointMapManager({
   // It does NOT delete DPs, homes, drops, geometry, status, notes,
   // photos or selected through-cable choices.
   // =====================================================
+  // =====================================================
+  // PROJECT WORKSPACE - PERSIST BULK CABLE PIA NOI
+  // Called by Workspace -> Build -> Bulk PIA NOI. This updates the
+  // saved cable assets so the NOI survives workspace refresh/reopen.
+  // =====================================================
+  const handleWorkspaceBulkCablePiaNoiUpdate = async (args: {
+    assetIds: string[];
+    piaNoiNumber: string;
+    note: string;
+  }) => {
+    const ids = new Set((args.assetIds || []).map(String).filter(Boolean));
+    if (!ids.size) {
+      alert("No cables selected for PIA NOI update.");
+      return;
+    }
+
+    const piaNoiNumber = String(args.piaNoiNumber || "").trim();
+    if (!piaNoiNumber) {
+      alert("Enter a PIA NOI number before applying.");
+      return;
+    }
+
+    const reason = String(args.note || "").trim();
+    if (!reason) {
+      alert("An audit note is required before applying a bulk PIA NOI update.");
+      return;
+    }
+
+    const beforeAssets = (savedJoints ?? []).filter((asset) =>
+      ids.has(String(asset.id || "")),
+    );
+
+    if (!beforeAssets.length) {
+      alert("No matching saved cables were found for the PIA NOI update.");
+      return;
+    }
+
+    const updatedById = new Map<string, SavedMapAsset>();
+
+    beforeAssets.forEach((asset) => {
+      const item = asset as any;
+      const currentPiaNoi = String(
+        item.piaNoiNumber ||
+          item.properties?.piaNoiNumber ||
+          item.piaNOINumber ||
+          item.properties?.piaNOINumber ||
+          item.noiNumber ||
+          item.properties?.noiNumber ||
+          "",
+      ).trim();
+
+      if (currentPiaNoi === piaNoiNumber) return;
+
+      const rawNextAsset = {
+        ...item,
+        piaNoiNumber,
+        piaNOINumber: piaNoiNumber,
+        noiNumber: piaNoiNumber,
+        properties: {
+          ...(item.properties || {}),
+          piaNoiNumber,
+          piaNOINumber: piaNoiNumber,
+          noiNumber: piaNoiNumber,
+        },
+      } as SavedMapAsset;
+
+      const nextAsset = withAssetEditedMetadata(
+        markAssetForLiveSync(rawNextAsset),
+        "updated",
+        reason,
+      );
+
+      updatedById.set(String(asset.id || ""), nextAsset);
+    });
+
+    if (!updatedById.size) {
+      alert(`No PIA NOI changes were needed; selected cables already show ${piaNoiNumber}.`);
+      return;
+    }
+
+    const nextSavedJoints = (savedJoints ?? []).map(
+      (asset) => updatedById.get(String(asset.id || "")) || asset,
+    );
+
+    setSavedJoints(nextSavedJoints);
+
+    beforeAssets.forEach((beforeAsset) => {
+      const afterAsset = updatedById.get(String(beforeAsset.id || ""));
+      if (!afterAsset) return;
+
+      writeAssetAuditLog({
+        asset: afterAsset,
+        action: "updated",
+        reason,
+        comment:
+          "Manager bulk PIA NOI update from Project Workspace Build tab.",
+        before: {
+          piaNoiNumber:
+            (beforeAsset as any).piaNoiNumber ||
+            (beforeAsset as any).properties?.piaNoiNumber ||
+            "",
+        },
+        after: {
+          piaNoiNumber:
+            (afterAsset as any).piaNoiNumber ||
+            (afterAsset as any).properties?.piaNoiNumber ||
+            "",
+        },
+      });
+    });
+
+    try {
+      await saveMapAssetsViaCoordinator(nextSavedJoints, {
+        reason: `bulk-pia-noi:${reason}`,
+        source: "joint-map-manager",
+      });
+    } catch (error) {
+      console.error("Bulk PIA NOI map save failed", error);
+      throw new Error(
+        "PIA NOI was applied locally, but the map save failed. Check the console before refreshing.",
+      );
+    }
+  };
+
   const handleWorkspaceClearDpFibreAllocations = (args: {
     assetIds: string[];
     note: string;
@@ -3369,6 +3493,7 @@ export default function JointMapManager({
           onOpenJoint(asset);
         }}
         onBulkUpdateDpStatus={handleWorkspaceBulkDpStatusUpdate}
+        onBulkUpdateCablePiaNoi={handleWorkspaceBulkCablePiaNoiUpdate}
         onUpdateDpStatus={handleWorkspaceSingleDpStatusUpdate}
         onClearDpFibreAllocations={handleWorkspaceClearDpFibreAllocations}
         onApplyAddressSheetAssignments={handleWorkspaceAddressSheetAssignments}

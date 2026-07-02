@@ -42,7 +42,20 @@ a:hover {
 
 button {
   font-family: inherit;
-}/* Fix Chrome autofill white background in dark UI */
+}
+
+.alistra-workspace-scrollless {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.alistra-workspace-scrollless::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+/* Fix Chrome autofill white background in dark UI */
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,

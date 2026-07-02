@@ -3412,6 +3412,27 @@ export default function ProjectWorkspace({
       } as SavedMapAsset;
     });
 
+    if (!onBulkUpdateCablePiaNoi) {
+      alert("Bulk PIA NOI save is not wired into this workspace.");
+      return;
+    }
+
+    try {
+      await onBulkUpdateCablePiaNoi({
+        assetIds: Array.from(targetIds),
+        piaNoiNumber: trimmedPiaNoi,
+        note: args.note,
+      });
+    } catch (error) {
+      console.error("Bulk PIA NOI update failed", error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Bulk PIA NOI update failed. Check the console before refreshing.",
+      );
+      return;
+    }
+
     setLocalAssetOverrides((current) => ({
       ...current,
       ...nextOverrides,
@@ -3422,14 +3443,8 @@ export default function ProjectWorkspace({
       return nextOverrides[current.id] || current;
     });
 
-    await onBulkUpdateCablePiaNoi?.({
-      assetIds: Array.from(targetIds),
-      piaNoiNumber: trimmedPiaNoi,
-      note: args.note,
-    });
-
     alert(
-      `Applied PIA NOI ${trimmedPiaNoi} to ${Object.keys(nextOverrides).length} cable${Object.keys(nextOverrides).length === 1 ? "" : "s"}.`,
+      `Applied and saved PIA NOI ${trimmedPiaNoi} to ${Object.keys(nextOverrides).length} cable${Object.keys(nextOverrides).length === 1 ? "" : "s"}.`,
     );
   };
 
@@ -3666,19 +3681,26 @@ export default function ProjectWorkspace({
 
   const responsiveTabBar: React.CSSProperties = {
     ...tabBar,
+    display: "none",
   };
 
   const responsiveWorkspaceBody: React.CSSProperties = {
     ...workspaceBody,
-    gridTemplateColumns: "1fr",
+    gridTemplateColumns: isCompact
+      ? "124px minmax(0, 1fr)"
+      : "136px minmax(0, 1fr) 340px",
   };
 
   const responsiveContentGrid: React.CSSProperties = {
     ...contentGrid,
+    gridTemplateColumns: "minmax(0, 1fr)",
+    padding: "12px 0",
+    overflow: "auto",
   };
 
   const responsiveMapPanel: React.CSSProperties = {
     ...mapPanel,
+    gridColumn: "1 / -1",
   };
 
   const responsiveMapToolbar: React.CSSProperties = {
@@ -3691,6 +3713,26 @@ export default function ProjectWorkspace({
 
   const responsiveMapAssetInspector: React.CSSProperties = {
     ...mapAssetInspector,
+  };
+
+  const responsiveNextActionsPanel: React.CSSProperties = {
+    ...nextActionsPanel,
+    ...(isCompact
+      ? {
+          gridColumn: "2 / 3",
+          borderLeft: "none",
+          borderTop: "1px solid rgba(148, 163, 184, 0.16)",
+          gridTemplateRows: "auto auto auto auto",
+          maxHeight: "none",
+        }
+      : {}),
+  };
+
+  const responsiveWorkspaceDetailPanel: React.CSSProperties = {
+    ...workspaceDetailPanel,
+    gridTemplateColumns: isCompact
+      ? "minmax(0, 1fr)"
+      : "repeat(2, minmax(0, 1fr))",
   };
 
   const workspaceQuickActions: {
@@ -3758,6 +3800,37 @@ export default function ProjectWorkspace({
       helper: operationalReadiness.state,
       active: activeOperationPanel === "handover",
       onClick: () => openOperationPanel("handover", "overview"),
+    },
+  ];
+
+  const nextActionItems = [
+    {
+      label: "QA Gate",
+      value: rolloutKpis.qaIssues === 0 ? "Clear" : `${formatNumber(rolloutKpis.qaIssues)} issue(s)`,
+      tone: rolloutKpis.qaIssues === 0 ? "good" : issueBuckets.high.length ? "bad" : "warn",
+      action: "Review QA",
+      onClick: () => openOperationPanel("qa", "qa"),
+    },
+    {
+      label: "Walk-Off",
+      value: walkOffStatus,
+      tone: walkOffStatus === "Approved" ? "good" : piaGatePassedForWalkOff ? "warn" : "bad",
+      action: piaGatePassedForWalkOff ? "Launch Audit" : "PIA Locked",
+      onClick: handleOpenWalkOffAudit,
+    },
+    {
+      label: "Commercial",
+      value: operationalReadiness.blockers.length ? `${operationalReadiness.blockers.length} blocker(s)` : "Ready",
+      tone: operationalReadiness.blockers.length ? "warn" : "good",
+      action: "Open Board",
+      onClick: () => handleWorkspaceTabChange("commercial"),
+    },
+    {
+      label: "RFS",
+      value: `${rolloutKpis.rfsPercent}%`,
+      tone: rolloutKpis.rfsPercent >= 100 ? "good" : rolloutKpis.rfsPercent >= 80 ? "warn" : "bad",
+      action: "View Readiness",
+      onClick: () => openOperationPanel("rfsBreakdown", "build"),
     },
   ];
 
@@ -3957,24 +4030,12 @@ export default function ProjectWorkspace({
                 tone={readinessTone(operationalReadiness.state)}
               />
               <StatCard
-                label="Homes Passed"
-                value={formatNumber(rolloutKpis.homesPassed)}
-              />
-              <StatCard
                 label="Homes Live"
                 value={formatNumber(rolloutKpis.homesLive)}
                 tone="good"
                 active={activeOperationPanel === "homesLive"}
                 title="Click to show live homes"
                 onClick={() => openKpiDrilldown("homesLive", "build")}
-              />
-              <StatCard
-                label="Homes Not Live"
-                value={formatNumber(rolloutKpis.homesNotLive)}
-                tone={rolloutKpis.homesNotLive > 0 ? "warn" : "good"}
-                active={activeOperationPanel === "homesNotLive"}
-                title="Click to show homes that are not live"
-                onClick={() => openKpiDrilldown("homesNotLive", "build")}
               />
               <StatCard
                 label="DPs Live"
@@ -3987,37 +4048,6 @@ export default function ProjectWorkspace({
                 }
               />
               <StatCard
-                label="DPs BWIP"
-                value={formatNumber(rolloutKpis.dpBwip)}
-                tone={rolloutKpis.dpBwip > 0 ? "warn" : "default"}
-              />
-              <StatCard
-                label="DPs LNRFS"
-                value={formatNumber(rolloutKpis.dpLnrfs)}
-                tone={rolloutKpis.dpLnrfs > 0 ? "warn" : "default"}
-              />
-              <StatCard
-                label="Unserviceable"
-                value={formatNumber(rolloutKpis.dpUnserviceable)}
-                tone={rolloutKpis.dpUnserviceable > 0 ? "bad" : "good"}
-              />
-              <StatCard
-                label="Near Capacity"
-                value={formatNumber(rolloutKpis.dpNearCapacity)}
-                tone={rolloutKpis.dpNearCapacity > 0 ? "warn" : "good"}
-                active={activeOperationPanel === "capacity"}
-                title="Click to show capacity risk DPs"
-                onClick={() => openKpiDrilldown("capacity", "build")}
-              />
-              <StatCard
-                label="Over Capacity"
-                value={formatNumber(rolloutKpis.dpOverCapacity)}
-                tone={rolloutKpis.dpOverCapacity > 0 ? "bad" : "good"}
-                active={activeOperationPanel === "capacity"}
-                title="Click to show capacity risk DPs"
-                onClick={() => openKpiDrilldown("capacity", "build")}
-              />
-              <StatCard
                 label="QA Issues"
                 value={formatNumber(rolloutKpis.qaIssues)}
                 tone={rolloutKpis.qaIssues > 0 ? "bad" : "good"}
@@ -4027,29 +4057,6 @@ export default function ProjectWorkspace({
                 }
                 title="Click to open QA issues"
                 onClick={() => openKpiDrilldown("qa", "qa")}
-              />
-              <StatCard
-                label="Disconnected"
-                value={formatNumber(rolloutKpis.disconnectedAssets)}
-                tone={rolloutKpis.disconnectedAssets > 0 ? "warn" : "good"}
-                active={activeOperationPanel === "disconnected"}
-                title="Click to show disconnected assets"
-                onClick={() => openKpiDrilldown("disconnected", "topology")}
-              />
-              <StatCard
-                label="Area Size"
-                value={formatAreaSize(workspaceAreaMetrics.areaSquareMeters)}
-                title="Selected AG polygon area"
-              />
-              <StatCard
-                label="Boundary Length"
-                value={formatDistance(workspaceAreaMetrics.boundaryLengthMeters)}
-                title="Selected AG polygon perimeter"
-              />
-              <StatCard
-                label="Route Length"
-                value={formatDistance(rolloutKpis.routeLengthMeters)}
-                title="Design cable length inside this workspace"
               />
             </div>
 
@@ -4087,30 +4094,49 @@ export default function ProjectWorkspace({
             ))}
           </nav>
 
-          <nav
-            style={workspaceQuickActionBar}
-            aria-label="Workspace quick actions"
-          >
-            {workspaceQuickActions.map((action) => (
-              <button
-                key={action.label}
-                type="button"
-                onClick={action.onClick}
-                style={
-                  action.active ? quickActionButtonActive : quickActionButton
-                }
-              >
-                <span style={quickActionLabel}>{action.label}</span>
-                <span style={quickActionHelper}>{action.helper}</span>
-              </button>
-            ))}
-          </nav>
-
           <div style={responsiveWorkspaceBody}>
+            <nav
+              className="alistra-workspace-scrollless"
+              style={workspaceQuickActionBar}
+              aria-label="Workspace navigation"
+            >
+              <div style={railSectionTitle}>Workspace</div>
+              {tabs.map((tab) => (
+                <button
+                  key={`rail-tab-${tab.id}`}
+                  type="button"
+                  onClick={() => handleWorkspaceTabChange(tab.id)}
+                  style={
+                    activeTab === tab.id
+                      ? quickActionButtonActive
+                      : quickActionButton
+                  }
+                >
+                  <span style={quickActionLabel}>{tab.label}</span>
+                </button>
+              ))}
+
+              <div style={railDivider} />
+              <div style={railSectionTitle}>Focus</div>
+              {workspaceQuickActions.slice(0, 7).map((action) => (
+                <button
+                  key={action.label}
+                  type="button"
+                  onClick={action.onClick}
+                  style={
+                    action.active ? quickActionButtonActive : quickActionButton
+                  }
+                >
+                  <span style={quickActionLabel}>{action.label}</span>
+                  <span style={quickActionHelper}>{action.helper}</span>
+                </button>
+              ))}
+            </nav>
+
             {/* =====================================================
             MAIN DASHBOARD CONTENT
         ===================================================== */}
-            <main style={responsiveContentGrid}>
+            <main className="alistra-workspace-scrollless" style={responsiveContentGrid}>
               <section style={responsiveMapPanel}>
                 <div style={responsiveMapToolbar}>
                   <div style={searchWrap}>
@@ -4502,62 +4528,64 @@ export default function ProjectWorkspace({
                 </section>
               ) : (
                 <>
-                  <WorkspaceTabContent
-                    activeTab={activeTab}
-                    projectName={projectName}
-                    status={status}
-                    stats={workspaceDisplayStats}
-                    projectAssets={workspaceAssets}
-                    projectArea={projectArea}
-                    auditIssues={auditIssues}
-                    disconnectedAssets={disconnectedAssets}
-                    networkGraph={networkGraph}
-                    managerAreaPoints={managerAreaPoints}
-                    isManagerAreaDrawing={isManagerAreaDrawing}
-                    onStartManagerAreaDrawing={() => {
-                      setActiveTab("build");
-                      setManagerAreaPoints([]);
-                      setIsManagerAreaDrawing(true);
-                    }}
-                    onStopManagerAreaDrawing={() =>
-                      setIsManagerAreaDrawing(false)
-                    }
-                    onClearManagerAreaDrawing={() => {
-                      setManagerAreaPoints([]);
-                      setIsManagerAreaDrawing(false);
-                    }}
-                    areaDistributionPoints={areaDistributionPoints}
-                    onBulkUpdateDpStatus={onBulkUpdateDpStatus}
-                    onBulkUpdateCablePiaNoi={handleBulkCablePiaNoiUpdate}
-                    onClearDpFibreAllocations={
-                      handleClearAreaDpFibreAllocations
-                    }
-                    onResolveDuplicateHomes={onResolveDuplicateHomes}
-                    onAutoSpreadStackedHomes={onAutoSpreadStackedHomes}
-                    onApplyAddressSheetAssignments={
-                      onApplyAddressSheetAssignments
-                    }
-                    onApplySbRouteAssignments={onApplySbRouteAssignments}
-                    onSelectAsset={(asset) => {
-                      setSelectedWorkspaceAsset(asset);
-                      setSearchTerm(getWorkspaceAssetTitle(asset));
-                    }}
-                    onOpenJointEditor={onOpenJointEditor}
-                    onOpenPanel={(panel, tab) =>
-                      openOperationPanel(
-                        panel as WorkspaceOperationPanel,
-                        (tab || activeTab) as WorkspaceTab,
-                      )
-                    }
-                    onOpenTrace={openInternalTraceTool}
-                    onOpenQA={() => {
-                      setActiveTab("qa");
-                      setActiveOperationPanel("none");
-                    }}
-                    onOpenFibreTopology={onOpenFibreTopology || openInternalTraceTool}
-                    onExport={onExport}
-                    onBackToMap={onBackToMap}
-                  />
+                  <section style={responsiveWorkspaceDetailPanel}>
+                    <WorkspaceTabContent
+                      activeTab={activeTab}
+                      projectName={projectName}
+                      status={status}
+                      stats={workspaceDisplayStats}
+                      projectAssets={workspaceAssets}
+                      projectArea={projectArea}
+                      auditIssues={auditIssues}
+                      disconnectedAssets={disconnectedAssets}
+                      networkGraph={networkGraph}
+                      managerAreaPoints={managerAreaPoints}
+                      isManagerAreaDrawing={isManagerAreaDrawing}
+                      onStartManagerAreaDrawing={() => {
+                        setActiveTab("build");
+                        setManagerAreaPoints([]);
+                        setIsManagerAreaDrawing(true);
+                      }}
+                      onStopManagerAreaDrawing={() =>
+                        setIsManagerAreaDrawing(false)
+                      }
+                      onClearManagerAreaDrawing={() => {
+                        setManagerAreaPoints([]);
+                        setIsManagerAreaDrawing(false);
+                      }}
+                      areaDistributionPoints={areaDistributionPoints}
+                      onBulkUpdateDpStatus={onBulkUpdateDpStatus}
+                      onBulkUpdateCablePiaNoi={handleBulkCablePiaNoiUpdate}
+                      onClearDpFibreAllocations={
+                        handleClearAreaDpFibreAllocations
+                      }
+                      onResolveDuplicateHomes={onResolveDuplicateHomes}
+                      onAutoSpreadStackedHomes={onAutoSpreadStackedHomes}
+                      onApplyAddressSheetAssignments={
+                        onApplyAddressSheetAssignments
+                      }
+                      onApplySbRouteAssignments={onApplySbRouteAssignments}
+                      onSelectAsset={(asset) => {
+                        setSelectedWorkspaceAsset(asset);
+                        setSearchTerm(getWorkspaceAssetTitle(asset));
+                      }}
+                      onOpenJointEditor={onOpenJointEditor}
+                      onOpenPanel={(panel, tab) =>
+                        openOperationPanel(
+                          panel as WorkspaceOperationPanel,
+                          (tab || activeTab) as WorkspaceTab,
+                        )
+                      }
+                      onOpenTrace={openInternalTraceTool}
+                      onOpenQA={() => {
+                        setActiveTab("qa");
+                        setActiveOperationPanel("none");
+                      }}
+                      onOpenFibreTopology={onOpenFibreTopology || openInternalTraceTool}
+                      onExport={onExport}
+                      onBackToMap={onBackToMap}
+                    />
+                  </section>
 
                   {activeTab === "overview" && (
                   <section style={areaHandoverPanel}>
@@ -5369,6 +5397,94 @@ export default function ProjectWorkspace({
                 </section>
               )}
             </main>
+
+            <aside
+              className="alistra-workspace-scrollless"
+              style={responsiveNextActionsPanel}
+              aria-label="Next actions"
+            >
+              <div style={nextActionsHeader}>
+                <div>
+                  <div style={operationKicker}>AREA CONTROL</div>
+                  <h3 style={nextActionsTitle}>Next Actions</h3>
+                </div>
+                <span
+                  style={{
+                    ...readinessPill,
+                    borderColor: readinessColour(operationalReadiness.state),
+                    color: readinessColour(operationalReadiness.state),
+                  }}
+                >
+                  {operationalReadiness.state}
+                </span>
+              </div>
+
+              <div style={nextActionsSummaryGrid}>
+                <InfoRow
+                  label="Area Size"
+                  value={formatAreaSize(workspaceAreaMetrics.areaSquareMeters)}
+                />
+                <InfoRow
+                  label="Route"
+                  value={formatDistance(rolloutKpis.routeLengthMeters)}
+                />
+                <InfoRow
+                  label="Assets"
+                  value={formatNumber(workspaceAssets.length)}
+                />
+                <InfoRow
+                  label="Disconnected"
+                  value={formatNumber(rolloutKpis.disconnectedAssets)}
+                  highlight={rolloutKpis.disconnectedAssets === 0}
+                />
+              </div>
+
+              <div style={nextActionList}>
+                {nextActionItems.map((item) => (
+                  <button
+                    key={item.label}
+                    type="button"
+                    style={nextActionButton(item.tone)}
+                    onClick={item.onClick}
+                  >
+                    <span style={nextActionText}>
+                      <strong>{item.label}</strong>
+                      <small style={nextActionValue}>{item.value}</small>
+                    </span>
+                    <em style={nextActionCommand}>{item.action}</em>
+                  </button>
+                ))}
+              </div>
+
+              <div style={selectedAssetStrip}>
+                <div style={operationKicker}>SELECTED ASSET</div>
+                <strong>
+                  {fullSelectedWorkspaceAsset
+                    ? getWorkspaceAssetTitle(fullSelectedWorkspaceAsset)
+                    : "Click an asset"}
+                </strong>
+                <span>
+                  {fullSelectedWorkspaceAsset
+                    ? getWorkspaceAssetType(fullSelectedWorkspaceAsset)
+                    : "Cable, DP, joint, pole, chamber or area"}
+                </span>
+              </div>
+
+              {operationalReadiness.blockers.length ? (
+                <div style={nextBlockerBox}>
+                  <strong>Readiness Blockers</strong>
+                  <ul>
+                    {operationalReadiness.blockers.slice(0, 4).map((blocker) => (
+                      <li key={blocker}>{blocker}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <div style={nextGoodBox}>
+                  No hard readiness blockers detected.
+                </div>
+              )}
+            </aside>
           </div>
 
           {false && isPhone && fullSelectedWorkspaceAsset && (
@@ -5834,8 +5950,7 @@ const workspaceRoot: React.CSSProperties = {
   position: "absolute",
   inset: 0,
   zIndex: 5000,
-  background:
-    "radial-gradient(circle at top left, rgba(37, 99, 235, 0.16), transparent 32%), #07111f",
+  background: "#07111f",
   color: "#f8fafc",
   display: "flex",
   flexDirection: "column",
@@ -5846,7 +5961,7 @@ const workspaceRoot: React.CSSProperties = {
 const topHeader: React.CSSProperties = {
   minHeight: 82,
   display: "grid",
-  gridTemplateColumns: "minmax(260px, 320px) minmax(0, 1fr) auto",
+  gridTemplateColumns: "minmax(260px, 320px) minmax(0, 720px) auto",
   alignItems: "center",
   gap: 12,
   padding: "8px 14px 8px 16px",
@@ -5984,16 +6099,17 @@ const readinessPill: React.CSSProperties = {
   fontWeight: 900,
 };
 const topMetrics: React.CSSProperties = {
-  display: "flex",
+  display: "grid",
+  gridTemplateColumns: "repeat(6, minmax(98px, 1fr))",
   alignItems: "stretch",
   gap: 8,
-  overflowX: "auto",
+  overflowX: "hidden",
   overflowY: "hidden",
   paddingBottom: 2,
   scrollbarWidth: "thin",
 };
 const metricCard: React.CSSProperties = {
-  flex: "0 0 108px",
+  minWidth: 0,
   background:
     "linear-gradient(180deg, rgba(15, 23, 42, 0.90), rgba(15, 23, 42, 0.68))",
   border: "1px solid rgba(148, 163, 184, 0.16)",
@@ -6055,7 +6171,7 @@ const commercialPanel: React.CSSProperties = {
 };
 
 const commercialStatsSidePanel: React.CSSProperties = {
-  gridColumn: "span 2",
+  gridColumn: "1 / -1",
   gridRow: "span 2",
   border: "1px solid rgba(96,165,250,0.32)",
   background: "linear-gradient(180deg, #0f1b2d 0%, #0b1626 100%)",
@@ -6166,23 +6282,25 @@ const activeTabButton: React.CSSProperties = {
 };
 const workspaceQuickActionBar: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(10, minmax(112px, 1fr))",
-  gap: 8,
-  padding: "10px 16px",
-  background: "#0f1b2e",
-  borderBottom: "1px solid rgba(148, 163, 184, 0.16)",
-  overflowX: "auto",
+  gridAutoRows: "min-content",
+  alignContent: "start",
+  gap: 5,
+  padding: "10px 8px",
+  background: "#07111f",
+  borderRight: "1px solid rgba(148, 163, 184, 0.16)",
+  overflow: "hidden",
+  minHeight: 0,
 };
 
 const quickActionButton: React.CSSProperties = {
   border: "1px solid rgba(148, 163, 184, 0.22)",
   background: "#111c30",
   color: "#cbd5e1",
-  borderRadius: 10,
-  padding: "9px 10px",
+  borderRadius: 8,
+  padding: "6px 8px",
   cursor: "pointer",
   textAlign: "left",
-  minHeight: 54,
+  minHeight: 34,
   display: "flex",
   flexDirection: "column",
   justifyContent: "center",
@@ -6198,15 +6316,32 @@ const quickActionButtonActive: React.CSSProperties = {
 };
 
 const quickActionLabel: React.CSSProperties = {
-  fontSize: 13,
+  fontSize: 12,
   fontWeight: 900,
   whiteSpace: "nowrap",
 };
 
 const quickActionHelper: React.CSSProperties = {
-  fontSize: 11,
+  fontSize: 10,
   color: "#94a3b8",
   whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+};
+
+const railSectionTitle: React.CSSProperties = {
+  color: "#93c5fd",
+  fontSize: 10,
+  fontWeight: 950,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+  margin: "2px 0 1px",
+};
+
+const railDivider: React.CSSProperties = {
+  height: 1,
+  background: "rgba(148, 163, 184, 0.14)",
+  margin: "4px 0",
 };
 
 const workspaceBody: React.CSSProperties = {
@@ -6270,6 +6405,7 @@ const contentGrid: React.CSSProperties = {
   gridAutoRows: "min-content",
   gap: 16,
   alignItems: "start",
+  minHeight: 0,
 };
 const mapPanel: React.CSSProperties = {
   gridRow: "span 2",
@@ -6375,7 +6511,7 @@ const fullWidthMiniLayerButton: React.CSSProperties = {
 };
 const mapLiveWrap: React.CSSProperties = {
   position: "relative",
-  height: 548,
+  height: 620,
   borderRadius: 12,
   overflow: "hidden",
   border: "1px solid rgba(148, 163, 184, 0.22)",
@@ -6395,6 +6531,123 @@ const mapAssetInspector: React.CSSProperties = {
   padding: 12,
   color: "#f8fafc",
   boxShadow: "0 12px 35px rgba(0,0,0,0.35)",
+};
+
+const nextActionsPanel: React.CSSProperties = {
+  background: "#08111f",
+  borderLeft: "1px solid rgba(148, 163, 184, 0.16)",
+  padding: 12,
+  display: "grid",
+  gridTemplateRows: "auto auto auto auto 1fr",
+  gap: 10,
+  minHeight: 0,
+  overflow: "hidden",
+};
+
+const workspaceDetailPanel: React.CSSProperties = {
+  gridColumn: "1 / -1",
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 12,
+  alignItems: "start",
+  minWidth: 0,
+};
+
+const nextActionsHeader: React.CSSProperties = {
+  display: "flex",
+  alignItems: "flex-start",
+  justifyContent: "space-between",
+  gap: 10,
+};
+
+const nextActionsTitle: React.CSSProperties = {
+  margin: "3px 0 0",
+  fontSize: 18,
+  fontWeight: 950,
+  color: "#f8fafc",
+};
+
+const nextActionsSummaryGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 8,
+};
+
+const nextActionList: React.CSSProperties = {
+  display: "grid",
+  gap: 8,
+};
+
+const nextActionText: React.CSSProperties = {
+  display: "grid",
+  gap: 3,
+  minWidth: 0,
+};
+
+const nextActionValue: React.CSSProperties = {
+  color: "#94a3b8",
+  fontSize: 11,
+  fontWeight: 800,
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+};
+
+const nextActionCommand: React.CSSProperties = {
+  color: "#bfdbfe",
+  fontSize: 11,
+  fontStyle: "normal",
+  fontWeight: 900,
+  whiteSpace: "nowrap",
+};
+
+function nextActionButton(tone: string): React.CSSProperties {
+  const toneColour =
+    tone === "good" ? "#22c55e" : tone === "bad" ? "#ef4444" : "#f59e0b";
+
+  return {
+    border: `1px solid ${toneColour}66`,
+    background: "rgba(15, 23, 42, 0.82)",
+    color: "#e5e7eb",
+    borderRadius: 8,
+    padding: "10px 11px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    cursor: "pointer",
+    textAlign: "left",
+    boxShadow: `inset 3px 0 0 ${toneColour}`,
+  };
+}
+
+const selectedAssetStrip: React.CSSProperties = {
+  display: "grid",
+  gap: 4,
+  border: "1px solid rgba(96, 165, 250, 0.26)",
+  background: "#0f1b2d",
+  borderRadius: 8,
+  padding: 12,
+  color: "#e5e7eb",
+};
+
+const nextBlockerBox: React.CSSProperties = {
+  border: "1px solid rgba(248, 113, 113, 0.34)",
+  background: "rgba(127, 29, 29, 0.18)",
+  color: "#fecaca",
+  borderRadius: 8,
+  padding: 12,
+  fontSize: 12,
+  lineHeight: 1.45,
+};
+
+const nextGoodBox: React.CSSProperties = {
+  border: "1px solid rgba(34, 197, 94, 0.3)",
+  background: "rgba(20, 83, 45, 0.16)",
+  color: "#bbf7d0",
+  borderRadius: 8,
+  padding: 12,
+  fontSize: 12,
 };
 const areaBoundary: React.CSSProperties = {
   position: "absolute",
@@ -6464,7 +6717,7 @@ const threeDButton: React.CSSProperties = {
   ...smallButton,
 };
 const intelligenceDock: React.CSSProperties = {
-  gridColumn: "span 2",
+  gridColumn: "1 / -1",
   gridRow: "span 4",
   background: "linear-gradient(180deg, #0f1b2d 0%, #0b1626 100%)",
   border: "1px solid rgba(148, 163, 184, 0.18)",

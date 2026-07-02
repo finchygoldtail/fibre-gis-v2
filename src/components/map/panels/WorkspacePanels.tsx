@@ -24,6 +24,11 @@ type WorkspacePanelsProps = {
     status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
     note: string;
   }) => void;
+  onBulkUpdateCablePiaNoi: (args: {
+    assetIds: string[];
+    piaNoiNumber: string;
+    note: string;
+  }) => void | Promise<void>;
   onUpdateDpStatus: (args: {
     assetId: string;
     status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
@@ -54,6 +59,7 @@ export default function WorkspacePanels({
   onOpenFibreTopology,
   onOpenJointEditor,
   onBulkUpdateDpStatus,
+  onBulkUpdateCablePiaNoi,
   onUpdateDpStatus,
   onClearDpFibreAllocations,
   onApplyAddressSheetAssignments,
@@ -104,6 +110,7 @@ export default function WorkspacePanels({
       onOpenFibreTopology={onOpenFibreTopology}
       onOpenJointEditor={onOpenJointEditor}
       onBulkUpdateDpStatus={onBulkUpdateDpStatus}
+      onBulkUpdateCablePiaNoi={onBulkUpdateCablePiaNoi}
       onUpdateDpStatus={onUpdateDpStatus}
       onClearDpFibreAllocations={onClearDpFibreAllocations}
       onApplyAddressSheetAssignments={onApplyAddressSheetAssignments}
