@@ -250,7 +250,7 @@ export default function CommercialApprovalWorkflow({
     documentValues.readyForPayment > 0 ||
     documentValues.heldValue > 0
   ));
-  const qaComplete = auditedCount > 0 && failedCount === 0 && advisoryCount === 0;
+  const qaComplete = projectAssetCount > 0 && failedCount === 0 && advisoryCount === 0;
   const walkOffComplete = String(walkOffStatus || "").toLowerCase() === "approved";
   const contractRegistered = Boolean(documentValues && documentValues.currentContractValue > 0);
   const variationsReviewed = Boolean(documentValues) && (documentValues?.approvedVariations || 0) >= 0;
