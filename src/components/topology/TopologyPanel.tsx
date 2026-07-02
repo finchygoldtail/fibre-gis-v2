@@ -331,7 +331,7 @@ export default function TopologyPanel({
 
       <div style={body}>
         <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.4 }}>
-          Reads drawn cables, uploaded joint mapping rows, sheet-to-cable fibre references, meet-me fibre-to-fibre splices and exchange/ODIN style
+          Reads drawn cables, uploaded joint mapping rows, sheet-to-cable fibre references, meet-me fibre-to-fibre splices and exchange-style
           patching fields. No Firestore schema or chunk storage changes.
         </div>
 

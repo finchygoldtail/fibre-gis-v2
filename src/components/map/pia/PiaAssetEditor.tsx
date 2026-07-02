@@ -393,7 +393,7 @@ export default function PiaAssetEditor({
             <option value="Existing asset untouched">Existing asset untouched</option>
             <option value="Outside build scope">Outside build scope</option>
             <option value="Existing Openreach asset">Existing Openreach asset</option>
-            <option value="Existing Netomnia asset">Existing Netomnia asset</option>
+            <option value="Existing third-party asset">Existing third-party asset</option>
             <option value="Survey only">Survey only</option>
             <option value="Duplicate asset">Duplicate asset</option>
             <option value="Other">Other</option>

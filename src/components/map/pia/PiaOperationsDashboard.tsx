@@ -1508,8 +1508,8 @@ export default function PiaReviewWorkspace({
                       <option value="Existing Openreach asset">
                         Existing Openreach asset
                       </option>
-                      <option value="Existing Netomnia asset">
-                        Existing Netomnia asset
+                      <option value="Existing third-party asset">
+                        Existing third-party asset
                       </option>
                       <option value="Survey only">Survey only</option>
                       <option value="Duplicate asset">Duplicate asset</option>

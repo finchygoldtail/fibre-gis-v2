@@ -8,7 +8,6 @@ type Props = {
 };
 
 const PRINCIPAL_CONTRACTORS = [
-  "Brsk ISP",
   "BV Comms",
   "C&L Communications",
   "CGI",
@@ -30,7 +29,6 @@ const PRINCIPAL_CONTRACTORS = [
   "MAP Group (UK)",
   "MIA Direct",
   "Nano Fibre UK Ltd",
-  "Netomnia",
   "NETS International Ltd",
   "Ociusnet",
   "OCU Group",
@@ -97,7 +95,7 @@ export default function PiaQaFields({ value, onChange }: Props) {
             <option value="Existing asset untouched">Existing asset untouched</option>
             <option value="Outside build scope">Outside build scope</option>
             <option value="Existing Openreach asset">Existing Openreach asset</option>
-            <option value="Existing Netomnia asset">Existing Netomnia asset</option>
+            <option value="Existing third-party asset">Existing third-party asset</option>
             <option value="Survey only">Survey only</option>
             <option value="Duplicate asset">Duplicate asset</option>
             <option value="Other">Other</option>
