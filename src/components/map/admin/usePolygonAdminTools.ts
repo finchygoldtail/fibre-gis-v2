@@ -216,6 +216,57 @@ export function usePolygonAdminTools({
     removePolygonAssetsFromMapState(allPolygons, "polygon area(s)");
   };
 
+  const handleAdminSetAllPolygonsToL3 = () => {
+    if (!isAdmin) {
+      alert("Administrator access required.");
+      return;
+    }
+
+    const allPolygons = operationalSavedJoints.filter(isPolygonAreaAsset);
+
+    if (!allPolygons.length) {
+      alert("No polygon areas were found.");
+      return;
+    }
+
+    const needsUpdate = allPolygons.filter(
+      (asset: any) => String(asset?.areaLevel || "").toUpperCase() !== "L3",
+    );
+
+    if (!needsUpdate.length) {
+      alert("All loaded polygon areas are already L3.");
+      return;
+    }
+
+    const typed = window.prompt(
+      `Change ${needsUpdate.length} loaded polygon area(s) to L3?\n\nThis does not delete anything. You must still press Save Map afterwards to persist the level change.\n\nType SET POLYGONS L3 to continue.`,
+      "",
+    );
+
+    if (typed !== "SET POLYGONS L3") return;
+
+    const updatedIds = new Set(needsUpdate.map((asset) => String(asset.id || "")));
+
+    setSavedJoints((prev) =>
+      (prev ?? []).map((asset: any) =>
+        updatedIds.has(String(asset?.id || ""))
+          ? {
+              ...asset,
+              areaLevel: "L3",
+              properties: {
+                ...(asset.properties || {}),
+                areaLevel: "L3",
+              },
+            }
+          : asset,
+      ),
+    );
+
+    alert(
+      `${needsUpdate.length} polygon area(s) changed to L3 in the loaded map.\n\nPress Save Map to make this permanent in Firestore.`,
+    );
+  };
+
   return {
     polygonBulkSelectEnabled,
     setPolygonBulkSelectEnabled,
@@ -229,5 +280,6 @@ export function usePolygonAdminTools({
     handleAdminRemoveSelectedPolygons,
     handleAdminRemoveSelectedPolygon,
     handleAdminRemoveAllPolygons,
+    handleAdminSetAllPolygonsToL3,
   };
 }

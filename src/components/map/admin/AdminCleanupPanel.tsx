@@ -21,6 +21,7 @@ type AdminCleanupPanelProps = {
   onRemoveSelectedPolygons: () => void;
   onRemoveSelectedPolygon: () => void;
   onRemoveAllPolygons: () => void;
+  onSetAllPolygonsToL3: () => void;
   onRepairAreaStamps: () => void | Promise<void>;
   onDeletePiaOverlayForActiveProject: () => void | Promise<void>;
   onDeleteAllOrReferenceAssets: () => void | Promise<void>;
@@ -46,6 +47,7 @@ export default function AdminCleanupPanel({
   onRemoveSelectedPolygons,
   onRemoveSelectedPolygon,
   onRemoveAllPolygons,
+  onSetAllPolygonsToL3,
   onRepairAreaStamps,
   onDeletePiaOverlayForActiveProject,
   onDeleteAllOrReferenceAssets,
@@ -160,6 +162,21 @@ export default function AdminCleanupPanel({
 
         <button type="button" onClick={onRemoveAllPolygons} style={btnDanger}>
           Remove ALL Polygons
+        </button>
+
+        <button
+          type="button"
+          onClick={onSetAllPolygonsToL3}
+          style={{
+            ...btnSecondary,
+            width: "100%",
+            marginTop: 8,
+            background: "#14532d",
+            borderColor: "#22c55e",
+          }}
+          title="Change every loaded polygon area level to L3. Press Save Map afterwards."
+        >
+          Set All Polygons to L3
         </button>
 
         <button

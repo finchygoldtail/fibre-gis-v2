@@ -25,6 +25,7 @@ type AdminPanelsProps = {
   onRemoveSelectedPolygons: (reason?: string) => void | Promise<void>;
   onRemoveSelectedPolygon: (reason?: string) => void | Promise<void>;
   onRemoveAllPolygons: (reason?: string) => void | Promise<void>;
+  onSetAllPolygonsToL3: (reason?: string) => void | Promise<void>;
   onRepairAreaStamps: (reason?: string) => void | Promise<void>;
   onDeletePiaOverlayForActiveProject: (reason?: string) => void | Promise<void>;
   onDeleteAllOrReferenceAssets: (reason?: string) => void | Promise<void>;
@@ -50,6 +51,7 @@ export default function AdminPanels({
   onRemoveSelectedPolygons,
   onRemoveSelectedPolygon,
   onRemoveAllPolygons,
+  onSetAllPolygonsToL3,
   onRepairAreaStamps,
   onDeletePiaOverlayForActiveProject,
   onDeleteAllOrReferenceAssets,
@@ -77,6 +79,7 @@ export default function AdminPanels({
       onRemoveSelectedPolygons={onRemoveSelectedPolygons}
       onRemoveSelectedPolygon={onRemoveSelectedPolygon}
       onRemoveAllPolygons={onRemoveAllPolygons}
+      onSetAllPolygonsToL3={onSetAllPolygonsToL3}
       onRepairAreaStamps={onRepairAreaStamps}
       onDeletePiaOverlayForActiveProject={onDeletePiaOverlayForActiveProject}
       onDeleteAllOrReferenceAssets={onDeleteAllOrReferenceAssets}
