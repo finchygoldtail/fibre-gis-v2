@@ -1,6 +1,10 @@
 import { getTuplePathDistanceMeters } from "../../utils/mapMeasure";
-import React, { useEffect, useMemo, useState } from "react";
-import WorkspaceMap, { type WorkspaceLayerVisibility } from "./WorkspaceMap";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import WorkspaceMap, {
+  type JobPackMapCaptureRequest,
+  type JobPackMapCaptureTarget,
+  type WorkspaceLayerVisibility,
+} from "./WorkspaceMap";
 import type { OpenreachLayerVisibility } from "../map/OpenreachOverlayLayer";
 import AssetIntelligencePanel from "./AssetIntelligencePanel";
 import TraceTopologyPanel from "../topology/TraceTopologyPanel";
@@ -1810,6 +1814,12 @@ export default function ProjectWorkspace({
   const [visibleLayers, setVisibleLayers] = useState<WorkspaceLayerVisibility>(
     defaultWorkspaceLayers,
   );
+  const [jobPackCaptureRequest, setJobPackCaptureRequest] =
+    useState<JobPackMapCaptureRequest | null>(null);
+  const jobPackCaptureResolverRef = useRef<{
+    target: JobPackMapCaptureTarget;
+    resolve: (imageDataUrl: string) => void;
+  } | null>(null);
   const [activeOperationPanel, setActiveOperationPanel] =
     useState<WorkspaceOperationPanel>("none");
   const [activeIssueSeverity, setActiveIssueSeverity] =
@@ -1825,6 +1835,47 @@ export default function ProjectWorkspace({
     "Pending" | "Approved" | "Review Required" | "Blocked"
   >("Pending");
   const [walkOffSavedAt, setWalkOffSavedAt] = useState<string>("");
+
+  const requestSingleJobPackMapCapture = (target: JobPackMapCaptureTarget) =>
+    new Promise<string>((resolve) => {
+      jobPackCaptureResolverRef.current = { target, resolve };
+      setJobPackCaptureRequest({ id: Date.now() + Math.floor(Math.random() * 1000), target });
+    });
+
+  const requestJobPackMapCaptures = async (targets: JobPackMapCaptureTarget[]) => {
+    const captures: Partial<Record<JobPackMapCaptureTarget, string>> = {};
+    const previousLayers = visibleLayers;
+
+    setVisibleLayers({
+      ...defaultWorkspaceLayers,
+      projectBoundary: true,
+      areas: true,
+      cables: true,
+      dropCables: false,
+      joints: true,
+      dps: true,
+      poles: true,
+      chambers: true,
+      streetCabs: false,
+      homes: false,
+      other: false,
+    });
+
+    for (const target of targets) {
+      captures[target] = await requestSingleJobPackMapCapture(target);
+    }
+
+    setJobPackCaptureRequest(null);
+    setVisibleLayers(previousLayers);
+    return captures;
+  };
+
+  const handleJobPackMapCaptured = (target: JobPackMapCaptureTarget, imageDataUrl: string) => {
+    const resolver = jobPackCaptureResolverRef.current;
+    if (!resolver || resolver.target !== target) return;
+    jobPackCaptureResolverRef.current = null;
+    resolver.resolve(imageDataUrl);
+  };
 
   const clearWorkspaceOperationState = () => {
     setActiveOperationPanel("none");
@@ -4268,6 +4319,8 @@ export default function ProjectWorkspace({
                     networkState={networkState}
                     managerAreaPoints={managerAreaPoints}
                     managerAreaDrawMode={isManagerAreaDrawing}
+                    jobPackCaptureRequest={jobPackCaptureRequest}
+                    onJobPackMapCaptured={handleJobPackMapCaptured}
                     onManagerAreaPointAdd={(point) => {
                       setManagerAreaPoints((prev) => [...prev, point]);
                     }}
@@ -4478,6 +4531,7 @@ export default function ProjectWorkspace({
                     areaKey={activeWorkspaceProjectId || projectArea?.id || projectName || "current-area"}
                     areaName={projectArea?.name || projectName || "Current area"}
                     projectAssets={workspaceAssets}
+                    onCaptureJobPackMaps={requestJobPackMapCaptures}
                     onSelectAsset={(asset) => {
                       setSelectedWorkspaceAsset(asset);
                       setSearchTerm(getWorkspaceAssetTitle(asset));

@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="720" viewBox="0 0 560 720" role="img" aria-label="Alistra GIS job pack map legend">
+  <rect x="0" y="0" width="560" height="720" fill="#ffffff"/>
+  <rect x="14" y="14" width="532" height="692" fill="#ffffff" stroke="#0f172a" stroke-width="2"/>
+  <rect x="14" y="14" width="532" height="72" fill="#001326"/>
+  <text x="38" y="59" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="800">MAP LEGEND</text>
+
+  <g font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#0f172a" font-weight="700">
+    <g transform="translate(40 128)">
+      <path d="M0 0H78" fill="none" stroke="#9652e1" stroke-width="9" stroke-linecap="round"/>
+      <path d="M0 0H78" fill="none" stroke="#9652e1" stroke-width="3" stroke-linecap="round" opacity="0.45"/>
+      <text x="110" y="8">Project Boundary</text>
+    </g>
+
+    <g transform="translate(40 184)">
+      <path d="M0 0H78" fill="none" stroke="#2563eb" stroke-width="8" stroke-linecap="round" stroke-dasharray="16 10"/>
+      <text x="110" y="8">96F Route</text>
+    </g>
+
+    <g transform="translate(40 240)">
+      <path d="M0 0H78" fill="none" stroke="#06b6d4" stroke-width="7" stroke-linecap="round" stroke-dasharray="16 10"/>
+      <text x="110" y="8">48F Route</text>
+    </g>
+
+    <g transform="translate(40 296)">
+      <path d="M0 0H78" fill="none" stroke="#0ea5e9" stroke-width="6" stroke-linecap="round" stroke-dasharray="14 9"/>
+      <text x="110" y="8">36F Route</text>
+    </g>
+
+    <g transform="translate(40 352)">
+      <path d="M0 0H78" fill="none" stroke="#f59e0b" stroke-width="6" stroke-linecap="round" stroke-dasharray="12 8"/>
+      <text x="110" y="8">24F Route</text>
+    </g>
+
+    <g transform="translate(40 408)">
+      <path d="M0 0H78" fill="none" stroke="#f97316" stroke-width="5" stroke-linecap="round" stroke-dasharray="11 8"/>
+      <text x="110" y="8">12F Route</text>
+    </g>
+
+    <g transform="translate(40 464)">
+      <path d="M0 0H78" fill="none" stroke="#22c55e" stroke-width="4" stroke-linecap="round"/>
+      <text x="110" y="8">Drop Fibre</text>
+    </g>
+
+    <g transform="translate(40 520)">
+      <circle cx="38" cy="0" r="15" fill="#facc15" stroke="#0f172a" stroke-width="4"/>
+      <text x="110" y="8">DP / Closure</text>
+    </g>
+
+    <g transform="translate(40 576)">
+      <path d="M38 -17L55 0L38 17L21 0Z" fill="#ec4899" stroke="#0f172a" stroke-width="3"/>
+      <text x="110" y="8">Joint / CMJ</text>
+    </g>
+
+    <g transform="translate(40 632)">
+      <rect x="22" y="-16" width="32" height="32" fill="#6b7280" stroke="#0f172a" stroke-width="3"/>
+      <text x="110" y="8">Chamber</text>
+    </g>
+  </g>
+
+  <text x="38" y="684" fill="#64748b" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700">Homes are plotted without UPRN labels unless required for review.</text>
+</svg>

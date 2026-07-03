@@ -11,6 +11,7 @@
 
 import { getDistanceMeters as distanceBetweenWorkspacePointsMeters, getPathDistanceMeters } from "../../utils/mapMeasure";
 import React, { useEffect, useMemo, useState } from "react";
+import html2canvas from "html2canvas";
 import {
   MapContainer,
   Marker,
@@ -52,6 +53,13 @@ export type WorkspaceLayerVisibility = {
   other: boolean;
 };
 
+export type JobPackMapCaptureTarget = "overview" | "96F" | "48F" | "36F" | "24F" | "12F";
+
+export type JobPackMapCaptureRequest = {
+  id: number;
+  target: JobPackMapCaptureTarget;
+};
+
 type WorkspaceMapProps = {
   projectName: string;
   projectArea?: SavedMapAsset | null;
@@ -66,6 +74,8 @@ type WorkspaceMapProps = {
   networkState?: NetworkState;
   managerAreaPoints?: LatLngLiteral[];
   managerAreaDrawMode?: boolean;
+  jobPackCaptureRequest?: JobPackMapCaptureRequest | null;
+  onJobPackMapCaptured?: (target: JobPackMapCaptureTarget, imageDataUrl: string) => void;
   onManagerAreaPointAdd?: (point: LatLngLiteral) => void;
   onManagerAreaClear?: () => void;
   onAssetSelect?: (asset: SavedMapAsset) => void;
@@ -131,6 +141,66 @@ function SafeMapLifecycle({ bounds }: { bounds: WorkspaceBounds | null }) {
     return () => window.clearTimeout(timeoutId);
   }, [map, bounds]);
 
+
+  return null;
+}
+
+function JobPackMapCaptureHandler({
+  request,
+  bounds,
+  onCaptured,
+}: {
+  request?: JobPackMapCaptureRequest | null;
+  bounds: WorkspaceBounds | null;
+  onCaptured?: (target: JobPackMapCaptureTarget, imageDataUrl: string) => void;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!request || !onCaptured) return;
+    let cancelled = false;
+
+    const capture = async () => {
+      try {
+        map.invalidateSize({ animate: false });
+        if (bounds) {
+          map.fitBounds(bounds, {
+            padding: [70, 70],
+            maxZoom: request.target === "overview" ? 17 : 19,
+            animate: false,
+          });
+        }
+
+        await new Promise((resolve) => window.setTimeout(resolve, 950));
+        if (cancelled) return;
+
+        const container = map.getContainer();
+        const canvas = await html2canvas(container, {
+          backgroundColor: "#ffffff",
+          useCORS: true,
+          allowTaint: true,
+          logging: false,
+          scale: 2,
+          ignoreElements: (element) => {
+            const node = element as HTMLElement;
+            return Boolean(
+              node.closest(".leaflet-control-container") ||
+              node.closest(".leaflet-popup") ||
+              node.closest(".leaflet-tooltip"),
+            );
+          },
+        });
+        if (!cancelled) onCaptured(request.target, canvas.toDataURL("image/png", 0.96));
+      } catch (error) {
+        console.warn("Job Pack map capture failed", error);
+      }
+    };
+
+    capture();
+    return () => {
+      cancelled = true;
+    };
+  }, [bounds, map, onCaptured, request]);
 
   return null;
 }
@@ -266,6 +336,14 @@ function getBoundsFromAssets(projectArea: SavedMapAsset | null | undefined, asse
     [Math.min(...lats), Math.min(...lngs)],
     [Math.max(...lats), Math.max(...lngs)],
   ];
+}
+
+function assetMatchesJobPackCaptureTarget(asset: SavedMapAsset, target: JobPackMapCaptureTarget): boolean {
+  if (target === "overview") return true;
+  const item = asset as any;
+  const fibreText = String(item.fibreCount || item.properties?.fibreCount || item.name || item.label || "").toUpperCase();
+  if (getLinePoints(asset).length >= 2) return fibreText.includes(target);
+  return true;
 }
 
 
@@ -445,6 +523,35 @@ function getDpCapacityState(
   return { ...baseState, colour: "#22c55e", label: "Capacity OK" };
 }
 
+function formatWorkspaceFibreRanges(fibres?: number[]): string {
+  if (!fibres?.length) return "";
+  const sorted = [...fibres].sort((a, b) => a - b);
+  const ranges: string[] = [];
+  let start = sorted[0];
+  let previous = sorted[0];
+  for (let index = 1; index <= sorted.length; index += 1) {
+    const current = sorted[index];
+    if (current === previous + 1) {
+      previous = current;
+      continue;
+    }
+    ranges.push(start === previous ? String(start) : `${start}-${previous}`);
+    start = current;
+    previous = current;
+  }
+  return ranges.join(", ");
+}
+
+function getDpFibreLabel(asset: SavedMapAsset): string {
+  const details = (asset as any).dpDetails || {};
+  return formatWorkspaceFibreRanges(
+    details.autoFibrePlan?.inputFibres ||
+    details.afnDetails?.inputFibres ||
+    details.mduDetails?.inputFibres ||
+    (asset as any).allocatedInputFibres,
+  );
+}
+
 function getAssetMarkerIcon(
   asset: SavedMapAsset,
   selected: boolean,
@@ -480,11 +587,17 @@ function getAssetMarkerIcon(
 
   const dotSize = touchMode ? (selected ? 28 : 22) : selected ? 18 : 14;
   const hitSize = touchMode ? 44 : dotSize;
+  const dpFibreLabel = type.includes("distribution") || type === "dp" || type.includes("afn") || type.includes("cbt")
+    ? getDpFibreLabel(asset)
+    : "";
+  const labelHtml = dpFibreLabel
+    ? `<div style="position:absolute;left:50%;top:${hitSize - 2}px;transform:translateX(-50%);background:#ffffff;color:#020617;border:1px solid rgba(2,6,23,0.55);border-radius:4px;padding:1px 4px;font-size:10px;font-weight:900;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,0.22);">F${dpFibreLabel}</div>`
+    : "";
 
   return L.divIcon({
     className: "alistra-workspace-marker",
-    html: `<div style="width:${hitSize}px;height:${hitSize}px;display:grid;place-items:center;"><div style="width:${dotSize}px;height:${dotSize}px;border-radius:999px;background:${colour};border:2px solid #020617;box-shadow:0 0 0 2px rgba(255,255,255,0.25),0 0 14px ${colour},0 6px 14px rgba(0,0,0,0.45);"></div></div>`,
-    iconSize: [hitSize, hitSize],
+    html: `<div style="position:relative;width:${hitSize}px;height:${hitSize + (dpFibreLabel ? 18 : 0)}px;display:grid;place-items:start center;"><div style="width:${hitSize}px;height:${hitSize}px;display:grid;place-items:center;"><div style="width:${dotSize}px;height:${dotSize}px;border-radius:999px;background:${colour};border:2px solid #020617;box-shadow:0 0 0 2px rgba(255,255,255,0.25),0 0 14px ${colour},0 6px 14px rgba(0,0,0,0.45);"></div></div>${labelHtml}</div>`,
+    iconSize: [hitSize, hitSize + (dpFibreLabel ? 18 : 0)],
     iconAnchor: [hitSize / 2, hitSize / 2],
   });
 }
@@ -654,6 +767,8 @@ export default function WorkspaceMap({
   networkState,
   managerAreaPoints = [],
   managerAreaDrawMode = false,
+  jobPackCaptureRequest,
+  onJobPackMapCaptured,
   onManagerAreaPointAdd,
   onManagerAreaClear,
   onAssetSelect,
@@ -676,11 +791,29 @@ export default function WorkspaceMap({
       window.removeEventListener("orientationchange", update);
     };
   }, []);
+  const jobPackCaptureAssets = useMemo(
+    () => jobPackCaptureRequest
+      ? assets.filter((asset) => assetMatchesJobPackCaptureTarget(asset, jobPackCaptureRequest.target))
+      : assets,
+    [assets, jobPackCaptureRequest],
+  );
   const bounds = useMemo(() => getBoundsFromAssets(projectArea, assets), [projectArea, assets]);
+  const activeBounds = useMemo(
+    () => jobPackCaptureRequest
+      ? getBoundsFromAssets(projectArea, jobPackCaptureAssets.filter((asset) => {
+          if (jobPackCaptureRequest.target === "overview") return true;
+          return getLinePoints(asset).length >= 2 && assetMatchesJobPackCaptureTarget(asset, jobPackCaptureRequest.target);
+        }))
+      : bounds,
+    [bounds, jobPackCaptureAssets, jobPackCaptureRequest, projectArea],
+  );
   const visibleAssets = useMemo(
     () =>
-      assets.filter((asset) => {
-        if (!isLayerVisibleForAsset(asset, visibleLayers)) return false;
+      (jobPackCaptureRequest ? jobPackCaptureAssets : assets).filter((asset) => {
+        if (!jobPackCaptureRequest && !isLayerVisibleForAsset(asset, visibleLayers)) return false;
+        if (jobPackCaptureRequest && isHomeAssetForWorkspace(asset)) return false;
+        if (jobPackCaptureRequest && isHomeDropCable(asset)) return false;
+        if (jobPackCaptureRequest && getLinePoints(asset).length >= 2 && !assetMatchesJobPackCaptureTarget(asset, jobPackCaptureRequest.target)) return false;
 
         if (isHomeAssetForWorkspace(asset)) {
           const homeStatus = getHomeConnectionStatus(asset, assets, isHomeDropCable);
@@ -689,12 +822,14 @@ export default function WorkspaceMap({
           if (homeStatus === "unconnected" && visibleLayers.homesUnconnected === false) return false;
         }
 
+        if (jobPackCaptureRequest) return true;
+
         return (
           assetInWorkspaceViewport(asset, viewportBounds) &&
           shouldRenderWorkspaceAssetAtZoom(asset, viewportZoom)
         );
       }),
-    [assets, visibleLayers, viewportBounds, viewportZoom],
+    [assets, jobPackCaptureAssets, jobPackCaptureRequest, visibleLayers, viewportBounds, viewportZoom],
   );
 
   const visibleOpenreachAssets = useMemo(() => {
@@ -750,7 +885,12 @@ export default function WorkspaceMap({
         touchZoom
       >
         <WorkspaceBaseLayers />
-        <SafeMapLifecycle bounds={bounds} />
+        <SafeMapLifecycle bounds={activeBounds} />
+        <JobPackMapCaptureHandler
+          request={jobPackCaptureRequest}
+          bounds={activeBounds}
+          onCaptured={onJobPackMapCaptured}
+        />
         <WorkspaceViewportTracker
           onChange={(nextBounds, nextZoom) => {
             setViewportBounds(nextBounds);

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import type { SavedMapAsset } from "../map/types";
+import JobPackWorkspace from "../jobpacks/JobPackWorkspace";
 import {
   EngineeringQueueCard,
   EngineeringTwinSnapshotStatus,
@@ -100,6 +101,7 @@ type EngineeringDeliveryWorkspaceProps = {
   areaKey: string;
   areaName: string;
   projectAssets: SavedMapAsset[];
+  onCaptureJobPackMaps?: (targets: Array<"overview" | "96F" | "48F" | "36F" | "24F" | "12F">) => Promise<Partial<Record<"overview" | "96F" | "48F" | "36F" | "24F" | "12F", string>>>;
   onSelectAsset?: (asset: SavedMapAsset) => void;
 };
 
@@ -179,6 +181,7 @@ export default function EngineeringDeliveryWorkspace({
   areaKey,
   areaName,
   projectAssets,
+  onCaptureJobPackMaps,
   onSelectAsset,
 }: EngineeringDeliveryWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<DeliveryTab>("overview");
@@ -684,80 +687,15 @@ export default function EngineeringDeliveryWorkspace({
 
       {activeTab === "jobPacks" ? (
         <section style={panel}>
-          <div style={panelTitle}>Job Pack Summary</div>
-          <div style={readinessHero}>
-            <div>
-              <div style={eyebrow}>Controlled Build Pack</div>
-              <h3 style={readinessTitle}>Engineering Pack Readiness</h3>
-              <p style={readinessText}>
-                Review the current IFC status, asset coverage, FAS reference and issued-pack position before releasing work to build.
-              </p>
-            </div>
-            <span style={readinessBadge}>
-              {issuedJobPack ? "Issued" : currentIfcRevision ? "Ready" : "Locked"}
-            </span>
-          </div>
-
-          <div style={kpiGrid}>
-            <Info label="Area" value={areaName} />
-            <Info label="Assets Included" value={projectAssets.length} />
-            <Info label="FAS Version" value={currentIfcRevision?.fasVersion || "Not issued"} />
-            <Info label="As-Built Version" value={currentIfcRevision?.asBuiltVersion || "Not issued"} />
-            <Info label="Saved Draft Packs" value={jobPacks.length} />
-            <Info label="Issued Pack" value={issuedJobPack ? issuedJobPack.jobPackNumber : "None"} />
-          </div>
-
-          <div style={roadmapGrid}>
-            <div style={roadmapCard}>
-              <strong>What is changing?</strong>
-              <p style={muted}>
-                Job Packs will move into their own controlled editor instead of being exported directly from raw live map data.
-              </p>
-              <ul style={roadmapList}>
-                <li>Draft pack generated from the live map.</li>
-                <li>Engineer reviews routes, UPRNs, FAS and schedules.</li>
-                <li>Corrections stay in the draft pack until approved.</li>
-                <li>Final issue exports PDF / ZIP and archives the controlled version.</li>
-              </ul>
-            </div>
-
-            <div style={roadmapCard}>
-              <strong>Planned editor modules</strong>
-              <ul style={roadmapList}>
-                <li>Route-by-route engineering sheets.</li>
-                <li>FAS / fibre allocation editor.</li>
-                <li>DP, Pole, Chamber and Cable schedule review.</li>
-                <li>UPRN visibility controls and validation.</li>
-                <li>Risk, QA and construction notes review.</li>
-                <li>As-built and walk-off pack generation.</li>
-              </ul>
-            </div>
-          </div>
-
-          <div style={statusTimeline}>
-            {[
-              ["Engineering Core", "Complete"],
-              ["Delivery Workspace", "Complete"],
-              ["Digital Twin", "Complete"],
-              ["PIA QA", "Complete"],
-              ["Commercial Reporting", "Complete"],
-              ["Job Pack Control", currentIfcRevision ? "Ready" : "Locked"],
-            ].map(([label, value]) => (
-              <div key={label} style={statusTimelineItem}>
-                <span>{label}</span>
-                <strong>{value}</strong>
-              </div>
-            ))}
-          </div>
-
-          <button
-            type="button"
-            style={currentIfcRevision ? primaryButton : disabledActionButton}
-            disabled={!currentIfcRevision}
-            onClick={() => setActiveTab("buildPartner")}
-          >
-            {currentIfcRevision ? "Open Build Partner Pack" : "Complete approvals before release"}
-          </button>
+          <JobPackWorkspace
+            areaId={areaKey}
+            areaName={areaName}
+            projectAssets={projectAssets}
+            currentRevision={currentIfcRevision ? `REV-${currentIfcRevision.revision}` : currentRevision?.revision !== undefined ? `DRAFT-${currentRevision.revision}` : "DRAFT-01"}
+            savedDraftCount={jobPacks.length}
+            issuedPackNumber={issuedJobPack?.jobPackNumber}
+            onCaptureJobPackMaps={onCaptureJobPackMaps}
+          />
         </section>
       ) : null}
 
@@ -995,89 +933,6 @@ function Info({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 
-
-const readinessHero: React.CSSProperties = {
-  border: "1px solid rgba(56, 189, 248, 0.35)",
-  borderRadius: 20,
-  padding: 18,
-  background: "linear-gradient(135deg, rgba(8, 47, 73, 0.56), rgba(15, 23, 42, 0.92))",
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 16,
-  alignItems: "flex-start",
-  marginBottom: 14,
-};
-
-const readinessTitle: React.CSSProperties = {
-  margin: "6px 0 8px",
-  fontSize: 24,
-  color: "#f8fafc",
-};
-
-const readinessText: React.CSSProperties = {
-  margin: 0,
-  color: "#cbd5e1",
-  maxWidth: 880,
-  lineHeight: 1.5,
-};
-
-const readinessBadge: React.CSSProperties = {
-  border: "1px solid rgba(250, 204, 21, 0.45)",
-  borderRadius: 999,
-  padding: "7px 12px",
-  background: "rgba(113, 63, 18, 0.28)",
-  color: "#fef3c7",
-  fontWeight: 900,
-  whiteSpace: "nowrap",
-};
-
-const roadmapGrid: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-  gap: 14,
-  marginTop: 14,
-};
-
-const roadmapCard: React.CSSProperties = {
-  border: "1px solid rgba(148, 163, 184, 0.18)",
-  borderRadius: 16,
-  padding: 14,
-  background: "rgba(2, 6, 23, 0.45)",
-};
-
-const roadmapList: React.CSSProperties = {
-  margin: "10px 0 0",
-  paddingLeft: 18,
-  color: "#cbd5e1",
-  lineHeight: 1.45,
-};
-
-const statusTimeline: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
-  gap: 10,
-  marginTop: 14,
-};
-
-const statusTimelineItem: React.CSSProperties = {
-  border: "1px solid rgba(34, 197, 94, 0.22)",
-  borderRadius: 14,
-  padding: 12,
-  background: "rgba(20, 83, 45, 0.14)",
-  display: "grid",
-  gap: 4,
-};
-
-const disabledActionButton: React.CSSProperties = {
-  marginTop: 14,
-  border: "1px solid rgba(148, 163, 184, 0.28)",
-  borderRadius: 12,
-  padding: "10px 14px",
-  background: "rgba(30, 41, 59, 0.72)",
-  color: "#94a3b8",
-  fontWeight: 900,
-  cursor: "not-allowed",
-};
 
 const shell: React.CSSProperties = {
   background: "rgba(2, 6, 23, 0.96)",
