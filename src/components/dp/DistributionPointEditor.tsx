@@ -13,7 +13,6 @@ import { buildDpRoutingState, buildNetworkState } from "../../services/network";
 import { getDpCapacityStateColour, getDpCapacitySummary } from "../../services/dpIntelligence";
 import CapacityPanel from "./dp/CapacityPanel";
 import RoutePanel from "./dp/RoutePanel";
-import ConnectedHomesPanel from "./dp/ConnectedHomesPanel";
 import FibreIntakePanel from "./dp/FibreIntakePanel";
 import { useDeviceLayout } from "../map/responsive/useDeviceLayout";
 
@@ -1077,7 +1076,7 @@ export default function DistributionPointEditor({
   const [selectedPort, setSelectedPort] = useState<number | null>(null);
   const [activeFibreView, setActiveFibreView] =
     useState<FibreViewMode>("splitter");
-  const [mobilePanel, setMobilePanel] = useState<"fibres" | "summary" | "homes">("fibres");
+  const [mobilePanel, setMobilePanel] = useState<"fibres" | "summary">("fibres");
   const [editMode, setEditMode] = useState(false);
   const [draftRouting, setDraftRouting] = useState<DraftRouting>(() =>
     buildInitialDraft(incomingAsset),
@@ -1992,7 +1991,7 @@ export default function DistributionPointEditor({
           flex: 1,
           minHeight: 0,
           display: "grid",
-          gridTemplateColumns: isMobile ? "1fr" : "330px minmax(760px, 1fr) 380px",
+          gridTemplateColumns: isMobile ? "1fr" : "330px minmax(760px, 1fr)",
           gap: isMobile ? 10 : 16,
           padding: isMobile ? 10 : 16,
           overflow: "auto",
@@ -2608,7 +2607,7 @@ export default function DistributionPointEditor({
 
         </RoutePanel>}
 
-        {(!isMobile || mobilePanel === "homes") && <ConnectedHomesPanel>
+        {false && <ConnectedHomesPanel>
           <div>
             <div style={smallLabelStyle()}>Served Homes</div>
             <h2 style={{ margin: "4px 0 0", fontSize: 22 }}>
@@ -2799,9 +2798,6 @@ export default function DistributionPointEditor({
           </button>
           <button type="button" onClick={() => setMobilePanel("fibres")} style={mobileDockButtonStyle(mobilePanel === "fibres")}>
             Fibres
-          </button>
-          <button type="button" onClick={() => setMobilePanel("homes")} style={mobileDockButtonStyle(mobilePanel === "homes")}>
-            Homes
           </button>
         </nav>
       ) : null}
@@ -3027,7 +3023,7 @@ const mobilePanelDockStyle: React.CSSProperties = {
   bottom: "calc(env(safe-area-inset-bottom, 0px) + 10px)",
   zIndex: 6600,
   display: "grid",
-  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
   gap: 8,
   padding: 8,
   borderRadius: 18,

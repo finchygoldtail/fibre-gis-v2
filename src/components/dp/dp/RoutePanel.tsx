@@ -22,7 +22,7 @@ export default function RoutePanel({ children }: RoutePanelProps) {
         maxWidth: "100%",
         minWidth: 0,
         boxSizing: "border-box",
-        overflow: "hidden",
+        overflow: "visible",
       }}
     >
       {children}

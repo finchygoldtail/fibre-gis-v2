@@ -21,7 +21,7 @@ export default function CapacityPanel({ children }: CapacityPanelProps) {
         maxWidth: "100%",
         minWidth: 0,
         boxSizing: "border-box",
-        overflow: "hidden",
+        overflow: "visible",
       }}
     >
       {children}
