@@ -437,6 +437,25 @@ function getDpInputFibres(asset: any): number[] {
   ).sort((a, b) => a - b);
 }
 
+function getDpSpliceFibres(asset: any): number[] {
+  const details = getDpDetails(asset);
+  const raw =
+    details?.afnDetails?.spliceFibres ||
+    details?.mduDetails?.spliceFibres ||
+    details?.autoFibrePlan?.spliceFibres ||
+    details?.spliceFibres ||
+    asset?.spliceFibres ||
+    asset?.properties?.spliceFibres;
+
+  return Array.from(
+    new Set(
+      (Array.isArray(raw) ? raw : [])
+        .map((fibre: unknown) => Number(fibre))
+        .filter((fibre: number) => Number.isFinite(fibre) && fibre > 0),
+    ),
+  ).sort((a, b) => a - b);
+}
+
 function getDpRequiredInputFibres(asset: any): number {
   const details = getDpDetails(asset);
   const closureType = getDpClosureType(asset);
@@ -940,7 +959,9 @@ function addFibreAllocationIssues(assets: any[], issues: AuditIssue[]): void {
     const closureType = getDpClosureType(dp);
     const throughCableId = getDpThroughCableId(dp);
     const inputFibres = getDpInputFibres(dp);
+    const spliceFibres = getDpSpliceFibres(dp);
     const requiredFibres = getDpRequiredInputFibres(dp);
+    const hasOnwardSpliceRoute = closureType === "AFN" && spliceFibres.length > 0;
 
     if (!isPassthroughArchitecture(closureType)) continue;
 
@@ -958,7 +979,9 @@ function addFibreAllocationIssues(assets: any[], issues: AuditIssue[]): void {
     const cableName = getCableDisplayName(cable);
     const cableCapacity = getCableCapacity(cable);
 
-    if (requiredFibres > 0 && inputFibres.length === 0) {
+    // AFN/SB splice fibres are deliberate shoot-off/onward routes. They do not
+    // need to feed a local splitter, so do not flag them as missing DP demand.
+    if (requiredFibres > 0 && inputFibres.length === 0 && !hasOnwardSpliceRoute) {
       issues.push(
         makeIssue(dp, `${closureType} has no fibres selected on ${cableName}`, {
           assetId: dpId,
@@ -968,7 +991,7 @@ function addFibreAllocationIssues(assets: any[], issues: AuditIssue[]): void {
       );
     }
 
-    if (requiredFibres > 0 && inputFibres.length < requiredFibres) {
+    if (requiredFibres > 0 && inputFibres.length < requiredFibres && !hasOnwardSpliceRoute) {
       issues.push(
         makeIssue(
           dp,
