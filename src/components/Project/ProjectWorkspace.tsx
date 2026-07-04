@@ -9,6 +9,8 @@ import type { OpenreachLayerVisibility } from "../map/OpenreachOverlayLayer";
 import AssetIntelligencePanel from "./AssetIntelligencePanel";
 import TraceTopologyPanel from "../topology/TraceTopologyPanel";
 import WorkspaceTabContent from "./workspace/WorkspaceTabContent";
+import AreaBulkStatusPanel from "./workspace/AreaBulkStatusPanel";
+import LiveHomesControl from "./workspace/LiveHomesControl";
 import type { SavedMapAsset } from "../map/types";
 import { getAssetSearchText as assetSearchText } from "../../utils/assetDisplay";
 import { collection, getDocs } from "firebase/firestore";
@@ -66,6 +68,7 @@ type WorkspaceOperationPanel =
   | "trace"
   | "homesNotLive"
   | "homesLive"
+  | "dpStatus"
   | "disconnected"
   | "capacity"
   | "addAsset"
@@ -79,9 +82,7 @@ type WorkspaceTab =
   | "qa"
   | "pia"
   | "build"
-  | "maintenance"
   | "assets"
-  | "fibre"
   | "reports"
   | "commercial"
   | "operations"
@@ -163,10 +164,8 @@ const tabs: { id: WorkspaceTab; label: string }[] = [
   { id: "qa", label: "QA" },
   { id: "pia", label: "PIA" },
   { id: "build", label: "Build" },
-  { id: "maintenance", label: "Maintenance" },
   { id: "assets", label: "Assets" },
-  { id: "fibre", label: "Fibre" },
-  { id: "reports", label: "Reports" },
+  { id: "reports", label: "Templates" },
   { id: "commercial", label: "Commercial" },
   { id: "operations", label: "Operations" },
   { id: "delivery", label: "Delivery" },
@@ -3825,12 +3824,6 @@ export default function ProjectWorkspace({
       onClick: () => openKpiDrilldown("homesNotLive", "build"),
     },
     {
-      label: "DP Status",
-      helper: "Bulk update",
-      active: activeOperationPanel === "rfsBreakdown",
-      onClick: () => openOperationPanel("rfsBreakdown", "build"),
-    },
-    {
       label: "Assets",
       helper: `${formatNumber(workspaceAssets.length)} total`,
       active: activeTab === "assets",
@@ -3914,7 +3907,7 @@ export default function ProjectWorkspace({
       label: "DPs",
       action: () => {
         setMobileQuickPanel("dps");
-        openOperationPanel("rfsBreakdown", "build");
+        openOperationPanel("dpStatus", "overview");
       },
     },
     {
@@ -4162,6 +4155,20 @@ export default function ProjectWorkspace({
                   <span style={quickActionLabel}>{tab.label}</span>
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={() => openOperationPanel("dpStatus", "overview")}
+                style={
+                  activeOperationPanel === "dpStatus"
+                    ? quickActionButtonActive
+                    : quickActionButton
+                }
+              >
+                <span style={quickActionLabel}>DPs</span>
+                <span style={quickActionHelper}>
+                  {formatNumber(rolloutKpis.dpTotal)} total
+                </span>
+              </button>
 
               <div style={railDivider} />
               <div style={railSectionTitle}>Focus</div>
@@ -4550,6 +4557,55 @@ export default function ProjectWorkspace({
                     }}
                   />
                 </section>
+              ) : activeOperationPanel === "dpStatus" ? (
+                <section style={commercialBelowMapPanel}>
+                  <div style={operationDrawerHeader}>
+                    <div>
+                      <div style={operationKicker}>DP OPERATIONS</div>
+                      <h3 style={operationTitle}>Distribution Points</h3>
+                    </div>
+                    <button
+                      type="button"
+                      style={closePanelButton}
+                      onClick={() => setActiveOperationPanel("none")}
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div style={operationStack}>
+                    <LiveHomesControl
+                      projectAssets={workspaceAssets}
+                      stats={workspaceDisplayStats}
+                      onSelectAsset={(asset) => {
+                        setSelectedWorkspaceAsset(asset);
+                        setSearchTerm(getWorkspaceAssetTitle(asset));
+                      }}
+                      onOpenAsset={(asset) => {
+                        setSelectedWorkspaceAsset(asset);
+                        setSearchTerm(getWorkspaceAssetTitle(asset));
+                        onOpenJointEditor?.(asset);
+                      }}
+                    />
+
+                    <AreaBulkStatusPanel
+                      projectAssets={workspaceAssets}
+                      projectArea={projectArea}
+                      drawnAreaPoints={managerAreaPoints}
+                      isDrawingArea={isManagerAreaDrawing}
+                      onStartDrawingArea={() => {
+                        setManagerAreaPoints([]);
+                        setIsManagerAreaDrawing(true);
+                      }}
+                      onStopDrawingArea={() => setIsManagerAreaDrawing(false)}
+                      onClearDrawingArea={() => {
+                        setManagerAreaPoints([]);
+                        setIsManagerAreaDrawing(false);
+                      }}
+                      onBulkUpdateDpStatus={onBulkUpdateDpStatus}
+                    />
+                  </div>
+                </section>
               ) : fullSelectedWorkspaceAsset && activeTab !== "pia" ? (
                 <section style={intelligenceDock}>
                   <AssetIntelligencePanel
@@ -4768,6 +4824,8 @@ export default function ProjectWorkspace({
                           "Project Details"}
                         {activeOperationPanel === "rfsBreakdown" &&
                           "RFS Breakdown"}
+                        {activeOperationPanel === "dpStatus" &&
+                          "DP Operations"}
                         {activeOperationPanel === "issues" && "Area Issues"}
                         {activeOperationPanel === "topology" && "Topology"}
                         {activeOperationPanel === "qa" && "QA Validation"}
@@ -4884,6 +4942,42 @@ export default function ProjectWorkspace({
                       <InfoRow label="Build Status" value={status} />
                     </div>
                   )}
+
+                  {activeOperationPanel === "dpStatus" && (
+                    <div style={operationStack}>
+                      <LiveHomesControl
+                        projectAssets={workspaceAssets}
+                        stats={workspaceDisplayStats}
+                        onSelectAsset={(asset) => {
+                          setSelectedWorkspaceAsset(asset);
+                          setSearchTerm(getWorkspaceAssetTitle(asset));
+                        }}
+                        onOpenAsset={(asset) => {
+                          setSelectedWorkspaceAsset(asset);
+                          setSearchTerm(getWorkspaceAssetTitle(asset));
+                          onOpenJointEditor?.(asset);
+                        }}
+                      />
+
+                      <AreaBulkStatusPanel
+                        projectAssets={workspaceAssets}
+                        projectArea={projectArea}
+                        drawnAreaPoints={managerAreaPoints}
+                        isDrawingArea={isManagerAreaDrawing}
+                        onStartDrawingArea={() => {
+                          setManagerAreaPoints([]);
+                          setIsManagerAreaDrawing(true);
+                        }}
+                        onStopDrawingArea={() => setIsManagerAreaDrawing(false)}
+                        onClearDrawingArea={() => {
+                          setManagerAreaPoints([]);
+                          setIsManagerAreaDrawing(false);
+                        }}
+                        onBulkUpdateDpStatus={onBulkUpdateDpStatus}
+                      />
+                    </div>
+                  )}
+
                   {(activeOperationPanel === "issues" ||
                     activeOperationPanel === "qa") && (
                     <div style={operationStack}>
@@ -5377,26 +5471,6 @@ export default function ProjectWorkspace({
                   {activeOperationPanel === "report" && (
                     <div style={operationStack}>
                       <div style={emptyPanel}>
-                        Project report is ready. Use Generate Report to download
-                        a current text report, or Export Project Data for the
-                        existing export workflow.
-                      </div>
-                      <button
-                        type="button"
-                        style={wideButton}
-                        onClick={handleGenerateReport}
-                      >
-                        Download Report
-                      </button>
-                      <button
-                        type="button"
-                        style={wideButton}
-                        onClick={onExport}
-                      >
-                        Export Project Data
-                      </button>
-
-                      <div style={{ ...emptyPanel, marginTop: 10 }}>
                         Download blank templates for the standard
                         Alistra GIS import workflow. These only create XLSX
                         starter files

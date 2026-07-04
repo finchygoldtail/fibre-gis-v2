@@ -32,10 +32,8 @@ type QaCategoryGroup = {
 };
 
 const panel: React.CSSProperties = { background: "#0f1b2d", border: "1px solid rgba(148, 163, 184, 0.18)", borderRadius: 10, padding: 16, minHeight: 190 };
-const wide: React.CSSProperties = { ...panel, gridColumn: "span 2" };
+const wide: React.CSSProperties = { ...panel, gridColumn: "1 / -1" };
 const title: React.CSSProperties = { margin: "0 0 12px", fontSize: 15, fontWeight: 900, color: "#e5e7eb" };
-const grid: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 };
-const tile: React.CSSProperties = { background: "#0b1424", border: "1px solid rgba(148,163,184,0.14)", borderRadius: 10, padding: 12 };
 const button: React.CSSProperties = { border: "1px solid rgba(148,163,184,0.22)", background: "#111827", color: "#f8fafc", borderRadius: 8, padding: "10px 12px", fontWeight: 800, cursor: "pointer" };
 const severityGrid: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 };
 const stickyHeader: React.CSSProperties = { position: "sticky", top: 0, zIndex: 10, display: "grid", gap: 10, background: "#0f1b2d", paddingBottom: 10 };
@@ -55,10 +53,6 @@ const empty: React.CSSProperties = { color: "#94a3b8", background: "#111827", bo
 function n(value: any): string {
   const num = Number(value ?? 0);
   return Number.isFinite(num) ? num.toLocaleString() : "0";
-}
-
-function Tile({ label, value }: { label: string; value: React.ReactNode }) {
-  return <div style={tile}><div style={{ color: "#94a3b8", fontSize: 12 }}>{label}</div><div style={{ marginTop: 6, fontSize: 24, fontWeight: 900 }}>{value}</div></div>;
 }
 
 function normaliseSeverity(value: unknown): QaSeverity | null {
@@ -142,7 +136,7 @@ function SeverityCard({ label, value, tone, active, onClick }: { label: string; 
   );
 }
 
-export default function WorkspaceQA({ auditIssues = [], stats, projectAssets, onOpenQA, onSelectAsset, onOpenJointEditor, onResolveDuplicateHomes }: Props) {
+export default function WorkspaceQA({ auditIssues = [], projectAssets, onOpenQA, onSelectAsset, onOpenJointEditor, onResolveDuplicateHomes }: Props) {
   const [activeSeverity, setActiveSeverity] = useState<QaSeverity | null>(null);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<QaViewMode>("navigator");
@@ -188,18 +182,6 @@ export default function WorkspaceQA({ auditIssues = [], stats, projectAssets, on
   };
 
   return <>
-    <section style={panel}>
-      <h3 style={title}>QA Status</h3>
-      <div style={grid}>
-        <Tile label="Total Issues" value={n(auditIssues.length || stats?.issueCount)} />
-        <Tile label="High" value={n(buckets.high.length)} />
-        <Tile label="Medium" value={n(buckets.medium.length)} />
-      </div>
-      <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 12 }}>
-        Use the navigator below to step through issues and zoom/select the asset.
-      </div>
-    </section>
-
     <section style={wide}>
       <h3 style={title}>QA Navigator</h3>
       <div style={stickyHeader}>

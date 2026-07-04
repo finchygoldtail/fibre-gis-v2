@@ -3,9 +3,7 @@ import WorkspaceOverview from "./WorkspaceOverview";
 import WorkspaceTopology from "./WorkspaceTopology";
 import WorkspaceQA from "./WorkspaceQA";
 import WorkspaceBuild from "./WorkspaceBuild";
-import WorkspaceMaintenance from "./WorkspaceMaintenance";
 import WorkspaceAssets from "./WorkspaceAssets";
-import WorkspaceFibre from "./WorkspaceFibre";
 import WorkspaceReports from "./WorkspaceReports";
 
 type Props = {
@@ -48,9 +46,7 @@ export default function WorkspaceTabContent(props: Props) {
     case "topology": return <WorkspaceTopology {...props} />;
     case "qa": return <WorkspaceQA {...props} />;
     case "build": return <WorkspaceBuild {...props} />;
-    case "maintenance": return <WorkspaceMaintenance {...props} />;
     case "assets": return <WorkspaceAssets {...props} />;
-    case "fibre": return <WorkspaceFibre {...props} />;
     case "reports": return <WorkspaceReports {...props} />;
     case "overview":
     default:

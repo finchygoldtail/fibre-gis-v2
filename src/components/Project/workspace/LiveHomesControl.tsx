@@ -497,7 +497,17 @@ function Metric({ label, value, good = false, warn = false }: { label: string; v
   return <div style={metricCard}><span>{label}</span><strong style={{ color: good ? "#4ade80" : warn ? "#fbbf24" : "#f8fafc" }}>{value}</strong></div>;
 }
 
-const widePanel: React.CSSProperties = { background: "#0f1b2d", border: "1px solid rgba(96,165,250,0.28)", borderRadius: 12, padding: 16, gridColumn: "span 2", display: "grid", gap: 13 };
+const widePanel: React.CSSProperties = {
+  background: "#0f1b2d",
+  border: "1px solid rgba(96,165,250,0.28)",
+  borderRadius: 12,
+  padding: 16,
+  gridColumn: "1 / -1",
+  width: "100%",
+  boxSizing: "border-box",
+  display: "grid",
+  gap: 13,
+};
 const headerRow: React.CSSProperties = { display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start" };
 const kicker: React.CSSProperties = { color: "#93c5fd", fontSize: 11, fontWeight: 900, letterSpacing: 0.5 };
 const title: React.CSSProperties = { margin: "4px 0 2px", fontSize: 18, color: "#e5e7eb" };

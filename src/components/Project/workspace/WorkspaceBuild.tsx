@@ -1,6 +1,4 @@
 import React from "react";
-import AreaBulkStatusPanel from "./AreaBulkStatusPanel";
-import LiveHomesControl from "./LiveHomesControl";
 import DuplicateHomeResolutionPanel from "./DuplicateHomeResolutionPanel";
 import AddressSheetImportPanel from "./AddressSheetImportPanel";
 import FasSbRouteImportPanel from "./FasSbRouteImportPanel";
@@ -51,11 +49,9 @@ type Props = {
 const panel: React.CSSProperties = { background: "#0f1b2d", border: "1px solid rgba(148, 163, 184, 0.18)", borderRadius: 10, padding: 16, minHeight: 190 };
 const wide: React.CSSProperties = { ...panel, gridColumn: "span 2" };
 const title: React.CSSProperties = { margin: "0 0 12px", fontSize: 15, fontWeight: 900, color: "#e5e7eb" };
-const row: React.CSSProperties = { display: "flex", justifyContent: "space-between", gap: 12, padding: "9px 0", borderBottom: "1px solid rgba(148,163,184,0.12)", color: "#cbd5e1" };
 const tile: React.CSSProperties = { background: "#0b1424", border: "1px solid rgba(148,163,184,0.14)", borderRadius: 10, padding: 12 };
 const button: React.CSSProperties = { border: "1px solid rgba(148,163,184,0.22)", background: "#111827", color: "#f8fafc", borderRadius: 8, padding: "10px 12px", fontWeight: 800, cursor: "pointer" };
 const readinessBox: React.CSSProperties = { background: "#0b1424", border: "1px solid rgba(96,165,250,0.28)", borderRadius: 10, padding: 12, color: "#cbd5e1" };
-const readinessBadge: React.CSSProperties = { display: "inline-flex", alignItems: "center", borderRadius: 999, padding: "5px 9px", fontSize: 12, fontWeight: 900, border: "1px solid rgba(148,163,184,0.35)", color: "#93c5fd", background: "rgba(37,99,235,0.12)" };
 
 const formGrid: React.CSSProperties = {
   display: "grid",
@@ -97,10 +93,6 @@ function n(value: any): string {
   return Number.isFinite(num) ? num.toLocaleString() : "0";
 }
 
-function Row({ label, value }: { label: string; value: React.ReactNode }) {
-  return <div style={row}><span>{label}</span><strong style={{ color: "#f8fafc" }}>{value}</strong></div>;
-}
-
 function Tile({ label, value }: { label: string; value: React.ReactNode }) {
   return <div style={tile}><div style={{ color: "#94a3b8", fontSize: 12 }}>{label}</div><div style={{ marginTop: 6, fontSize: 24, fontWeight: 900 }}>{value}</div></div>;
 }
@@ -109,7 +101,6 @@ type BuildToolKey =
   | "fas"
   | "address"
   | "homes"
-  | "dps"
   | "pia"
   | "reset"
   | "actions";
@@ -170,16 +161,8 @@ function ToolButton({
 
 export default function WorkspaceBuild({
   stats,
-  status,
   projectAssets,
-  projectArea,
-  managerAreaPoints = [],
-  isManagerAreaDrawing = false,
   areaDistributionPoints = [],
-  onStartManagerAreaDrawing,
-  onStopManagerAreaDrawing,
-  onClearManagerAreaDrawing,
-  onBulkUpdateDpStatus,
   onBulkUpdateCablePiaNoi,
   onClearDpFibreAllocations,
   onSelectAsset,
@@ -194,9 +177,6 @@ export default function WorkspaceBuild({
   const [piaNoiNumber, setPiaNoiNumber] = React.useState("");
   const [piaCableFilter, setPiaCableFilter] = React.useState("");
   const [piaAuditNote, setPiaAuditNote] = React.useState("Bulk apply PIA NOI to project design cables");
-  const canonicalHomesPassed = Number(stats?.rolloutKpis?.homesPassed ?? stats?.homesPassed ?? 0);
-  const canonicalHomesLive = Number(stats?.rolloutKpis?.homesLive ?? stats?.homesConnected ?? 0);
-  const remaining = Math.max(0, canonicalHomesPassed - canonicalHomesLive);
   const readiness = stats?.operationalReadiness;
   const blockers = Array.isArray(readiness?.blockers) ? readiness.blockers : [];
   const nextActions = Array.isArray(readiness?.nextActions) ? readiness.nextActions : [];
@@ -273,40 +253,12 @@ export default function WorkspaceBuild({
   };
 
   return <>
-    <section style={panel}>
-      <h3 style={title}>Build Progress</h3>
-      <Tile label="RFS" value={`${n(stats?.rfsPercent)}%`} />
-      <Row label="Status" value={status || "Build"} />
-      <Row label="Build completion" value={`${n(stats?.rolloutKpis?.buildCompletionPercent)}%`} />
-    </section>
-
-    <section style={panel}>
-      <h3 style={title}>Area Readiness</h3>
-      <div style={readinessBox}>
-        <span style={readinessBadge}>{readiness?.state || "Build"}</span>
-        <div style={{ marginTop: 10, fontSize: 28, fontWeight: 900, color: "#f8fafc" }}>
-          {n(readiness?.score)}%
-        </div>
-        <div style={{ marginTop: 6 }}>{readiness?.summary || "Readiness will be calculated from DP status, QA and topology."}</div>
-      </div>
-      <Row label="Hard blockers" value={blockers.length ? blockers.length : "None"} />
-      <Row label="QA high" value={n(readiness?.qaHigh)} />
-      <Row label="Disconnected" value={n(readiness?.disconnectedAssets)} />
-    </section>
-
-    <section style={panel}>
-      <h3 style={title}>Homes</h3>
-      <Row label="Passed" value={n(canonicalHomesPassed)} />
-      <Row label="Live / Connected" value={n(canonicalHomesLive)} />
-      <Row label="Remaining" value={n(remaining)} />
-    </section>
-
     <section style={wide}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", marginBottom: 12 }}>
         <div>
           <h3 style={title}>Build Operations</h3>
           <p style={{ color: "#94a3b8", margin: 0, fontSize: 13 }}>
-            Pick one build tool below. Only the selected tool opens, so this tab stays short and easy to use.
+            Pick one build tool below. DP status and live home checks now live in the side Focus panel.
           </p>
         </div>
         {activeTool ? (
@@ -335,12 +287,6 @@ export default function WorkspaceBuild({
           active={activeTool === "homes"}
           tone="good"
           onClick={() => setActiveTool((value) => value === "homes" ? null : "homes")}
-        />
-        <ToolButton
-          label="DP Operations"
-          description="Live homes, capacity and bulk DP status."
-          active={activeTool === "dps"}
-          onClick={() => setActiveTool((value) => value === "dps" ? null : "dps")}
         />
         <ToolButton
           label="Bulk PIA NOI"
@@ -420,31 +366,6 @@ export default function WorkspaceBuild({
             2.5m circle so they can be selected and connected individually.
           </div>
         </section>
-      </>
-    ) : null}
-
-    {activeTool === "dps" ? (
-      <>
-        <LiveHomesControl
-          projectAssets={projectAssets}
-          stats={stats}
-          onSelectAsset={onSelectAsset}
-          onOpenAsset={(asset) => {
-            onSelectAsset?.(asset);
-            onOpenJointEditor?.(asset);
-          }}
-        />
-
-        <AreaBulkStatusPanel
-          projectAssets={projectAssets}
-          projectArea={projectArea}
-          drawnAreaPoints={managerAreaPoints}
-          isDrawingArea={isManagerAreaDrawing}
-          onStartDrawingArea={onStartManagerAreaDrawing}
-          onStopDrawingArea={onStopManagerAreaDrawing}
-          onClearDrawingArea={onClearManagerAreaDrawing}
-          onBulkUpdateDpStatus={onBulkUpdateDpStatus}
-        />
       </>
     ) : null}
 

@@ -321,6 +321,8 @@ export default function AreaBulkStatusPanel({
 
 const panel: React.CSSProperties = {
   gridColumn: "1 / -1",
+  width: "100%",
+  boxSizing: "border-box",
   background: "#0f1b2d",
   border: "1px solid rgba(96, 165, 250, 0.28)",
   borderRadius: 12,
