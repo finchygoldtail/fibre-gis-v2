@@ -916,6 +916,15 @@ function buildInitialDraft(asset: SavedMapAsset | null): DraftRouting {
   const details = getDpDetails(asset);
   const afnDetails = details.afnDetails || {};
   const mduDetails = details.mduDetails || {};
+  const architectureText = [
+    details.closureType,
+    details.networkArchitecture,
+    (asset as any)?.closureType,
+    (asset as any)?.networkArchitecture,
+  ]
+    .map(normalise)
+    .join(" ");
+  const isMduClosure = architectureText.includes("mdu");
   const inputFibres: number[] = Array.isArray(afnDetails.inputFibres)
     ? afnDetails.inputFibres.map(Number).filter(Number.isFinite)
     : Array.isArray(mduDetails.inputFibres)
@@ -926,6 +935,15 @@ function buildInitialDraft(asset: SavedMapAsset | null): DraftRouting {
     ? afnDetails.directOutputFibres.map(Number).filter(Number.isFinite)
     : Array.isArray(afnDetails.directFibres)
       ? afnDetails.directFibres.map(Number).filter(Number.isFinite)
+      : Array.isArray(mduDetails.directFibres)
+        ? mduDetails.directFibres.map(Number).filter(Number.isFinite)
+        : isMduClosure
+          ? inputFibres
+          : [];
+  const explicitSplitterFibres = Array.isArray(afnDetails.splitterFibres)
+    ? afnDetails.splitterFibres.map(Number).filter(Number.isFinite)
+    : Array.isArray(mduDetails.splitterFibres)
+      ? mduDetails.splitterFibres.map(Number).filter(Number.isFinite)
       : [];
 
   const downstreamCableId =
@@ -951,7 +969,9 @@ function buildInitialDraft(asset: SavedMapAsset | null): DraftRouting {
 
   return {
     splitterFibres: uniqueSorted(
-      inputFibres.filter((fibre) => !directFibres.includes(fibre)),
+      explicitSplitterFibres.length
+        ? explicitSplitterFibres.filter((fibre) => !directFibres.includes(fibre))
+        : inputFibres.filter((fibre) => !directFibres.includes(fibre)),
     ),
     directFibres: uniqueSorted(
       inputFibres.filter((fibre) => directFibres.includes(fibre)),
@@ -1279,10 +1299,19 @@ export default function DistributionPointEditor({
   const currentSbName = getAssetTitle(asset);
   const manualSbParentFibres = uniqueSorted((manualSbRoute?.parentFibres || []) as number[]);
   const manualSbLocalFibres = uniqueSorted((manualSbRoute?.localFibres || []) as number[]);
-  const storedSplitterFibres = uniqueSorted([
-    ...((Array.isArray(afnDetails.splitterFibres) ? afnDetails.splitterFibres : []) as number[]),
-    ...((Array.isArray(afnDetails.inputFibres) ? afnDetails.inputFibres : []) as number[]),
-  ]);
+  const isMduClosureType = closureType.includes("MDU");
+  const storedSplitterFibres = uniqueSorted(
+    isMduClosureType
+      ? ((Array.isArray(afnDetails.splitterFibres)
+          ? afnDetails.splitterFibres
+          : Array.isArray(mduDetails.splitterFibres)
+            ? mduDetails.splitterFibres
+            : []) as number[])
+      : ([
+          ...((Array.isArray(afnDetails.splitterFibres) ? afnDetails.splitterFibres : []) as number[]),
+          ...((Array.isArray(afnDetails.inputFibres) ? afnDetails.inputFibres : []) as number[]),
+        ] as number[]),
+  );
   const storedSpliceFibres = uniqueSorted(
     (Array.isArray(afnDetails.spliceFibres) ? afnDetails.spliceFibres : []) as number[],
   );
@@ -1429,12 +1458,6 @@ export default function DistributionPointEditor({
           childAssetName: currentSbName,
         }))
       : [];
-
-  const usedFibresDisplayText = parentFibreMappings.length
-    ? parentFibreMappings
-        .map((row) => `F${row.parentFibre} → F${row.localFibre}`)
-        .join(", ")
-    : inputFibres.join(", " );
 
   const capacity = getCapacity(
     asset,
@@ -2583,266 +2606,6 @@ export default function DistributionPointEditor({
             )}
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 10,
-              alignItems: "center",
-              color: "#94a3b8",
-              fontSize: 12,
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => setActiveFibreView("used")}
-              style={legendButtonStyle("#c084fc", activeFibreView === "used")}
-            >
-              Fibre spliced to splitter ({displaySplitterFibres.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveFibreView("splitter")}
-              style={legendButtonStyle(
-                "#38bdf8",
-                activeFibreView === "splitter",
-              )}
-            >
-              1:8 splitter view
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveFibreView("splice")}
-              style={legendButtonStyle("#f472b6", activeFibreView === "splice")}
-            >
-              Splice fibres ({displaySpliceFibres.length})
-            </button>
-            <span style={{ ...legendPillStyle(), color: "#4ade80" }}>
-              Splitter outputs
-            </span>
-            <button
-              type="button"
-              onClick={() => setActiveFibreView("passthrough")}
-              style={legendButtonStyle(
-                "#22c55e",
-                activeFibreView === "passthrough",
-              )}
-            >
-              Passthrough fibres ({passthroughFibres.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveFibreView("allocated")}
-              style={legendButtonStyle(
-                "#fb923c",
-                activeFibreView === "allocated",
-              )}
-            >
-              Allocated upstream / elsewhere (
-              {jointAllocatedElsewhereFibres.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveFibreView("spare")}
-              style={legendButtonStyle("#64748b", activeFibreView === "spare")}
-            >
-              Spare / EOL fibres ({spareFibres.length})
-            </button>
-            <span style={{ marginLeft: "auto" }}>
-              {activeFibreView === "splitter"
-                ? "Click fibres, splitter outputs, or ports to inspect"
-                : "Click a fibre card to inspect it on the right"}
-            </span>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(175px, 1fr))",
-              gap: 10,
-              maxHeight: 225,
-              overflow: "auto",
-              paddingRight: 4,
-            }}
-          >
-            {portRoutes.map((route) => {
-              const active = selectedPort === route.port;
-              const live = isLiveStatus(route.home?.status || "");
-              return (
-                <button
-                  key={route.port}
-                  type="button"
-                  onClick={() => setSelectedPort(active ? null : route.port)}
-                  style={{
-                    background: active
-                      ? "rgba(37,99,235,0.24)"
-                      : route.home
-                        ? "rgba(34,197,94,0.10)"
-                        : "rgba(15,23,42,0.82)",
-                    border: active
-                      ? "2px solid #38bdf8"
-                      : `1px solid ${route.home ? (live ? "rgba(34,197,94,0.48)" : "rgba(251,191,36,0.48)") : "rgba(148,163,184,0.14)"}`,
-                    borderRadius: 12,
-                    padding: 12,
-                    minHeight: 118,
-                    maxWidth: "100%",
-                    overflow: "hidden",
-                    color: "#e5e7eb",
-                    textAlign: "left",
-                    cursor: "pointer",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 8,
-                    }}
-                  >
-                    <strong style={{ color: route.fibreColour || "#93c5fd" }}>
-                      Port {route.port}
-                    </strong>
-                    <span
-                      style={{
-                        fontSize: 11,
-                        color:
-                          route.routeType === "direct"
-                            ? "#38bdf8"
-                            : route.routeType === "splitter"
-                              ? "#4ade80"
-                              : route.routeType === "splice"
-                                ? "#f472b6"
-                                : route.routeType === "passthrough"
-                                ? "#22c55e"
-                                : "#64748b",
-                      }}
-                    >
-                      {route.routeType === "direct"
-                        ? "Direct"
-                        : route.routeType === "splitter"
-                          ? "Splitter"
-                          : route.routeType === "splice"
-                            ? "Splice"
-                            : route.routeType === "passthrough"
-                            ? "Passthrough"
-                            : "Spare"}
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 8,
-                      color: route.fibreColour || "#94a3b8",
-                      fontSize: 12,
-                      lineHeight: 1.25,
-                      overflow: "hidden",
-                      display: "-webkit-box",
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: "vertical",
-                    }}
-                  >
-                    {route.fibreLabel}
-                  </div>
-                  <div
-                    style={{ marginTop: 10, color: "#cbd5e1", fontSize: 12 }}
-                  >
-                    Cable
-                  </div>
-                  <div
-                    title={
-                      route.cable
-                        ? cableName(route.cable)
-                        : "No cable connected"
-                    }
-                    style={{
-                      color: "#f8fafc",
-                      fontSize: 12,
-                      lineHeight: 1.25,
-                      overflow: "hidden",
-                      display: "-webkit-box",
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: "vertical",
-                      wordBreak: "break-word",
-                    }}
-                  >
-                    {route.cable
-                      ? cableName(route.cable)
-                      : "No cable connected"}
-                  </div>
-                  <div
-                    title={route.home?.name || "No home connected"}
-                    style={{
-                      marginTop: 7,
-                      color: route.home ? "#f8fafc" : "#64748b",
-                      fontSize: 12,
-                      lineHeight: 1.25,
-                      overflow: "hidden",
-                      whiteSpace: "nowrap",
-                      textOverflow: "ellipsis",
-                    }}
-                  >
-                    {route.home?.name || "No home connected"}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          <div
-            style={{
-              background: "rgba(15,23,42,0.72)",
-              border: "1px solid rgba(148,163,184,0.12)",
-              borderRadius: 14,
-              padding: 14,
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr 1fr",
-              gap: 12,
-              alignItems: "center",
-            }}
-          >
-            <div>
-              <div style={smallLabelStyle()}>Incoming</div>
-              <div style={{ fontSize: 26, fontWeight: 950 }}>
-                {incomingFibreCount}F
-              </div>
-              <small style={{ color: "#38bdf8" }}>
-                From {cableName(throughCable)}
-              </small>
-            </div>
-            <div>
-              <div style={smallLabelStyle()}>Used in this DP</div>
-              <div style={{ fontSize: 26, fontWeight: 950, color: "#fbbf24" }}>
-                {consumedFibreCount}F
-              </div>
-              <small style={{ color: "#cbd5e1" }}>
-                {usedFibresDisplayText || "No fibres selected"}
-              </small>
-            </div>
-            <div>
-              <div style={smallLabelStyle()}>
-                {hasJointMappedFibres
-                  ? "Passthrough downstream"
-                  : draftRouting.hasDownstreamCable
-                    ? "Passthrough"
-                    : "Spare at end of line"}
-              </div>
-              <div style={{ fontSize: 26, fontWeight: 950, color: "#4ade80" }}>
-                {hasJointMappedFibres
-                  ? passthroughFibreCount
-                  : draftRouting.hasDownstreamCable
-                    ? passthroughFibreCount
-                    : spareEndOfLineFibreCount}
-                F
-              </div>
-              <small style={{ color: "#cbd5e1" }}>
-                {hasJointMappedFibres
-                  ? `${allocatedElsewhereFibreCount}F allocated upstream / elsewhere`
-                  : draftRouting.hasDownstreamCable
-                    ? "Continuing to next asset"
-                    : "Unused fibres stop at this DP"}
-              </small>
-            </div>
-          </div>
         </RoutePanel>}
 
         {(!isMobile || mobilePanel === "homes") && <ConnectedHomesPanel>
@@ -3330,12 +3093,6 @@ function FibreSpliceDiagram({
   const passDisplayFibres = uniqueSorted(passthroughFibres).slice(0, 8);
   const spareDisplayFibres = uniqueSorted(spareFibres).slice(0, 4);
   const totalFibreCount = allCableFibres.length;
-  const colourKey = FIBRE_COLOURS.map((colour, index) => {
-    const start = index + 1;
-    return { ...colour, range: totalFibreCount > 12 ? `${start}, ${start + 12}...` : `${start}` };
-  });
-
-
   const routeTargetText = (fibre: number, index: number) => {
     const mapping = parentFibreMappings.find((row) => row.parentFibre === fibre || row.localFibre === fibre);
     if (mapping) {
@@ -3420,6 +3177,7 @@ function FibreSpliceDiagram({
     { label: "Pass-through", value: passthroughFibres.length, colour: "#38bdf8" },
     { label: "Spare / EOL", value: spareFibres.length, colour: "#94a3b8" },
   ];
+  const showSplitterSection = splitterFibres.length > 0 && !isHybridMduFeed;
 
   return (
     <div
@@ -3482,21 +3240,6 @@ function FibreSpliceDiagram({
             </div>
           </div>
 
-          <div style={routeCardStyle("rgba(148,163,184,0.18)")}>
-            <div style={smallLabelStyle()}>Fibre Colour Key</div>
-            <div style={{ display: "grid", gap: 5, marginTop: 10 }}>
-              {colourKey.map((colour) => (
-                <div
-                  key={colour.name}
-                  style={{ display: "grid", gridTemplateColumns: "42px 1fr auto", alignItems: "center", gap: 8, fontSize: 12, color: "#cbd5e1" }}
-                >
-                  <span style={{ height: 3, borderRadius: 999, background: colour.colour }} />
-                  <span>{colour.name}</span>
-                  <span style={{ color: "#94a3b8" }}>{colour.range}</span>
-                </div>
-              ))}
-            </div>
-          </div>
         </aside>
 
         <main
@@ -3514,7 +3257,7 @@ function FibreSpliceDiagram({
                 {routeModeLabel}
               </div>
               <div style={{ color: "#cbd5e1", fontSize: 13, marginTop: 4 }}>
-                Complete view of direct feeds, splitter feeds, splice and pass-through fibres. Fibre lines use the real 12-colour code.
+                DP-local view of fibre work at this asset. Feeder cable fibres are only shown where they are used, reserved, spliced, or passed through here.
               </div>
             </div>
             <div style={{ color: "#94a3b8", fontSize: 12 }}>
@@ -3523,38 +3266,38 @@ function FibreSpliceDiagram({
           </div>
 
           <div style={{ display: "grid", gap: 12 }}>
-            <section style={routeCardStyle("rgba(251,146,60,0.34)")}>
-              <div style={sectionHeaderStyle("#fb923c")}>
-                <span>Splice Routes</span>
-                <span>{spliceDisplayFibres.length} fibre{spliceDisplayFibres.length === 1 ? "" : "s"}</span>
-              </div>
-              <div style={{ display: "grid", gap: 6 }}>
-                {spliceDisplayFibres.length ? spliceDisplayFibres.map((fibre, index) => {
-                  const colour = getFibreColour(fibre);
-                  const active = selectedFibre === fibre;
-                  return (
-                    <button key={`splice-${fibre}`} type="button" onClick={() => onSelectFibre(fibre)} style={fibreRowStyle(active)}>
-                      <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={chipStyle(fibre, active)}>{fibre}</span>
-                        <span style={{ color: "#e5e7eb", fontWeight: 800 }}>{colour.name}</span>
-                      </span>
-                      <span style={lineStyle(fibre, "splice")} />
-                      <span style={{ color: "#fb923c", fontWeight: 950, fontSize: 20 }}>⊗</span>
-                      <span style={{ color: "#cbd5e1", fontSize: 13 }}>
-                        {routeTargetText(fibre, index)}
-                      </span>
-                    </button>
-                  );
-                }) : (
-                  <div style={{ color: "#94a3b8", fontSize: 13 }}>No splice fibres recorded on this DP.</div>
-                )}
-              </div>
-            </section>
+            {spliceDisplayFibres.length ? (
+              <section style={routeCardStyle("rgba(251,146,60,0.34)")}>
+                <div style={sectionHeaderStyle("#fb923c")}>
+                  <span>Splice Routes</span>
+                  <span>{spliceDisplayFibres.length} fibre{spliceDisplayFibres.length === 1 ? "" : "s"}</span>
+                </div>
+                <div style={{ display: "grid", gap: 6 }}>
+                  {spliceDisplayFibres.map((fibre, index) => {
+                    const colour = getFibreColour(fibre);
+                    const active = selectedFibre === fibre;
+                    return (
+                      <button key={`splice-${fibre}`} type="button" onClick={() => onSelectFibre(fibre)} style={fibreRowStyle(active)}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={chipStyle(fibre, active)}>{fibre}</span>
+                          <span style={{ color: "#e5e7eb", fontWeight: 800 }}>{colour.name}</span>
+                        </span>
+                        <span style={lineStyle(fibre, "splice")} />
+                        <span style={{ color: "#fb923c", fontWeight: 950, fontSize: 20 }}>⊗</span>
+                        <span style={{ color: "#cbd5e1", fontSize: 13 }}>
+                          {routeTargetText(fibre, index)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : null}
 
             {directFeedFibres.length ? (
               <section style={routeCardStyle("rgba(56,189,248,0.30)")}>
                 <div style={sectionHeaderStyle("#38bdf8")}>
-                  <span>{isHybridMduFeed ? "Direct MDU Feeds" : "Direct Feeds"}</span>
+                  <span>{isHybridMduFeed ? "Reserved MDU Flat Feeds" : "Direct Feeds"}</span>
                   <span>{directFeedFibres.length} fibre{directFeedFibres.length === 1 ? "" : "s"}</span>
                 </div>
                 <div style={{ display: "grid", gap: 6 }}>
@@ -3570,7 +3313,7 @@ function FibreSpliceDiagram({
                         <span style={lineStyle(fibre, "passthrough")} />
                         <span style={{ color: "#38bdf8", fontWeight: 950, fontSize: 20 }}>→</span>
                         <span style={{ color: "#cbd5e1", fontSize: 13 }}>
-                          Direct feed output {index + 1}
+                          {isHybridMduFeed ? `Flat feed reserved in DP ${index + 1}` : `Direct feed output ${index + 1}`}
                         </span>
                       </button>
                     );
@@ -3579,6 +3322,7 @@ function FibreSpliceDiagram({
               </section>
             ) : null}
 
+            {showSplitterSection ? (
             <section style={routeCardStyle("rgba(34,197,94,0.34)")}>
               <div style={sectionHeaderStyle("#22c55e")}>
                 <span>{isHybridMduFeed ? "1:8 Splitter Feeds" : "Splitter Routes"}</span>
@@ -3668,6 +3412,7 @@ function FibreSpliceDiagram({
                 </div>
               </div>
             </section>
+            ) : null}
 
             <section style={routeCardStyle("rgba(56,189,248,0.30)")}>
               <div style={sectionHeaderStyle("#38bdf8")}>

@@ -3569,11 +3569,11 @@ export default function JointMapManager({
         style={{
           ...panel,
           position: "absolute",
-          top: 0,
+          top: isMobile ? "calc(env(safe-area-inset-top, 0px) + 78px)" : 0,
           left: 0,
           width: "360px",
           maxWidth: "calc(100vw - 16px)",
-          height: "100%",
+          height: isMobile ? "calc(100% - env(safe-area-inset-top, 0px) - 78px)" : "100%",
           zIndex: 1500,
           overflowY: "auto",
           background: "#1f2937",
