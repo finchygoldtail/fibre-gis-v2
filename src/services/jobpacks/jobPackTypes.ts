@@ -8,6 +8,7 @@ export type JobPackAssetGroup =
   | "boundary"
   | "route"
   | "distributionPoint"
+  | "streetCab"
   | "joint"
   | "chamber"
   | "pole"

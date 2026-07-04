@@ -577,6 +577,98 @@ function getDpFibreLabel(asset: SavedMapAsset): string {
   );
 }
 
+function isStreetCabAsset(asset: SavedMapAsset): boolean {
+  const item = asset as any;
+  const type = getAssetType(asset);
+  const text = [item.assetType, item.type, item.name, item.label, item.cableId, item.category]
+    .map((value) => String(value ?? "").toLowerCase())
+    .join(" ");
+
+  return (
+    type.includes("street") ||
+    type.includes("cab") ||
+    text.includes("street cab") ||
+    text.includes("street-cab") ||
+    /\bsb[\s-]?\d*\b/.test(text)
+  );
+}
+
+function getStreetCabLabel(asset: SavedMapAsset): string {
+  const item = asset as any;
+  const raw = String(
+    item.name ||
+      item.label ||
+      item.cabinetNumber ||
+      item.cabNumber ||
+      item.sbNumber ||
+      item.properties?.name ||
+      item.properties?.label ||
+      "SB",
+  ).trim();
+
+  if (!raw) return "SB";
+  return raw.toUpperCase().includes("SB") ? raw : `SB ${raw}`;
+}
+
+function getCableFibreCountLabel(asset: SavedMapAsset): string {
+  const item = asset as any;
+  const value = item.fibreCount || item.fiberCount || item.coreCount || item.size || item.properties?.fibreCount || item.properties?.fiberCount;
+  if (!value) return "";
+  const text = String(value).trim().toUpperCase();
+  if (!text) return "";
+  return text.endsWith("F") ? text : `${text}F`;
+}
+
+function getCablePiaLabel(asset: SavedMapAsset): string {
+  const item = asset as any;
+  return String(
+    item.piaNoiNumber ||
+      item.piaNOINumber ||
+      item.piaNoi ||
+      item.piaNOI ||
+      item.properties?.piaNoiNumber ||
+      item.properties?.piaNOINumber ||
+      item.properties?.piaNoi ||
+      "",
+  ).trim();
+}
+
+function getWorkspaceCableLabel(asset: SavedMapAsset): string {
+  const item = asset as any;
+  const piaLabel = getCablePiaLabel(asset);
+  const fibreLabel = getCableFibreCountLabel(asset);
+  const cableRef = String(item.cableId || item.cableName || item.name || item.label || "").trim();
+
+  return [piaLabel ? `PIA ${piaLabel}` : cableRef, fibreLabel].filter(Boolean).join(" / ");
+}
+
+function getLineLabelPlacement(points: LatLngLiteral[]): { point: LatLngLiteral; angle: number } | null {
+  if (points.length < 2) return null;
+  const total = getPathDistanceMeters(points);
+  const target = total / 2;
+  let travelled = 0;
+
+  for (let index = 1; index < points.length; index += 1) {
+    const start = points[index - 1];
+    const end = points[index];
+    const segment = distanceBetweenWorkspacePointsMeters(start, end);
+    if (travelled + segment >= target || index === points.length - 1) {
+      const ratio = segment > 0 ? Math.max(0, Math.min(1, (target - travelled) / segment)) : 0;
+      const point = {
+        lat: start.lat + (end.lat - start.lat) * ratio,
+        lng: start.lng + (end.lng - start.lng) * ratio,
+      };
+      let angle = Math.atan2(-(end.lat - start.lat), end.lng - start.lng) * (180 / Math.PI);
+      if (angle > 90) angle -= 180;
+      if (angle < -90) angle += 180;
+      return { point, angle };
+    }
+    travelled += segment;
+  }
+
+  return { point: points[Math.floor(points.length / 2)], angle: 0 };
+}
+
 function getAssetMarkerIcon(
   asset: SavedMapAsset,
   selected: boolean,
@@ -584,8 +676,10 @@ function getAssetMarkerIcon(
   homeStatus?: "unconnected" | "connected" | "live",
   touchMode = false,
   allAssets: SavedMapAsset[] = [],
+  showLabels = true,
 ) {
   const type = getAssetType(asset);
+  const streetCab = isStreetCabAsset(asset);
   const traceColour = getTraceColour(traceKind);
   const dpCapacityState = getDpCapacityState(asset, allAssets);
   const colour = selected
@@ -600,7 +694,7 @@ function getAssetMarkerIcon(
         ? "#a3e635"
         : type.includes("chamber")
           ? "#f97316"
-          : type.includes("street") || type.includes("cab")
+          : streetCab
             ? "#38bdf8"
             : isHomeAssetForWorkspace(asset)
               ? homeStatus === "live"
@@ -615,14 +709,17 @@ function getAssetMarkerIcon(
   const dpFibreLabel = type.includes("distribution") || type === "dp" || type.includes("afn") || type.includes("cbt")
     ? getDpFibreLabel(asset)
     : "";
-  const labelHtml = dpFibreLabel
-    ? `<div style="position:absolute;left:50%;top:${hitSize - 2}px;transform:translateX(-50%);background:#ffffff;color:#020617;border:1px solid rgba(2,6,23,0.55);border-radius:4px;padding:1px 4px;font-size:10px;font-weight:900;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,0.22);">F${dpFibreLabel}</div>`
+  const streetCabLabel = showLabels && streetCab ? getStreetCabLabel(asset) : "";
+  const markerLabel = showLabels && dpFibreLabel ? `F${dpFibreLabel}` : streetCabLabel;
+  const labelHtml = markerLabel
+    ? `<div style="position:absolute;left:50%;top:${hitSize - 2}px;transform:translateX(-50%);background:${streetCabLabel ? "#0f172a" : "#ffffff"};color:${streetCabLabel ? "#e0f2fe" : "#020617"};border:1px solid ${streetCabLabel ? "rgba(56,189,248,0.85)" : "rgba(2,6,23,0.55)"};border-radius:4px;padding:1px 4px;font-size:10px;font-weight:900;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,0.22);">${markerLabel}</div>`
     : "";
+  const extraHeight = markerLabel ? 18 : 0;
 
   return L.divIcon({
     className: "alistra-workspace-marker",
-    html: `<div style="position:relative;width:${hitSize}px;height:${hitSize + (dpFibreLabel ? 18 : 0)}px;display:grid;place-items:start center;"><div style="width:${hitSize}px;height:${hitSize}px;display:grid;place-items:center;"><div style="width:${dotSize}px;height:${dotSize}px;border-radius:999px;background:${colour};border:2px solid #020617;box-shadow:0 0 0 2px rgba(255,255,255,0.25),0 0 14px ${colour},0 6px 14px rgba(0,0,0,0.45);"></div></div>${labelHtml}</div>`,
-    iconSize: [hitSize, hitSize + (dpFibreLabel ? 18 : 0)],
+    html: `<div style="position:relative;width:${hitSize}px;height:${hitSize + extraHeight}px;display:grid;place-items:start center;"><div style="width:${hitSize}px;height:${hitSize}px;display:grid;place-items:center;"><div style="width:${dotSize}px;height:${dotSize}px;border-radius:999px;background:${colour};border:2px solid #020617;box-shadow:0 0 0 2px rgba(255,255,255,0.25),0 0 14px ${colour},0 6px 14px rgba(0,0,0,0.45);"></div></div>${labelHtml}</div>`,
+    iconSize: [hitSize, hitSize + extraHeight],
     iconAnchor: [hitSize / 2, hitSize / 2],
   });
 }
@@ -659,7 +756,7 @@ function isLayerVisibleForAsset(asset: SavedMapAsset, visibleLayers: WorkspaceLa
 
   if (type.includes("pole")) return visibleLayers.poles;
   if (type.includes("chamber")) return visibleLayers.chambers;
-  if (type.includes("street") || type.includes("cab")) return visibleLayers.streetCabs;
+  if (isStreetCabAsset(asset)) return visibleLayers.streetCabs;
   if (type.includes("joint") || type.includes("ag") || type.includes("lmj") || type.includes("cmj")) return visibleLayers.joints;
 
   return visibleLayers.other;
@@ -777,7 +874,7 @@ export default function WorkspaceMap({
 
   poles: false,
   chambers: false,
-  streetCabs: false,
+  streetCabs: true,
   homes: false,
   homesConnected: true,
   homesUnconnected: true,
@@ -802,6 +899,7 @@ export default function WorkspaceMap({
   const [viewportZoom, setViewportZoom] = useState(15);
   const [isTouchWorkspace, setIsTouchWorkspace] = useState(false);
   const [basemap, setBasemap] = useState<WorkspaceBasemap>("street");
+  const [showMapLabels, setShowMapLabels] = useState(true);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1031,10 +1129,11 @@ export default function WorkspaceMap({
 
         {designCableAssets.map((asset) => {
           const points = getLinePoints(asset);
-          const midpoint = points[Math.floor(points.length / 2)];
+          const labelPlacement = getLineLabelPlacement(points);
           const traceKind = getTraceKind(asset, traceHighlightedAssetIds, traceHighlightKinds);
           const traceColour = getTraceColour(traceKind);
           const cableState = networkState?.cableStates[asset.id];
+          const cableLabel = getWorkspaceCableLabel(asset);
 
           return (
             <React.Fragment key={`workspace-cable-${asset.id}`}>
@@ -1065,13 +1164,13 @@ export default function WorkspaceMap({
                 </Tooltip>
               </Polyline>
 
-              {showCableDistances && midpoint && (
+              {showMapLabels && (showCableDistances || cableLabel) && labelPlacement && (
                 <Marker
-                  position={[midpoint.lat, midpoint.lng]}
+                  position={[labelPlacement.point.lat, labelPlacement.point.lng]}
                   interactive={false}
                   icon={L.divIcon({
                     className: "alistra-workspace-cable-label",
-                    html: `<div style="background:#020617;color:#f8fafc;border:1px solid rgba(96,165,250,0.8);border-radius:999px;padding:3px 7px;font-size:11px;font-weight:800;white-space:nowrap;box-shadow:0 4px 10px rgba(0,0,0,0.35);">${formatDistance(getPathDistanceMeters(points))}</div>`,
+                    html: `<div style="transform:translate(-50%,-50%) rotate(${labelPlacement.angle.toFixed(1)}deg);transform-origin:center;background:rgba(255,255,255,0.88);color:#020617;border:1px solid rgba(2,6,23,0.62);border-radius:999px;padding:3px 7px;font-size:11px;font-weight:900;white-space:nowrap;text-shadow:none;box-shadow:0 3px 8px rgba(255,255,255,0.35);">${[cableLabel, showCableDistances ? formatDistance(getPathDistanceMeters(points)) : ""].filter(Boolean).join(" - ")}</div>`,
                     iconSize: [1, 1],
                     iconAnchor: [0, 0],
                   })}
@@ -1129,7 +1228,7 @@ export default function WorkspaceMap({
             <Marker
               key={`workspace-point-${asset.id}`}
               position={[point.lat, point.lng]}
-              icon={getAssetMarkerIcon(asset, selected, traceKind, homeStatus, isTouchWorkspace, assets)}
+              icon={getAssetMarkerIcon(asset, selected, traceKind, homeStatus, isTouchWorkspace, assets, showMapLabels)}
               eventHandlers={{ click: (event) => selectWorkspaceAsset(asset, onAssetSelect, event) }}
             >
               <Popup>
@@ -1169,6 +1268,13 @@ export default function WorkspaceMap({
             {option === "street" ? "Street" : option === "satellite" ? "Satellite" : "Hybrid"}
           </button>
         ))}
+        <button
+          type="button"
+          style={showMapLabels ? basemapButtonActive : basemapButton}
+          onClick={() => setShowMapLabels((value) => !value)}
+        >
+          Labels {showMapLabels ? "On" : "Off"}
+        </button>
       </div>
 
       {isTouchWorkspace && visibleAssets.length > 0 && (

@@ -16,6 +16,7 @@ function assetGroup(asset: SavedMapAsset): JobPackAssetGroup {
   if (type === "area") return "boundary";
   if (type === "cable" || type === "piaroute") return "route";
   if (type === "distributionpoint") return "distributionPoint";
+  if (type === "streetcab") return "streetCab";
   if (type === "joint" || type === "agjoint") return "joint";
   if (type === "chamber") return "chamber";
   if (type === "pole") return "pole";

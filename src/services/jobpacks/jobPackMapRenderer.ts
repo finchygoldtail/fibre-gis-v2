@@ -63,6 +63,120 @@ function distance(a: Point, b: Point): number {
   return Math.hypot(a[0] - b[0], a[1] - b[1]);
 }
 
+function pointToSegmentDistance(point: Point, start: Point, end: Point): number {
+  const dx = end[0] - start[0];
+  const dy = end[1] - start[1];
+  if (dx === 0 && dy === 0) return distance(point, start);
+  const t = Math.max(0, Math.min(1, ((point[0] - start[0]) * dx + (point[1] - start[1]) * dy) / (dx * dx + dy * dy)));
+  return distance(point, [start[0] + t * dx, start[1] + t * dy]);
+}
+
+function distanceToRoute(point: Point, route: JobPackDraftAsset): number {
+  const points = coordinates(route);
+  if (points.length < 2) return Number.POSITIVE_INFINITY;
+  let best = Number.POSITIVE_INFINITY;
+  for (let index = 1; index < points.length; index += 1) {
+    best = Math.min(best, pointToSegmentDistance(point, points[index - 1], points[index]));
+  }
+  return best;
+}
+
+function compact(value: unknown): string {
+  return String(value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function sourceValue(asset: JobPackDraftAsset, keys: string[]): string {
+  const item = (asset.sourceAsset || {}) as any;
+  for (const key of keys) {
+    const value = key.split(".").reduce((current, part) => current?.[part], item);
+    if (value !== undefined && value !== null && String(value).trim()) return String(value).trim();
+  }
+  return "";
+}
+
+function cablePiaLabel(asset: JobPackDraftAsset): string {
+  return sourceValue(asset, [
+    "piaNoiNumber",
+    "piaNOINumber",
+    "piaNoi",
+    "piaNOI",
+    "properties.piaNoiNumber",
+    "properties.piaNOINumber",
+    "properties.piaNoi",
+  ]);
+}
+
+function cableLabel(asset: JobPackDraftAsset): string {
+  const pia = cablePiaLabel(asset);
+  const ref = sourceValue(asset, ["cableId", "cableName", "name", "label"]) || asset.name;
+  return [pia ? `PIA ${pia}` : ref, asset.fibreCount].filter(Boolean).join(" / ");
+}
+
+function routeReferenceTokens(route: JobPackDraftAsset): Set<string> {
+  const item = (route.sourceAsset || {}) as any;
+  return new Set(
+    [
+      route.id,
+      route.name,
+      route.fibreCount,
+      item.id,
+      item.assetId,
+      item.cableId,
+      item.cableName,
+      item.name,
+      item.label,
+      item.piaNoiNumber,
+      item.piaNOINumber,
+      item.piaNoi,
+      item.piaNOI,
+      item.properties?.piaNoiNumber,
+      item.properties?.piaNOINumber,
+      item.properties?.piaNoi,
+    ].map(compact).filter(Boolean),
+  );
+}
+
+function assetReferenceTokens(asset: JobPackDraftAsset): Set<string> {
+  const item = (asset.sourceAsset || {}) as any;
+  return new Set(
+    [
+      asset.id,
+      asset.name,
+      item.id,
+      item.assetId,
+      item.name,
+      item.label,
+      item.cableId,
+      item.cableName,
+      item.throughCableId,
+      item.downstreamCableId,
+      item.parentCableId,
+      item.feedCableId,
+      item.dpDetails?.autoFibrePlan?.throughCableId,
+      item.dpDetails?.afnDetails?.throughCableId,
+      item.dpDetails?.mduDetails?.throughCableId,
+      item.piaNoiNumber,
+      item.piaNOINumber,
+      item.piaNoi,
+      item.piaNOI,
+      item.properties?.piaNoiNumber,
+      item.properties?.piaNOINumber,
+      item.properties?.piaNoi,
+    ].map(compact).filter(Boolean),
+  );
+}
+
+function isPointRelatedToSelectedRoutes(asset: JobPackDraftAsset, selectedRoutes: JobPackDraftAsset[], bounds: Bounds): boolean {
+  if (!selectedRoutes.length || asset.geometry.type !== "Point") return false;
+  const assetPoint = coordinates(asset)[0];
+  const routeTokens = new Set(selectedRoutes.flatMap((route) => Array.from(routeReferenceTokens(route))));
+  const assetTokens = assetReferenceTokens(asset);
+  if (Array.from(assetTokens).some((token) => routeTokens.has(token))) return true;
+
+  const tolerance = Math.max(bounds.maxLng - bounds.minLng, bounds.maxLat - bounds.minLat) * 0.015;
+  return selectedRoutes.some((route) => distanceToRoute(assetPoint, route) <= tolerance);
+}
+
 function routeColour(asset: JobPackDraftAsset): string {
   if (asset.fibreCount === "96F") return "#e60000";
   if (asset.fibreCount === "48F") return "#0ea5e9";
@@ -108,13 +222,42 @@ function renderBoundary(asset: JobPackDraftAsset, bounds: Bounds): string {
   return `<polygon points="${pathPoints(points)}" fill="rgba(255,255,255,0.18)" stroke="#858585" stroke-width="6" stroke-linejoin="round"/>`;
 }
 
+function routeLabelPlacement(points: Point[]): { point: Point; angle: number } | null {
+  if (points.length < 2) return null;
+  const lengths = points.slice(1).map((point, index) => distance(points[index], point));
+  const total = lengths.reduce((sum, value) => sum + value, 0);
+  const target = total / 2;
+  let travelled = 0;
+
+  for (let index = 1; index < points.length; index += 1) {
+    const start = points[index - 1];
+    const end = points[index];
+    const segment = lengths[index - 1] || 0;
+    if (travelled + segment >= target || index === points.length - 1) {
+      const ratio = segment > 0 ? Math.max(0, Math.min(1, (target - travelled) / segment)) : 0;
+      const point: Point = [start[0] + (end[0] - start[0]) * ratio, start[1] + (end[1] - start[1]) * ratio];
+      let angle = Math.atan2(end[1] - start[1], end[0] - start[0]) * (180 / Math.PI);
+      if (angle > 90) angle -= 180;
+      if (angle < -90) angle += 180;
+      return { point, angle };
+    }
+    travelled += segment;
+  }
+
+  return null;
+}
+
 function renderRoute(asset: JobPackDraftAsset, bounds: Bounds, selected: boolean, context: boolean): string {
   const points = coordinates(asset).map((point) => project(point, bounds));
   const stroke = selected ? routeColour(asset) : context ? "#111827" : routeColour(asset);
   const width = selected ? 7 : context ? 3 : 5;
   const dash = selected || !context ? "" : ` stroke-dasharray="7 7"`;
+  const placement = routeLabelPlacement(points);
+  const label = selected ? cableLabel(asset) : "";
+  const labelWidth = Math.min(230, Math.max(56, label.length * 6.2));
   return `<polyline points="${pathPoints(points)}" fill="none" stroke="${stroke}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"${dash}/>
-    ${selected ? points.map(([x, y]) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="5" fill="#ffd60a" stroke="#1f2937" stroke-width="1.5"/>`).join("") : ""}`;
+    ${selected ? points.map(([x, y]) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="5" fill="#ffd60a" stroke="#1f2937" stroke-width="1.5"/>`).join("") : ""}
+    ${selected && label && placement ? `<g transform="translate(${placement.point[0].toFixed(1)} ${placement.point[1].toFixed(1)}) rotate(${placement.angle.toFixed(1)})"><rect x="${(-labelWidth / 2).toFixed(1)}" y="-18" width="${labelWidth.toFixed(1)}" height="16" rx="8" fill="#ffffff" fill-opacity="0.9" stroke="#111827" stroke-width="1"/><text x="0" y="-6" text-anchor="middle" font-family="Arial" font-size="9" font-weight="700" fill="#111827">${escapeXml(label).slice(0, 34)}</text></g>` : ""}`;
 }
 
 function renderHome(asset: JobPackDraftAsset, bounds: Bounds, muted: boolean): string {
@@ -126,7 +269,12 @@ function renderHome(asset: JobPackDraftAsset, bounds: Bounds, muted: boolean): s
 function renderPoint(asset: JobPackDraftAsset, bounds: Bounds): string {
   const [x, y] = project(coordinates(asset)[0], bounds);
   if (asset.group === "distributionPoint") {
-    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="6" fill="#ffd60a" stroke="#111827" stroke-width="2"/><text x="${(x + 8).toFixed(1)}" y="${(y - 7).toFixed(1)}" font-family="Arial" font-size="8" fill="#111827">DP</text>`;
+    const label = asset.name || "DP";
+    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="6" fill="#ffd60a" stroke="#111827" stroke-width="2"/><rect x="${(x + 8).toFixed(1)}" y="${(y - 16).toFixed(1)}" width="${Math.min(170, Math.max(22, label.length * 5.5)).toFixed(1)}" height="13" rx="3" fill="#ffffff" stroke="#111827" stroke-width="0.8"/><text x="${(x + 11).toFixed(1)}" y="${(y - 6).toFixed(1)}" font-family="Arial" font-size="8" font-weight="700" fill="#111827">${escapeXml(label).slice(0, 30)}</text>`;
+  }
+  if (asset.group === "streetCab") {
+    const label = asset.name || "SB";
+    return `<rect x="${(x - 6).toFixed(1)}" y="${(y - 6).toFixed(1)}" width="12" height="12" rx="2" fill="#38bdf8" stroke="#111827" stroke-width="1.8"/><rect x="${(x + 8).toFixed(1)}" y="${(y - 16).toFixed(1)}" width="${Math.min(160, Math.max(22, label.length * 5.5)).toFixed(1)}" height="13" rx="3" fill="#ffffff" stroke="#111827" stroke-width="0.8"/><text x="${(x + 11).toFixed(1)}" y="${(y - 6).toFixed(1)}" font-family="Arial" font-size="8" font-weight="700" fill="#111827">${escapeXml(label).slice(0, 28)}</text>`;
   }
   if (asset.group === "joint") {
     return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4" fill="#111827" stroke="#ffffff" stroke-width="1.5"/>`;
@@ -158,6 +306,7 @@ function renderLegend(): string {
     ["Planned Route", "#e60000", "line"],
     ["Route Context", "#111827", "dash"],
     ["DP / Closure", "#ffd60a", "circle"],
+    ["SB / Street Cab", "#38bdf8", "rect"],
     ["Home / Premises", "#f7c98f", "rect"],
     ["Drop Fibre", "#13a865", "line"],
     ["Chamber", "#7a7a7a", "rect"],
@@ -220,10 +369,15 @@ function renderJobPackMapSvg(draft: JobPackDraft, assets: JobPackDraftAsset[], t
   const contextRoutes = routeFilter ? drawable.filter((asset) => asset.group === "route" && asset.fibreCount !== routeFilter) : [];
   const nonRouteAssets = drawable.filter((asset) => asset.group !== "route");
   const muted = Boolean(routeFilter);
+  const routePagePointGroups = new Set(["distributionPoint", "streetCab", "joint", "chamber", "pole"]);
 
   const boundaries = nonRouteAssets.filter((asset) => asset.group === "boundary").map((asset) => renderBoundary(asset, bounds)).join("");
   const homes = nonRouteAssets.filter((asset) => asset.group === "home").map((asset) => renderHome(asset, bounds, muted)).join("");
-  const points = nonRouteAssets.filter((asset) => !["boundary", "home"].includes(asset.group)).map((asset) => renderPoint(asset, bounds)).join("");
+  const points = nonRouteAssets
+    .filter((asset) => !["boundary", "home"].includes(asset.group))
+    .filter((asset) => !routeFilter || !routePagePointGroups.has(asset.group) || isPointRelatedToSelectedRoutes(asset, selectedRoutes, bounds))
+    .map((asset) => renderPoint(asset, bounds))
+    .join("");
   const context = contextRoutes.map((asset) => renderRoute(asset, bounds, false, true)).join("");
   const selected = selectedRoutes.map((asset) => renderRoute(asset, bounds, true, false)).join("");
 
