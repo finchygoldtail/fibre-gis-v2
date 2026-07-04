@@ -1299,6 +1299,69 @@ export default function JointMapManager({
     setSavedJoints,
   });
 
+  const persistMapAssetImmediately = async (
+    asset: SavedMapAsset,
+    options: {
+      reason: string;
+      source: string;
+      isNew?: boolean;
+      successMessage?: string;
+    },
+  ): Promise<SavedMapAsset> => {
+    if (isOpenreachReferenceAsset(asset)) {
+      const nextReferenceAsset = normaliseOpenreachAsset(asset);
+
+      try {
+        const merged = await mergeAndSaveOrAssets([nextReferenceAsset], {
+          reason: options.reason,
+        });
+        setOrAssets(merged);
+        if (options.successMessage) {
+          alert(options.successMessage);
+        }
+      } catch (error) {
+        console.error("Immediate reference asset save failed", error);
+        alert(
+          "This reference asset changed on screen, but its Firestore save failed. Do not refresh until the save issue is checked.",
+        );
+      }
+
+      return nextReferenceAsset;
+    }
+
+    const savedAsset = saveMapAssetToState(asset, {
+      isNew: options.isNew,
+    });
+    const savedAssetId = String(savedAsset.id || "");
+    const currentAssets = savedJoints ?? [];
+    const nextSavedJoints = currentAssets.some(
+      (currentAsset) => String(currentAsset.id || "") === savedAssetId,
+    )
+      ? currentAssets.map((currentAsset) =>
+          String(currentAsset.id || "") === savedAssetId
+            ? savedAsset
+            : currentAsset,
+        )
+      : [...currentAssets, savedAsset];
+
+    try {
+      await saveMapAssetsViaCoordinator(nextSavedJoints, {
+        reason: options.reason,
+        source: options.source,
+      });
+      if (options.successMessage) {
+        alert(options.successMessage);
+      }
+    } catch (error) {
+      console.error("Immediate map asset save failed", error);
+      alert(
+        "This change was updated on screen, but Firestore save failed. Do not refresh until the save issue is checked.",
+      );
+    }
+
+    return savedAsset;
+  };
+
   // =====================================================
   // PROJECT WORKSPACE SUMMARY STATS
   // Heavy derived statistics now live in a dedicated hook so
@@ -2260,7 +2323,7 @@ export default function JointMapManager({
   // existing savedJoints state and split chunk mirroring path, so
   // it does not introduce a second storage system.
   // =====================================================
-  const handleWorkspaceBulkDpStatusUpdate = (args: {
+  const handleWorkspaceBulkDpStatusUpdate = async (args: {
     assetIds: string[];
     status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
     note: string;
@@ -2307,13 +2370,29 @@ export default function JointMapManager({
       return;
     }
 
-    setSavedJoints((prev) =>
-      (prev ?? []).map((asset) => {
-        const updatedAsset = updatedById.get(String(asset.id || ""));
-        return updatedAsset || asset;
-      }),
-    );
+    const nextSavedJoints = (savedJoints ?? []).map((asset) => {
+      const updatedAsset = updatedById.get(String(asset.id || ""));
+      return updatedAsset || asset;
+    });
 
+    setSavedJoints(nextSavedJoints);
+
+    try {
+      await saveMapAssetsViaCoordinator(nextSavedJoints, {
+        reason: `bulk-dp-status:${reason}`,
+        source: "joint-map-manager",
+      });
+    } catch (error) {
+      console.error("Bulk DP status map save failed", error);
+      alert(
+        "DP status was updated on screen, but Firestore save failed. Do not refresh until the save issue is checked.",
+      );
+      return;
+    }
+
+    alert(
+      `Updated ${beforeAssets.length} DP${beforeAssets.length === 1 ? "" : "s"} to ${args.status}.`,
+    );
     beforeAssets.forEach((beforeAsset) => {
       const afterAsset = updatedById.get(String(beforeAsset.id || ""));
       if (!afterAsset) return;
@@ -2333,10 +2412,6 @@ export default function JointMapManager({
         },
       });
     });
-
-    alert(
-      `Updated ${beforeAssets.length} DP${beforeAssets.length === 1 ? "" : "s"} to ${args.status}.`,
-    );
   };
 
   // =====================================================
@@ -2469,7 +2544,7 @@ export default function JointMapManager({
     }
   };
 
-  const handleWorkspaceClearDpFibreAllocations = (args: {
+  const handleWorkspaceClearDpFibreAllocations = async (args: {
     assetIds: string[];
     note: string;
   }) => {
@@ -2539,12 +2614,12 @@ export default function JointMapManager({
       return;
     }
 
-    setSavedJoints((prev) =>
-      (prev ?? []).map((asset) => {
-        const updatedAsset = updatedById.get(String(asset.id || ""));
-        return updatedAsset || asset;
-      }),
-    );
+    const nextSavedJoints = (savedJoints ?? []).map((asset) => {
+      const updatedAsset = updatedById.get(String(asset.id || ""));
+      return updatedAsset || asset;
+    });
+
+    setSavedJoints(nextSavedJoints);
 
     beforeAssets.forEach((beforeAsset) => {
       const afterAsset = updatedById.get(String(beforeAsset.id || ""));
@@ -2569,6 +2644,19 @@ export default function JointMapManager({
       });
     });
 
+    try {
+      await saveMapAssetsViaCoordinator(nextSavedJoints, {
+        reason: `clear-dp-fibre-allocations:${reason}`,
+        source: "joint-map-manager",
+      });
+    } catch (error) {
+      console.error("Clear DP fibre allocations map save failed", error);
+      alert(
+        "DP fibre allocations were cleared on screen, but Firestore save failed. Do not refresh until the save issue is checked.",
+      );
+      return;
+    }
+
     alert(
       `Cleared fibre allocations from ${clearResult.summary.clearedDpCount} DP${clearResult.summary.clearedDpCount === 1 ? "" : "s"} in this area. You can now run Rebuild Chain.`,
     );
@@ -2580,7 +2668,7 @@ export default function JointMapManager({
   // Manual SB routes are preserved; previous FAS-imported routes can be replaced.
   // Cable is stored as supporting evidence only and is not the authority.
   // =====================================================
-  const handleWorkspaceSbRouteAssignments = (request: {
+  const handleWorkspaceSbRouteAssignments = async (request: {
     routes: any[];
     note: string;
     replaceImportedRoutes?: boolean;
@@ -2788,11 +2876,11 @@ export default function JointMapManager({
       return;
     }
 
-    setSavedJoints((prev) =>
-      (prev ?? []).map(
-        (asset) => updatedById.get(String(asset.id || "")) || asset,
-      ),
+    const nextSavedJoints = (savedJoints ?? []).map(
+      (asset) => updatedById.get(String(asset.id || "")) || asset,
     );
+
+    setSavedJoints(nextSavedJoints);
 
     beforeAssets.forEach((beforeAsset) => {
       const afterAsset = updatedById.get(String(beforeAsset.id || ""));
@@ -2810,6 +2898,20 @@ export default function JointMapManager({
 
     const missing =
       routes.length - Array.from(routeGroups.values()).flat().length;
+
+    try {
+      await saveMapAssetsViaCoordinator(nextSavedJoints, {
+        reason: `fas-sb-route-import:${reason}`,
+        source: "joint-map-manager",
+      });
+    } catch (error) {
+      console.error("FAS SB route map save failed", error);
+      alert(
+        "FAS SB routes were applied on screen, but Firestore save failed. Do not refresh until the save issue is checked.",
+      );
+      return;
+    }
+
     alert(
       `Applied FAS SB routes to ${beforeAssets.length} SB${beforeAssets.length === 1 ? "" : "s"}.` +
         (missing > 0
@@ -2824,12 +2926,12 @@ export default function JointMapManager({
   // the same bulk status save path so audit/live-sync/chunk mirroring
   // remain consistent.
   // =====================================================
-  const handleWorkspaceSingleDpStatusUpdate = (args: {
+  const handleWorkspaceSingleDpStatusUpdate = async (args: {
     assetId: string;
     status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
     note: string;
   }) => {
-    handleWorkspaceBulkDpStatusUpdate({
+    await handleWorkspaceBulkDpStatusUpdate({
       assetIds: [args.assetId],
       status: args.status,
       note: args.note,
@@ -3542,6 +3644,12 @@ export default function JointMapManager({
         onApplySbRouteAssignments={handleWorkspaceSbRouteAssignments}
         onAutoSpreadStackedHomes={handleAutoSpreadStackedHomes}
         onExport={handleExportGeoJson}
+        onUpdateWorkspaceAsset={(asset) => {
+          void persistMapAssetImmediately(asset, {
+            reason: "workspace-asset-update",
+            source: "project-workspace",
+          });
+        }}
       />
     );
   }
@@ -5293,11 +5401,11 @@ export default function JointMapManager({
                 },
               } as SavedMapAsset;
 
-              const savedAsset = saveMapAssetToState(updatedAsset, {
-                message: "DP routing updated",
-              });
-
-              setOpenDistributionPointAsset(savedAsset);
+              void persistMapAssetImmediately(updatedAsset, {
+                reason: "dp-routing-save",
+                source: "distribution-point-editor",
+                successMessage: "DP routing saved.",
+              }).then(setOpenDistributionPointAsset);
             }}
           />
         </div>
