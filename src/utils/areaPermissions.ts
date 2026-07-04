@@ -8,7 +8,9 @@ export function normaliseUserRole(value: unknown): UserRole {
     value === "super_user" ||
     value === "maintenance_user" ||
     value === "build_user" ||
-    value === "survey_user"
+    value === "survey_user" ||
+    value === "client_admin" ||
+    value === "client_viewer"
   ) {
     return value;
   }

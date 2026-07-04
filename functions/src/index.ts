@@ -1,21 +1,58 @@
 import * as admin from "firebase-admin";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { setGlobalOptions } from "firebase-functions/v2";
 
 
-type AppRole = "super_user" | "maintenance_user" | "build_user" | "survey_user";
+type AppRole =
+  | "admin"
+  | "super_user"
+  | "maintenance_user"
+  | "build_user"
+  | "survey_user"
+  | "client_admin"
+  | "client_viewer";
+
+type InfrastructureSector = "telecoms" | "gas" | "water" | "power" | "maps";
+
+const DEFAULT_SECTOR: InfrastructureSector = "telecoms";
 
 const normaliseRole = (value: unknown): AppRole => {
   if (
+    value === "admin" ||
     value === "super_user" ||
     value === "maintenance_user" ||
     value === "build_user" ||
-    value === "survey_user"
+    value === "survey_user" ||
+    value === "client_admin" ||
+    value === "client_viewer"
   ) {
     return value;
   }
 
   return "survey_user";
+};
+
+const normaliseSector = (value: unknown): InfrastructureSector => {
+  if (
+    value === "gas" ||
+    value === "water" ||
+    value === "power" ||
+    value === "maps"
+  ) {
+    return value;
+  }
+
+  return DEFAULT_SECTOR;
+};
+
+const normaliseAllowedSectors = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [DEFAULT_SECTOR];
+
+  const cleaned = value
+    .map((item) => String(item || "").trim().toLowerCase())
+    .filter(Boolean)
+    .map((item) => (item === "*" ? item : normaliseSector(item)));
+
+  return Array.from(new Set(cleaned));
 };
 
 const OWNER_EMAILS = new Set([
@@ -29,6 +66,12 @@ const permissionsByRole: Record<AppRole, {
   maintenance: boolean;
   manageUsers: boolean;
 }> = {
+  admin: {
+    survey: true,
+    build: true,
+    maintenance: true,
+    manageUsers: true,
+  },
   super_user: {
     survey: true,
     build: true,
@@ -49,6 +92,18 @@ const permissionsByRole: Record<AppRole, {
   },
   survey_user: {
     survey: true,
+    build: false,
+    maintenance: false,
+    manageUsers: false,
+  },
+  client_admin: {
+    survey: false,
+    build: false,
+    maintenance: false,
+    manageUsers: false,
+  },
+  client_viewer: {
+    survey: false,
     build: false,
     maintenance: false,
     manageUsers: false,
@@ -84,6 +139,11 @@ export const createLoginUser = onCall(
       typeof request.data?.password === "string" ? request.data.password : "";
 
     const role = normaliseRole(request.data?.role);
+    const sector = normaliseSector(request.data?.sector);
+    const allowedSectors =
+      role === "admin"
+        ? ["*"]
+        : normaliseAllowedSectors(request.data?.allowedSectors);
 
     if (!name || !email || !password) {
       throw new HttpsError("invalid-argument", "Missing required fields.");
@@ -112,8 +172,8 @@ export const createLoginUser = onCall(
     const hasRootProfile = rootCallerDoc.exists;
 
     const isFirestoreSuperUser =
-      (hasBusinessProfile && callerRole === "super_user") ||
-      (hasRootProfile && rootCallerRole === "super_user");
+      (hasBusinessProfile && (callerRole === "admin" || callerRole === "super_user")) ||
+      (hasRootProfile && (rootCallerRole === "admin" || rootCallerRole === "super_user"));
 
     const isBootstrapOwner =
       OWNER_EMAILS.has(callerEmail) &&
@@ -133,6 +193,10 @@ export const createLoginUser = onCall(
         email: callerEmail,
         role: "super_user" as AppRole,
         permissions: permissionsByRole.super_user,
+        businessId,
+        sector: DEFAULT_SECTOR,
+        allowedSectors: ["*"],
+        allowedAreas: ["*"],
         active: true,
         createdBy: callerUid,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -179,6 +243,10 @@ export const createLoginUser = onCall(
       email,
       role,
       permissions: permissionsByRole[role],
+      businessId,
+      sector,
+      allowedSectors,
+      allowedAreas: role === "admin" ? ["*"] : [],
       active: true,
       createdBy: callerUid,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),

@@ -15,13 +15,23 @@ import {
   normaliseAllowedAreasForRole,
   normaliseUserRole,
 } from "../utils/areaPermissions";
+import {
+  DEFAULT_BUSINESS_ID,
+  DEFAULT_SECTOR,
+  normaliseAllowedSectors,
+  normaliseBusinessId,
+  normaliseSector,
+  type InfrastructureSector,
+} from "../utils/clientAccessControl";
 
 export type UserRole =
   | "admin"
   | "super_user"
   | "maintenance_user"
   | "build_user"
-  | "survey_user";
+  | "survey_user"
+  | "client_admin"
+  | "client_viewer";
 
 export type UserPermissions = {
   survey: boolean;
@@ -36,6 +46,21 @@ export type AppUserProfile = {
   email: string;
   role: UserRole;
   permissions: UserPermissions;
+  /**
+   * Business/client tenant scope. Admins can span businesses; non-admin users
+   * should be scoped to one business/client such as fibre-gis-v2 or a client id.
+   */
+  businessId: string;
+  /**
+   * Primary infrastructure sector for the user. Multi-sector access is
+   * represented by allowedSectors.
+   */
+  sector: InfrastructureSector;
+  /**
+   * Sector access, for example ["telecoms"]. ["*"] means unrestricted sector
+   * access and should normally be reserved for platform admins.
+   */
+  allowedSectors: string[];
   /**
    * Area access is stored as project area names/codes, for example BD-BAS-AG1.
    * ["*"] means unrestricted access.
@@ -60,6 +85,8 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   maintenance_user: "Maintenance User",
   build_user: "Build User",
   survey_user: "Survey User",
+  client_admin: "Client Admin",
+  client_viewer: "Client Viewer",
 };
 
 export const ROLE_PERMISSIONS: Record<UserRole, UserPermissions> = {
@@ -93,6 +120,20 @@ export const ROLE_PERMISSIONS: Record<UserRole, UserPermissions> = {
 
   survey_user: {
     survey: true,
+    build: false,
+    maintenance: false,
+    manageUsers: false,
+  },
+
+  client_admin: {
+    survey: false,
+    build: false,
+    maintenance: false,
+    manageUsers: false,
+  },
+
+  client_viewer: {
+    survey: false,
     build: false,
     maintenance: false,
     manageUsers: false,
@@ -163,6 +204,9 @@ function buildFallbackProfileFromUser(user: User): AppUserProfile {
       email,
       role: knownRole,
       permissions: ROLE_PERMISSIONS[knownRole],
+      businessId: DEFAULT_BUSINESS_ID,
+      sector: DEFAULT_SECTOR,
+      allowedSectors: ["*"],
       allowedAreas: ["*"],
     };
   }
@@ -173,6 +217,9 @@ function buildFallbackProfileFromUser(user: User): AppUserProfile {
     email,
     role: "survey_user",
     permissions: LOCKED_DOWN_PERMISSIONS,
+    businessId: DEFAULT_BUSINESS_ID,
+    sector: DEFAULT_SECTOR,
+    allowedSectors: [],
     allowedAreas: [],
   };
 }
@@ -206,6 +253,12 @@ async function loadFirestoreProfile(user: User): Promise<AppUserProfile> {
           : fallbackProfile.email,
       role,
       permissions,
+      businessId: normaliseBusinessId(data.businessId),
+      sector: normaliseSector(data.sector),
+      allowedSectors: normaliseAllowedSectors(
+        data.allowedSectors,
+        fallbackProfile.allowedSectors,
+      ),
       allowedAreas: normaliseAllowedAreasForRole(role, data.allowedAreas, []),
     };
   }

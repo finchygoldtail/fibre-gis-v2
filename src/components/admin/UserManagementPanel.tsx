@@ -24,6 +24,13 @@ import {
   normaliseAllowedAreasForRole,
   normaliseUserRole,
 } from "../../utils/areaPermissions";
+import {
+  DEFAULT_BUSINESS_ID,
+  DEFAULT_SECTOR,
+  normaliseAllowedSectors,
+  normaliseBusinessId,
+  normaliseSector,
+} from "../../utils/clientAccessControl";
 
 type Props = {
   visible: boolean;
@@ -35,7 +42,7 @@ type AreaOption = {
   label: string;
 };
 
-const BUSINESS_ID = "fibre-gis-v2";
+const BUSINESS_ID = DEFAULT_BUSINESS_ID;
 
 const roleOptions: UserRole[] = [
   "admin",
@@ -43,6 +50,8 @@ const roleOptions: UserRole[] = [
   "maintenance_user",
   "build_user",
   "survey_user",
+  "client_admin",
+  "client_viewer",
 ];
 
 export default function UserManagementPanel({ visible, onClose }: Props) {
@@ -94,6 +103,11 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
               ...ROLE_PERMISSIONS[role],
               ...(data.permissions || {}),
             },
+            businessId: normaliseBusinessId(data.businessId),
+            sector: normaliseSector(data.sector),
+            allowedSectors: normaliseAllowedSectors(data.allowedSectors, [
+              DEFAULT_SECTOR,
+            ]),
             allowedAreas,
           });
         });
@@ -179,6 +193,9 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
       name?: string;
       email?: string;
       role: UserRole;
+      businessId?: string;
+      sector?: string;
+      allowedSectors?: string[];
       allowedAreas?: string[];
     },
   ) => {
@@ -198,6 +215,12 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
       email: cleanEmail,
       role: patch.role,
       permissions,
+      businessId: normaliseBusinessId(patch.businessId),
+      sector: normaliseSector(patch.sector),
+      allowedSectors:
+        patch.role === "admin"
+          ? ["*"]
+          : normaliseAllowedSectors(patch.allowedSectors, [DEFAULT_SECTOR]),
       allowedAreas,
       updatedAt: serverTimestamp(),
     };
@@ -250,6 +273,9 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
       name: user.name,
       email: user.email,
       role: user.role,
+      businessId: user.businessId,
+      sector: user.sector,
+      allowedSectors: user.allowedSectors,
       allowedAreas: user.role === "admin" ? ["*"] : nextAllowedAreas,
     }).catch(() => undefined);
   };
@@ -301,6 +327,9 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
           name: cleanName,
           email: cleanEmail,
           role: newRole,
+          businessId: BUSINESS_ID,
+          sector: DEFAULT_SECTOR,
+          allowedSectors: newRole === "admin" ? ["*"] : [DEFAULT_SECTOR],
           allowedAreas: newRole === "admin" ? ["*"] : [],
         });
       } else {
@@ -323,6 +352,8 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
             email: string;
             password: string;
             role: UserRole;
+            sector: string;
+            allowedSectors: string[];
           },
           { success: boolean; uid: string }
         >(functions, "createLoginUser");
@@ -333,6 +364,8 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
           email: cleanEmail,
           password: cleanPassword,
           role: newRole,
+          sector: DEFAULT_SECTOR,
+          allowedSectors: newRole === "admin" ? ["*"] : [DEFAULT_SECTOR],
         });
 
         if (result.data.uid && newRole === "admin") {
@@ -340,6 +373,9 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
             name: cleanName,
             email: cleanEmail,
             role: newRole,
+            businessId: BUSINESS_ID,
+            sector: DEFAULT_SECTOR,
+            allowedSectors: ["*"],
             allowedAreas: ["*"],
           });
         }
@@ -495,6 +531,9 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
                         <div style={userMetaStyle}>
                           {user.email || "No email"}
                         </div>
+                        <div style={userMetaStyle}>
+                          {user.businessId} / {user.sector}
+                        </div>
                         <div style={userMetaStyle}>{user.uid}</div>
                       </div>
 
@@ -506,6 +545,12 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
                             name: user.name,
                             email: user.email,
                             role: event.target.value as UserRole,
+                            businessId: user.businessId,
+                            sector: user.sector,
+                            allowedSectors:
+                              event.target.value === "admin"
+                                ? ["*"]
+                                : user.allowedSectors,
                             allowedAreas:
                               event.target.value === "admin"
                                 ? ["*"]

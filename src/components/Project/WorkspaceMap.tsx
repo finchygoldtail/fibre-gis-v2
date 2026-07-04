@@ -82,6 +82,7 @@ type WorkspaceMapProps = {
 };
 
 type WorkspaceBounds = [[number, number], [number, number]];
+type WorkspaceBasemap = "street" | "satellite" | "hybrid";
 
 // =====================================================
 // TILE LAYERS
@@ -89,7 +90,31 @@ type WorkspaceBounds = [[number, number], [number, number]];
 // Leaflet + OSM + Esri imagery + optional hybrid labels.
 // =====================================================
 
-function WorkspaceBaseLayers() {
+function WorkspaceBaseLayers({ basemap }: { basemap: WorkspaceBasemap }) {
+  if (basemap === "street") {
+    return (
+      <TileLayer
+        key="workspace-street-basemap"
+        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        maxZoom={22}
+        maxNativeZoom={19}
+      />
+    );
+  }
+
+  if (basemap === "satellite") {
+    return (
+      <TileLayer
+        key="workspace-satellite-basemap"
+        url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+        attribution="Tiles &copy; Esri - Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community"
+        maxZoom={22}
+        maxNativeZoom={19}
+      />
+    );
+  }
+
   return (
     <>
       <TileLayer
@@ -776,6 +801,7 @@ export default function WorkspaceMap({
   const [viewportBounds, setViewportBounds] = useState<WorkspaceBounds | null>(null);
   const [viewportZoom, setViewportZoom] = useState(15);
   const [isTouchWorkspace, setIsTouchWorkspace] = useState(false);
+  const [basemap, setBasemap] = useState<WorkspaceBasemap>("street");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -884,7 +910,7 @@ export default function WorkspaceMap({
         tap
         touchZoom
       >
-        <WorkspaceBaseLayers />
+        <WorkspaceBaseLayers basemap={basemap} />
         <SafeMapLifecycle bounds={activeBounds} />
         <JobPackMapCaptureHandler
           request={jobPackCaptureRequest}
@@ -1132,6 +1158,19 @@ export default function WorkspaceMap({
         })}
       </MapContainer>
 
+      <div style={basemapControl} aria-label="Workspace basemap selector">
+        {(["street", "satellite", "hybrid"] as WorkspaceBasemap[]).map((option) => (
+          <button
+            key={option}
+            type="button"
+            style={basemap === option ? basemapButtonActive : basemapButton}
+            onClick={() => setBasemap(option)}
+          >
+            {option === "street" ? "Street" : option === "satellite" ? "Satellite" : "Hybrid"}
+          </button>
+        ))}
+      </div>
+
       {isTouchWorkspace && visibleAssets.length > 0 && (
         <div style={touchMapHint}>
           Tap asset to select · pinch to zoom · drag to pan
@@ -1160,6 +1199,38 @@ const mapShell: React.CSSProperties = {
   overflow: "hidden",
   borderRadius: 12,
   background: "#020617",
+};
+
+const basemapControl: React.CSSProperties = {
+  position: "absolute",
+  left: 56,
+  top: 12,
+  zIndex: 900,
+  display: "flex",
+  gap: 6,
+  padding: 6,
+  background: "rgba(2, 6, 23, 0.82)",
+  border: "1px solid rgba(148, 163, 184, 0.24)",
+  borderRadius: 10,
+  boxShadow: "0 12px 28px rgba(0,0,0,0.32)",
+};
+
+const basemapButton: React.CSSProperties = {
+  border: "1px solid rgba(148, 163, 184, 0.24)",
+  background: "rgba(15, 23, 42, 0.86)",
+  color: "#cbd5e1",
+  borderRadius: 8,
+  padding: "7px 9px",
+  fontSize: 12,
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const basemapButtonActive: React.CSSProperties = {
+  ...basemapButton,
+  background: "#2563eb",
+  color: "#fff",
+  borderColor: "rgba(147,197,253,0.75)",
 };
 
 const touchMapHint: React.CSSProperties = {
