@@ -998,6 +998,7 @@ export default function JointMapManager({
       ? "maintenance"
       : "survey";
   const [isFieldPhotoPanelOpen, setIsFieldPhotoPanelOpen] = useState(false);
+  const canOpenFullProjectWorkspace = canManageNetworkDesign && !isMobile;
 
   const normalizedSavedJoints = useMemo(
     () => (savedJoints ?? []).map(normalizeMapAsset),
@@ -1320,7 +1321,7 @@ export default function JointMapManager({
   });
 
   useEffect(() => {
-    if (!activeProjectArea || !canManageNetworkDesign) {
+    if (!activeProjectArea || !canOpenFullProjectWorkspace) {
       setIsProjectWorkspaceOpen(false);
       setIsProjectWorkspaceLoading(false);
       return;
@@ -1333,7 +1334,7 @@ export default function JointMapManager({
     }, 650);
 
     return () => window.clearTimeout(timer);
-  }, [activeProjectArea?.id, canManageNetworkDesign]);
+  }, [activeProjectArea?.id, canOpenFullProjectWorkspace]);
 
   const { handleSelectProject, handleZoomToAsset } = useMapNavigation({
     mapRef,
@@ -3498,7 +3499,7 @@ export default function JointMapManager({
   if (
     (isProjectWorkspaceLoading || isProjectWorkspaceOpen) &&
     activeProjectArea &&
-    canManageNetworkDesign
+    canOpenFullProjectWorkspace
   ) {
     return (
       <WorkspacePanels
@@ -3632,11 +3633,11 @@ export default function JointMapManager({
           onDeleteAllOrReferenceAssets={handleAdminDeleteAllOrReferenceAssets}
         />
 
-        {activeProjectArea && canManageNetworkDesign && (
+        {activeProjectArea && canOpenFullProjectWorkspace && (
           <button
             type="button"
             onClick={() => {
-              if (!canManageNetworkDesign) {
+              if (!canOpenFullProjectWorkspace) {
                 setIsProjectWorkspaceOpen(false);
                 return;
               }
@@ -5269,24 +5270,14 @@ export default function JointMapManager({
 
       {openDistributionPointAsset && (
         <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            zIndex: 3000,
-            background: "#0f172a",
-            height: "100dvh",
-            maxHeight: "100dvh",
-            overflow: "auto",
-            WebkitOverflowScrolling: "touch",
-            boxSizing: "border-box",
-          }}
+          style={mobileEditorOverlayStyle(isMobile)}
         >
           <DistributionPointEditor
             asset={openDistributionPointAsset}
             allAssets={allMapAssets}
             onClose={() => {
               setOpenDistributionPointAsset(null);
-              if (activeProjectArea && canManageNetworkDesign) {
+              if (activeProjectArea && canOpenFullProjectWorkspace) {
                 setIsProjectWorkspaceOpen(true);
               } else {
                 setIsProjectWorkspaceOpen(false);
@@ -5314,19 +5305,7 @@ export default function JointMapManager({
 
       {openStreetCabAsset && (
         <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            zIndex: 3000,
-            background: "#0f172a",
-            height: "100dvh",
-            maxHeight: "100dvh",
-            overflowY: "auto",
-            overflowX: isMobile ? "auto" : "hidden",
-            overscrollBehavior: "contain",
-            paddingBottom: "96px",
-            boxSizing: "border-box",
-          }}
+          style={mobileEditorOverlayStyle(isMobile)}
         >
           <StreetCabDesigner
             asset={openStreetCabAsset}
@@ -5343,19 +5322,7 @@ export default function JointMapManager({
       )}
       {openExchangeAsset && (
         <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            zIndex: 3000,
-            background: "#0f172a",
-            height: "100dvh",
-            maxHeight: "100dvh",
-            overflowY: "auto",
-            overflowX: isMobile ? "auto" : "hidden",
-            overscrollBehavior: "contain",
-            paddingBottom: "96px",
-            boxSizing: "border-box",
-          }}
+          style={mobileEditorOverlayStyle(isMobile)}
         >
           <ExchangeDesigner
             exchange={openExchangeAsset}
@@ -5454,6 +5421,23 @@ const btnDanger: React.CSSProperties = {
   border: "1px solid #ef4444",
   fontWeight: 800,
 };
+
+function mobileEditorOverlayStyle(isMobile: boolean): React.CSSProperties {
+  return {
+    position: "absolute",
+    inset: 0,
+    zIndex: 3000,
+    background: "#0f172a",
+    height: "100dvh",
+    maxHeight: "100dvh",
+    overflowY: "auto",
+    overflowX: isMobile ? "hidden" : "hidden",
+    overscrollBehavior: "contain",
+    paddingBottom: isMobile ? "calc(env(safe-area-inset-bottom, 0px) + 92px)" : "96px",
+    boxSizing: "border-box",
+    WebkitOverflowScrolling: "touch",
+  };
+}
 
 const layerRow: React.CSSProperties = {
   display: "flex",

@@ -15,6 +15,7 @@ import CapacityPanel from "./dp/CapacityPanel";
 import RoutePanel from "./dp/RoutePanel";
 import ConnectedHomesPanel from "./dp/ConnectedHomesPanel";
 import FibreIntakePanel from "./dp/FibreIntakePanel";
+import { useDeviceLayout } from "../map/responsive/useDeviceLayout";
 
 type ConnectedHomeRow = {
   id: string;
@@ -1050,11 +1051,13 @@ export default function DistributionPointEditor({
   onOpenTopology,
   onSaveRouting,
 }: Props) {
+  const { isMobile } = useDeviceLayout();
   const [asset, setEditorAsset] = useState<SavedMapAsset | null>(incomingAsset);
   const [selectedFibre, setSelectedFibre] = useState<number | null>(null);
   const [selectedPort, setSelectedPort] = useState<number | null>(null);
   const [activeFibreView, setActiveFibreView] =
     useState<FibreViewMode>("splitter");
+  const [mobilePanel, setMobilePanel] = useState<"fibres" | "summary" | "homes">("fibres");
   const [editMode, setEditMode] = useState(false);
   const [draftRouting, setDraftRouting] = useState<DraftRouting>(() =>
     buildInitialDraft(incomingAsset),
@@ -1807,22 +1810,23 @@ export default function DistributionPointEditor({
         background:
           "radial-gradient(circle at top left, rgba(37,99,235,0.18), transparent 32%), #020617",
         color: "#f8fafc",
-        display: "flex",
-        flexDirection: "column",
-        fontFamily:
-          "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+          display: "flex",
+          flexDirection: "column",
+          fontFamily:
+            "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+          paddingBottom: isMobile ? 76 : 0,
       }}
     >
       <header
         style={{
-          minHeight: 76,
-          padding: "14px 20px",
+          minHeight: isMobile ? 64 : 76,
+          padding: isMobile ? "10px 12px" : "14px 20px",
           borderBottom: "1px solid rgba(148,163,184,0.16)",
           background: "rgba(15, 23, 42, 0.92)",
           display: "grid",
-          gridTemplateColumns: "320px 1fr auto",
+          gridTemplateColumns: isMobile ? "1fr auto" : "320px 1fr auto",
           alignItems: "center",
-          gap: 18,
+          gap: isMobile ? 10 : 18,
         }}
       >
         <div>
@@ -1832,7 +1836,7 @@ export default function DistributionPointEditor({
           <h1
             style={{
               margin: "5px 0 0",
-              fontSize: 25,
+              fontSize: isMobile ? 18 : 25,
               lineHeight: 1.05,
               letterSpacing: "-0.04em",
             }}
@@ -1849,7 +1853,7 @@ export default function DistributionPointEditor({
 
         <div
           style={{
-            display: "flex",
+            display: isMobile ? "none" : "flex",
             justifyContent: "center",
             gap: 12,
             alignItems: "center",
@@ -1957,13 +1961,13 @@ export default function DistributionPointEditor({
           flex: 1,
           minHeight: 0,
           display: "grid",
-          gridTemplateColumns: "330px minmax(760px, 1fr) 380px",
-          gap: 16,
-          padding: 16,
+          gridTemplateColumns: isMobile ? "1fr" : "330px minmax(760px, 1fr) 380px",
+          gap: isMobile ? 10 : 16,
+          padding: isMobile ? 10 : 16,
           overflow: "auto",
         }}
       >
-        <CapacityPanel>
+        {(!isMobile || mobilePanel === "summary") && <CapacityPanel>
           <h2 style={{ margin: 0, fontSize: 18 }}>DP Capacity</h2>
           <div
             style={{
@@ -2439,9 +2443,9 @@ export default function DistributionPointEditor({
             ) : null}
           </div>
           </FibreIntakePanel>
-        </CapacityPanel>
+        </CapacityPanel>}
 
-        <RoutePanel>
+        {(!isMobile || mobilePanel === "fibres") && <RoutePanel>
           <div
             style={{
               display: "flex",
@@ -2829,9 +2833,9 @@ export default function DistributionPointEditor({
               </small>
             </div>
           </div>
-        </RoutePanel>
+        </RoutePanel>}
 
-        <ConnectedHomesPanel>
+        {(!isMobile || mobilePanel === "homes") && <ConnectedHomesPanel>
           <div>
             <div style={smallLabelStyle()}>Served Homes</div>
             <h2 style={{ margin: "4px 0 0", fontSize: 22 }}>
@@ -3012,8 +3016,22 @@ export default function DistributionPointEditor({
               )}
             </div>
           </div>
-        </ConnectedHomesPanel>
+        </ConnectedHomesPanel>}
       </main>
+
+      {isMobile ? (
+        <nav style={mobilePanelDockStyle}>
+          <button type="button" onClick={() => setMobilePanel("summary")} style={mobileDockButtonStyle(mobilePanel === "summary")}>
+            Summary
+          </button>
+          <button type="button" onClick={() => setMobilePanel("fibres")} style={mobileDockButtonStyle(mobilePanel === "fibres")}>
+            Fibres
+          </button>
+          <button type="button" onClick={() => setMobilePanel("homes")} style={mobileDockButtonStyle(mobilePanel === "homes")}>
+            Homes
+          </button>
+        </nav>
+      ) : null}
     </div>
   );
 }
@@ -3227,6 +3245,35 @@ function FibreTraceGroupView({
       )}
     </div>
   );
+}
+
+const mobilePanelDockStyle: React.CSSProperties = {
+  position: "fixed",
+  left: 10,
+  right: 10,
+  bottom: "calc(env(safe-area-inset-bottom, 0px) + 10px)",
+  zIndex: 6600,
+  display: "grid",
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  gap: 8,
+  padding: 8,
+  borderRadius: 18,
+  border: "1px solid rgba(148,163,184,0.28)",
+  background: "rgba(15,23,42,0.96)",
+  boxShadow: "0 18px 44px rgba(0,0,0,0.42)",
+  backdropFilter: "blur(12px)",
+};
+
+function mobileDockButtonStyle(active: boolean): React.CSSProperties {
+  return {
+    minHeight: 46,
+    borderRadius: 14,
+    border: active ? "1px solid rgba(147,197,253,0.78)" : "1px solid rgba(148,163,184,0.24)",
+    background: active ? "#2563eb" : "rgba(30,41,59,0.92)",
+    color: "#fff",
+    fontWeight: 950,
+    fontSize: 13,
+  };
 }
 
 function FibreSpliceDiagram({
