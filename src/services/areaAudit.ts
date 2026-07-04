@@ -961,7 +961,7 @@ function addFibreAllocationIssues(assets: any[], issues: AuditIssue[]): void {
     const inputFibres = getDpInputFibres(dp);
     const spliceFibres = getDpSpliceFibres(dp);
     const requiredFibres = getDpRequiredInputFibres(dp);
-    const hasOnwardSpliceRoute = closureType === "AFN" && spliceFibres.length > 0;
+    const shouldEnforceLocalDemand = closureType !== "AFN";
 
     if (!isPassthroughArchitecture(closureType)) continue;
 
@@ -979,9 +979,10 @@ function addFibreAllocationIssues(assets: any[], issues: AuditIssue[]): void {
     const cableName = getCableDisplayName(cable);
     const cableCapacity = getCableCapacity(cable);
 
-    // AFN/SB splice fibres are deliberate shoot-off/onward routes. They do not
-    // need to feed a local splitter, so do not flag them as missing DP demand.
-    if (requiredFibres > 0 && inputFibres.length === 0 && !hasOnwardSpliceRoute) {
+    // AFN/SB fibres can be direct, split, spliced onward, or simply pass through
+    // to another route. Do not compare them to local homes demand here; only
+    // validate that selected fibre numbers are real for the through cable.
+    if (shouldEnforceLocalDemand && requiredFibres > 0 && inputFibres.length === 0) {
       issues.push(
         makeIssue(dp, `${closureType} has no fibres selected on ${cableName}`, {
           assetId: dpId,
@@ -991,7 +992,7 @@ function addFibreAllocationIssues(assets: any[], issues: AuditIssue[]): void {
       );
     }
 
-    if (requiredFibres > 0 && inputFibres.length < requiredFibres && !hasOnwardSpliceRoute) {
+    if (shouldEnforceLocalDemand && requiredFibres > 0 && inputFibres.length < requiredFibres) {
       issues.push(
         makeIssue(
           dp,
@@ -1005,7 +1006,7 @@ function addFibreAllocationIssues(assets: any[], issues: AuditIssue[]): void {
       );
     }
 
-    if (requiredFibres > 0 && inputFibres.length > requiredFibres) {
+    if (shouldEnforceLocalDemand && requiredFibres > 0 && inputFibres.length > requiredFibres) {
       issues.push(
         makeIssue(
           dp,
@@ -1020,7 +1021,7 @@ function addFibreAllocationIssues(assets: any[], issues: AuditIssue[]): void {
     }
 
     if (cableCapacity > 0) {
-      const overSizedFibres = inputFibres.filter((fibre) => fibre > cableCapacity);
+      const overSizedFibres = [...inputFibres, ...spliceFibres].filter((fibre) => fibre > cableCapacity);
       if (overSizedFibres.length) {
         issues.push(
           makeIssue(
