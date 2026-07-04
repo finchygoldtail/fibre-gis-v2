@@ -24,7 +24,7 @@ export function JobPackExportPanel({ draft, onArchive }: JobPackExportPanelProps
         setMessage({ type: "ok", text: `QGIS bundle export started: ${filename}` });
       } else {
         await exportJobPackZip(draft);
-        setMessage({ type: "ok", text: "ZIP export started." });
+        setMessage({ type: "ok", text: "Job pack upload bundle export started." });
       }
     } catch (error) {
       const text = error instanceof Error ? error.message : String(error);
@@ -43,7 +43,7 @@ export function JobPackExportPanel({ draft, onArchive }: JobPackExportPanelProps
           {exporting === "pdf" ? "Building PDF..." : "Export PDF"}
         </button>
         <button type="button" style={secondary} onClick={() => runExport("zip")} disabled={Boolean(exporting)}>
-          {exporting === "zip" ? "Building ZIP..." : "Export ZIP"}
+          {exporting === "zip" ? "Preparing upload..." : "Job Pack Upload"}
         </button>
         <button type="button" style={secondary} onClick={() => runExport("qgis")} disabled={Boolean(exporting)}>
           {exporting === "qgis" ? "Building QGIS..." : "Export QGIS"}

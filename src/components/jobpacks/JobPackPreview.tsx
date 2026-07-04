@@ -25,11 +25,7 @@ export function JobPackPreview({ draft }: JobPackPreviewProps) {
       </div>
       {draft.overviewMapImageDataUrl ? (
         <img src={draft.overviewMapImageDataUrl} alt="Captured live map overview" style={capturedMap} />
-      ) : (
-        <div style={captureRequired}>
-          Live map capture required. Use the Route Pages capture controls before exporting the contractor pack.
-        </div>
-      )}
+      ) : null}
     </section>
   );
 }
@@ -63,4 +59,3 @@ const badge: React.CSSProperties = { borderRadius: 999, padding: "5px 9px", back
 const grid: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8, marginBottom: 12 };
 const metric: React.CSSProperties = { border: "1px solid rgba(148,163,184,.14)", borderRadius: 8, padding: 10, background: "rgba(2,6,23,.55)", display: "grid", gap: 4 };
 const capturedMap: React.CSSProperties = { width: "100%", borderRadius: 8, border: "1px solid rgba(34,197,94,.28)" };
-const captureRequired: React.CSSProperties = { border: "1px dashed rgba(250,204,21,.35)", borderRadius: 8, padding: 18, color: "#fef3c7", background: "rgba(113,63,18,.16)" };

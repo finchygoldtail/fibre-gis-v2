@@ -3,7 +3,6 @@ import type { SavedMapAsset } from "../map/types";
 import {
   archiveJobPackDraft,
   buildJobPackDraftFromLiveMap,
-  captureCurrentLeafletMap,
   readArchivedJobPackDrafts,
   type JobPackDraft,
 } from "../../services/jobpacks";
@@ -12,7 +11,6 @@ import { JobPackDraftBuilder } from "./JobPackDraftBuilder";
 import { JobPackEditor } from "./JobPackEditor";
 import { JobPackExportPanel } from "./JobPackExportPanel";
 import { JobPackPreview } from "./JobPackPreview";
-import { JobPackRoutePages } from "./JobPackRoutePages";
 
 type JobPackCaptureTarget = "overview" | "96F" | "48F" | "36F" | "24F" | "12F";
 
@@ -33,11 +31,9 @@ export default function JobPackWorkspace({
   currentRevision,
   savedDraftCount = 0,
   issuedPackNumber,
-  onCaptureJobPackMaps,
 }: JobPackWorkspaceProps) {
   const [draft, setDraft] = useState<JobPackDraft | null>(null);
   const [archives, setArchives] = useState<JobPackDraft[]>(() => readArchivedJobPackDrafts(areaId));
-  const [autoCapturing, setAutoCapturing] = useState(false);
 
   const buildDraft = () => {
     setDraft(buildJobPackDraftFromLiveMap({
@@ -52,51 +48,6 @@ export default function JobPackWorkspace({
     if (!draft) return;
     setArchives(archiveJobPackDraft(draft));
     setDraft({ ...draft, status: "issued" });
-  };
-
-  const captureOverviewMap = async () => {
-    const image = await captureCurrentLeafletMap();
-    setDraft((current) => current ? {
-      ...current,
-      overviewMapImageDataUrl: image,
-      overviewMapCapturedAt: new Date().toISOString(),
-    } : current);
-  };
-
-  const captureRouteMap = async (routeId: string) => {
-    const image = await captureCurrentLeafletMap();
-    setDraft((current) => current ? {
-      ...current,
-      routes: current.routes.map((route) =>
-        route.id === routeId
-          ? { ...route, mapImageDataUrl: image, mapImageCapturedAt: new Date().toISOString() }
-          : route,
-      ),
-    } : current);
-  };
-
-  const autoCaptureAllRouteMaps = async () => {
-    if (!draft || !onCaptureJobPackMaps) return;
-    setAutoCapturing(true);
-    try {
-      const targets: JobPackCaptureTarget[] = [
-        "overview",
-        ...draft.routes.filter((route) => route.assets.length > 0).map((route) => route.fibreCount),
-      ];
-      const captures = await onCaptureJobPackMaps(targets);
-      const capturedAt = new Date().toISOString();
-      setDraft((current) => current ? {
-        ...current,
-        overviewMapImageDataUrl: captures.overview || current.overviewMapImageDataUrl,
-        overviewMapCapturedAt: captures.overview ? capturedAt : current.overviewMapCapturedAt,
-        routes: current.routes.map((route) => {
-          const image = captures[route.fibreCount];
-          return image ? { ...route, mapImageDataUrl: image, mapImageCapturedAt: capturedAt } : route;
-        }),
-      } : current);
-    } finally {
-      setAutoCapturing(false);
-    }
   };
 
   return (
@@ -130,16 +81,6 @@ export default function JobPackWorkspace({
           <JobPackPreview draft={draft} />
           <JobPackExportPanel draft={draft} onArchive={archiveDraft} />
           <JobPackEditor draft={draft} />
-          {onCaptureJobPackMaps ? (
-            <button type="button" style={autoCaptureButton} onClick={autoCaptureAllRouteMaps} disabled={autoCapturing}>
-              {autoCapturing ? "Capturing live map pages..." : "Auto Capture Overview + Route Maps"}
-            </button>
-          ) : null}
-          <JobPackRoutePages
-            draft={draft}
-            onCaptureOverviewMap={captureOverviewMap}
-            onCaptureRouteMap={captureRouteMap}
-          />
         </div>
       ) : null}
 
@@ -166,4 +107,3 @@ const statusBox: CSSProperties = { border: "1px solid rgba(34,197,94,.28)", bord
 const metrics: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 };
 const metric: CSSProperties = { border: "1px solid rgba(148,163,184,.14)", borderRadius: 8, padding: 12, background: "rgba(2,6,23,.55)", display: "grid", gap: 4 };
 const grid: CSSProperties = { display: "grid", gap: 14 };
-const autoCaptureButton: CSSProperties = { border: 0, borderRadius: 8, padding: "12px 14px", background: "linear-gradient(135deg, #22c55e, #0ea5e9)", color: "white", fontWeight: 900, cursor: "pointer" };

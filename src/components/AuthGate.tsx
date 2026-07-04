@@ -5,7 +5,7 @@
 
 /**
  * Alistra GIS
- * Copyright © 2026 Alistra GIS. All Rights Reserved.
+ * Copyright (c) 2026 Alistra GIS. All Rights Reserved.
  *
  * Unauthorized copying, modification, distribution,
  * reverse engineering, resale, or commercial use is prohibited.
@@ -23,7 +23,7 @@ import { auth, googleProvider } from "../firebase";
 
 import { AppModeProvider } from "../context/AppModeContext";
 import { UserRoleProvider } from "../context/UserRoleContext";
-
+import AlistraLanding from "./landing/AlistraLanding";
 
 type Props = {
   children: React.ReactNode;
@@ -37,7 +37,6 @@ export default function AuthGate({ children }: Props) {
 
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState("");
-
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (nextUser) => {
@@ -74,7 +73,7 @@ export default function AuthGate({ children }: Props) {
 
   if (loading) {
     return (
-      <div style={screen}>
+      <div style={loadingScreen}>
         Loading Fibre GIS Platform...
       </div>
     );
@@ -91,104 +90,105 @@ export default function AuthGate({ children }: Props) {
   }
 
   return (
-    <div style={screen}>
-      <div style={card}>
-        <img
-  src="/Alistra GIS Logo.png"
-  alt="Alistra GIS"
-  style={logo}
-/>
+    <AlistraLanding
+      loginPanel={
+        <div style={loginCard} id="login">
+          <img
+            src="/Alistra GIS Logo.png"
+            alt="Alistra GIS"
+            style={loginLogo}
+          />
 
-        <h1 style={{ margin: "0 0 6px" }}>
-          Alistra GIS
-        </h1>
+          <h2 style={loginTitle}>
+            Client login
+          </h2>
 
-        <p
-          style={{
-            color: "#9ca3af",
-            marginTop: 0,
-          }}
-        >
-          Sign in to continue
-        </p>
+          <p style={loginCopy}>
+            Secure access for authorised infrastructure teams.
+          </p>
 
-        <input
-          style={input}
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) =>
-            setEmail(e.target.value)
-          }
-        />
+          <input
+            style={input}
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) =>
+              setEmail(e.target.value)
+            }
+          />
 
-        <input
-          style={input}
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) =>
-            setPassword(e.target.value)
-          }
-        />
+          <input
+            style={input}
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) =>
+              setPassword(e.target.value)
+            }
+          />
 
-        <button
-          style={button}
-          onClick={handleEmailAuth}
-        >
-          Sign in
-        </button>
+          <button
+            style={button}
+            onClick={handleEmailAuth}
+          >
+            Sign in
+          </button>
 
+          <div style={divider}>or</div>
 
-        <div style={divider}>or</div>
+          <button
+            style={secondaryButton}
+            onClick={handleGoogleSignIn}
+          >
+            Sign in with Google
+          </button>
 
-        <button
-          style={secondaryButton}
-          onClick={handleGoogleSignIn}
-        >
-          Sign in with Google
-        </button>
-
-        {authError && (
-          <div style={errorText}>
-            {authError}
-          </div>
-        )}
-      </div>
-
-      <div style={copyrightFooter}>
-        <div>Alistra GIS v1.0.0</div>
-        <div>© 2026 Alistra GIS. All Rights Reserved.</div>
-        <div>Confidential &amp; Proprietary Software</div>
-      </div>
-    </div>
+          {authError && (
+            <div style={errorText}>
+              {authError}
+            </div>
+          )}
+        </div>
+      }
+    />
   );
 }
 
-const logo: React.CSSProperties = {
-  width: 120,
-  marginBottom: 16,
-};
-
-const screen: React.CSSProperties = {
+const loadingScreen: React.CSSProperties = {
   minHeight: "100vh",
   display: "grid",
   placeItems: "center",
   background: "#020617",
   color: "white",
-  position: "relative",
 };
 
-const card: React.CSSProperties = {
-  background: "#111827",
-  padding: "2rem",
-  borderRadius: 16,
-  width: 380,
-  maxWidth: "90vw",
+const loginCard: React.CSSProperties = {
+  width: "100%",
+  background: "rgba(15,23,42,0.94)",
+  padding: "24px",
+  borderRadius: 8,
   textAlign: "center",
-  boxShadow: "0 20px 50px rgba(0,0,0,0.45)",
+  boxShadow: "0 24px 70px rgba(0,0,0,0.45)",
   border:
-    "1px solid rgba(148,163,184,0.18)",
+    "1px solid rgba(148,163,184,0.2)",
+  boxSizing: "border-box",
+};
+
+const loginLogo: React.CSSProperties = {
+  width: 88,
+  marginBottom: 14,
+};
+
+const loginTitle: React.CSSProperties = {
+  margin: "0 0 8px",
+  fontSize: 24,
+  color: "#ffffff",
+};
+
+const loginCopy: React.CSSProperties = {
+  color: "#b6c6d9",
+  margin: "0 0 18px",
+  lineHeight: 1.5,
 };
 
 const input: React.CSSProperties = {
@@ -209,7 +209,7 @@ const button: React.CSSProperties = {
   padding: "0.75rem 1rem",
   borderRadius: 8,
   cursor: "pointer",
-  fontWeight: 700,
+  fontWeight: 800,
   marginBottom: "0.75rem",
 };
 
@@ -227,17 +227,4 @@ const errorText: React.CSSProperties = {
   color: "#fca5a5",
   fontSize: 13,
   marginTop: 10,
-};
-
-const copyrightFooter: React.CSSProperties = {
-  position: "fixed",
-  bottom: 12,
-  left: "50%",
-  transform: "translateX(-50%)",
-  textAlign: "center",
-  color: "#6b7280",
-  fontSize: 12,
-  lineHeight: 1.4,
-  pointerEvents: "none",
-  userSelect: "none",
 };
