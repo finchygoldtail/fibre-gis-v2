@@ -18,6 +18,11 @@ export default function ConnectedHomesPanel({ children }: ConnectedHomesPanelPro
         flexDirection: "column",
         minHeight: 0,
         gap: 12,
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
+        overflow: "hidden",
       }}
     >
       {children}

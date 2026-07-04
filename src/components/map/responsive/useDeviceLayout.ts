@@ -30,6 +30,13 @@ function getWindowSize(): { width: number; height: number } {
   return { width: window.innerWidth, height: window.innerHeight };
 }
 
+function hasCoarsePointer(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return false;
+  }
+  return window.matchMedia("(pointer: coarse)").matches;
+}
+
 function getLayoutKind(width: number): DeviceLayoutKind {
   if (width < 390) return "smallPhone";
   if (width < 640) return "largePhone";
@@ -62,7 +69,9 @@ export function useDeviceLayout(): DeviceLayout {
     const isTabletLandscape = layout === "tabletLandscape";
     const isLaptop = layout === "laptop";
     const isDesktop = layout === "desktop" || layout === "laptop";
-    const isMobile = isSmallPhone || isLargePhone;
+    const isPhoneLandscape =
+      orientation === "landscape" && hasCoarsePointer() && size.height < 640;
+    const isMobile = isSmallPhone || isLargePhone || isPhoneLandscape;
     const isTablet = isTabletPortrait || isTabletLandscape;
 
     return {
@@ -78,7 +87,7 @@ export function useDeviceLayout(): DeviceLayout {
       isTablet,
       isLaptop,
       isDesktop,
-      isTouchLayout: isMobile || isTablet,
+      isTouchLayout: isMobile || isTablet || hasCoarsePointer(),
       isShortViewport: size.height < 680,
     };
   }, [size]);

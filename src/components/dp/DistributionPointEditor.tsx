@@ -1824,7 +1824,7 @@ export default function DistributionPointEditor({
           borderBottom: "1px solid rgba(148,163,184,0.16)",
           background: "rgba(15, 23, 42, 0.92)",
           display: "grid",
-          gridTemplateColumns: isMobile ? "1fr auto" : "320px 1fr auto",
+          gridTemplateColumns: isMobile ? "1fr" : "320px 1fr auto",
           alignItems: "center",
           gap: isMobile ? 10 : 18,
         }}
@@ -1871,7 +1871,15 @@ export default function DistributionPointEditor({
           </strong>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: isMobile ? 8 : 10,
+            flexWrap: isMobile ? "wrap" : "nowrap",
+            minWidth: 0,
+          }}
+        >
           <button
             type="button"
             disabled={!previousSiblingDp}
@@ -1965,6 +1973,7 @@ export default function DistributionPointEditor({
           gap: isMobile ? 10 : 16,
           padding: isMobile ? 10 : 16,
           overflow: "auto",
+          overflowX: "hidden",
         }}
       >
         {(!isMobile || mobilePanel === "summary") && <CapacityPanel>
@@ -2493,6 +2502,7 @@ export default function DistributionPointEditor({
                 parentFibreMappings={parentFibreMappings}
                 selectedFibre={selectedFibre}
                 selectedPort={selectedPort}
+                isCompact={isMobile}
                 onSelectFibre={(fibre) =>
                   setSelectedFibre(selectedFibre === fibre ? null : fibre)
                 }
@@ -3291,6 +3301,7 @@ function FibreSpliceDiagram({
   parentFibreMappings = [],
   selectedFibre,
   selectedPort,
+  isCompact = false,
   onSelectFibre,
   onSelectPort,
 }: {
@@ -3308,6 +3319,7 @@ function FibreSpliceDiagram({
   parentFibreMappings?: ParentFibreMapping[];
   selectedFibre: number | null;
   selectedPort: number | null;
+  isCompact?: boolean;
   onSelectFibre: (fibre: number) => void;
   onSelectPort: (port: number) => void;
 }) {
@@ -3351,14 +3363,17 @@ function FibreSpliceDiagram({
 
   const fibreRowStyle = (active: boolean): React.CSSProperties => ({
     display: "grid",
-    gridTemplateColumns: "92px minmax(130px, 220px) 34px minmax(160px, 1fr)",
+    gridTemplateColumns: isCompact
+      ? "minmax(0, 1fr)"
+      : "92px minmax(130px, 220px) 34px minmax(160px, 1fr)",
     alignItems: "center",
-    gap: 10,
+    gap: isCompact ? 7 : 10,
     border: active ? "1px solid rgba(56,189,248,0.8)" : "1px solid rgba(148,163,184,0.12)",
     background: active ? "rgba(14,165,233,0.13)" : "rgba(15,23,42,0.62)",
     borderRadius: 12,
     padding: "7px 10px",
     cursor: "pointer",
+    minWidth: 0,
   });
 
   const lineStyle = (fibre: number, kind: "splice" | "splitter" | "passthrough" | "spare"): React.CSSProperties => {
@@ -3421,10 +3436,12 @@ function FibreSpliceDiagram({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "220px minmax(0, 1fr) 280px",
+          gridTemplateColumns: isCompact
+            ? "minmax(0, 1fr)"
+            : "220px minmax(0, 1fr) 280px",
           gap: 14,
           minWidth: 0,
-          minHeight: 490,
+          minHeight: isCompact ? 0 : 490,
           alignItems: "start",
         }}
       >
@@ -3485,7 +3502,7 @@ function FibreSpliceDiagram({
         <main
           style={{
             ...routeCardStyle("rgba(59,130,246,0.22)"),
-            padding: 14,
+            padding: isCompact ? 10 : 14,
             minWidth: 0,
             overflowX: "auto",
           }}
@@ -3570,10 +3587,12 @@ function FibreSpliceDiagram({
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "minmax(220px, 1fr) 120px minmax(190px, 1fr)",
+                  gridTemplateColumns: isCompact
+                    ? "minmax(0, 1fr)"
+                    : "minmax(220px, 1fr) 120px minmax(190px, 1fr)",
                   gap: 12,
                   alignItems: "center",
-                  minWidth: 560,
+                  minWidth: isCompact ? 0 : 560,
                 }}
               >
                 <div style={{ display: "grid", gap: 6 }}>
@@ -3581,7 +3600,7 @@ function FibreSpliceDiagram({
                     const colour = getFibreColour(fibre);
                     const active = selectedFibre === fibre;
                     return (
-                      <button key={`splitter-input-${fibre}`} type="button" onClick={() => onSelectFibre(fibre)} style={{ ...fibreRowStyle(active), gridTemplateColumns: "92px 1fr" }}>
+                      <button key={`splitter-input-${fibre}`} type="button" onClick={() => onSelectFibre(fibre)} style={{ ...fibreRowStyle(active), gridTemplateColumns: isCompact ? "minmax(0, 1fr)" : "92px 1fr" }}>
                         <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <span style={chipStyle(fibre, active)}>{fibre}</span>
                           <span style={{ color: "#e5e7eb", fontWeight: 800 }}>{colour.name}</span>
@@ -3615,7 +3634,7 @@ function FibreSpliceDiagram({
                   </span>
                 </button>
 
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6 }}>
+                <div style={{ display: "grid", gridTemplateColumns: isCompact ? "minmax(0, 1fr)" : "repeat(2, minmax(0, 1fr))", gap: 6 }}>
                   {portRoutes.slice(0, Math.min(portRoutes.length, 16)).map((route) => {
                     const active = selectedPort === route.port;
                     return (
@@ -3660,7 +3679,7 @@ function FibreSpliceDiagram({
                   const colour = getFibreColour(fibre);
                   const active = selectedFibre === fibre;
                   return (
-                    <button key={`pass-${fibre}`} type="button" onClick={() => onSelectFibre(fibre)} style={{ ...fibreRowStyle(active), gridTemplateColumns: "92px minmax(200px, 1fr) 120px" }}>
+                    <button key={`pass-${fibre}`} type="button" onClick={() => onSelectFibre(fibre)} style={{ ...fibreRowStyle(active), gridTemplateColumns: isCompact ? "minmax(0, 1fr)" : "92px minmax(200px, 1fr) 120px" }}>
                       <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <span style={chipStyle(fibre, active)}>{fibre}</span>
                         <span style={{ color: "#e5e7eb", fontWeight: 800 }}>{colour.name}</span>
@@ -3689,7 +3708,7 @@ function FibreSpliceDiagram({
                     const colour = getFibreColour(fibre);
                     const active = selectedFibre === fibre;
                     return (
-                      <button key={`spare-${fibre}`} type="button" onClick={() => onSelectFibre(fibre)} style={{ ...fibreRowStyle(active), gridTemplateColumns: "92px minmax(200px, 1fr) 120px" }}>
+                      <button key={`spare-${fibre}`} type="button" onClick={() => onSelectFibre(fibre)} style={{ ...fibreRowStyle(active), gridTemplateColumns: isCompact ? "minmax(0, 1fr)" : "92px minmax(200px, 1fr) 120px" }}>
                         <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <span style={chipStyle(fibre, active)}>{fibre}</span>
                           <span style={{ color: "#e5e7eb", fontWeight: 800 }}>{colour.name}</span>
@@ -3708,7 +3727,7 @@ function FibreSpliceDiagram({
         <aside
           style={{
             ...routeCardStyle("rgba(34,197,94,0.20)"),
-            width: 280,
+            width: isCompact ? "100%" : 280,
             minWidth: 0,
             boxSizing: "border-box",
           }}

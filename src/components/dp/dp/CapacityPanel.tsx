@@ -17,6 +17,11 @@ export default function CapacityPanel({ children }: CapacityPanelProps) {
         display: "grid",
         gap: 14,
         alignContent: "start",
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
+        overflow: "hidden",
       }}
     >
       {children}

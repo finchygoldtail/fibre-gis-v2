@@ -35,11 +35,20 @@ export function useMapDrawingState({ initialZoom = 6 }: UseMapDrawingStateArgs =
   const [mapZoom, setMapZoom] = useState<number>(initialZoom);
 
   useEffect(() => {
-    const updateMobile = () => setIsMobile(window.innerWidth < 600);
+    const updateMobile = () => {
+      const coarsePointer =
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(pointer: coarse)").matches;
+      setIsMobile(window.innerWidth < 600 || (coarsePointer && window.innerHeight < 640));
+    };
     updateMobile();
 
     window.addEventListener("resize", updateMobile);
-    return () => window.removeEventListener("resize", updateMobile);
+    window.addEventListener("orientationchange", updateMobile);
+    return () => {
+      window.removeEventListener("resize", updateMobile);
+      window.removeEventListener("orientationchange", updateMobile);
+    };
   }, []);
 
   return {
