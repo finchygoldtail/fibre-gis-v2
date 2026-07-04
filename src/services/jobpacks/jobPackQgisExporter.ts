@@ -597,7 +597,7 @@ function qgisAutomationScript(draft: JobPackDraft): string {
     "    route_layer = get_layer(route_layer_name)",
     "    if not route_layer:",
     "        continue",
-    "    route_extent = combined_extent([route_layer_name, 'dps', 'joints', 'chambers'], extent, 2.65)",
+    "    route_extent = combined_extent([route_layer_name], extent, 1.35)",
     "    page_layers = context_names + [route_layer_name, 'boundary']",
     "    export_sheet(layout_name, pdf_name, title, page_layers, route_extent)",
     "",

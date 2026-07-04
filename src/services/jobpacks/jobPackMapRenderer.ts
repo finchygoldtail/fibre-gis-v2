@@ -36,9 +36,9 @@ function boundsFor(assets: JobPackDraftAsset[]): Bounds {
   };
 }
 
-function expandBounds(bounds: Bounds): Bounds {
-  const lngPad = Math.max((bounds.maxLng - bounds.minLng) * 0.08, 0.00002);
-  const latPad = Math.max((bounds.maxLat - bounds.minLat) * 0.08, 0.00002);
+function expandBounds(bounds: Bounds, ratio = 0.08, minimum = 0.00002): Bounds {
+  const lngPad = Math.max((bounds.maxLng - bounds.minLng) * ratio, minimum);
+  const latPad = Math.max((bounds.maxLat - bounds.minLat) * ratio, minimum);
   return {
     minLng: bounds.minLng - lngPad,
     maxLng: bounds.maxLng + lngPad,
@@ -364,18 +364,28 @@ function renderJobPackMapSvg(draft: JobPackDraft, assets: JobPackDraftAsset[], t
   if (!drawable.length) {
     return `<svg viewBox="0 0 ${sheetWidth} ${sheetHeight}" role="img" aria-label="${escapeXml(title)}" xmlns="http://www.w3.org/2000/svg"><rect width="${sheetWidth}" height="${sheetHeight}" fill="#ffffff"/><text x="40" y="70" fill="#111827" font-size="28">No mappable assets</text>${renderSidePanel(draft, title)}</svg>`;
   }
-  const bounds = expandBounds(boundsFor(drawable));
   const selectedRoutes = drawable.filter((asset) => asset.group === "route" && (!routeFilter || asset.fibreCount === routeFilter));
   const contextRoutes = routeFilter ? drawable.filter((asset) => asset.group === "route" && asset.fibreCount !== routeFilter) : [];
   const nonRouteAssets = drawable.filter((asset) => asset.group !== "route");
   const muted = Boolean(routeFilter);
   const routePagePointGroups = new Set(["distributionPoint", "streetCab", "joint", "chamber", "pole"]);
+  const seedBounds = routeFilter && selectedRoutes.length
+    ? expandBounds(boundsFor(selectedRoutes), 0.28, 0.00008)
+    : expandBounds(boundsFor(drawable));
+  const relatedRoutePoints = routeFilter
+    ? nonRouteAssets
+      .filter((asset) => routePagePointGroups.has(asset.group))
+      .filter((asset) => isPointRelatedToSelectedRoutes(asset, selectedRoutes, seedBounds))
+    : [];
+  const bounds = routeFilter && selectedRoutes.length
+    ? expandBounds(boundsFor([...selectedRoutes, ...relatedRoutePoints]), 0.22, 0.00008)
+    : seedBounds;
 
   const boundaries = nonRouteAssets.filter((asset) => asset.group === "boundary").map((asset) => renderBoundary(asset, bounds)).join("");
   const homes = nonRouteAssets.filter((asset) => asset.group === "home").map((asset) => renderHome(asset, bounds, muted)).join("");
   const points = nonRouteAssets
     .filter((asset) => !["boundary", "home"].includes(asset.group))
-    .filter((asset) => !routeFilter || !routePagePointGroups.has(asset.group) || isPointRelatedToSelectedRoutes(asset, selectedRoutes, bounds))
+    .filter((asset) => !routeFilter || !routePagePointGroups.has(asset.group) || relatedRoutePoints.includes(asset))
     .map((asset) => renderPoint(asset, bounds))
     .join("");
   const context = contextRoutes.map((asset) => renderRoute(asset, bounds, false, true)).join("");
