@@ -104,6 +104,14 @@ export default function AlistraLanding({ loginPanel }: AlistraLandingProps) {
             scroll-behavior: smooth;
           }
 
+          html,
+          body,
+          #root {
+            min-height: 100%;
+            overflow-x: hidden;
+            overflow-y: auto;
+          }
+
           @keyframes alistraFiberFlow {
             0% { transform: translateX(-18%) rotate(-10deg); opacity: 0.35; }
             50% { opacity: 0.95; }
@@ -139,31 +147,81 @@ export default function AlistraLanding({ loginPanel }: AlistraLandingProps) {
 
           @media (max-width: 920px) {
             .alistra-nav-links {
-              display: none !important;
+              order: 3 !important;
+              width: 100% !important;
+              overflow-x: auto !important;
+              justify-content: flex-start !important;
+              flex-wrap: nowrap !important;
+              padding-bottom: 2px !important;
+              scrollbar-width: none !important;
             }
 
             .alistra-hero {
               grid-template-columns: 1fr !important;
+              min-height: auto !important;
+              padding-top: 36px !important;
             }
 
             .alistra-contact {
               grid-template-columns: 1fr !important;
             }
+
+            .alistra-page-shell {
+              padding-top: 128px !important;
+            }
           }
 
           @media (max-width: 620px) {
             .alistra-header {
-              align-items: flex-start !important;
-              flex-direction: column !important;
+              align-items: center !important;
+              flex-wrap: wrap !important;
+              gap: 10px !important;
+              padding: 10px 14px !important;
             }
 
             .alistra-brand-row {
-              width: 100% !important;
-              justify-content: space-between !important;
+              flex: 1 1 auto !important;
+              min-width: 0 !important;
             }
 
             .alistra-hero-visual {
-              min-height: 280px !important;
+              min-height: 235px !important;
+            }
+
+            .alistra-page-shell {
+              width: min(100% - 28px, 1240px) !important;
+              padding-top: 122px !important;
+            }
+
+            .alistra-headline {
+              font-size: 40px !important;
+              line-height: 1.02 !important;
+            }
+
+            .alistra-section {
+              padding: 46px 0 !important;
+            }
+
+            .alistra-cta {
+              width: 100% !important;
+            }
+
+            .alistra-login-overlay {
+              align-items: start !important;
+              overflow-y: auto !important;
+              padding: 86px 14px 24px !important;
+            }
+
+            .alistra-overlay-close {
+              top: 18px !important;
+              right: 14px !important;
+            }
+
+            .alistra-back-top {
+              right: 12px !important;
+              bottom: 12px !important;
+              padding: 8px 10px !important;
+              font-size: 12px !important;
             }
           }
         `}
@@ -214,10 +272,16 @@ export default function AlistraLanding({ loginPanel }: AlistraLandingProps) {
       </header>
 
       {loginOpen ? (
-        <div style={loginOverlay} role="dialog" aria-modal="true">
+        <div
+          style={loginOverlay}
+          className="alistra-login-overlay"
+          role="dialog"
+          aria-modal="true"
+        >
           <button
             type="button"
             style={overlayClose}
+            className="alistra-overlay-close"
             onClick={() => setLoginOpen(false)}
           >
             Close
@@ -228,15 +292,15 @@ export default function AlistraLanding({ loginPanel }: AlistraLandingProps) {
         </div>
       ) : null}
 
-      <a href="#top" style={backToTop}>
+      <a href="#top" style={backToTop} className="alistra-back-top">
         Back to top
       </a>
 
-      <main style={pageShell} id="top">
+      <main style={pageShell} className="alistra-page-shell" id="top">
         <section style={heroSection} className="alistra-hero">
           <div style={heroContent}>
             <p style={eyebrow}>Alistra GIS</p>
-            <h1 style={headline}>
+            <h1 style={headline} className="alistra-headline">
               The operating system for infrastructure intelligence
             </h1>
 
@@ -257,10 +321,10 @@ export default function AlistraLanding({ loginPanel }: AlistraLandingProps) {
             </div>
 
             <div style={heroActions}>
-              <a href="#explore" style={primaryCta}>
+              <a href="#explore" style={primaryCta} className="alistra-cta">
                 Explore platform
               </a>
-              <a href="#contact" style={secondaryCta}>
+              <a href="#contact" style={secondaryCta} className="alistra-cta">
                 Contact Alistra
               </a>
             </div>
@@ -299,7 +363,7 @@ export default function AlistraLanding({ loginPanel }: AlistraLandingProps) {
           </div>
         </section>
 
-        <section style={section} id="about" className="alistra-section-anchor">
+        <section style={section} id="about" className="alistra-section alistra-section-anchor">
           <div style={sectionIntro}>
             <p style={eyebrow}>Product vision</p>
             <h2 style={sectionTitle}>
@@ -321,7 +385,7 @@ export default function AlistraLanding({ loginPanel }: AlistraLandingProps) {
           </div>
         </section>
 
-        <section style={section} id="explore" className="alistra-section-anchor">
+        <section style={section} id="explore" className="alistra-section alistra-section-anchor">
           <div style={sectionIntro}>
             <p style={eyebrow}>Explore platform</p>
             <h2 style={sectionTitle}>
@@ -344,7 +408,7 @@ export default function AlistraLanding({ loginPanel }: AlistraLandingProps) {
           </div>
         </section>
 
-        <section style={section} id="products" className="alistra-section-anchor">
+        <section style={section} id="products" className="alistra-section alistra-section-anchor">
           <div style={sectionIntro}>
             <p style={eyebrow}>Platform suite</p>
             <h2 style={sectionTitle}>
@@ -363,7 +427,7 @@ export default function AlistraLanding({ loginPanel }: AlistraLandingProps) {
           </div>
         </section>
 
-        <section style={section} id="infrastructure" className="alistra-section-anchor">
+        <section style={section} id="infrastructure" className="alistra-section alistra-section-anchor">
           <div style={sectionIntro}>
             <p style={eyebrow}>Infrastructure intelligence</p>
             <h2 style={sectionTitle}>
@@ -386,7 +450,7 @@ export default function AlistraLanding({ loginPanel }: AlistraLandingProps) {
 
         <section
           style={contactSection}
-          className="alistra-contact alistra-section-anchor"
+          className="alistra-contact alistra-section alistra-section-anchor"
           id="contact"
         >
           <div>
