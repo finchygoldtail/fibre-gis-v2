@@ -36,11 +36,13 @@ export default function AuthGate({ children }: Props) {
   const [password, setPassword] = useState("");
 
   const [loading, setLoading] = useState(true);
+  const [signingIn, setSigningIn] = useState(false);
   const [authError, setAuthError] = useState("");
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (nextUser) => {
       setUser(nextUser);
+      setSigningIn(false);
       setLoading(false);
     });
 
@@ -49,16 +51,19 @@ export default function AuthGate({ children }: Props) {
 
   const handleGoogleSignIn = async () => {
     setAuthError("");
+    setSigningIn(true);
 
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (err: any) {
       setAuthError(err.message || "Google sign in failed.");
+      setSigningIn(false);
     }
   };
 
   const handleEmailAuth = async () => {
     setAuthError("");
+    setSigningIn(true);
 
     try {
       await signInWithEmailAndPassword(
@@ -68,13 +73,14 @@ export default function AuthGate({ children }: Props) {
       );
     } catch (err: any) {
       setAuthError(err.message || "Authentication failed.");
+      setSigningIn(false);
     }
   };
 
-  if (loading) {
+  if (loading || signingIn) {
     return (
       <div style={loadingScreen}>
-        Loading Fibre GIS Platform...
+        {signingIn ? "Opening Alistra GIS..." : "Loading Fibre GIS Platform..."}
       </div>
     );
   }

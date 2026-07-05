@@ -5127,6 +5127,7 @@ export default function JointMapManager({
         onStopMeasurement={() => setMapMode("pick")}
         onUndoMeasurementPoint={handleUndoMeasurementPoint}
         onClearMeasurements={handleClearMeasurement}
+        onClose={() => setIsLayersOpen(false)}
       />
 
       {!showMaintenancePanel && !isFieldResponsiveMode && (
