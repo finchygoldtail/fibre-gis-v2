@@ -123,10 +123,12 @@ export default function MeetMeTrayView({
           <div style={trayTitle}>Splice Tray {tray}</div>
           {(() => {
             const visualRows = buildVisualSpliceRows(tray, trayRows);
+            const inputCableLabel = shortCableLabel(trayRows[0]?.inputCable, "EBCL");
+            const outputCableLabel = shortCableLabel(trayRows[0]?.outputCable, "Feeder");
             return (
               <>
           <div style={spliceMatrix}>
-            <div style={rowLabel}>EBCL / Input</div>
+            <div style={rowLabel}>{inputCableLabel} / Input</div>
             <div style={fibreButtonGrid}>
               {Array.from({ length: 12 }, (_, index) =>
                 renderFibreButton({
@@ -173,7 +175,7 @@ export default function MeetMeTrayView({
                 })}
             </svg>
 
-            <div style={rowLabel}>Feeder / Output</div>
+            <div style={rowLabel}>{outputCableLabel} / Output</div>
             <div style={fibreButtonGrid}>
               {Array.from({ length: 12 }, (_, index) => {
                 const localFibre = index + 1;
@@ -358,6 +360,11 @@ function getLocalFibre(fibre: number | null) {
 
 function formatLocalFibre(fibre: number | null) {
   return fibre ? `F${getLocalFibre(fibre)}` : "F?";
+}
+
+function shortCableLabel(value: string | undefined, fallback: string) {
+  const text = cleanCell(value) || fallback;
+  return text.length > 28 ? `${text.slice(0, 25)}...` : text;
 }
 
 function readMeetMeRow(row: any[], rowIndex: number) {
