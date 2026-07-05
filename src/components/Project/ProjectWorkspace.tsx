@@ -22,14 +22,6 @@ import {
   isDistributionPointAsset,
 } from "../../services/network";
 import { getDpIntelligence } from "../../services/dpIntelligence";
-import { downloadAddressSheetTemplate } from "./workspace/addressSheetParser";
-import {
-  downloadAgJointTemplate,
-  downloadCmjJointTemplate,
-} from "../../logic/exportAgExcel";
-import { downloadLmjJointTemplate } from "../../logic/exportLmjExcel";
-import { downloadStreetCabTemplate } from "../../logic/exportStreetCabExcel";
-import { downloadExchangeTemplate } from "../../logic/exportExchangeExcel";
 import AuditModal from "../audits/AuditModal";
 import AuditFormEngine from "../audits/AuditFormEngine";
 import { walkOffAuditTemplate } from "../audits/auditTemplates";
@@ -3120,7 +3112,8 @@ export default function ProjectWorkspace({
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    openOperationPanel("report", "reports");
+    setActiveTab("reports");
+    setActiveOperationPanel("none");
   };
 
   const issueTone = displayStats.issueCount > 0 ? "bad" : "good";
@@ -4036,10 +4029,13 @@ export default function ProjectWorkspace({
       onClick: () => openOperationPanel("projectDetails", "assets"),
     },
     {
-      label: "Report",
-      helper: "Export pack",
+      label: "Templates",
+      helper: "XLSX packs",
       active: activeTab === "reports",
-      onClick: () => openOperationPanel("report", "reports"),
+      onClick: () => {
+        setActiveTab("reports");
+        setActiveOperationPanel("none");
+      },
     },
     {
       label: "Handover",
@@ -5757,60 +5753,6 @@ export default function ProjectWorkspace({
                     </div>
                   )}
 
-                  {activeOperationPanel === "report" && (
-                    <div style={operationStack}>
-                      <div style={emptyPanel}>
-                        Download blank templates for the standard
-                        Alistra GIS import workflow. These only create XLSX
-                        starter files
-                      </div>
-
-                      <div style={templateButtonGrid}>
-                        <button
-                          type="button"
-                          style={wideButton}
-                          onClick={() => void downloadAddressSheetTemplate()}
-                        >
-                          Download Address Sheet Template
-                        </button>
-                        <button
-                          type="button"
-                          style={wideButton}
-                          onClick={downloadAgJointTemplate}
-                        >
-                          Download AG Joint Template
-                        </button>
-                        <button
-                          type="button"
-                          style={wideButton}
-                          onClick={downloadLmjJointTemplate}
-                        >
-                          Download LMJ Joint Template
-                        </button>
-                        <button
-                          type="button"
-                          style={wideButton}
-                          onClick={downloadCmjJointTemplate}
-                        >
-                          Download CMJ Joint Template
-                        </button>
-                        <button
-                          type="button"
-                          style={wideButton}
-                          onClick={downloadStreetCabTemplate}
-                        >
-                          Download Street Cab Template
-                        </button>
-                        <button
-                          type="button"
-                          style={wideButton}
-                          onClick={downloadExchangeTemplate}
-                        >
-                          Download Exchange Template
-                        </button>
-                      </div>
-                    </div>
-                  )}
                 </section>
               )}
             </main>
@@ -6323,12 +6265,6 @@ const closePanelButton: React.CSSProperties = {
 const operationGrid: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(2, minmax(220px, 1fr))",
-  gap: 10,
-};
-
-const templateButtonGrid: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
   gap: 10,
 };
 

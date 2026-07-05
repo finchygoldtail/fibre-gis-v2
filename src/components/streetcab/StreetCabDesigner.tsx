@@ -618,11 +618,11 @@ export default function StreetCabDesigner({
   onSave,
 }: Props) {
   const [isMobileDesigner, setIsMobileDesigner] = useState(() =>
-    typeof window !== "undefined" ? window.innerWidth < 760 : false,
+    typeof window !== "undefined" ? window.innerWidth < 1100 : false,
   );
 
   useEffect(() => {
-    const update = () => setIsMobileDesigner(window.innerWidth < 760);
+    const update = () => setIsMobileDesigner(window.innerWidth < 1100);
     update();
     window.addEventListener("resize", update);
     window.addEventListener("orientationchange", update);

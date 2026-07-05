@@ -2,7 +2,7 @@ import React from "react";
 import { downloadAddressSheetTemplate } from "./addressSheetParser";
 import {
   downloadAgJointTemplate,
-  downloadCmjJointTemplate,
+  downloadMeetMeJointTemplate,
 } from "../../../logic/exportAgExcel";
 import { downloadLmjJointTemplate } from "../../../logic/exportLmjExcel";
 import { downloadStreetCabTemplate } from "../../../logic/exportStreetCabExcel";
@@ -54,8 +54,8 @@ export default function WorkspaceReports() {
         <button type="button" style={button} onClick={downloadLmjJointTemplate}>
           LMJ Joint Template
         </button>
-        <button type="button" style={button} onClick={downloadCmjJointTemplate}>
-          CMJ Joint Template
+        <button type="button" style={button} onClick={downloadMeetMeJointTemplate}>
+          Meet Me Chamber Template
         </button>
         <button type="button" style={button} onClick={downloadStreetCabTemplate}>
           Street Cab Template

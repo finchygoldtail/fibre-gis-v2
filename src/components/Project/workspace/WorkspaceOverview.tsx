@@ -276,7 +276,7 @@ export default function WorkspaceOverview({
           >
             Trace Fibre Route
           </button>
-          <button type="button" style={button} onClick={() => onOpenPanel?.("report", "reports")}>
+          <button type="button" style={button} onClick={() => onOpenPanel?.("none", "reports")}>
             Templates
           </button>
         </div>

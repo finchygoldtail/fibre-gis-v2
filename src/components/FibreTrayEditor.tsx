@@ -292,6 +292,52 @@ function applyStandardRowsToTrayModel(
   return next;
 }
 
+function buildMeetMeContinuityRows(rows: any[][]) {
+  return rows.flatMap((row, index) => {
+    const tray = parseFibreNumber(row?.[1]) || Math.floor(index / 12) + 1;
+    const inputCable = cleanCell(row?.[5]) || "EBCL";
+    const inputFibre = parseFibreNumber(row?.[6]);
+    const outputCable = cleanCell(row?.[7]) || "Feeder";
+    const outputFibre = parseFibreNumber(row?.[8]) ?? inputFibre;
+    const status = cleanCell(row?.[9]) || "Through splice";
+    const notes = cleanCell(row?.[10]);
+    const fibreRefs = Array.from(
+      new Set([inputFibre, outputFibre].filter((value): value is number => value !== null)),
+    );
+
+    if (!fibreRefs.length) return [];
+
+    const label = [
+      `${inputCable} F${inputFibre ?? "?"}`,
+      "spliced to",
+      `${outputCable} F${outputFibre ?? "?"}`,
+      status,
+      notes,
+    ]
+      .filter(Boolean)
+      .join(" - ");
+
+    return fibreRefs.map((fibre) => ({
+      fibre,
+      label,
+      tray,
+      pos: ((fibre - 1) % 12) + 1,
+    }));
+  });
+}
+
+function swapMeetMeFibreRows(rows: any[][], aNo: number, bNo: number) {
+  return rows.map((row) => {
+    const nextRow = [...row];
+    ([6, 8] as const).forEach((index) => {
+      const fibre = parseFibreNumber(nextRow[index]);
+      if (fibre === aNo) nextRow[index] = bNo;
+      if (fibre === bNo) nextRow[index] = aNo;
+    });
+    return nextRow;
+  });
+}
+
 /* -------------------------------------------------------------
   Helpers
 ------------------------------------------------------------- */
@@ -564,11 +610,11 @@ export const FibreTrayEditor: React.FC = () => {
   const [trayFilter, setTrayFilter] = useState<number | "all">("all");
   const trayContainerRef = useRef<HTMLDivElement | null>(null);
   const [isMobileEditor, setIsMobileEditor] = useState(() =>
-    typeof window !== "undefined" ? window.innerWidth < 760 : false,
+    typeof window !== "undefined" ? window.innerWidth < 1100 : false,
   );
 
   useEffect(() => {
-    const update = () => setIsMobileEditor(window.innerWidth < 760);
+    const update = () => setIsMobileEditor(window.innerWidth < 1100);
     update();
     window.addEventListener("resize", update);
     window.addEventListener("orientationchange", update);
@@ -1092,6 +1138,11 @@ export const FibreTrayEditor: React.FC = () => {
     return set;
   }, [searchTerm, model]);
 
+  const meetMeContinuityRows = useMemo(
+    () => (jointType === "Meet Me Chamber" ? buildMeetMeContinuityRows(mappingRows) : []),
+    [jointType, mappingRows],
+  );
+
   const findCell = useCallback(
     (tray: number, pos: number) =>
       model.find((f) => f.tray === tray && f.pos === pos),
@@ -1129,16 +1180,18 @@ export const FibreTrayEditor: React.FC = () => {
       });
 
       setMappingRows((prevRows) =>
-        dedupeMappingRows(
-          prevRows.map((row) => {
-            const fibre = parseFibreNumber(row?.[1]);
-            if (fibre !== aNo && fibre !== bNo) return row;
+        jointType === "Meet Me Chamber"
+          ? swapMeetMeFibreRows(prevRows, aNo, bNo)
+          : dedupeMappingRows(
+              prevRows.map((row) => {
+                const fibre = parseFibreNumber(row?.[1]);
+                if (fibre !== aNo && fibre !== bNo) return row;
 
-            const nextRow = [...row];
-            nextRow[1] = fibre === aNo ? bNo : aNo;
-            return nextRow;
-          }),
-        ),
+                const nextRow = [...row];
+                nextRow[1] = fibre === aNo ? bNo : aNo;
+                return nextRow;
+              }),
+            ),
       );
 
       if (selectedJointId) {
@@ -1776,10 +1829,14 @@ export const FibreTrayEditor: React.FC = () => {
               <div style={trayCanvasSurface}>
                 {jointType === "Meet Me Chamber" ? (
                   <MeetMeTrayView
+                    model={model}
                     mappingRows={mappingRows}
                     searchMatches={searchMatches}
+                    moveMode={moveMode}
+                    moveSrc={moveSrc}
                     selectedFibre={selectedFibre}
                     onSelectFibre={setSelectedFibre}
+                    onFibreClick={handleFibreClick}
                   />
                 ) : jointType === "LMJ (40 trays)" ? (
                   <LMJTrayView
@@ -1912,7 +1969,11 @@ export const FibreTrayEditor: React.FC = () => {
                 selectedFibre={selectedFibre}
               />
             ) : (
-              <ContinuityViewer model={model} selectedFibre={selectedFibre} />
+              <ContinuityViewer
+                model={model}
+                selectedFibre={selectedFibre}
+                extraRows={meetMeContinuityRows}
+              />
             )}
           </div>
         </>

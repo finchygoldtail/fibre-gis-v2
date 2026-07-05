@@ -1,4 +1,6 @@
 import React, { useMemo } from "react";
+import type { FibreCell } from "../logic/jointConfig";
+import { getColourForFibre } from "../logic/fibreColours";
 
 function cleanCell(value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -27,10 +29,14 @@ type MeetMeSpliceRow = {
 };
 
 type Props = {
+  model: FibreCell[];
   mappingRows: any[][];
   searchMatches: Set<number>;
+  moveMode?: boolean;
+  moveSrc?: FibreCell | null;
   selectedFibre: number | null;
   onSelectFibre: (fibre: number | null) => void;
+  onFibreClick?: (cell: FibreCell) => void;
 };
 
 function buildSpliceRows(mappingRows: any[][]): MeetMeSpliceRow[] {
@@ -61,14 +67,18 @@ function buildSpliceRows(mappingRows: any[][]): MeetMeSpliceRow[] {
 }
 
 function short(value: string, fallback: string) {
-  return value.length > 24 ? `${value.slice(0, 21)}…` : value || fallback;
+  return value.length > 24 ? `${value.slice(0, 21)}...` : value || fallback;
 }
 
 export default function MeetMeTrayView({
+  model,
   mappingRows,
   searchMatches,
+  moveMode = false,
+  moveSrc = null,
   selectedFibre,
   onSelectFibre,
+  onFibreClick,
 }: Props) {
   const rows = useMemo(() => buildSpliceRows(mappingRows), [mappingRows]);
   const grouped = useMemo(() => {
@@ -80,6 +90,19 @@ export default function MeetMeTrayView({
     });
     return Array.from(byTray.entries()).sort((a, b) => a[0] - b[0]);
   }, [rows]);
+  const modelByTray = useMemo(() => {
+    const byTray = new Map<number, FibreCell[]>();
+    model.forEach((cell) => {
+      const tray = cell.tray + 1;
+      const list = byTray.get(tray) || [];
+      list.push(cell);
+      byTray.set(tray, list);
+    });
+    byTray.forEach((list) =>
+      list.sort((a, b) => a.pos - b.pos || a.globalNo - b.globalNo),
+    );
+    return byTray;
+  }, [model]);
 
   if (!rows.length) {
     return (
@@ -105,6 +128,80 @@ export default function MeetMeTrayView({
       {grouped.map(([tray, trayRows]) => (
         <div key={tray} style={trayCard}>
           <div style={trayTitle}>Splice Tray {tray}</div>
+          {(() => {
+            const visualRows = buildVisualSpliceRows(tray, trayRows);
+            return (
+              <>
+          <div style={spliceMatrix}>
+            <div style={rowLabel}>EBCL / Input</div>
+            <div style={fibreButtonGrid}>
+              {Array.from({ length: 12 }, (_, index) =>
+                renderFibreButton({
+                  tray,
+                  localFibre: index + 1,
+                  fibreNo: getTrayGlobalFibre(tray, index + 1),
+                  modelByTray,
+                  searchMatches,
+                  selectedFibre,
+                  moveMode,
+                  moveSrc,
+                  onSelectFibre,
+                  onFibreClick,
+                }),
+              )}
+            </div>
+
+            <svg viewBox="0 0 1200 86" preserveAspectRatio="none" style={spliceSvg}>
+              {visualRows.map((row) => {
+                  const inputLocal = getLocalFibre(row.inputFibre);
+                  const outputLocal = getLocalFibre(row.outputFibre);
+                  const x1 = getColumnX(inputLocal);
+                  const x2 = getColumnX(outputLocal);
+                  const selected =
+                    selectedFibre === row.inputFibre || selectedFibre === row.outputFibre;
+                  const matched =
+                    (row.inputFibre !== null && searchMatches.has(row.inputFibre)) ||
+                    (row.outputFibre !== null && searchMatches.has(row.outputFibre));
+                  return (
+                    <g key={`${row.id}-line`}>
+                      <path
+                        d={`M ${x1} 4 C ${x1} 34, ${x2} 52, ${x2} 82`}
+                        fill="none"
+                        stroke={selected ? "#60a5fa" : matched ? "#facc15" : "#38bdf8"}
+                        strokeWidth={selected || matched ? 5 : 3}
+                        opacity={selected || matched ? 0.95 : 0.72}
+                      />
+                      <circle cx={x1} cy={4} r={5} fill="#0ea5e9" />
+                      <circle cx={x2} cy={82} r={5} fill="#0ea5e9" />
+                    </g>
+                  );
+                })}
+            </svg>
+
+            <div style={rowLabel}>Feeder / Output</div>
+            <div style={fibreButtonGrid}>
+              {Array.from({ length: 12 }, (_, index) => {
+                const localFibre = index + 1;
+                const mappedRow = trayRows.find((row) => getLocalFibre(row.outputFibre) === localFibre);
+                return renderFibreButton({
+                  tray,
+                  localFibre,
+                  fibreNo: mappedRow?.outputFibre ?? getTrayGlobalFibre(tray, localFibre),
+                  modelByTray,
+                  searchMatches,
+                  selectedFibre,
+                  moveMode,
+                  moveSrc,
+                  onSelectFibre,
+                  onFibreClick,
+                });
+              })}
+            </div>
+          </div>
+              </>
+            );
+          })()}
+
           <div style={gridHeader}>
             <span>EBCL / Input</span>
             <span style={{ textAlign: "center" }}>Through splice</span>
@@ -135,7 +232,7 @@ export default function MeetMeTrayView({
                 <span style={spliceLine}>
                   <span style={dot} />
                   <span style={line} />
-                  <span style={arrow}>→</span>
+                  <span style={arrow}>-&gt;</span>
                   <span style={line} />
                   <span style={dot} />
                 </span>
@@ -146,7 +243,7 @@ export default function MeetMeTrayView({
                 </span>
 
                 {(row.status || row.notes) && (
-                  <span style={noteText}>{[row.status, row.notes].filter(Boolean).join(" · ")}</span>
+                  <span style={noteText}>{[row.status, row.notes].filter(Boolean).join(" - ")}</span>
                 )}
               </button>
             );
@@ -155,6 +252,120 @@ export default function MeetMeTrayView({
       ))}
     </div>
   );
+}
+
+function renderFibreButton({
+  tray,
+  localFibre,
+  fibreNo,
+  modelByTray,
+  searchMatches,
+  selectedFibre,
+  moveMode,
+  moveSrc,
+  onSelectFibre,
+  onFibreClick,
+}: {
+  tray: number;
+  localFibre: number;
+  fibreNo: number;
+  modelByTray: Map<number, FibreCell[]>;
+  searchMatches: Set<number>;
+  selectedFibre: number | null;
+  moveMode: boolean;
+  moveSrc: FibreCell | null;
+  onSelectFibre: (fibre: number | null) => void;
+  onFibreClick?: (cell: FibreCell) => void;
+}) {
+  const cell =
+    modelByTray.get(tray)?.find((item) => item.globalNo === fibreNo) ||
+    modelByTray.get(tray)?.find((item) => item.pos === localFibre - 1);
+  const colour = getColourForFibre(localFibre - 1);
+  const selected = selectedFibre === fibreNo;
+  const matched = searchMatches.has(fibreNo);
+  const isMoveSource = moveMode && moveSrc?.globalNo === fibreNo;
+
+  return (
+    <button
+      key={`${tray}-${localFibre}-${fibreNo}`}
+      type="button"
+      onClick={() => {
+        if (cell && onFibreClick) {
+          onFibreClick(cell);
+          return;
+        }
+        onSelectFibre(fibreNo);
+      }}
+      style={{
+        ...fibreButton,
+        background: colour,
+        color: getTextColour(colour),
+        borderColor: isMoveSource
+          ? "#ffffff"
+          : selected
+            ? "#60a5fa"
+            : matched
+              ? "#facc15"
+              : "#334155",
+        boxShadow: isMoveSource
+          ? "0 0 0 3px rgba(249, 115, 22, 0.45)"
+          : selected || matched
+            ? "0 0 0 3px rgba(96, 165, 250, 0.22)"
+            : "none",
+      }}
+      title={`Tray ${tray} F${fibreNo}`}
+    >
+      F{localFibre}
+    </button>
+  );
+}
+
+function buildVisualSpliceRows(tray: number, rows: MeetMeSpliceRow[]): MeetMeSpliceRow[] {
+  const byInputLocal = new Map<number, MeetMeSpliceRow>();
+  rows.forEach((row) => {
+    const inputLocal = getLocalFibre(row.inputFibre ?? row.outputFibre);
+    if (!byInputLocal.has(inputLocal)) byInputLocal.set(inputLocal, row);
+  });
+
+  return Array.from({ length: 12 }, (_, index) => {
+    const localFibre = index + 1;
+    const mapped = byInputLocal.get(localFibre);
+    if (mapped) return mapped;
+
+    const globalFibre = getTrayGlobalFibre(tray, localFibre);
+    return {
+      id: `visual-splice-${tray}-${localFibre}`,
+      tray,
+      inputCable: "EBCL",
+      inputFibre: globalFibre,
+      outputCable: "Feeder",
+      outputFibre: globalFibre,
+      status: "Visual path",
+      notes: "",
+    };
+  });
+}
+
+function getTrayGlobalFibre(tray: number, localFibre: number) {
+  return (tray - 1) * 12 + localFibre;
+}
+
+function getLocalFibre(fibre: number | null) {
+  if (!fibre || !Number.isFinite(fibre)) return 1;
+  return ((fibre - 1) % 12) + 1;
+}
+
+function getColumnX(localFibre: number) {
+  return ((localFibre - 0.5) / 12) * 1200;
+}
+
+function getTextColour(bg: string): string {
+  const hex = bg.replace("#", "");
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+  return brightness > 150 ? "#000000" : "#ffffff";
 }
 
 const wrapper: React.CSSProperties = {
@@ -181,6 +392,48 @@ const trayTitle: React.CSSProperties = {
   color: "#e5e7eb",
   fontWeight: 900,
   marginBottom: 8,
+};
+
+const spliceMatrix: React.CSSProperties = {
+  display: "grid",
+  gap: 6,
+  marginBottom: 10,
+};
+
+const rowLabel: React.CSSProperties = {
+  color: "#93c5fd",
+  fontSize: 11,
+  fontWeight: 850,
+};
+
+const fibreButtonGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(12, minmax(34px, 1fr))",
+  gap: 7,
+  marginBottom: 10,
+  background: "#0b1220",
+  border: "1px solid rgba(148, 163, 184, 0.16)",
+  borderRadius: 10,
+  padding: 8,
+};
+
+const spliceSvg: React.CSSProperties = {
+  width: "100%",
+  height: 86,
+  display: "block",
+  background: "rgba(2, 6, 23, 0.55)",
+  border: "1px solid rgba(148, 163, 184, 0.12)",
+  borderRadius: 10,
+};
+
+const fibreButton: React.CSSProperties = {
+  height: 34,
+  minWidth: 34,
+  border: "2px solid #334155",
+  borderRadius: 8,
+  fontWeight: 950,
+  fontSize: 12,
+  cursor: "pointer",
 };
 
 const gridHeader: React.CSSProperties = {

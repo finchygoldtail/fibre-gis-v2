@@ -4,17 +4,26 @@ import type { FibreCell } from "../logic/jointConfig";
 type Props = {
   model: FibreCell[];
   selectedFibre: number | null;
+  extraRows?: ContinuityRow[];
+};
+
+type ContinuityRow = {
+  fibre: number;
+  label: string;
+  tray: number;
+  pos: number;
 };
 
 export const ContinuityViewer: React.FC<Props> = ({
   model,
   selectedFibre,
+  extraRows = [],
 }) => {
   const [filter, setFilter] = useState("");
   const [search, setSearch] = useState("");
 
   const rows = useMemo(() => {
-    return model
+    const labelledModelRows = model
       .filter((f) => f.label.trim())
       .sort((a, b) => a.globalNo - b.globalNo)
       .map((f) => ({
@@ -23,7 +32,15 @@ export const ContinuityViewer: React.FC<Props> = ({
         tray: f.tray + 1,
         pos: f.pos + 1,
       }));
-  }, [model]);
+
+    const byFibre = new Map<number, ContinuityRow>();
+    [...labelledModelRows, ...extraRows].forEach((row) => {
+      if (!Number.isFinite(row.fibre) || !row.label.trim()) return;
+      byFibre.set(row.fibre, row);
+    });
+
+    return Array.from(byFibre.values()).sort((a, b) => a.fibre - b.fibre);
+  }, [model, extraRows]);
 
   const filteredRows = useMemo(() => {
     const term = filter.trim().toLowerCase();

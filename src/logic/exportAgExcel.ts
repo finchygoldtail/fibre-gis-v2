@@ -173,3 +173,19 @@ export function downloadCmjJointTemplate() {
 
   XLSX.writeFile(buildTemplateWorkbook("Alistra GIS CMJ Joint Blank Template", "CMJ Joint Template", columns), "Alistra_GIS_CMJ_Joint_Template.xlsx");
 }
+
+export function downloadMeetMeJointTemplate() {
+  const columns: TemplateColumn[] = [
+    { key: "Meet Me Chamber Name", required: true, description: "Meet Me chamber / LMJ reference as it appears on the map.", example: "Meet Me LMJ01" },
+    { key: "Tray", required: true, description: "Splice tray number inside the Meet Me chamber.", example: 1 },
+    { key: "Position", description: "Position within the tray, normally 1 to 12.", example: 12 },
+    { key: "EBCL / Input Cable", required: true, description: "Incoming EBCL or provider input cable reference.", example: "EBCL18320685" },
+    { key: "Input Fibre", required: true, description: "Input fibre number on the EBCL / input cable.", example: 12 },
+    { key: "Feeder / Output Cable", required: true, description: "Outgoing feeder cable reference.", example: "BD-BAW-FC001" },
+    { key: "Output Fibre", required: true, description: "Output fibre number on the feeder cable.", example: 12 },
+    { key: "Splice Type", description: "Through splice, spare, reserved or local wording.", example: "through splice" },
+    { key: "Notes", description: "Engineer notes or supplier reference.", example: "Meet-me fibre-to-fibre continuity" },
+  ];
+
+  XLSX.writeFile(buildTemplateWorkbook("Alistra GIS Meet Me Chamber Blank Template", "Meet Me Template", columns), "Alistra_GIS_Meet_Me_Chamber_Template.xlsx");
+}
