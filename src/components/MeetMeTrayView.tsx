@@ -36,38 +36,26 @@ type Props = {
   moveSrc?: FibreCell | null;
   selectedFibre: number | null;
   onSelectFibre: (fibre: number | null) => void;
-  onFibreClick?: (cell: FibreCell) => void;
+  onFibreClick?: (cell: FibreCell, target?: { side: "input" | "output"; tray: number; localFibre: number }) => void;
 };
 
 function buildSpliceRows(mappingRows: any[][]): MeetMeSpliceRow[] {
   if (!Array.isArray(mappingRows)) return [];
 
   return mappingRows
-    .map((row, index) => {
-      const tray = parseFibre(row?.[1]) || Math.floor(index / 12) + 1;
-      const inputCable = cleanCell(row?.[5]) || "EBCL";
-      const inputFibre = parseFibre(row?.[6]);
-      const outputCable = cleanCell(row?.[7]) || "Feeder";
-      const outputFibre = parseFibre(row?.[8]) ?? inputFibre;
-      const status = cleanCell(row?.[9]);
-      const notes = cleanCell(row?.[10]);
-
-      return {
-        id: `meet-me-splice-${index}`,
-        tray,
-        inputCable,
-        inputFibre,
-        outputCable,
-        outputFibre,
-        status,
-        notes,
-      };
-    })
+    .flatMap((row, index) =>
+      readMeetMeRows(row, index).map((fields, spliceIndex) => ({
+        id: `meet-me-splice-${index}-${spliceIndex}`,
+        tray: fields.tray,
+        inputCable: fields.inputCable,
+        inputFibre: fields.inputFibre,
+        outputCable: fields.outputCable,
+        outputFibre: fields.outputFibre,
+        status: fields.status,
+        notes: fields.notes,
+      })),
+    )
     .filter((row) => row.inputFibre !== null || row.outputFibre !== null || row.inputCable || row.outputCable);
-}
-
-function short(value: string, fallback: string) {
-  return value.length > 24 ? `${value.slice(0, 21)}...` : value || fallback;
 }
 
 export default function MeetMeTrayView({
@@ -102,6 +90,11 @@ export default function MeetMeTrayView({
       list.sort((a, b) => a.pos - b.pos || a.globalNo - b.globalNo),
     );
     return byTray;
+  }, [model]);
+  const modelByGlobalNo = useMemo(() => {
+    const byGlobalNo = new Map<number, FibreCell>();
+    model.forEach((cell) => byGlobalNo.set(cell.globalNo, cell));
+    return byGlobalNo;
   }, [model]);
 
   if (!rows.length) {
@@ -141,12 +134,14 @@ export default function MeetMeTrayView({
                   localFibre: index + 1,
                   fibreNo: getTrayGlobalFibre(tray, index + 1),
                   modelByTray,
+                  modelByGlobalNo,
                   searchMatches,
                   selectedFibre,
                   moveMode,
                   moveSrc,
                   onSelectFibre,
                   onFibreClick,
+                  side: "input",
                 }),
               )}
             </div>
@@ -188,12 +183,14 @@ export default function MeetMeTrayView({
                   localFibre,
                   fibreNo: mappedRow?.outputFibre ?? getTrayGlobalFibre(tray, localFibre),
                   modelByTray,
+                  modelByGlobalNo,
                   searchMatches,
                   selectedFibre,
                   moveMode,
                   moveSrc,
                   onSelectFibre,
                   onFibreClick,
+                  side: "output",
                 });
               })}
             </div>
@@ -202,52 +199,52 @@ export default function MeetMeTrayView({
             );
           })()}
 
-          <div style={gridHeader}>
-            <span>EBCL / Input</span>
-            <span style={{ textAlign: "center" }}>Through splice</span>
-            <span style={{ textAlign: "right" }}>Feeder / Output</span>
-          </div>
+          {trayRows.filter((row) => getLocalFibre(row.inputFibre) !== getLocalFibre(row.outputFibre)).length > 0 && (
+            <>
+              <div style={gridHeader}>
+                <span>EBCL</span>
+                <span style={{ textAlign: "center" }}>Splice</span>
+                <span style={{ textAlign: "right" }}>Feeder</span>
+              </div>
 
-          {trayRows.map((row) => {
-            const fibreNo = row.inputFibre ?? row.outputFibre;
-            const selected = fibreNo !== null && selectedFibre === fibreNo;
-            const matched = fibreNo !== null && searchMatches.has(fibreNo);
+              {trayRows
+                .filter((row) => getLocalFibre(row.inputFibre) !== getLocalFibre(row.outputFibre))
+                .map((row) => {
+                const fibreNo = row.inputFibre ?? row.outputFibre;
+                const selected = fibreNo !== null && selectedFibre === fibreNo;
+                const matched = fibreNo !== null && searchMatches.has(fibreNo);
 
-            return (
-              <button
-                key={row.id}
-                type="button"
-                onClick={() => onSelectFibre(fibreNo)}
-                style={{
-                  ...spliceRow,
-                  borderColor: selected ? "#60a5fa" : matched ? "#facc15" : "#334155",
-                  background: selected ? "#172554" : matched ? "#422006" : "#0f172a",
-                }}
-              >
-                <span style={sideText}>
-                  <strong>{short(row.inputCable, "EBCL")}</strong>
-                  <small>F{row.inputFibre ?? "?"}</small>
-                </span>
+                return (
+                  <button
+                    key={row.id}
+                    type="button"
+                    onClick={() => onSelectFibre(fibreNo)}
+                    style={{
+                      ...spliceRow,
+                      borderColor: selected ? "#60a5fa" : matched ? "#facc15" : "#334155",
+                      background: selected ? "#172554" : matched ? "#422006" : "#0f172a",
+                    }}
+                  >
+                    <span style={sideText}>
+                      <strong>{formatLocalFibre(row.inputFibre)}</strong>
+                    </span>
 
-                <span style={spliceLine}>
-                  <span style={dot} />
-                  <span style={line} />
-                  <span style={arrow}>-&gt;</span>
-                  <span style={line} />
-                  <span style={dot} />
-                </span>
+                    <span style={spliceLine}>
+                      <span style={dot} />
+                      <span style={line} />
+                      <span style={arrow}>-&gt;</span>
+                      <span style={line} />
+                      <span style={dot} />
+                    </span>
 
-                <span style={{ ...sideText, textAlign: "right" }}>
-                  <strong>{short(row.outputCable, "Feeder")}</strong>
-                  <small>F{row.outputFibre ?? "?"}</small>
-                </span>
-
-                {(row.status || row.notes) && (
-                  <span style={noteText}>{[row.status, row.notes].filter(Boolean).join(" - ")}</span>
-                )}
-              </button>
-            );
-          })}
+                    <span style={{ ...sideText, textAlign: "right" }}>
+                      <strong>{formatLocalFibre(row.outputFibre)}</strong>
+                    </span>
+                  </button>
+                );
+              })}
+            </>
+          )}
         </div>
       ))}
     </div>
@@ -259,26 +256,30 @@ function renderFibreButton({
   localFibre,
   fibreNo,
   modelByTray,
+  modelByGlobalNo,
   searchMatches,
   selectedFibre,
   moveMode,
   moveSrc,
   onSelectFibre,
   onFibreClick,
+  side,
 }: {
   tray: number;
   localFibre: number;
   fibreNo: number;
   modelByTray: Map<number, FibreCell[]>;
+  modelByGlobalNo: Map<number, FibreCell>;
   searchMatches: Set<number>;
   selectedFibre: number | null;
   moveMode: boolean;
   moveSrc: FibreCell | null;
   onSelectFibre: (fibre: number | null) => void;
-  onFibreClick?: (cell: FibreCell) => void;
+  onFibreClick?: (cell: FibreCell, target?: { side: "input" | "output"; tray: number; localFibre: number }) => void;
+  side: "input" | "output";
 }) {
   const cell =
-    modelByTray.get(tray)?.find((item) => item.globalNo === fibreNo) ||
+    modelByGlobalNo.get(fibreNo) ||
     modelByTray.get(tray)?.find((item) => item.pos === localFibre - 1);
   const colour = getColourForFibre(localFibre - 1);
   const selected = selectedFibre === fibreNo;
@@ -291,7 +292,7 @@ function renderFibreButton({
       type="button"
       onClick={() => {
         if (cell && onFibreClick) {
-          onFibreClick(cell);
+          onFibreClick(cell, { side, tray, localFibre });
           return;
         }
         onSelectFibre(fibreNo);
@@ -313,7 +314,7 @@ function renderFibreButton({
             ? "0 0 0 3px rgba(96, 165, 250, 0.22)"
             : "none",
       }}
-      title={`Tray ${tray} F${fibreNo}`}
+      title={`Tray ${tray} ${side === "output" ? "Output" : "Input"} F${localFibre}`}
     >
       F{localFibre}
     </button>
@@ -353,6 +354,55 @@ function getTrayGlobalFibre(tray: number, localFibre: number) {
 function getLocalFibre(fibre: number | null) {
   if (!fibre || !Number.isFinite(fibre)) return 1;
   return ((fibre - 1) % 12) + 1;
+}
+
+function formatLocalFibre(fibre: number | null) {
+  return fibre ? `F${getLocalFibre(fibre)}` : "F?";
+}
+
+function readMeetMeRow(row: any[], rowIndex: number) {
+  return readMeetMeRows(row, rowIndex)[0];
+}
+
+function readMeetMeRows(row: any[], rowIndex: number) {
+  const tray = parseFibre(row?.[1]) || Math.floor(rowIndex / 12) + 1;
+  const inputLocalFibres = parseMeetMeFibreRange(row?.[3]);
+  const outputLocalFibres = parseMeetMeFibreRange(row?.[5]);
+  const fallbackLocalFibres = inputLocalFibres.length ? inputLocalFibres : outputLocalFibres;
+  const maxLength = Math.max(inputLocalFibres.length, outputLocalFibres.length, fallbackLocalFibres.length, 1);
+
+  return Array.from({ length: maxLength }, (_, index) => {
+    const inputLocalFibre = inputLocalFibres[index] ?? fallbackLocalFibres[index] ?? null;
+    const outputLocalFibre = outputLocalFibres[index] ?? inputLocalFibre;
+
+    return {
+    tray,
+    position: inputLocalFibre ?? outputLocalFibre ?? 1,
+    inputCable: cleanCell(row?.[2]) || "EBCL",
+    inputFibre: inputLocalFibre ? getTrayGlobalFibre(tray, inputLocalFibre) : null,
+    outputCable: cleanCell(row?.[4]) || "Feeder",
+    outputFibre: outputLocalFibre ? getTrayGlobalFibre(tray, outputLocalFibre) : null,
+    status: cleanCell(row?.[6]),
+    notes: cleanCell(row?.[7]),
+    };
+  });
+}
+
+function parseMeetMeFibreRange(value: unknown): number[] {
+  const text = cleanCell(value);
+  if (!text) return [];
+
+  const range = text.match(/F?\s*(\d{1,4})\s*-\s*F?\s*(\d{1,4})/i);
+  if (range) {
+    const start = Number(range[1]);
+    const end = Number(range[2]);
+    if (Number.isFinite(start) && Number.isFinite(end) && end >= start) {
+      return Array.from({ length: end - start + 1 }, (_, index) => ((start + index - 1) % 12) + 1);
+    }
+  }
+
+  const single = parseFibre(value);
+  return single === null ? [] : [((single - 1) % 12) + 1];
 }
 
 function getColumnX(localFibre: number) {
@@ -489,13 +539,6 @@ const line: React.CSSProperties = {
 const arrow: React.CSSProperties = {
   color: "#bfdbfe",
   fontWeight: 900,
-};
-
-const noteText: React.CSSProperties = {
-  gridColumn: "1 / 4",
-  color: "#94a3b8",
-  fontSize: 11,
-  textAlign: "left",
 };
 
 const emptyState: React.CSSProperties = {

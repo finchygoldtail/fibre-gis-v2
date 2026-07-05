@@ -14,6 +14,11 @@ type ContinuityRow = {
   pos: number;
 };
 
+function formatFibreLabel(row: ContinuityRow) {
+  const localLabel = `F${row.pos}`;
+  return row.fibre === row.pos ? localLabel : `${localLabel} (Fibre ${row.fibre})`;
+}
+
 export const ContinuityViewer: React.FC<Props> = ({
   model,
   selectedFibre,
@@ -125,7 +130,7 @@ export const ContinuityViewer: React.FC<Props> = ({
             whiteSpace: "pre-wrap",
           }}
         >
-          <strong>Selected Fibre:</strong> {selectedRow.fibre}
+          <strong>Selected Fibre:</strong> {formatFibreLabel(selectedRow)}
           {"\n"}
           <strong>Tray:</strong> {selectedRow.tray}
           {"\n"}
@@ -163,6 +168,7 @@ export const ContinuityViewer: React.FC<Props> = ({
           filteredRows.map((r) => {
             const isSelected = selectedFibre === r.fibre;
             const isHighlighted = highlightedRows.has(r.fibre);
+            const fibreLabel = formatFibreLabel(r);
 
             return (
               <div
@@ -181,7 +187,7 @@ export const ContinuityViewer: React.FC<Props> = ({
                 }}
               >
                 <div style={{ fontWeight: 700 }}>
-                  Fibre {r.fibre} — Tray {r.tray}, Pos {r.pos}
+                  {fibreLabel} - Tray {r.tray}, Pos {r.pos}
                 </div>
                 <div style={{ marginTop: 4, color: "#d1d5db" }}>{r.label}</div>
               </div>

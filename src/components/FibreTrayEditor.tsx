@@ -294,48 +294,206 @@ function applyStandardRowsToTrayModel(
 
 function buildMeetMeContinuityRows(rows: any[][]) {
   return rows.flatMap((row, index) => {
-    const tray = parseFibreNumber(row?.[1]) || Math.floor(index / 12) + 1;
-    const inputCable = cleanCell(row?.[5]) || "EBCL";
-    const inputFibre = parseFibreNumber(row?.[6]);
-    const outputCable = cleanCell(row?.[7]) || "Feeder";
-    const outputFibre = parseFibreNumber(row?.[8]) ?? inputFibre;
-    const status = cleanCell(row?.[9]) || "Through splice";
-    const notes = cleanCell(row?.[10]);
-    const fibreRefs = Array.from(
-      new Set([inputFibre, outputFibre].filter((value): value is number => value !== null)),
-    );
+    return readMeetMeRows(row, index).flatMap((fields) => {
+      const { tray, inputCable, inputFibre, outputCable, outputFibre, status, notes } = fields;
+      const fibreRefs = Array.from(
+        new Set([inputFibre, outputFibre].filter((value): value is number => value !== null)),
+      );
 
-    if (!fibreRefs.length) return [];
+      if (!fibreRefs.length) return [];
 
-    const label = [
-      `${inputCable} F${inputFibre ?? "?"}`,
-      "spliced to",
-      `${outputCable} F${outputFibre ?? "?"}`,
-      status,
-      notes,
-    ]
-      .filter(Boolean)
-      .join(" - ");
+      const label = [
+        `${inputCable} ${formatMeetMeLocalFibre(inputFibre)}`,
+        "spliced to",
+        `${outputCable} ${formatMeetMeLocalFibre(outputFibre)}`,
+        status,
+        notes,
+      ]
+        .filter(Boolean)
+        .join(" - ");
 
-    return fibreRefs.map((fibre) => ({
-      fibre,
-      label,
-      tray,
-      pos: ((fibre - 1) % 12) + 1,
-    }));
+      return fibreRefs.map((fibre) => ({
+        fibre,
+        label,
+        tray,
+        pos: ((fibre - 1) % 12) + 1,
+      }));
+    });
   });
 }
 
 function swapMeetMeFibreRows(rows: any[][], aNo: number, bNo: number) {
   return rows.map((row) => {
     const nextRow = [...row];
-    ([6, 8] as const).forEach((index) => {
-      const fibre = parseFibreNumber(nextRow[index]);
-      if (fibre === aNo) nextRow[index] = bNo;
-      if (fibre === bNo) nextRow[index] = aNo;
+    const fields = readMeetMeRow(nextRow, 0);
+    ([3, 5] as const).forEach((index, sideIndex) => {
+      const fibre = sideIndex === 0 ? fields.inputFibre : fields.outputFibre;
+      if (fibre === aNo) nextRow[index] = getMeetMeLocalFibre(bNo) ?? bNo;
+      if (fibre === bNo) nextRow[index] = getMeetMeLocalFibre(aNo) ?? aNo;
     });
     return nextRow;
   });
+}
+
+function swapMeetMeFibreRowsOnSide(rows: any[][], aNo: number, bNo: number, side: "input" | "output") {
+  return rows.map((row) => {
+    const nextRow = [...row];
+    const fields = readMeetMeRow(nextRow, 0);
+    const index = side === "input" ? 3 : 5;
+    const fibre = side === "input" ? fields.inputFibre : fields.outputFibre;
+    if (fibre === aNo) nextRow[index] = getMeetMeLocalFibre(bNo) ?? bNo;
+    if (fibre === bNo) nextRow[index] = getMeetMeLocalFibre(aNo) ?? aNo;
+    return nextRow;
+  });
+}
+
+function swapMeetMeFibreRowsBetweenTargets(
+  rows: any[][],
+  source: MeetMeMoveTarget,
+  destination: MeetMeMoveTarget,
+) {
+  if (source.tray !== destination.tray) return rows;
+
+  if (source.side !== destination.side) {
+    const fromSide = source.side;
+    const toSide = destination.side;
+    const fromIndex = fromSide === "input" ? 3 : 5;
+    const toIndex = toSide === "input" ? 3 : 5;
+    let previousTargetLocal: number | null = null;
+
+    const nextRows = rows.map((row, rowIndex) => {
+      const fields = readMeetMeRow(row, rowIndex);
+      if (fields.tray !== source.tray) return row;
+
+      const sourceLocal =
+        fromSide === "input"
+          ? getMeetMeLocalFibre(fields.inputFibre)
+          : getMeetMeLocalFibre(fields.outputFibre);
+
+      if (sourceLocal !== source.localFibre) return row;
+
+      const nextRow = [...row];
+      previousTargetLocal = parseFibreNumber(nextRow[toIndex]);
+      nextRow[toIndex] = destination.localFibre;
+      return nextRow;
+    });
+
+    if (previousTargetLocal === null) return nextRows;
+
+    return nextRows.map((row, rowIndex) => {
+      const fields = readMeetMeRow(row, rowIndex);
+      if (fields.tray !== destination.tray) return row;
+
+      const targetLocal =
+        toSide === "input"
+          ? getMeetMeLocalFibre(fields.inputFibre)
+          : getMeetMeLocalFibre(fields.outputFibre);
+      const oppositeLocal =
+        fromSide === "input"
+          ? getMeetMeLocalFibre(fields.inputFibre)
+          : getMeetMeLocalFibre(fields.outputFibre);
+
+      if (targetLocal !== destination.localFibre || oppositeLocal === source.localFibre) return row;
+
+      const nextRow = [...row];
+      nextRow[toIndex] = previousTargetLocal;
+      return nextRow;
+    });
+  }
+
+  return rows.map((row, rowIndex) => {
+    const fields = readMeetMeRow(row, rowIndex);
+    if (fields.tray !== source.tray) return row;
+
+    const nextRow = [...row];
+    const index = source.side === "input" ? 3 : 5;
+    const fibre = parseFibreNumber(nextRow[index]);
+    const localFibre = fibre;
+
+    if (localFibre === source.localFibre) {
+      nextRow[index] = destination.localFibre;
+    }
+    if (localFibre === destination.localFibre) {
+      nextRow[index] = source.localFibre;
+    }
+
+    return nextRow;
+  });
+}
+
+function getMeetMeLocalFibre(fibre: number | null) {
+  if (!fibre || !Number.isFinite(fibre)) return null;
+  return ((fibre - 1) % 12) + 1;
+}
+
+function formatMeetMeLocalFibre(fibre: number | null) {
+  const local = getMeetMeLocalFibre(fibre);
+  return local ? `F${local}` : "F?";
+}
+
+function getMeetMeGlobalFibre(tray: number, localFibre: number | null) {
+  if (!localFibre || !Number.isFinite(localFibre)) return null;
+  return (tray - 1) * 12 + localFibre;
+}
+
+function readMeetMeRow(row: any[], rowIndex: number) {
+  return readMeetMeRows(row, rowIndex)[0];
+}
+
+function readMeetMeRows(row: any[], rowIndex: number) {
+  const tray = parseFibreNumber(row?.[1]) || Math.floor(rowIndex / 12) + 1;
+  const inputLocalFibres = parseMeetMeFibreRange(row?.[3]);
+  const outputLocalFibres = parseMeetMeFibreRange(row?.[5]);
+  const fallbackLocalFibres = inputLocalFibres.length ? inputLocalFibres : outputLocalFibres;
+  const maxLength = Math.max(inputLocalFibres.length, outputLocalFibres.length, fallbackLocalFibres.length, 1);
+
+  return Array.from({ length: maxLength }, (_, index) => {
+    const inputLocalFibre = inputLocalFibres[index] ?? fallbackLocalFibres[index] ?? null;
+    const outputLocalFibre = outputLocalFibres[index] ?? inputLocalFibre;
+
+    return {
+    tray,
+    position: inputLocalFibre ?? outputLocalFibre ?? 1,
+    inputCable: cleanCell(row?.[2]) || "EBCL",
+    inputFibre: getMeetMeGlobalFibre(tray, inputLocalFibre),
+    outputCable: cleanCell(row?.[4]) || "Feeder",
+    outputFibre: getMeetMeGlobalFibre(tray, outputLocalFibre),
+    status: cleanCell(row?.[6]) || "Through splice",
+    notes: cleanCell(row?.[7]),
+    };
+  });
+}
+
+function parseMeetMeFibreRange(value: any): number[] {
+  const text = cleanCell(value);
+  if (!text) return [];
+
+  const range = text.match(/F?\s*(\d{1,4})\s*-\s*F?\s*(\d{1,4})/i);
+  if (range) {
+    const start = Number(range[1]);
+    const end = Number(range[2]);
+    if (Number.isFinite(start) && Number.isFinite(end) && end >= start) {
+      return Array.from({ length: end - start + 1 }, (_, index) => ((start + index - 1) % 12) + 1);
+    }
+  }
+
+  const single = parseFibreNumber(value);
+  return single === null ? [] : [((single - 1) % 12) + 1];
+}
+
+function normalizeMeetMeRows(rows: any[][]) {
+  return rows.flatMap((row, rowIndex) =>
+    readMeetMeRows(row, rowIndex).map((fields) => [
+      cleanCell(row?.[0]) || "Meet Me Chamber",
+      fields.tray,
+      fields.inputCable,
+      getMeetMeLocalFibre(fields.inputFibre) ?? "",
+      fields.outputCable,
+      getMeetMeLocalFibre(fields.outputFibre) ?? "",
+      fields.status,
+      fields.notes,
+    ]),
+  );
 }
 
 /* -------------------------------------------------------------
@@ -461,10 +619,9 @@ function looksLikeMeetMeRows(rows: any[][]): boolean {
 
   const hasFibreToFibreRows = rows.some((row) => {
     if (!Array.isArray(row)) return false;
-    const cableId = cleanCell(row[5]).toUpperCase();
-    const inputFibre = parseFibreNumber(row[6]);
-    const feederCable = cleanCell(row[7]).toUpperCase();
-    const outputFibre = parseFibreNumber(row[8]);
+    const { inputCable, inputFibre, outputCable, outputFibre } = readMeetMeRow(row, 0);
+    const cableId = inputCable.toUpperCase();
+    const feederCable = outputCable.toUpperCase();
 
     return Boolean(
       (cableId.includes("EBCL") || cableId.includes("E-BCL") || cableId.includes("BCL")) &&
@@ -571,6 +728,12 @@ type PendingFibreMove = {
   movedAt: string;
 };
 
+type MeetMeMoveTarget = {
+  side: "input" | "output";
+  tray: number;
+  localFibre: number;
+};
+
 /* -------------------------------------------------------------
   MAIN COMPONENT
 ------------------------------------------------------------- */
@@ -603,6 +766,7 @@ export const FibreTrayEditor: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [moveMode, setMoveMode] = useState(false);
   const [moveSrc, setMoveSrc] = useState<FibreCell | null>(null);
+  const [moveSrcMeetMeTarget, setMoveSrcMeetMeTarget] = useState<MeetMeMoveTarget | null>(null);
   const [selectedFibre, setSelectedFibre] = useState<number | null>(null);
   const [pendingFibreMoves, setPendingFibreMoves] = useState<PendingFibreMove[]>([]);
   const [showChangeReasonModal, setShowChangeReasonModal] = useState(false);
@@ -879,6 +1043,7 @@ export const FibreTrayEditor: React.FC = () => {
     setSearchTerm("");
     setMoveMode(false);
     setMoveSrc(null);
+    setMoveSrcMeetMeTarget(null);
     setSelectedFibre(null);
     setPendingFibreMoves([]);
     setTrayFilter("all");
@@ -924,20 +1089,21 @@ export const FibreTrayEditor: React.FC = () => {
         : Array.isArray((joint as any).mappingRows)
           ? ((joint as any).mappingRows as any[][])
           : [];
+      const displayRows = jt === "Meet Me Chamber" ? normalizeMeetMeRows(rows) : rows;
 
-      setLoadedFileName(rows.length ? joint.name || "" : "");
-      setMappingRows(rows);
+      setLoadedFileName(displayRows.length ? joint.name || "" : "");
+      setMappingRows(displayRows);
 
       if (!isStreetCab && jt !== "Meet Me Chamber") {
         if (persistedTrayModel) {
           const expandedPersistedModel = expandTrayModelToFibreCount(
             persistedTrayModel,
-            getMaxFibreNumberFromRows(rows),
+            getMaxFibreNumberFromRows(displayRows),
             JOINT_TYPES[jt]?.fibresPerTray || 12,
           );
 
           setModel(
-            applyStandardRowsToTrayModel(expandedPersistedModel, rows, {
+            applyStandardRowsToTrayModel(expandedPersistedModel, displayRows, {
               overwriteExistingLabels: false,
             }),
           );
@@ -1028,14 +1194,16 @@ export const FibreTrayEditor: React.FC = () => {
           ? "street-cab"
           : detectedAssetType,
       );
-      setMappingRows(rows);
+      const editorRows = detectedJointType === "Meet Me Chamber" ? normalizeMeetMeRows(rows) : rows;
+      setMappingRows(editorRows);
       setTrayFilter("all");
       setSelectedFibre(null);
       setMoveSrc(null);
+      setMoveSrcMeetMeTarget(null);
       setSearchTerm("");
 
       if (detectedJointType === "Meet Me Chamber") {
-        const base = buildJointForRows("LMJ (40 trays)", rows);
+        const base = buildJointForRows("LMJ (40 trays)", editorRows);
         setJointType("Meet Me Chamber");
         setModel(base);
       } else if (detectedJointType === "LMJ (40 trays)") {
@@ -1152,15 +1320,17 @@ export const FibreTrayEditor: React.FC = () => {
   /* -------------------------------------------------------------
     Move + click
   ------------------------------------------------------------- */
-  const handleFibreClick = (cell: FibreCell) => {
+  const handleFibreClick = (cell: FibreCell, meetMeTarget?: MeetMeMoveTarget) => {
     if (moveMode) {
       if (!moveSrc) {
         setMoveSrc(cell);
+        setMoveSrcMeetMeTarget(meetMeTarget ?? null);
         return;
       }
 
       if (moveSrc.globalNo === cell.globalNo) {
         setMoveSrc(null);
+        setMoveSrcMeetMeTarget(null);
         return;
       }
 
@@ -1179,10 +1349,25 @@ export const FibreTrayEditor: React.FC = () => {
         return prev;
       });
 
-      setMappingRows((prevRows) =>
-        jointType === "Meet Me Chamber"
-          ? swapMeetMeFibreRows(prevRows, aNo, bNo)
-          : dedupeMappingRows(
+      setMappingRows((prevRows) => {
+        if (jointType === "Meet Me Chamber") {
+          if (moveSrcMeetMeTarget && meetMeTarget) {
+            return swapMeetMeFibreRowsBetweenTargets(prevRows, moveSrcMeetMeTarget, meetMeTarget);
+          }
+
+          const meetMeSide =
+            meetMeTarget?.side === "output" || moveSrcMeetMeTarget?.side === "output"
+              ? "output"
+              : meetMeTarget?.side === "input" || moveSrcMeetMeTarget?.side === "input"
+                ? "input"
+                : null;
+
+          return meetMeSide
+            ? swapMeetMeFibreRowsOnSide(prevRows, aNo, bNo, meetMeSide)
+            : swapMeetMeFibreRows(prevRows, aNo, bNo);
+        }
+
+        return dedupeMappingRows(
               prevRows.map((row) => {
                 const fibre = parseFibreNumber(row?.[1]);
                 if (fibre !== aNo && fibre !== bNo) return row;
@@ -1191,8 +1376,8 @@ export const FibreTrayEditor: React.FC = () => {
                 nextRow[1] = fibre === aNo ? bNo : aNo;
                 return nextRow;
               }),
-            ),
-      );
+            );
+      });
 
       if (selectedJointId) {
         setPendingFibreMoves((prev) => [
@@ -1212,6 +1397,7 @@ export const FibreTrayEditor: React.FC = () => {
       }
 
       setMoveSrc(null);
+      setMoveSrcMeetMeTarget(null);
       return;
     }
 
@@ -1304,6 +1490,7 @@ export const FibreTrayEditor: React.FC = () => {
     setSearchTerm("");
     setSelectedFibre(null);
     setMoveSrc(null);
+    setMoveSrcMeetMeTarget(null);
     setMappingRows([]);
   };
 
@@ -1325,6 +1512,7 @@ export const FibreTrayEditor: React.FC = () => {
     setSearchTerm("");
     setMoveMode(false);
     setMoveSrc(null);
+    setMoveSrcMeetMeTarget(null);
     setTrayFilter("all");
     setLoadedFileName("");
     setOriginalFile(null);
@@ -1340,6 +1528,7 @@ export const FibreTrayEditor: React.FC = () => {
     setAssetType(jt === "Meet Me Chamber" ? "meet-me" : "ag-joint");
     setModel(jt === "Meet Me Chamber" ? buildJointForRows("LMJ (40 trays)", mappingRows) : buildJoint(jt));
     setMoveSrc(null);
+    setMoveSrcMeetMeTarget(null);
     setSelectedFibre(null);
     setSearchTerm("");
     setMappingRows([]);
@@ -1725,6 +1914,7 @@ export const FibreTrayEditor: React.FC = () => {
               onClick={() => {
                 setMoveMode(!moveMode);
                 setMoveSrc(null);
+                setMoveSrcMeetMeTarget(null);
               }}
               style={{
                 ...btnSecondary,

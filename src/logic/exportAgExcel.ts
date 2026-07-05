@@ -178,14 +178,54 @@ export function downloadMeetMeJointTemplate() {
   const columns: TemplateColumn[] = [
     { key: "Meet Me Chamber Name", required: true, description: "Meet Me chamber / LMJ reference as it appears on the map.", example: "Meet Me LMJ01" },
     { key: "Tray", required: true, description: "Splice tray number inside the Meet Me chamber.", example: 1 },
-    { key: "Position", description: "Position within the tray, normally 1 to 12.", example: 12 },
     { key: "EBCL / Input Cable", required: true, description: "Incoming EBCL or provider input cable reference.", example: "EBCL18320685" },
-    { key: "Input Fibre", required: true, description: "Input fibre number on the EBCL / input cable.", example: 12 },
+    { key: "Input Fibre (F1-F12)", required: true, description: "Input fibre range for this tray, normally shown as F1-F12, F13-F24, and so on.", example: "(F1-F12)" },
     { key: "Feeder / Output Cable", required: true, description: "Outgoing feeder cable reference.", example: "BD-BAW-FC001" },
-    { key: "Output Fibre", required: true, description: "Output fibre number on the feeder cable.", example: 12 },
+    { key: "Output Fibre (F1-F12)", required: true, description: "Output fibre range for this tray, normally shown as F1-F12, F13-F24, and so on.", example: "(F1-F12)" },
     { key: "Splice Type", description: "Through splice, spare, reserved or local wording.", example: "through splice" },
     { key: "Notes", description: "Engineer notes or supplier reference.", example: "Meet-me fibre-to-fibre continuity" },
   ];
 
-  XLSX.writeFile(buildTemplateWorkbook("Alistra GIS Meet Me Chamber Blank Template", "Meet Me Template", columns), "Alistra_GIS_Meet_Me_Chamber_Template.xlsx");
+  const headers = columns.map((column) => column.key);
+  const rows = Array.from({ length: 20 }, (_, index) => {
+    const tray = index + 1;
+    const start = index * 12 + 1;
+    const end = start + 11;
+    const range = `(F${start}-F${end})`;
+
+    return [
+      "Meet Me LMJ01",
+      tray,
+      "EBCL18320685",
+      range,
+      "BD-BAW-FC001",
+      range,
+      "through splice",
+      "Meet-me fibre-to-fibre continuity",
+    ];
+  });
+
+  const guidanceRows = [
+    ["Template", "Alistra GIS Meet Me Chamber Blank Template"],
+    ["Required columns", columns.filter((column) => column.required).map((column) => column.key).join(", ")],
+    [],
+    ["Column", "Required", "Description", "Example"],
+    ...columns.map((column) => [
+      column.key,
+      column.required ? "Yes" : "No",
+      column.description,
+      column.example ?? "",
+    ]),
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  const dataSheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  const guidanceSheet = XLSX.utils.aoa_to_sheet(guidanceRows);
+
+  dataSheet["!cols"] = headers.map(() => ({ wch: 24 }));
+  guidanceSheet["!cols"] = [{ wch: 28 }, { wch: 16 }, { wch: 70 }, { wch: 28 }];
+
+  XLSX.utils.book_append_sheet(workbook, dataSheet, "Meet Me Template");
+  XLSX.utils.book_append_sheet(workbook, guidanceSheet, "Guidance");
+  XLSX.writeFile(workbook, "Alistra_GIS_Meet_Me_Chamber_Template.xlsx");
 }
