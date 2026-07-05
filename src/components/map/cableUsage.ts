@@ -107,7 +107,7 @@ function maxReservedDpFibreOnCable(cable: any, allAssets: any[] = []): number {
   const cableId = String(cable?.id || "");
   if (!cableId) return 0;
 
-  let maxFibre = 0;
+  const reservedFibres = new Set<number>();
 
   (allAssets || []).forEach((asset: any) => {
     const details = asset?.dpDetails;
@@ -120,11 +120,11 @@ function maxReservedDpFibreOnCable(cable: any, allAssets: any[] = []): number {
 
     [...(afn?.inputFibres || []), ...(mdu?.inputFibres || [])].forEach((value: any) => {
       const fibre = Number(value);
-      if (Number.isFinite(fibre) && fibre > maxFibre) maxFibre = fibre;
+      if (Number.isFinite(fibre) && fibre > 0) reservedFibres.add(fibre);
     });
   });
 
-  return maxFibre;
+  return reservedFibres.size;
 }
 
 function rowLooksLikeHeader(text: string): boolean {

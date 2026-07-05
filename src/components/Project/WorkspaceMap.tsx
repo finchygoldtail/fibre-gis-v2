@@ -659,6 +659,49 @@ function getCableFibreCountLabel(asset: SavedMapAsset): string {
   return text.endsWith("F") ? text : `${text}F`;
 }
 
+function parseWorkspaceFibreNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const match = String(value ?? "").match(/\d+/);
+  return match ? Number(match[0]) : null;
+}
+
+function getWorkspaceCableUsageDisplay(
+  asset: SavedMapAsset,
+  cableState?: NetworkState["cableStates"][string],
+): string {
+  const item = asset as any;
+  const explicitUsed = parseWorkspaceFibreNumber(
+    item.usedFibres ??
+      item.usedFibers ??
+      item.usedCoreCount ??
+      item.fibresUsed ??
+      item.allocatedFibres ??
+      item.properties?.usedFibres ??
+      item.properties?.fibresUsed,
+  );
+  const capacity =
+    parseWorkspaceFibreNumber(
+      item.fibreCount ||
+        item.fiberCount ||
+        item.coreCount ||
+        item.size ||
+        item.properties?.fibreCount ||
+        item.properties?.fiberCount,
+    ) ||
+    cableState?.capacity ||
+    null;
+  const used = explicitUsed ?? cableState?.usedFibres ?? null;
+
+  if (used === null) return "";
+
+  const percent =
+    capacity && capacity > 0
+      ? Math.min(100, Math.round((used / capacity) * 100))
+      : cableState?.utilisationPercent;
+
+  return `${used}/${capacity || "?"}F${percent !== undefined ? ` · ${percent}%` : ""}`;
+}
+
 function getCablePiaLabel(asset: SavedMapAsset): string {
   const item = asset as any;
   return String(
@@ -1132,6 +1175,7 @@ export default function WorkspaceMap({
           const traceKind = getTraceKind(asset, traceHighlightedAssetIds, traceHighlightKinds);
           const traceColour = getTraceColour(traceKind);
           const cableState = networkState?.cableStates[asset.id];
+          const cableUsageDisplay = getWorkspaceCableUsageDisplay(asset, cableState);
 
           return (
             <React.Fragment key={`workspace-drop-cable-${asset.id}`}>
@@ -1147,7 +1191,7 @@ export default function WorkspaceMap({
               >
                 <Tooltip sticky>
                   {getAssetName(asset)} · drop · {formatDistance(getPathDistanceMeters(points))}
-                  {cableState ? ` · ${cableState.usedFibres}/${cableState.capacity || "?"}F` : ""}
+                  {cableUsageDisplay ? ` � ${cableUsageDisplay}` : ""}
                 </Tooltip>
               </Polyline>
 
@@ -1173,6 +1217,7 @@ export default function WorkspaceMap({
           const traceKind = getTraceKind(asset, traceHighlightedAssetIds, traceHighlightKinds);
           const traceColour = getTraceColour(traceKind);
           const cableState = networkState?.cableStates[asset.id];
+          const cableUsageDisplay = getWorkspaceCableUsageDisplay(asset, cableState);
           const cableLabel = getWorkspaceCableLabel(asset);
 
           return (
@@ -1200,7 +1245,7 @@ export default function WorkspaceMap({
               >
                 <Tooltip sticky>
                   {getAssetName(asset)} · {formatDistance(getPathDistanceMeters(points))}
-                  {cableState ? ` · ${cableState.usedFibres}/${cableState.capacity || "?"}F · ${cableState.utilisationPercent}%` : ""}
+                  {cableUsageDisplay ? ` � ${cableUsageDisplay}` : ""}
                 </Tooltip>
               </Polyline>
 
@@ -1413,3 +1458,5 @@ const emptyOverlay: React.CSSProperties = {
   textAlign: "center",
   boxShadow: "0 18px 50px rgba(0,0,0,0.35)",
 };
+
+

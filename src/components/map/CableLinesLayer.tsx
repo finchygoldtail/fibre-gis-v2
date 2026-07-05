@@ -1520,19 +1520,20 @@ export default function CableLinesLayer({
 
         const cableState = networkState.cableStates[asset.id];
 
-        const localLegacyUsedFibres = getCableUsedFibres(asset, networkAnalysisAssets);
-        const usedFibres = Math.max(
-          cableState?.usedFibres ?? 0,
-          localLegacyUsedFibres,
-          usedFibresFromSharedMappings,
-          routeGroupUsage.totalUsed,
-        );
-
         const usedFibreNumbers = usedFibreNumbersFromMappings.length
           ? usedFibreNumbersFromMappings
           : routeGroupUsage.usedFibreNumbers.length
             ? routeGroupUsage.usedFibreNumbers
             : cableState?.usedFibreNumbers || [];
+
+        const localLegacyUsedFibres = getCableUsedFibres(asset, networkAnalysisAssets);
+        const usedFibres = usedFibreNumbers.length
+          ? usedFibreNumbers.length
+          : usedFibresFromSharedMappings > 0
+            ? usedFibresFromSharedMappings
+            : routeGroupUsage.totalUsed > 0
+              ? routeGroupUsage.totalUsed
+              : Math.max(cableState?.usedFibres ?? 0, localLegacyUsedFibres);
 
         const networkStateSource = routeGroupUsage.totalUsed > usedFibresFromSharedMappings
           ? routeGroupUsage.source

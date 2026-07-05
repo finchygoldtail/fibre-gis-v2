@@ -17,94 +17,270 @@ type Props = {
   onBackToMap?: () => void;
 };
 
-const panel: React.CSSProperties = { background: "#0f1b2d", border: "1px solid rgba(148, 163, 184, 0.18)", borderRadius: 10, padding: 16, minHeight: 190 };
-const wide: React.CSSProperties = { ...panel, gridColumn: "span 2" };
-const title: React.CSSProperties = { margin: "0 0 12px", fontSize: 15, fontWeight: 900, color: "#e5e7eb" };
-const row: React.CSSProperties = { display: "flex", justifyContent: "space-between", gap: 12, padding: "9px 0", borderBottom: "1px solid rgba(148,163,184,0.12)", color: "#cbd5e1" };
-const grid: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 };
-const tile: React.CSSProperties = { background: "#0b1424", border: "1px solid rgba(148,163,184,0.14)", borderRadius: 10, padding: 12 };
-const button: React.CSSProperties = { border: "1px solid rgba(148,163,184,0.22)", background: "#111827", color: "#f8fafc", borderRadius: 8, padding: "10px 12px", fontWeight: 800, cursor: "pointer" };
-const readinessBadge: React.CSSProperties = { display: "inline-flex", alignItems: "center", borderRadius: 999, padding: "5px 9px", fontSize: 12, fontWeight: 900, border: "1px solid rgba(96,165,250,0.35)", color: "#93c5fd", background: "rgba(37,99,235,0.12)" };
+const shell: React.CSSProperties = {
+  gridColumn: "1 / -1",
+  display: "grid",
+  gridTemplateColumns: "minmax(360px, 1.1fr) minmax(360px, 0.9fr)",
+  gap: 12,
+  alignItems: "stretch",
+};
+
+const panel: React.CSSProperties = {
+  background: "linear-gradient(180deg, #0f1b2d 0%, #0b1626 100%)",
+  border: "1px solid rgba(148, 163, 184, 0.18)",
+  borderRadius: 12,
+  padding: 16,
+  minHeight: 0,
+};
+
+const wide: React.CSSProperties = { ...panel, gridColumn: "1 / -1" };
+
+const title: React.CSSProperties = {
+  margin: 0,
+  fontSize: 15,
+  fontWeight: 950,
+  color: "#f8fafc",
+};
+
+const kicker: React.CSSProperties = {
+  color: "#38bdf8",
+  fontSize: 10,
+  fontWeight: 950,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+  marginBottom: 6,
+};
+
+const row: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 14,
+  padding: "9px 0",
+  borderBottom: "1px solid rgba(148,163,184,0.12)",
+  color: "#cbd5e1",
+};
+
+const tileGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+  gap: 10,
+};
+
+const tile: React.CSSProperties = {
+  background: "#0b1424",
+  border: "1px solid rgba(148,163,184,0.14)",
+  borderRadius: 10,
+  padding: 12,
+  minHeight: 78,
+};
+
+const button: React.CSSProperties = {
+  border: "1px solid rgba(148,163,184,0.22)",
+  background: "#111827",
+  color: "#f8fafc",
+  borderRadius: 8,
+  padding: "10px 12px",
+  fontWeight: 850,
+  cursor: "pointer",
+};
+
+const primaryButton: React.CSSProperties = {
+  ...button,
+  background: "#1d4ed8",
+  borderColor: "rgba(147, 197, 253, 0.45)",
+};
+
+const readinessBadge: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  borderRadius: 999,
+  padding: "5px 9px",
+  fontSize: 12,
+  fontWeight: 900,
+  border: "1px solid rgba(96,165,250,0.35)",
+  color: "#93c5fd",
+  background: "rgba(37,99,235,0.12)",
+};
 
 function n(value: any): string {
   const num = Number(value ?? 0);
   return Number.isFinite(num) ? num.toLocaleString() : "0";
 }
 
+function pct(value: any): string {
+  return `${n(value)}%`;
+}
+
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
-  return <div style={row}><span>{label}</span><strong style={{ color: "#f8fafc" }}>{value}</strong></div>;
+  return (
+    <div style={row}>
+      <span>{label}</span>
+      <strong style={{ color: "#f8fafc", textAlign: "right" }}>{value}</strong>
+    </div>
+  );
 }
 
-function Tile({ label, value }: { label: string; value: React.ReactNode }) {
-  return <div style={tile}><div style={{ color: "#94a3b8", fontSize: 12 }}>{label}</div><div style={{ marginTop: 6, fontSize: 24, fontWeight: 900 }}>{value}</div></div>;
+function Tile({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: React.ReactNode;
+  tone?: "default" | "good" | "warn" | "bad";
+}) {
+  const colour =
+    tone === "good"
+      ? "#4ade80"
+      : tone === "warn"
+        ? "#fbbf24"
+        : tone === "bad"
+          ? "#fb7185"
+          : "#f8fafc";
+
+  return (
+    <div style={tile}>
+      <div style={{ color: "#94a3b8", fontSize: 12, fontWeight: 800 }}>
+        {label}
+      </div>
+      <div style={{ marginTop: 8, fontSize: 25, fontWeight: 950, color: colour }}>
+        {value}
+      </div>
+    </div>
+  );
 }
 
-export default function WorkspaceOverview({ projectName, status, stats, projectAssets, projectArea, onOpenPanel, onOpenTrace, onExport }: Props) {
+export default function WorkspaceOverview({
+  projectName,
+  status,
+  stats,
+  projectAssets,
+  onOpenPanel,
+  onOpenTrace,
+}: Props) {
   const readiness = stats?.operationalReadiness;
+  const rollout = stats?.rolloutKpis || {};
   const blockers = Array.isArray(readiness?.blockers) ? readiness.blockers : [];
-  return <>
-    <section style={panel}>
-      <h3 style={title}>Project Summary</h3>
-      <Row label="Area" value={projectName} />
-      <Row label="Status" value={status || "Live"} />
-      <Row label="Readiness" value={<span style={readinessBadge}>{readiness?.state || "Build"}</span>} />
-      <Row label="Readiness Score" value={`${n(readiness?.score)}%`} />
-      <Row label="Homes" value={`${n(stats?.homesConnected)} / ${n(stats?.homesPassed)}`} />
-      <Row label="Route Length" value={`${n(stats?.routeLengthMeters)} m`} />
-      <button type="button" style={{ ...button, marginTop: 12, width: "100%" }} onClick={() => onOpenPanel?.("projectDetails", "assets")}>View Project Details</button>
-    </section>
-    <section style={panel}>
-      <h3 style={title}>RFS Progress</h3>
-      <div style={{ display: "grid", placeItems: "center", minHeight: 92 }}>
-        <div style={{ fontSize: 38, fontWeight: 900, color: Number(stats?.rfsPercent || 0) >= 80 ? "#4ade80" : "#fb7185" }}>{n(stats?.rfsPercent)}%</div>
-        <div style={{ color: "#94a3b8" }}>Complete</div>
-      </div>
-      <button type="button" style={{ ...button, marginTop: 12, width: "100%" }} onClick={() => onOpenPanel?.("rfsBreakdown", "build")}>View RFS Breakdown</button>
-    </section>
-    <section style={panel}>
-      <h3 style={title}>Area Readiness</h3>
-      <div style={{ display: "grid", placeItems: "center", minHeight: 92 }}>
-        <div style={{ fontSize: 38, fontWeight: 900, color: blockers.length ? "#fb7185" : "#4ade80" }}>{n(readiness?.score)}%</div>
-        <div style={{ color: "#94a3b8" }}>{readiness?.state || "Build"}</div>
-      </div>
-      <Row label="Hard blockers" value={blockers.length ? blockers.length : "None"} />
-      <button type="button" style={{ ...button, marginTop: 12, width: "100%" }} onClick={() => onOpenPanel?.("rfsBreakdown", "build")}>View Readiness</button>
-    </section>
-    <section style={panel}>
-      <h3 style={title}>Issue Summary</h3>
-      <div style={grid}>
-        <Tile label="Issues" value={n(stats?.issueCount)} />
-        <Tile label="Unmatched Cables" value={n(stats?.unmatchedCableIds)} />
-      </div>
-      <button type="button" style={{ ...button, marginTop: 12, width: "100%" }} onClick={() => onOpenPanel?.("issues", "qa")}>View All Issues</button>
-    </section>
-    <section style={panel}>
-      <h3 style={title}>Topology Summary</h3>
-      <Row label="Mapped Joints" value={n(stats?.mappedJoints ?? stats?.joints)} />
-      <Row label="Fibre Rows" value={n(stats?.fibreTrayRows)} />
-      <Row label="Route Links" value={n(stats?.topologyLinks)} />
-      <button type="button" style={{ ...button, marginTop: 12, width: "100%" }} onClick={() => onOpenPanel?.("topology", "topology")}>View Topology</button>
-    </section>
-    <section style={wide}>
-      <h3 style={title}>Asset Overview</h3>
-      <div style={grid}>
-        <Tile label="Total Assets" value={n(projectAssets?.length)} />
-        <Tile label="Joints" value={n(stats?.joints)} />
-        <Tile label="DPs / CBTs / AFNs" value={n(stats?.dps)} />
-        <Tile label="Cables" value={n(stats?.cables)} />
-        <Tile label="Poles" value={n(stats?.poles)} />
-        <Tile label="Chambers" value={n(stats?.chambers)} />
-      </div>
-    </section>
-    <section style={wide}>
-      <h3 style={title}>Quick Actions</h3>
-      <div style={grid}>
-        <button type="button" style={button} onClick={() => onOpenPanel?.("qa", "qa")}>Run QA Validation</button>
-        <button type="button" style={button} onClick={() => { onOpenPanel?.("trace", "topology"); onOpenTrace?.(); }}>Trace Fibre Route</button>
-        <button type="button" style={button} onClick={() => onOpenPanel?.("addAsset", "assets")}>Add New Asset</button>
-        <button type="button" style={button} onClick={onExport}>Export Project Data</button>
-        <button type="button" style={button} onClick={() => onOpenPanel?.("report", "reports")}>Generate Report</button>
-      </div>
-    </section>
-  </>;
+  const phaseLabel = stats?.deliveryPhaseLabel || status || "Build Phase";
+  const phaseReason = String(stats?.deliveryPhaseOverrideReason || "").trim();
+  const issueCount = Number(stats?.issueCount ?? rollout.qaIssues ?? 0);
+
+  return (
+    <div style={shell}>
+      <section style={wide}>
+        <div style={kicker}>Area Overview</div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 16,
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+            marginBottom: 14,
+          }}
+        >
+          <div>
+            <h3 style={{ ...title, fontSize: 20 }}>{projectName}</h3>
+            <div style={{ color: "#9ca3af", marginTop: 5, fontSize: 13 }}>
+              {stats?.deliveryPhaseDescription || "Operational project workspace"}
+            </div>
+          </div>
+          <span style={readinessBadge}>{phaseLabel}</span>
+        </div>
+
+        <div style={tileGrid}>
+          <Tile label="RFS" value={pct(rollout.rfsPercent ?? stats?.rfsPercent)} tone="good" />
+          <Tile
+            label="Build"
+            value={pct(rollout.buildCompletionPercent)}
+            tone={Number(rollout.buildCompletionPercent || 0) >= 95 ? "good" : "warn"}
+          />
+          <Tile
+            label="Readiness"
+            value={pct(readiness?.score)}
+            tone={blockers.length ? "bad" : "good"}
+          />
+          <Tile label="Homes Live" value={`${n(rollout.homesLive ?? stats?.homesConnected)} / ${n(rollout.homesPassed ?? stats?.homesPassed)}`} tone="good" />
+          <Tile label="DPs Live" value={`${n(rollout.dpLive)} / ${n(rollout.dpTotal ?? stats?.dps)}`} tone="good" />
+          <Tile label="QA Issues" value={n(issueCount)} tone={issueCount ? "bad" : "good"} />
+        </div>
+      </section>
+
+      <section style={panel}>
+        <div style={kicker}>Project Snapshot</div>
+        <h3 style={title}>Scope</h3>
+        <div style={{ marginTop: 10 }}>
+          <Row label="Status" value={status || phaseLabel} />
+          <Row label="Readiness" value={readiness?.state || "Build"} />
+          <Row label="Homes" value={`${n(stats?.homesConnected)} / ${n(stats?.homesPassed)}`} />
+          <Row label="Route Length" value={`${n(stats?.routeLengthMeters)} m`} />
+          <Row label="Hard Blockers" value={blockers.length || "None"} />
+        </div>
+        {phaseReason && (
+          <div
+            style={{
+              marginTop: 12,
+              color: "#cbd5e1",
+              background: "rgba(15, 23, 42, 0.72)",
+              border: "1px solid rgba(148,163,184,0.14)",
+              borderRadius: 10,
+              padding: 10,
+              fontSize: 12,
+            }}
+          >
+            Override note: {phaseReason}
+          </div>
+        )}
+      </section>
+
+      <section style={panel}>
+        <div style={kicker}>Network</div>
+        <h3 style={title}>Asset Totals</h3>
+        <div style={{ ...tileGrid, marginTop: 10 }}>
+          <Tile label="Total" value={n(projectAssets?.length)} />
+          <Tile label="DPs" value={n(stats?.dps)} />
+          <Tile label="Cables" value={n(stats?.cables)} />
+          <Tile label="Joints" value={n(stats?.joints)} />
+          <Tile label="Poles" value={n(stats?.poles)} />
+          <Tile label="Chambers" value={n(stats?.chambers)} />
+        </div>
+      </section>
+
+      <section style={wide}>
+        <div style={kicker}>Operations</div>
+        <h3 style={title}>Common Actions</h3>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            gap: 10,
+            marginTop: 12,
+          }}
+        >
+          <button type="button" style={primaryButton} onClick={() => onOpenPanel?.("handover", "overview")}>
+            Delivery Phase
+          </button>
+          <button type="button" style={button} onClick={() => onOpenPanel?.("dpStatus", "overview")}>
+            DP Status
+          </button>
+          <button type="button" style={button} onClick={() => onOpenPanel?.("issues", "qa")}>
+            QA Navigator
+          </button>
+          <button
+            type="button"
+            style={button}
+            onClick={() => {
+              onOpenPanel?.("trace", "topology");
+              onOpenTrace?.();
+            }}
+          >
+            Trace Fibre Route
+          </button>
+          <button type="button" style={button} onClick={() => onOpenPanel?.("report", "reports")}>
+            Templates
+          </button>
+        </div>
+      </section>
+    </div>
+  );
 }

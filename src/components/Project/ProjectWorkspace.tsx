@@ -745,6 +745,118 @@ type AreaReadiness = {
   disconnectedAssets: number;
 };
 
+type DeliveryPhaseId =
+  | "build"
+  | "customer-live"
+  | "pia-ready"
+  | "walkoff-ready"
+  | "complete";
+
+type DeliveryPhaseConfig = {
+  id: DeliveryPhaseId;
+  label: string;
+  shortLabel: string;
+  description: string;
+  statusLabel: string;
+  allowsCustomerLiveWithoutPia: boolean;
+  allowsWalkOffWithoutPia: boolean;
+};
+
+const deliveryPhaseOptions: DeliveryPhaseConfig[] = [
+  {
+    id: "build",
+    label: "Build Phase",
+    shortLabel: "Build",
+    description: "Normal build state. PIA must pass before walk-off.",
+    statusLabel: "Build Phase",
+    allowsCustomerLiveWithoutPia: false,
+    allowsWalkOffWithoutPia: false,
+  },
+  {
+    id: "customer-live",
+    label: "Customer Live Override",
+    shortLabel: "Customer Live",
+    description: "Allows customers to go live while PIA evidence is still being completed.",
+    statusLabel: "Customer Live",
+    allowsCustomerLiveWithoutPia: true,
+    allowsWalkOffWithoutPia: false,
+  },
+  {
+    id: "pia-ready",
+    label: "PIA Ready",
+    shortLabel: "PIA Ready",
+    description: "PIA is complete and the area is ready for normal walk-off checks.",
+    statusLabel: "PIA Ready",
+    allowsCustomerLiveWithoutPia: false,
+    allowsWalkOffWithoutPia: false,
+  },
+  {
+    id: "walkoff-ready",
+    label: "Walk-Off Override",
+    shortLabel: "Walk-Off",
+    description: "Manager override to allow formal walk-off before every PIA item is complete.",
+    statusLabel: "Walk-Off Override",
+    allowsCustomerLiveWithoutPia: true,
+    allowsWalkOffWithoutPia: true,
+  },
+  {
+    id: "complete",
+    label: "Complete",
+    shortLabel: "Complete",
+    description: "Final commercial and delivery close-out state.",
+    statusLabel: "Complete",
+    allowsCustomerLiveWithoutPia: false,
+    allowsWalkOffWithoutPia: true,
+  },
+];
+
+function getDeliveryPhaseConfig(id: DeliveryPhaseId): DeliveryPhaseConfig {
+  return (
+    deliveryPhaseOptions.find((phase) => phase.id === id) ||
+    deliveryPhaseOptions[0]
+  );
+}
+
+function normaliseDeliveryPhase(value: unknown): DeliveryPhaseId | null {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) return null;
+  if (text === "build" || text.includes("build")) return "build";
+  if (
+    text === "customer-live" ||
+    text === "customer_live" ||
+    text.includes("customer live")
+  )
+    return "customer-live";
+  if (text === "pia-ready" || text === "pia_ready" || text.includes("pia ready"))
+    return "pia-ready";
+  if (
+    text === "walkoff-ready" ||
+    text === "walk-off-ready" ||
+    text === "walkoff_override" ||
+    text.includes("walk-off") ||
+    text.includes("walkoff")
+  )
+    return "walkoff-ready";
+  if (text === "complete" || text.includes("complete")) return "complete";
+  if (text === "live") return "customer-live";
+  return null;
+}
+
+function getWorkspaceDeliveryPhase(
+  projectArea: SavedMapAsset | null | undefined,
+  fallbackStatus?: string,
+): DeliveryPhaseId {
+  const item = projectArea as any;
+  return (
+    normaliseDeliveryPhase(item?.deliveryPhase) ||
+    normaliseDeliveryPhase(item?.properties?.deliveryPhase) ||
+    normaliseDeliveryPhase(item?.phase) ||
+    normaliseDeliveryPhase(item?.properties?.phase) ||
+    normaliseDeliveryPhase(fallbackStatus) ||
+    "build"
+  );
+}
+
 function readinessTone(
   state: AreaReadinessState,
 ): "default" | "good" | "warn" | "bad" {
@@ -2229,6 +2341,78 @@ export default function ProjectWorkspace({
     [projectArea],
   );
 
+  const deliveryPhase = useMemo(
+    () => getWorkspaceDeliveryPhase(projectArea, status),
+    [projectArea, status],
+  );
+
+  const deliveryPhaseConfig = useMemo(
+    () => getDeliveryPhaseConfig(deliveryPhase),
+    [deliveryPhase],
+  );
+
+  const effectiveWorkspaceStatus = deliveryPhaseConfig.statusLabel || status;
+
+  const deliveryPhaseOverrideReason = String(
+    (projectArea as any)?.deliveryPhaseOverrideReason ||
+      (projectArea as any)?.properties?.deliveryPhaseOverrideReason ||
+      "",
+  ).trim();
+
+  const handleDeliveryPhaseChange = (phaseId: DeliveryPhaseId) => {
+    const phase = getDeliveryPhaseConfig(phaseId);
+
+    if (!projectArea?.id || !onUpdateWorkspaceAsset) {
+      alert("Select a project area before changing the delivery phase.");
+      return;
+    }
+
+    let reason = deliveryPhaseOverrideReason;
+    if (phase.allowsCustomerLiveWithoutPia || phase.allowsWalkOffWithoutPia) {
+      const enteredReason = window.prompt(
+        `${phase.label} needs a manager note so the PIA exception is auditable.`,
+        reason || "Customer service released while PIA evidence is being completed.",
+      );
+      if (enteredReason === null) return;
+      reason = enteredReason.trim();
+      if (!reason) {
+        alert("A manager note is required for a PIA override phase.");
+        return;
+      }
+    }
+
+    const now = new Date().toISOString();
+    const item = projectArea as any;
+    const nextAsset = {
+      ...item,
+      status: phase.statusLabel,
+      buildStatus: phase.statusLabel,
+      deliveryPhase: phase.id,
+      deliveryPhaseLabel: phase.label,
+      deliveryPhaseOverrideReason: reason,
+      deliveryPhaseUpdatedAt: now,
+      piaGateOverride: phase.allowsCustomerLiveWithoutPia,
+      piaWalkOffOverride: phase.allowsWalkOffWithoutPia,
+      properties: {
+        ...(item.properties || {}),
+        status: phase.statusLabel,
+        buildStatus: phase.statusLabel,
+        deliveryPhase: phase.id,
+        deliveryPhaseLabel: phase.label,
+        deliveryPhaseOverrideReason: reason,
+        deliveryPhaseUpdatedAt: now,
+        piaGateOverride: phase.allowsCustomerLiveWithoutPia,
+        piaWalkOffOverride: phase.allowsWalkOffWithoutPia,
+      },
+    } as SavedMapAsset;
+
+    onUpdateWorkspaceAsset(nextAsset);
+    setLocalAssetOverrides((current) => ({
+      ...current,
+      [nextAsset.id]: nextAsset,
+    }));
+  };
+
   // =====================================================
   // OPERATIONAL ROLLOUT KPI ENGINE
   // Derived only from already-scoped workspace assets so this
@@ -2304,9 +2488,9 @@ export default function ProjectWorkspace({
       buildAreaReadiness({
         rolloutKpis,
         auditIssues,
-        status,
+        status: effectiveWorkspaceStatus,
       }),
-    [rolloutKpis, auditIssues, status],
+    [rolloutKpis, auditIssues, effectiveWorkspaceStatus],
   );
 
   const workspaceDisplayStats = useMemo(
@@ -2314,12 +2498,23 @@ export default function ProjectWorkspace({
       ...displayStats,
       rolloutKpis,
       operationalReadiness,
+      deliveryPhase,
+      deliveryPhaseLabel: deliveryPhaseConfig.label,
+      deliveryPhaseDescription: deliveryPhaseConfig.description,
+      deliveryPhaseOverrideReason,
       readinessState: operationalReadiness.state,
       readinessScore: operationalReadiness.score,
       readinessBlockers: operationalReadiness.blockers,
       readinessNextActions: operationalReadiness.nextActions,
     }),
-    [displayStats, rolloutKpis, operationalReadiness],
+    [
+      displayStats,
+      rolloutKpis,
+      operationalReadiness,
+      deliveryPhase,
+      deliveryPhaseConfig,
+      deliveryPhaseOverrideReason,
+    ],
   );
 
   const issueBuckets = useMemo(
@@ -2688,7 +2883,9 @@ export default function ProjectWorkspace({
     rows.push(["Alistra GIS Operational Rollout Report"]);
     rows.push(["Generated", new Date().toLocaleString("en-GB")]);
     rows.push(["Project", projectName]);
-    rows.push(["Status", status]);
+    rows.push(["Status", effectiveWorkspaceStatus]);
+    rows.push(["Delivery phase", deliveryPhaseConfig.label]);
+    rows.push(["Delivery phase note", deliveryPhaseOverrideReason || ""]);
     rows.push(["Readiness state", operationalReadiness.state]);
     rows.push(["Readiness score", `${operationalReadiness.score}%`]);
     rows.push(["Readiness summary", operationalReadiness.summary]);
@@ -3505,10 +3702,19 @@ export default function ProjectWorkspace({
     [piaWorkspaceAssets],
   );
 
-  const piaGatePassedForWalkOff = piaQaStats.requiredTotal === 0 || piaQaStats.piaPass >= piaQaStats.requiredTotal;
-  const piaGateBlockerText = piaGatePassedForWalkOff
+  const rawPiaGatePassedForWalkOff =
+    piaQaStats.requiredTotal === 0 || piaQaStats.piaPass >= piaQaStats.requiredTotal;
+  const piaGatePassedForWalkOff =
+    rawPiaGatePassedForWalkOff || deliveryPhaseConfig.allowsWalkOffWithoutPia;
+  const piaGateCustomerLiveOverride =
+    !rawPiaGatePassedForWalkOff && deliveryPhaseConfig.allowsCustomerLiveWithoutPia;
+  const piaGateBlockerText = rawPiaGatePassedForWalkOff
     ? "PIA passed in full. Walk-Off can start."
-    : `PIA not complete: ${piaQaStats.piaPass} / ${piaQaStats.requiredTotal} required assets passed.`;
+    : deliveryPhaseConfig.allowsWalkOffWithoutPia
+      ? `PIA walk-off override active: ${deliveryPhaseOverrideReason || "manager approved"}`
+      : piaGateCustomerLiveOverride
+        ? `Customer live override active while PIA completes: ${piaQaStats.piaPass} / ${piaQaStats.requiredTotal} required assets passed.`
+        : `PIA not complete: ${piaQaStats.piaPass} / ${piaQaStats.requiredTotal} required assets passed.`;
 
   const handleOpenWalkOffAudit = () => {
     if (!piaGatePassedForWalkOff) {
@@ -4033,7 +4239,7 @@ export default function ProjectWorkspace({
                 }}
               >
                 <h1 style={responsiveProjectTitle}>{projectName}</h1>
-                <span style={statusPill}>{status}</span>
+                <span style={statusPill}>{effectiveWorkspaceStatus}</span>
                 <span
                   style={{
                     ...readinessPill,
@@ -4638,7 +4844,7 @@ export default function ProjectWorkspace({
                     <WorkspaceTabContent
                       activeTab={activeTab}
                       projectName={projectName}
-                      status={status}
+                      status={effectiveWorkspaceStatus}
                       stats={workspaceDisplayStats}
                       projectAssets={workspaceAssets}
                       projectArea={projectArea}
@@ -4703,11 +4909,11 @@ export default function ProjectWorkspace({
                         <div>
                           <div style={operationKicker}>AREA HANDOVER</div>
                           <h3 style={areaHandoverTitle}>
-                            Walk-Off / Commercial Sign-Off
+                            Delivery Phase / Commercial Sign-Off
                           </h3>
                           <div style={areaHandoverHint}>
-                            Formal area sign-off sits after build, QA, audit
-                            evidence and commercial checks.
+                            Control whether the area is still in build, live under PIA override,
+                            or ready for formal walk-off.
                           </div>
                         </div>
                         <span style={walkOffStatusPill(walkOffStatus)}>
@@ -4715,10 +4921,88 @@ export default function ProjectWorkspace({
                         </span>
                       </div>
 
+                      <div
+                        style={{
+                          display: "grid",
+                          gap: 10,
+                          padding: 12,
+                          border: "1px solid rgba(96,165,250,0.25)",
+                          background: "rgba(2, 6, 23, 0.22)",
+                          borderRadius: 12,
+                          marginBottom: 12,
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 12,
+                            alignItems: "flex-start",
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <div>
+                            <div style={operationKicker}>PHASE CONTROL</div>
+                            <strong style={{ color: "#f8fafc" }}>
+                              {deliveryPhaseConfig.label}
+                            </strong>
+                            <div style={{ color: "#9ca3af", fontSize: 12, marginTop: 4 }}>
+                              {deliveryPhaseConfig.description}
+                            </div>
+                          </div>
+                          {piaGateCustomerLiveOverride && (
+                            <span style={walkOffStatusPill("Review Required")}>
+                              PIA override active
+                            </span>
+                          )}
+                        </div>
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))",
+                            gap: 8,
+                          }}
+                        >
+                          {deliveryPhaseOptions.map((phase) => {
+                            const selected = phase.id === deliveryPhase;
+                            return (
+                              <button
+                                key={phase.id}
+                                type="button"
+                                style={{
+                                  ...smallButton,
+                                  width: "100%",
+                                  background: selected ? "#1d4ed8" : "#111827",
+                                  borderColor: selected
+                                    ? "rgba(147,197,253,0.7)"
+                                    : "rgba(148,163,184,0.22)",
+                                  color: selected ? "#ffffff" : "#e5e7eb",
+                                }}
+                                onClick={() => handleDeliveryPhaseChange(phase.id)}
+                                title={phase.description}
+                              >
+                                {phase.shortLabel}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {deliveryPhaseOverrideReason && piaGateCustomerLiveOverride && (
+                          <div style={{ color: "#cbd5e1", fontSize: 12 }}>
+                            Override note: {deliveryPhaseOverrideReason}
+                          </div>
+                        )}
+                      </div>
+
                       <div style={areaHandoverGrid}>
                         <InfoRow
                           label="PIA Gate"
-                          value={piaGatePassedForWalkOff ? "Passed" : `${piaQaStats.piaPass} / ${piaQaStats.requiredTotal}`}
+                          value={
+                            rawPiaGatePassedForWalkOff
+                              ? "Passed"
+                              : deliveryPhaseConfig.allowsWalkOffWithoutPia
+                                ? "Override"
+                                : `${piaQaStats.piaPass} / ${piaQaStats.requiredTotal}`
+                          }
                           highlight={piaGatePassedForWalkOff}
                         />
                         <InfoRow
@@ -4766,6 +5050,11 @@ export default function ProjectWorkspace({
                         <div style={handoverBlockerBox}>
                           <strong>PIA gate blocker</strong>
                           <div style={{ marginTop: 8 }}>{piaGateBlockerText}</div>
+                        </div>
+                      ) : !rawPiaGatePassedForWalkOff && deliveryPhaseConfig.allowsWalkOffWithoutPia ? (
+                        <div style={handoverGoodBox}>
+                          Walk-Off is available through manager override. PIA is still
+                          incomplete, so keep the override note with the audit evidence.
                         </div>
                       ) : operationalReadiness.blockers.length ? (
                         <div style={handoverBlockerBox}>
@@ -4856,7 +5145,7 @@ export default function ProjectWorkspace({
                   {activeOperationPanel === "projectDetails" && (
                     <div style={operationGrid}>
                       <InfoRow label="Project" value={projectName} />
-                      <InfoRow label="Status" value={status} highlight />
+                      <InfoRow label="Status" value={effectiveWorkspaceStatus} highlight />
                       <InfoRow
                         label="Homes"
                         value={`${formatNumber(displayStats.homesConnected)} / ${formatNumber(displayStats.homesPassed)}`}
@@ -4939,7 +5228,7 @@ export default function ProjectWorkspace({
                         }
                         highlight={operationalReadiness.blockers.length === 0}
                       />
-                      <InfoRow label="Build Status" value={status} />
+                      <InfoRow label="Build Status" value={effectiveWorkspaceStatus} />
                     </div>
                   )}
 

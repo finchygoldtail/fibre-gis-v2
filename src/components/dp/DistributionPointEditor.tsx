@@ -1298,6 +1298,7 @@ export default function DistributionPointEditor({
   const currentSbName = getAssetTitle(asset);
   const manualSbParentFibres = uniqueSorted((manualSbRoute?.parentFibres || []) as number[]);
   const manualSbLocalFibres = uniqueSorted((manualSbRoute?.localFibres || []) as number[]);
+  const isMduSplitterClosure = closureType.includes("MDU_SPLITTER");
   const isMduClosureType = closureType.includes("MDU");
   const storedSplitterFibres = uniqueSorted(
     isMduClosureType
@@ -1410,17 +1411,19 @@ export default function DistributionPointEditor({
   const hasDirectFeeds = displayDirectFibresOnCable.length > 0;
   const hasSplitterFeeds = displaySplitterFibresOnCable.length > 0;
   const isHybridMduFeed =
-    closureType.includes("MDU") && hasDirectFeeds && hasSplitterFeeds;
+    isMduClosureType && hasDirectFeeds && hasSplitterFeeds;
   const routeModeLabel = isHybridMduFeed
-    ? "Hybrid MDU Feed"
-    : closureType.includes("MDU") && hasSplitterFeeds
+    ? isMduSplitterClosure
+      ? "MDU + Splitter Feed"
+      : "Hybrid MDU Feed"
+    : isMduClosureType && hasSplitterFeeds
       ? "MDU Splitter Feed"
       : hasSplitterFeeds
         ? splitterRatio
         : hasDirectFeeds
           ? "Direct Feed"
           : splitterRatio;
-  const splitterBlockLabel = isHybridMduFeed || closureType.includes("MDU")
+  const splitterBlockLabel = isHybridMduFeed || isMduClosureType
     ? "1:8"
     : splitterRatio;
 
@@ -2520,6 +2523,8 @@ export default function DistributionPointEditor({
                 splitterRatio={splitterBlockLabel}
                 routeModeLabel={routeModeLabel}
                 isHybridMduFeed={isHybridMduFeed}
+                isMduClosureType={isMduClosureType}
+                isMduSplitterClosure={isMduSplitterClosure}
                 portRoutes={portRoutes.slice(0, 8)}
                 parentFibreMappings={parentFibreMappings}
                 selectedFibre={selectedFibre}
@@ -3056,6 +3061,8 @@ function FibreSpliceDiagram({
   splitterRatio,
   routeModeLabel,
   isHybridMduFeed = false,
+  isMduClosureType = false,
+  isMduSplitterClosure = false,
   portRoutes,
   parentFibreMappings = [],
   selectedFibre,
@@ -3074,6 +3081,8 @@ function FibreSpliceDiagram({
   splitterRatio: string;
   routeModeLabel: string;
   isHybridMduFeed?: boolean;
+  isMduClosureType?: boolean;
+  isMduSplitterClosure?: boolean;
   portRoutes: PortRoute[];
   parentFibreMappings?: ParentFibreMapping[];
   selectedFibre: number | null;
@@ -3173,7 +3182,16 @@ function FibreSpliceDiagram({
     { label: "Pass-through", value: passthroughFibres.length, colour: "#38bdf8" },
     { label: "Spare / EOL", value: spareFibres.length, colour: "#94a3b8" },
   ];
-  const showSplitterSection = splitterFibres.length > 0 && !isHybridMduFeed;
+  const directFeedSectionLabel = isMduClosureType
+    ? "MDU Flat Feeds"
+    : "Direct Feeds";
+  const splitterSectionLabel = isMduSplitterClosure
+    ? "MDU Splitter Feeds"
+    : isHybridMduFeed
+      ? "1:8 Splitter Feeds"
+      : "Splitter Routes";
+  const showSplitterSection =
+    splitterFibres.length > 0 && (!isHybridMduFeed || isMduSplitterClosure);
 
   return (
     <div
@@ -3293,7 +3311,7 @@ function FibreSpliceDiagram({
             {directFeedFibres.length ? (
               <section style={routeCardStyle("rgba(56,189,248,0.30)")}>
                 <div style={sectionHeaderStyle("#38bdf8")}>
-                  <span>{isHybridMduFeed ? "Reserved MDU Flat Feeds" : "Direct Feeds"}</span>
+                  <span>{directFeedSectionLabel}</span>
                   <span>{directFeedFibres.length} fibre{directFeedFibres.length === 1 ? "" : "s"}</span>
                 </div>
                 <div style={{ display: "grid", gap: 6 }}>
@@ -3309,7 +3327,7 @@ function FibreSpliceDiagram({
                         <span style={lineStyle(fibre, "passthrough")} />
                         <span style={{ color: "#38bdf8", fontWeight: 950, fontSize: 20 }}>→</span>
                         <span style={{ color: "#cbd5e1", fontSize: 13 }}>
-                          {isHybridMduFeed ? `Flat feed reserved in DP ${index + 1}` : `Direct feed output ${index + 1}`}
+                          {isMduClosureType ? `Flat feed reserved in DP ${index + 1}` : `Direct feed output ${index + 1}`}
                         </span>
                       </button>
                     );
@@ -3321,7 +3339,7 @@ function FibreSpliceDiagram({
             {showSplitterSection ? (
             <section style={routeCardStyle("rgba(34,197,94,0.34)")}>
               <div style={sectionHeaderStyle("#22c55e")}>
-                <span>{isHybridMduFeed ? "1:8 Splitter Feeds" : "Splitter Routes"}</span>
+                <span>{splitterSectionLabel}</span>
                 <span>{splitterFibres.length} fibre{splitterFibres.length === 1 ? "" : "s"}</span>
               </div>
               <div
