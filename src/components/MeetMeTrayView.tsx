@@ -150,10 +150,9 @@ export default function MeetMeTrayView({
 
             <svg viewBox="0 0 1200 86" preserveAspectRatio="none" style={spliceSvg}>
               {visualRows.map((row) => {
-                  const inputLocal = getLocalFibre(row.inputFibre);
-                  const outputLocal = getLocalFibre(row.outputFibre);
-                  const x1 = getColumnX(inputLocal);
-                  const x2 = getColumnX(getTrayNumber(row.outputFibre) !== tray ? inputLocal : outputLocal);
+                  const visualLocal = getVisualLocalFibre(row);
+                  const x1 = getColumnX(visualLocal);
+                  const x2 = getColumnX(visualLocal);
                   const selected =
                     selectedFibre === row.inputFibre || selectedFibre === row.outputFibre;
                   const matched =
@@ -188,9 +187,7 @@ export default function MeetMeTrayView({
               {Array.from({ length: 12 }, (_, index) => {
                 const localFibre = index + 1;
                 const mappedRow = trayRows.find(
-                  (row) =>
-                    (getTrayNumber(row.outputFibre) === tray && getLocalFibre(row.outputFibre) === localFibre) ||
-                    (getTrayNumber(row.outputFibre) !== tray && getLocalFibre(row.inputFibre) === localFibre),
+                  (row) => getVisualLocalFibre(row) === localFibre,
                 );
                 return renderFibreButton({
                   tray,
@@ -338,7 +335,7 @@ function renderFibreButton({
 function buildVisualSpliceRows(tray: number, rows: MeetMeSpliceRow[]): MeetMeSpliceRow[] {
   const byInputLocal = new Map<number, MeetMeSpliceRow>();
   rows.forEach((row) => {
-    const inputLocal = getLocalFibre(row.inputFibre ?? row.outputFibre);
+    const inputLocal = getVisualLocalFibre(row);
     if (!byInputLocal.has(inputLocal)) byInputLocal.set(inputLocal, row);
   });
 
@@ -359,6 +356,10 @@ function buildVisualSpliceRows(tray: number, rows: MeetMeSpliceRow[]): MeetMeSpl
       notes: "",
     };
   });
+}
+
+function getVisualLocalFibre(row: MeetMeSpliceRow) {
+  return getLocalFibre(row.inputFibre ?? row.outputFibre);
 }
 
 function getTrayGlobalFibre(tray: number, localFibre: number) {
