@@ -30,7 +30,6 @@ import { getDpIntelligence as getCentralDpIntelligence, isDpLikeAsset } from "..
 import { getJointIntelligence } from "../../services/jointIntelligence";
 import type { NetworkGraph } from "../../services/networkGraph";
 import type { DpRoutingState } from "../../services/network/types";
-import { buildTopologyTrace, type TopologyTraceStep } from "../../services/topologyTraceService";
 
 // =====================================================
 // TYPES
@@ -960,38 +959,6 @@ function isTopologyNoise(asset: SavedMapAsset | null): boolean {
   return !asset || isDropCable(asset) || getPrettyType(asset).toLowerCase().includes("home");
 }
 
-function TracePathList({
-  rows,
-  onSelectAsset,
-}: {
-  rows: TopologyTraceStep[];
-  onSelectAsset?: (asset: SavedMapAsset) => void;
-}) {
-  if (!rows.length) {
-    return <div style={mutedText}>No infrastructure path resolved yet. Check snapped cable endpoints or uploaded joint references.</div>;
-  }
-
-  return (
-    <div style={tracePathList}>
-      {rows.map((row, index) => (
-        <button
-          key={`${row.id}-${index}`}
-          type="button"
-          style={tracePathRow}
-          onClick={() => row.asset && onSelectAsset?.(row.asset as SavedMapAsset)}
-        >
-          <span style={traceStepNo}>{index + 1}</span>
-          <span style={traceStepBody}>
-            <span style={traceStepTitle}>{row.title}</span>
-            <span style={traceStepSubtitle}>{row.subtitle}</span>
-          </span>
-          {row.fibreText ? <span style={traceFibrePill}>{row.fibreText}</span> : null}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 function buildDpIntelligence(
   asset: SavedMapAsset | null,
   projectAssets: SavedMapAsset[],
@@ -1176,17 +1143,6 @@ export default function AssetIntelligencePanel({
       .slice(0, 6);
   }, [asset, deferredProjectAssets, selectedAssetType.cable]);
 
-  const topologyTrace = useMemo(() => {
-    if (!asset || !networkGraph) return null;
-    return buildTopologyTrace({
-      selectedAsset: asset,
-      assets: deferredProjectAssets,
-      graph: networkGraph,
-      dpStates,
-      auditIssues: [],
-    });
-  }, [asset, deferredProjectAssets, networkGraph, dpStates]);
-
   const qaFlags = useMemo(() => buildQaFlags(asset), [asset]);
 
   const areaAuditIssues = useMemo(() => {
@@ -1275,7 +1231,6 @@ export default function AssetIntelligencePanel({
         <div style={operationsGrid}>
           <button type="button" style={operationButton} onClick={() => onSelectAsset?.(asset)}>Select</button>
           <button type="button" style={operationButton} onClick={() => onZoomAsset?.(asset)}>Zoom</button>
-          <button type="button" style={operationButton} onClick={onOpenTopology}>Topology</button>
           <button type="button" style={operationButton} onClick={onOpenQA}>QA</button>
           {selectedAuditTemplate ? (
             <button type="button" style={liveOperationButton} onClick={() => setAuditOpen(true)}>Audit</button>
@@ -1421,28 +1376,6 @@ export default function AssetIntelligencePanel({
         </PanelSection>
       )}
 
-      <PanelSection title="Fibre Path">
-        <TracePathList rows={topologyTrace?.path || []} onSelectAsset={onSelectAsset} />
-      </PanelSection>
-
-      <PanelSection title="Direct Infrastructure Links">
-        {relatedAssets.length ? (
-          <div style={relatedList}>
-            {relatedAssets.map((related) => (
-              <div key={related.id} style={relatedRow}>
-                <span style={relatedDot} />
-                <div>
-                  <div style={relatedName}>{getAssetName(related)}</div>
-                  <div style={relatedType}>{getPrettyType(related)}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div style={mutedText}>No nearby infrastructure links found yet.</div>
-        )}
-      </PanelSection>
-
       <PanelSection title="Maintenance Snapshot">
         <InfoRow label="Last Updated" value={read(item, ["updatedAt", "lastEditedAt", "modifiedAt", "createdAt"])} />
         <InfoRow label="Updated By" value={read(item, ["updatedByEmail", "updatedBy", "lastEditedBy", "createdByEmail"])} />
@@ -1498,7 +1431,6 @@ export default function AssetIntelligencePanel({
       </PanelSection>
 
       <div style={actionRow}>
-        <button type="button" style={primaryButton} onClick={onOpenTopology}>Trace Topology</button>
         <button type="button" style={secondaryButton} onClick={onOpenQA}>Run QA</button>
       </div>
 
@@ -1806,107 +1738,6 @@ const goodState: React.CSSProperties = {
   fontSize: 12,
   fontWeight: 800,
 };
-
-const relatedList: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 7,
-};
-
-const relatedRow: React.CSSProperties = {
-  display: "flex",
-  gap: 8,
-  alignItems: "center",
-  background: "rgba(15, 23, 42, 0.72)",
-  border: "1px solid rgba(148, 163, 184, 0.10)",
-  borderRadius: 8,
-  padding: "8px 9px",
-};
-
-const relatedDot: React.CSSProperties = {
-  width: 9,
-  height: 9,
-  borderRadius: 999,
-  background: "#60a5fa",
-  flexShrink: 0,
-};
-
-const relatedName: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 900,
-};
-
-const relatedType: React.CSSProperties = {
-  color: "#94a3b8",
-  fontSize: 11,
-  marginTop: 2,
-};
-
-const tracePathList: React.CSSProperties = {
-  display: "grid",
-  gap: 6,
-};
-
-const tracePathRow: React.CSSProperties = {
-  width: "100%",
-  display: "grid",
-  gridTemplateColumns: "22px 1fr auto",
-  alignItems: "center",
-  gap: 8,
-  border: "1px solid rgba(96, 165, 250, 0.16)",
-  borderRadius: 8,
-  background: "rgba(15, 23, 42, 0.82)",
-  color: "#e5e7eb",
-  padding: "7px 8px",
-  textAlign: "left",
-  cursor: "pointer",
-};
-
-const traceStepNo: React.CSSProperties = {
-  width: 20,
-  height: 20,
-  borderRadius: 999,
-  display: "grid",
-  placeItems: "center",
-  background: "#1d4ed8",
-  color: "#eff6ff",
-  fontSize: 10,
-  fontWeight: 900,
-};
-
-const traceStepBody: React.CSSProperties = {
-  display: "grid",
-  gap: 2,
-  minWidth: 0,
-};
-
-const traceStepTitle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 900,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-};
-
-const traceStepSubtitle: React.CSSProperties = {
-  color: "#93c5fd",
-  fontSize: 10,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-};
-
-const traceFibrePill: React.CSSProperties = {
-  border: "1px solid rgba(56, 189, 248, 0.28)",
-  borderRadius: 999,
-  color: "#bae6fd",
-  background: "rgba(14, 165, 233, 0.12)",
-  padding: "3px 6px",
-  fontSize: 10,
-  fontWeight: 900,
-  whiteSpace: "nowrap",
-};
-
 
 const miniListWrap: React.CSSProperties = {
   marginTop: 10,

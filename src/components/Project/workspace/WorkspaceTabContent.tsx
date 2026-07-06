@@ -1,6 +1,5 @@
 import React from "react";
 import WorkspaceOverview from "./WorkspaceOverview";
-import WorkspaceTopology from "./WorkspaceTopology";
 import WorkspaceQA from "./WorkspaceQA";
 import WorkspaceBuild from "./WorkspaceBuild";
 import WorkspaceAssets from "./WorkspaceAssets";
@@ -43,7 +42,6 @@ type Props = {
 
 export default function WorkspaceTabContent(props: Props) {
   switch (props.activeTab) {
-    case "topology": return <WorkspaceTopology {...props} />;
     case "qa": return <WorkspaceQA {...props} />;
     case "build": return <WorkspaceBuild {...props} />;
     case "assets": return <WorkspaceAssets {...props} />;

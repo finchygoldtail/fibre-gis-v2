@@ -7,7 +7,6 @@ import WorkspaceMap, {
 } from "./WorkspaceMap";
 import type { OpenreachLayerVisibility } from "../map/OpenreachOverlayLayer";
 import AssetIntelligencePanel from "./AssetIntelligencePanel";
-import TraceTopologyPanel from "../topology/TraceTopologyPanel";
 import WorkspaceTabContent from "./workspace/WorkspaceTabContent";
 import AreaBulkStatusPanel from "./workspace/AreaBulkStatusPanel";
 import LiveHomesControl from "./workspace/LiveHomesControl";
@@ -16,7 +15,6 @@ import { getAssetSearchText as assetSearchText } from "../../utils/assetDisplay"
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../firebase";
 import { auditAreaAssets, type AuditIssue } from "../../services/areaAudit";
-import { buildTopologyTrace } from "../../services/topologyTraceService";
 import {
   buildNetworkState,
   isDistributionPointAsset,
@@ -152,7 +150,6 @@ type ProjectWorkspaceProps = {
 
 const tabs: { id: WorkspaceTab; label: string }[] = [
   { id: "overview", label: "Overview" },
-  { id: "topology", label: "Topology" },
   { id: "qa", label: "QA" },
   { id: "pia", label: "PIA" },
   { id: "build", label: "Build" },
@@ -2655,43 +2652,12 @@ export default function ProjectWorkspace({
       return highlights;
     }
 
-    const trace = buildTopologyTrace({
-      selectedAsset: fullSelectedWorkspaceAsset,
-      assets: workspaceAssets,
-      graph: networkGraph,
-      dpStates: networkState.dpStates,
-      auditIssues,
-    });
-
     addTraceHighlight(highlights, fullSelectedWorkspaceAsset, "selected");
-    trace.path.forEach((row) =>
-      addTraceHighlight(highlights, row.asset, "upstream"),
-    );
-    trace.upstream.forEach((row) =>
-      addTraceHighlight(highlights, row.asset, "upstream"),
-    );
-    trace.downstream.forEach((row) =>
-      addTraceHighlight(highlights, row.asset, "downstream"),
-    );
-    trace.branches.forEach((row) =>
-      addTraceHighlight(highlights, row.asset, "branch"),
-    );
-    trace.homes.forEach((row) =>
-      addTraceHighlight(highlights, row.asset, "home"),
-    );
-    trace.fibre.forEach((row) =>
-      addTraceHighlight(highlights, row.asset, "fibre"),
-    );
-    trace.qa.forEach((row) => addTraceHighlight(highlights, row.asset, "qa"));
 
     return highlights;
   }, [
     activeOperationPanel,
     fullSelectedWorkspaceAsset,
-    workspaceAssets,
-    networkGraph,
-    networkState.dpStates,
-    auditIssues,
   ]);
 
   const traceHighlightedAssetIds = useMemo(
@@ -2747,13 +2713,13 @@ export default function ProjectWorkspace({
     setSelectedWorkspaceAsset(asset);
     setSearchTerm(getWorkspaceAssetTitle(asset));
     setSearchFocused(false);
-    setActiveOperationPanel("trace");
-    setActiveTab("topology");
+    setActiveOperationPanel("none");
+    setActiveTab("assets");
   };
 
   const openInternalTraceTool = () => {
-    setActiveTab("topology");
-    setActiveOperationPanel("trace");
+    setActiveTab("assets");
+    setActiveOperationPanel("none");
   };
 
   const openIssueSeverity = (severity: QaIssueSeverity) => {
@@ -3992,12 +3958,6 @@ export default function ProjectWorkspace({
     onClick: () => void;
   }[] = [
     {
-      label: "Trace",
-      helper: "Topology path",
-      active: activeTab === "topology" && activeOperationPanel === "trace",
-      onClick: () => openOperationPanel("trace", "topology"),
-    },
-    {
       label: "QA Issues",
       helper: `${formatNumber(rolloutKpis.qaIssues)} issues`,
       active: activeTab === "qa",
@@ -4007,7 +3967,7 @@ export default function ProjectWorkspace({
       label: "Disconnected",
       helper: `${formatNumber(rolloutKpis.disconnectedAssets)} assets`,
       active: activeOperationPanel === "disconnected",
-      onClick: () => openKpiDrilldown("disconnected", "topology"),
+      onClick: () => openKpiDrilldown("disconnected", "assets"),
     },
     {
       label: "Capacity",
@@ -5119,10 +5079,7 @@ export default function ProjectWorkspace({
                         {activeOperationPanel === "dpStatus" &&
                           "DP Operations"}
                         {activeOperationPanel === "issues" && "Area Issues"}
-                        {activeOperationPanel === "topology" && "Topology"}
                         {activeOperationPanel === "qa" && "QA Validation"}
-                        {activeOperationPanel === "trace" &&
-                          "Trace Fibre Route"}
                         {activeOperationPanel === "homesNotLive" &&
                           "Homes Not Live"}
                         {activeOperationPanel === "homesLive" && "Live Homes"}
@@ -5587,65 +5544,6 @@ export default function ProjectWorkspace({
                         )}
                       </div>
                     </div>
-                  )}
-
-                  {activeOperationPanel === "topology" && (
-                    <div style={operationGrid}>
-                      <InfoRow
-                        label="Graph Nodes"
-                        value={formatNumber(networkGraph.nodes.size)}
-                      />
-                      <InfoRow
-                        label="Graph Links"
-                        value={formatNumber(networkGraph.edges.size)}
-                      />
-                      <InfoRow
-                        label="Mapped Joints"
-                        value={formatNumber(
-                          stats.mappedJoints ?? displayStats.joints,
-                        )}
-                      />
-                      <InfoRow
-                        label="Route Links"
-                        value={formatNumber(displayStats.topologyLinks)}
-                      />
-                      <InfoRow
-                        label="Disconnected Assets"
-                        value={formatNumber(disconnectedAssets.length)}
-                      />
-                      <InfoRow
-                        label="Unmatched Cable IDs"
-                        value={formatNumber(
-                          displayStats.unmatchedCableIds ?? 0,
-                        )}
-                      />
-                      <button
-                        type="button"
-                        style={wideButton}
-                        onClick={() => {
-                          if (onOpenFibreTopology) onOpenFibreTopology();
-                          else openInternalTraceTool();
-                        }}
-                      >
-                        Open Fibre Tray Topology
-                      </button>
-                    </div>
-                  )}
-
-                  {activeOperationPanel === "trace" && (
-                    <TraceTopologyPanel
-                      selectedAsset={fullSelectedWorkspaceAsset}
-                      assets={workspaceAssets}
-                      networkGraph={networkGraph}
-                      dpStates={networkState.dpStates}
-                      auditIssues={auditIssues}
-                      onSelectAsset={(asset) => {
-                        setSelectedWorkspaceAsset(asset);
-                        setSearchTerm(getWorkspaceAssetTitle(asset));
-                        setActiveTab("topology");
-                        setActiveOperationPanel("trace");
-                      }}
-                    />
                   )}
 
                   {activeOperationPanel === "addAsset" && (

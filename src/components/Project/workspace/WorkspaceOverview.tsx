@@ -266,16 +266,6 @@ export default function WorkspaceOverview({
           <button type="button" style={button} onClick={() => onOpenPanel?.("issues", "qa")}>
             QA Navigator
           </button>
-          <button
-            type="button"
-            style={button}
-            onClick={() => {
-              onOpenPanel?.("trace", "topology");
-              onOpenTrace?.();
-            }}
-          >
-            Trace Fibre Route
-          </button>
           <button type="button" style={button} onClick={() => onOpenPanel?.("none", "reports")}>
             Templates
           </button>
