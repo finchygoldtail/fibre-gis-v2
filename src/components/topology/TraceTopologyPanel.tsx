@@ -8,6 +8,7 @@ import React, { useMemo } from "react";
 import type { SavedMapAsset } from "../map/types";
 import type { AuditIssue } from "../../services/areaAudit";
 import type { NetworkGraph } from "../../services/networkGraph";
+import type { DpRoutingState } from "../../services/network/types";
 
 import {
   buildTopologyTrace,
@@ -18,6 +19,7 @@ type TraceTopologyPanelProps = {
   selectedAsset: SavedMapAsset | null;
   assets: SavedMapAsset[];
   networkGraph: NetworkGraph;
+  dpStates?: Record<string, DpRoutingState>;
   auditIssues?: AuditIssue[];
   onSelectAsset?: (asset: SavedMapAsset) => void;
 };
@@ -78,6 +80,7 @@ export default function TraceTopologyPanel({
   selectedAsset,
   assets,
   networkGraph,
+  dpStates,
   auditIssues = [],
   onSelectAsset,
 }: TraceTopologyPanelProps) {
@@ -87,9 +90,10 @@ export default function TraceTopologyPanel({
         selectedAsset,
         assets,
         graph: networkGraph,
+        dpStates,
         auditIssues,
       }),
-    [selectedAsset, assets, networkGraph, auditIssues],
+    [selectedAsset, assets, networkGraph, dpStates, auditIssues],
   );
 
   if (!selectedAsset) {

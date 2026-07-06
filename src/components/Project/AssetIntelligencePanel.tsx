@@ -29,6 +29,7 @@ import { createAuditFormLog } from "../../services/auditService";
 import { getDpIntelligence as getCentralDpIntelligence, isDpLikeAsset } from "../../services/dpIntelligence";
 import { getJointIntelligence } from "../../services/jointIntelligence";
 import type { NetworkGraph } from "../../services/networkGraph";
+import type { DpRoutingState } from "../../services/network/types";
 import { buildTopologyTrace, type TopologyTraceStep } from "../../services/topologyTraceService";
 
 // =====================================================
@@ -40,6 +41,7 @@ type AssetIntelligencePanelProps = {
   projectName: string;
   projectAssets: SavedMapAsset[];
   networkGraph?: NetworkGraph;
+  dpStates?: Record<string, DpRoutingState>;
   onClose?: () => void;
   onOpenTopology?: () => void;
   onOpenQA?: () => void;
@@ -1092,6 +1094,7 @@ export default function AssetIntelligencePanel({
   projectName,
   projectAssets,
   networkGraph,
+  dpStates,
   onClose,
   onOpenTopology,
   onOpenQA,
@@ -1179,9 +1182,10 @@ export default function AssetIntelligencePanel({
       selectedAsset: asset,
       assets: deferredProjectAssets,
       graph: networkGraph,
+      dpStates,
       auditIssues: [],
     });
-  }, [asset, deferredProjectAssets, networkGraph]);
+  }, [asset, deferredProjectAssets, networkGraph, dpStates]);
 
   const qaFlags = useMemo(() => buildQaFlags(asset), [asset]);
 

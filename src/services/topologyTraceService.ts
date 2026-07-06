@@ -13,6 +13,7 @@ import type { AuditIssue } from "./areaAudit";
 import type { NetworkGraph, GraphEdge, GraphNode } from "./networkGraph";
 import type { SavedMapAsset } from "../components/map/types";
 import { getCableUsedFibres } from "../components/map/cableUsage";
+import type { DpRoutingState } from "./network/types";
 
 export type TraceDirection = "selected" | "upstream" | "downstream" | "branch" | "home" | "qa";
 
@@ -61,6 +62,7 @@ type BuildTopologyTraceInput = {
   selectedAsset: SavedMapAsset | null;
   assets: SavedMapAsset[];
   graph: NetworkGraph;
+  dpStates?: Record<string, DpRoutingState>;
   auditIssues?: AuditIssue[];
 };
 
@@ -244,6 +246,26 @@ function cableReferenceMatches(cable: any, reference: string): boolean {
   return candidateKeys(cable).some((key) => key === ref || key.includes(ref) || ref.includes(key));
 }
 
+function edgeReferenceMatches(edge: GraphEdge, reference: string | undefined): boolean {
+  if (!reference) return false;
+  return cableReferenceMatches(edge.asset, reference) || norm(edge.id) === norm(reference);
+}
+
+function findDpStateForNode(node: GraphNode, dpStates?: Record<string, DpRoutingState>): DpRoutingState | null {
+  if (!dpStates) return null;
+  if (dpStates[node.id]) return dpStates[node.id];
+
+  const nodeKeys = new Set(candidateKeys(node.asset));
+  return (
+    Object.values(dpStates).find((state) =>
+      [state.assetId, state.assetName, state.throughCableId, state.jointCableKey, state.jointCableName]
+        .map(norm)
+        .filter(Boolean)
+        .some((key) => nodeKeys.has(key)),
+    ) || null
+  );
+}
+
 function cableForDp(dp: any, assets: SavedMapAsset[]): SavedMapAsset | null {
   const throughCableId = getDpThroughCableId(dp);
   if (!throughCableId) return null;
@@ -385,7 +407,41 @@ function scoreInfrastructureSteps(steps: TopologyTraceStep[], terminalNode?: Gra
   return (terminalNode ? pathTargetScore(terminalNode) : 0) * 10 + edgeScore * 100 + steps.length;
 }
 
-function buildInfrastructurePath(selectedAsset: SavedMapAsset, graph: NetworkGraph): TopologyTraceStep[] {
+function dpAwareCandidateEdges(
+  node: GraphNode,
+  availableEdges: GraphEdge[],
+  dpStates?: Record<string, DpRoutingState>,
+): GraphEdge[] {
+  if (node.kind !== "dp") return availableEdges;
+
+  const state = findDpStateForNode(node, dpStates);
+  if (!state) return availableEdges;
+
+  const throughEdges = availableEdges.filter((edge) => edgeReferenceMatches(edge, state.throughCableId));
+  const downstreamEdges = state.passthroughFibres.length
+    ? availableEdges.filter((edge) => edgeReferenceMatches(edge, state.downstreamCableId))
+    : [];
+
+  const explicitEdges = [...throughEdges, ...downstreamEdges].filter(
+    (edge, index, array) => array.findIndex((item) => item.id === edge.id) === index,
+  );
+  if (explicitEdges.length) return explicitEdges;
+
+  if (state.passthroughFibres.length > 0 && state.throughCableId) {
+    const inferredDownstreamEdges = availableEdges.filter(
+      (edge) => !edgeReferenceMatches(edge, state.throughCableId) && edgeBackboneScore(edge) < 80,
+    );
+    if (inferredDownstreamEdges.length === 1) return inferredDownstreamEdges;
+  }
+
+  return [];
+}
+
+function buildInfrastructurePath(
+  selectedAsset: SavedMapAsset,
+  graph: NetworkGraph,
+  dpStates?: Record<string, DpRoutingState>,
+): TopologyTraceStep[] {
   const selectedNode = findSelectedNode(graph, selectedAsset);
   const selectedEdge = findSelectedEdge(graph, selectedAsset);
   const maxDepth = 18;
@@ -446,10 +502,11 @@ function buildInfrastructurePath(selectedAsset: SavedMapAsset, graph: NetworkGra
       .map((edgeId) => graph.edges.get(edgeId))
       .filter((edge): edge is GraphEdge => Boolean(edge && isInfrastructureEdge(edge)))
       .filter((edge) => !current.visitedEdges.has(edge.id));
-    const backboneEdges = availableEdges.filter((edge) => edgeBackboneScore(edge) >= 80);
+    const dpAwareEdges = dpAwareCandidateEdges(current.node, availableEdges, dpStates);
+    const backboneEdges = dpAwareEdges.filter((edge) => edgeBackboneScore(edge) >= 80);
     const candidateEdges = isBackboneTransitNode(current.node)
       ? backboneEdges
-      : availableEdges;
+      : dpAwareEdges;
 
     if (isBackboneTransitNode(current.node) && candidateEdges.length === 0) continue;
 
@@ -501,7 +558,7 @@ function buildInfrastructurePath(selectedAsset: SavedMapAsset, graph: NetworkGra
 }
 
 export function buildTopologyTrace(input: BuildTopologyTraceInput): TopologyTraceResult {
-  const { selectedAsset, assets, graph, auditIssues = [] } = input;
+  const { selectedAsset, assets, graph, dpStates, auditIssues = [] } = input;
   const result = emptyResult(selectedAsset);
   if (!selectedAsset) return result;
 
@@ -523,7 +580,7 @@ export function buildTopologyTrace(input: BuildTopologyTraceInput): TopologyTrac
   };
 
   addQa(selectedIssues);
-  result.path = buildInfrastructurePath(selectedAsset, graph);
+  result.path = buildInfrastructurePath(selectedAsset, graph, dpStates);
 
   if (selectedNode) {
     selectedNode.connectedTo.forEach((edgeId, index) => {

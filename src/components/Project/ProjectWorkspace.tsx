@@ -2659,10 +2659,14 @@ export default function ProjectWorkspace({
       selectedAsset: fullSelectedWorkspaceAsset,
       assets: workspaceAssets,
       graph: networkGraph,
+      dpStates: networkState.dpStates,
       auditIssues,
     });
 
     addTraceHighlight(highlights, fullSelectedWorkspaceAsset, "selected");
+    trace.path.forEach((row) =>
+      addTraceHighlight(highlights, row.asset, "upstream"),
+    );
     trace.upstream.forEach((row) =>
       addTraceHighlight(highlights, row.asset, "upstream"),
     );
@@ -2686,6 +2690,7 @@ export default function ProjectWorkspace({
     fullSelectedWorkspaceAsset,
     workspaceAssets,
     networkGraph,
+    networkState.dpStates,
     auditIssues,
   ]);
 
@@ -4815,6 +4820,7 @@ export default function ProjectWorkspace({
                     projectName={projectName}
                     projectAssets={workspaceAssets}
                     networkGraph={networkGraph}
+                    dpStates={networkState.dpStates}
                     onClose={() => setSelectedWorkspaceAsset(null)}
                     onOpenTopology={openInternalTraceTool}
                     onOpenQA={() => {
@@ -5631,6 +5637,7 @@ export default function ProjectWorkspace({
                       selectedAsset={fullSelectedWorkspaceAsset}
                       assets={workspaceAssets}
                       networkGraph={networkGraph}
+                      dpStates={networkState.dpStates}
                       auditIssues={auditIssues}
                       onSelectAsset={(asset) => {
                         setSelectedWorkspaceAsset(asset);
