@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import type { CommercialRegisterValues } from "./CommercialDocumentRegister";
 import type { CommercialAuditBlocker } from "../../services/auditCommercialStatus";
+import type { AuditLog } from "../../services/auditService";
 
 export type CommercialApprovalState = {
   approved: boolean;
@@ -33,6 +34,7 @@ type Props = {
   piaPassed: number;
   piaGatePassed: boolean;
   walkOffStatus: string;
+  walkOffAuditLog?: AuditLog | null;
   documentValues: CommercialRegisterValues | null;
   blockers: CommercialAuditBlocker[];
   onApprovalChange?: (state: CommercialApprovalState) => void;
@@ -161,6 +163,25 @@ function dateTime(value?: string): string {
   return date.toLocaleString();
 }
 
+function readAuditPayload(log?: AuditLog | null): Record<string, any> {
+  const payload = log?.after as any;
+  return payload && typeof payload === "object" ? payload : {};
+}
+
+function readableAnswerLabel(value: string): string {
+  const spaced = String(value || "")
+    .replace(/([A-Z])/g, " $1")
+    .replace(/[_-]+/g, " ")
+    .trim();
+  return spaced ? spaced.charAt(0).toUpperCase() + spaced.slice(1) : "Answer";
+}
+
+function readableAnswerValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "object") return "Stored snapshot";
+  return String(value);
+}
+
 function stageColour(complete: boolean, blocked: boolean): string {
   if (complete) return "#86efac";
   if (blocked) return "#fca5a5";
@@ -212,6 +233,7 @@ export default function CommercialApprovalWorkflow({
   piaPassed,
   piaGatePassed,
   walkOffStatus,
+  walkOffAuditLog,
   documentValues,
   blockers,
   onApprovalChange,
@@ -338,6 +360,15 @@ export default function CommercialApprovalWorkflow({
   const readinessToLive = approval.approved ? Math.min(100, commercialReadiness + 5) : commercialReadiness;
   const blockedItems = checklist.filter((item) => !item.complete);
   const canApproveNow = canApproveCommercial && blockedItems.length === 0;
+  const walkOffAuditPayload = readAuditPayload(walkOffAuditLog);
+  const walkOffAuditAnswers =
+    walkOffAuditPayload.answers && typeof walkOffAuditPayload.answers === "object"
+      ? Object.entries(walkOffAuditPayload.answers).filter(
+          ([key]) => key !== "areaSnapshot" && key !== "contractor",
+        )
+      : [];
+  const walkOffEvidenceCount = walkOffAuditLog?.attachments?.length || 0;
+  const walkOffSignatureCaptured = String(walkOffAuditPayload.signature || "").startsWith("data:image");
 
   function approve() {
     if (!canApproveNow) return;
@@ -457,6 +488,52 @@ export default function CommercialApprovalWorkflow({
           </tbody>
         </table>
       </div>
+
+      {walkOffComplete ? (
+        <div style={{ ...card, marginTop: 12, borderColor: "rgba(96,165,250,0.28)" }}>
+          <div style={{ color: "#e5e7eb", fontWeight: 900 }}>Digital Walk-Off Record</div>
+          {walkOffAuditLog ? (
+            <>
+              <div style={grid}>
+                <ScoreCard label="Result" value={walkOffAuditPayload.result || walkOffStatus} good={walkOffAuditPayload.result === "Pass"} />
+                <ScoreCard label="Completed By" value={walkOffAuditLog.changedByName || walkOffAuditLog.changedByEmail || "Unknown"} good />
+                <ScoreCard label="Completed On" value={dateTime(walkOffAuditLog.changedAt)} good />
+                <ScoreCard label="Evidence" value={`${walkOffEvidenceCount} photo${walkOffEvidenceCount === 1 ? "" : "s"}`} good={walkOffEvidenceCount > 0} />
+                <ScoreCard label="Signature" value={walkOffSignatureCaptured ? "Captured" : "Not captured"} good={walkOffSignatureCaptured} />
+              </div>
+
+              {walkOffAuditLog.comment ? (
+                <div style={{ ...hint, color: "#cbd5e1", marginTop: 10 }}>
+                  <strong>Comments:</strong> {walkOffAuditLog.comment}
+                </div>
+              ) : null}
+
+              {walkOffAuditAnswers.length ? (
+                <div style={{ marginTop: 10, overflowX: "auto" }}>
+                  <table style={table}>
+                    <thead>
+                      <tr>
+                        <th style={th}>Walk-Off Check</th>
+                        <th style={th}>Answer</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {walkOffAuditAnswers.map(([key, value]) => (
+                        <tr key={`walkoff-record-${key}`}>
+                          <td style={td}>{readableAnswerLabel(key)}</td>
+                          <td style={{ ...td, fontWeight: 900 }}>{readableAnswerValue(value)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div style={hint}>Walk-Off is marked complete, but the saved audit detail could not be loaded for this area.</div>
+          )}
+        </div>
+      ) : null}
 
       <div style={{ ...card, marginTop: 12 }}>
         <div style={{ color: "#e5e7eb", fontWeight: 900 }}>Digital Sign-Off</div>

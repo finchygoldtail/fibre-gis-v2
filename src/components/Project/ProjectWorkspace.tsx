@@ -23,7 +23,11 @@ import { getDpIntelligence } from "../../services/dpIntelligence";
 import AuditModal from "../audits/AuditModal";
 import AuditFormEngine from "../audits/AuditFormEngine";
 import { walkOffAuditTemplate } from "../audits/auditTemplates";
-import { createAuditFormLog } from "../../services/auditService";
+import {
+  createAuditFormLog,
+  loadAssetAuditLogs,
+  type AuditLog,
+} from "../../services/auditService";
 import AuditCommercialDashboard from "../audits/AuditCommercialDashboard";
 import AuditPaymentBlockerPanel from "../audits/AuditPaymentBlockerPanel";
 import AuditHistoryPanel from "../audits/AuditHistoryPanel";
@@ -1935,6 +1939,8 @@ export default function ProjectWorkspace({
     "Pending" | "Approved" | "Review Required" | "Blocked"
   >("Pending");
   const [walkOffSavedAt, setWalkOffSavedAt] = useState<string>("");
+  const [latestWalkOffAudit, setLatestWalkOffAudit] =
+    useState<AuditLog | null>(null);
 
   const requestSingleJobPackMapCapture = (target: JobPackMapCaptureTarget) =>
     new Promise<string>((resolve) => {
@@ -3266,13 +3272,70 @@ export default function ProjectWorkspace({
     [projectArea, activeWorkspaceProjectId, projectName, walkOffSnapshot],
   );
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLatestWalkOffAudit() {
+      const assetId = String(walkOffAreaAsset.id || "").trim();
+      if (!assetId) {
+        setLatestWalkOffAudit(null);
+        return;
+      }
+
+      try {
+        const logs = await loadAssetAuditLogs(assetId, 50);
+        const latest = logs.find((log) => {
+          const payload = log.after as any;
+          return (
+            log.context === walkOffAuditTemplate.auditType ||
+            payload?.auditType === walkOffAuditTemplate.auditType ||
+            payload?.auditTitle === walkOffAuditTemplate.title
+          );
+        });
+
+        if (cancelled) return;
+        setLatestWalkOffAudit(latest || null);
+
+        if (latest) {
+          const payload = latest.after as any;
+          const result = String(payload?.result || "");
+          setWalkOffStatus(
+            result === "Pass"
+              ? "Approved"
+              : result === "Advisory"
+                ? "Review Required"
+                : result === "Fail"
+                  ? "Blocked"
+                  : "Pending",
+          );
+          setWalkOffSavedAt(
+            latest.changedAt
+              ? new Date(latest.changedAt).toLocaleString("en-GB")
+              : "",
+          );
+        } else {
+          setWalkOffStatus("Pending");
+          setWalkOffSavedAt("");
+        }
+      } catch (err) {
+        console.warn("Failed to load latest Walk-Off audit", err);
+      }
+    }
+
+    loadLatestWalkOffAudit();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [walkOffAreaAsset.id]);
+
   const handleSaveWalkOffAudit = async (audit: any) => {
     if (!piaGatePassedForWalkOff) {
       alert("Walk-Off is locked until PIA has passed in full for this area.");
       return;
     }
 
-    await createAuditFormLog({
+    const savedWalkOffAudit = await createAuditFormLog({
       projectId:
         activeWorkspaceProjectId || activeProjectId || projectArea?.id || null,
       asset: walkOffAreaAsset,
@@ -3288,6 +3351,7 @@ export default function ProjectWorkspace({
       photos: audit.photos,
     });
 
+    setLatestWalkOffAudit(savedWalkOffAudit);
     setWalkOffStatus(
       audit.result === "Pass"
         ? "Approved"
@@ -4655,6 +4719,7 @@ export default function ProjectWorkspace({
                       piaPassed={piaQaStats.piaPass}
                       piaGatePassed={piaGatePassedForWalkOff}
                       walkOffStatus={walkOffStatus}
+                      walkOffAuditLog={latestWalkOffAudit}
                       areaKey={activeWorkspaceProjectId || projectArea?.id || projectName || "commercial-area"}
                       areaName={projectArea?.name || projectName || "Current area"}
                       onSelectAssetId={(assetId) => {

@@ -14,6 +14,7 @@ import {
 import { useUserRole } from "../../context/UserRoleContext";
 import CommercialDocumentRegister, { type CommercialRegisterValues } from "../commercial/CommercialDocumentRegister";
 import CommercialApprovalWorkflow from "../commercial/CommercialApprovalWorkflow";
+import type { AuditLog } from "../../services/auditService";
 
 type Props = {
   onSelectAssetId?: (assetId: string) => void;
@@ -30,6 +31,7 @@ type Props = {
   piaPassed?: number;
   piaGatePassed?: boolean;
   walkOffStatus?: string;
+  walkOffAuditLog?: AuditLog | null;
   areaKey?: string;
   areaName?: string;
 };
@@ -215,6 +217,7 @@ export default function AuditCommercialDashboard({
   piaPassed = 0,
   piaGatePassed = true,
   walkOffStatus = "Pending",
+  walkOffAuditLog = null,
   areaKey = "",
   areaName = "Current area",
 }: Props) {
@@ -367,6 +370,7 @@ export default function AuditCommercialDashboard({
         piaPassed={piaPassed}
         piaGatePassed={piaGatePassed}
         walkOffStatus={walkOffStatus}
+        walkOffAuditLog={walkOffAuditLog}
         documentValues={documentValues}
         blockers={blockers}
       />
