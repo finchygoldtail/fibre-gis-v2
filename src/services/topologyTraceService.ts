@@ -407,15 +407,68 @@ function scoreInfrastructureSteps(steps: TopologyTraceStep[], terminalNode?: Gra
   return (terminalNode ? pathTargetScore(terminalNode) : 0) * 10 + edgeScore * 100 + steps.length;
 }
 
+function uniqueNumbers(values: unknown[]): number[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0),
+    ),
+  ).sort((a, b) => a - b);
+}
+
+function activeFibresForNode(node: GraphNode, dpStates?: Record<string, DpRoutingState>): number[] {
+  const state = findDpStateForNode(node, dpStates);
+  if (!state) return [];
+  return uniqueNumbers([
+    ...state.inputFibres,
+    ...state.passthroughFibres,
+    ...(state.jointPassthroughFibres || []),
+  ]);
+}
+
+function dpConsumesActiveFibres(state: DpRoutingState, activeFibres: number[]): boolean {
+  if (!activeFibres.length) return false;
+  const consumed = new Set(uniqueNumbers([
+    ...state.consumedFibres,
+    ...state.splitterFibres,
+    ...state.directFibres,
+  ]));
+  return activeFibres.some((fibre) => consumed.has(fibre));
+}
+
+function dpPassesActiveFibres(
+  node: GraphNode,
+  activeFibres: number[],
+  dpStates?: Record<string, DpRoutingState>,
+): boolean {
+  const state = findDpStateForNode(node, dpStates);
+  if (!state || !activeFibres.length) return false;
+  return !dpConsumesActiveFibres(state, activeFibres);
+}
+
 function dpAwareCandidateEdges(
   node: GraphNode,
   availableEdges: GraphEdge[],
   dpStates?: Record<string, DpRoutingState>,
+  activeFibres: number[] = [],
+  incomingEdgeId?: string,
 ): GraphEdge[] {
   if (node.kind !== "dp") return availableEdges;
 
   const state = findDpStateForNode(node, dpStates);
   if (!state) return availableEdges;
+
+  const activePassesThrough = activeFibres.length > 0 && !dpConsumesActiveFibres(state, activeFibres);
+  if (activePassesThrough) {
+    const passThroughEdges = availableEdges.filter(
+      (edge) =>
+        edge.id === incomingEdgeId ||
+        edgeReferenceMatches(edge, state.downstreamCableId) ||
+        !edgeReferenceMatches(edge, state.throughCableId),
+    );
+    if (passThroughEdges.length) return passThroughEdges;
+  }
 
   const throughEdges = availableEdges.filter((edge) => edgeReferenceMatches(edge, state.throughCableId));
   const downstreamEdges = state.passthroughFibres.length
@@ -451,6 +504,8 @@ function buildInfrastructurePath(
     steps: TopologyTraceStep[];
     visitedNodes: Set<string>;
     visitedEdges: Set<string>;
+    incomingEdgeId?: string;
+    activeFibres: number[];
   };
 
   const queue: QueueItem[] = [];
@@ -461,6 +516,7 @@ function buildInfrastructurePath(
       steps: [nodeStep(selectedNode, "selected")],
       visitedNodes: new Set([selectedNode.id]),
       visitedEdges: new Set(),
+      activeFibres: activeFibresForNode(selectedNode, dpStates),
     });
   }
 
@@ -477,6 +533,8 @@ function buildInfrastructurePath(
           ],
           visitedNodes: new Set([node.id]),
           visitedEdges: new Set([selectedEdge.id]),
+          incomingEdgeId: selectedEdge.id,
+          activeFibres: activeFibresForNode(node, dpStates),
         });
       });
   }
@@ -498,11 +556,21 @@ function buildInfrastructurePath(
 
     if (current.steps.length >= maxDepth) continue;
 
+    const canReuseIncomingEdge = Boolean(
+      current.incomingEdgeId &&
+        dpPassesActiveFibres(current.node, current.activeFibres, dpStates),
+    );
     const availableEdges = current.node.connectedTo
       .map((edgeId) => graph.edges.get(edgeId))
       .filter((edge): edge is GraphEdge => Boolean(edge && isInfrastructureEdge(edge)))
-      .filter((edge) => !current.visitedEdges.has(edge.id));
-    const dpAwareEdges = dpAwareCandidateEdges(current.node, availableEdges, dpStates);
+      .filter((edge) => !current.visitedEdges.has(edge.id) || (canReuseIncomingEdge && edge.id === current.incomingEdgeId));
+    const dpAwareEdges = dpAwareCandidateEdges(
+      current.node,
+      availableEdges,
+      dpStates,
+      current.activeFibres,
+      current.incomingEdgeId,
+    );
     const backboneEdges = dpAwareEdges.filter((edge) => edgeBackboneScore(edge) >= 80);
     const candidateEdges = isBackboneTransitNode(current.node)
       ? backboneEdges
@@ -544,6 +612,10 @@ function buildInfrastructurePath(
               node: nextNode,
               visitedNodes,
               visitedEdges,
+              incomingEdgeId: edge.id,
+              activeFibres: current.activeFibres.length
+                ? current.activeFibres
+                : activeFibresForNode(nextNode, dpStates),
               steps: [
                 ...current.steps,
                 edgeStep(edge, "upstream"),
