@@ -347,9 +347,9 @@ function renderFibreButton({
             ? "0 0 0 3px rgba(96, 165, 250, 0.22)"
             : "none",
       }}
-      title={`Tray ${tray} ${side === "output" ? "Output" : "Input"} F${localFibre}`}
+      title={`Tray ${tray} ${side === "output" ? "Output" : "Input"} F${fibreNo}`}
     >
-      F{localFibre}
+      F{fibreNo}
     </button>
   );
 }
