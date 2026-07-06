@@ -122,12 +122,19 @@ export default function TraceTopologyPanel({
         <Metric label="Upstream" value={trace.summary.upstreamCount} />
         <Metric label="Downstream" value={trace.summary.downstreamCount} />
         <Metric label="Branches" value={trace.summary.branchCableCount} />
-        <Metric label="Homes" value={trace.summary.connectedHomeCount} />
+        <Metric label="Path Steps" value={trace.path.length} />
         <Metric label="Reserved" value={`${trace.summary.reservedFibres}${trace.summary.capacity ? `/${trace.summary.capacity}` : ""}F`} />
         <Metric label="Utilisation" value={formatPercent(trace.summary.utilisationPercent)} />
         <Metric label="QA High" value={trace.summary.qaHigh} />
         <Metric label="QA Med/Low" value={`${trace.summary.qaMedium}/${trace.summary.qaLow}`} />
       </div>
+
+      <StepList
+        title="Full Infrastructure Path"
+        empty="No infrastructure path resolved yet. Check snapped cable endpoints or uploaded joint references."
+        rows={trace.path}
+        onSelectAsset={onSelectAsset}
+      />
 
       <StepList
         title="Upstream Chain"
@@ -154,13 +161,6 @@ export default function TraceTopologyPanel({
         title="Fibre Reservations"
         empty="No fibre reservation metadata found yet. Apply/rebuild the fibre plan to populate this section."
         rows={trace.fibre}
-        onSelectAsset={onSelectAsset}
-      />
-
-      <StepList
-        title="Connected Homes / Drops"
-        empty="No connected homes or drop cables detected in the current trace."
-        rows={trace.homes}
         onSelectAsset={onSelectAsset}
       />
 

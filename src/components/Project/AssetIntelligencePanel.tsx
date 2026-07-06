@@ -28,6 +28,8 @@ import {
 import { createAuditFormLog } from "../../services/auditService";
 import { getDpIntelligence as getCentralDpIntelligence, isDpLikeAsset } from "../../services/dpIntelligence";
 import { getJointIntelligence } from "../../services/jointIntelligence";
+import type { NetworkGraph } from "../../services/networkGraph";
+import { buildTopologyTrace, type TopologyTraceStep } from "../../services/topologyTraceService";
 
 // =====================================================
 // TYPES
@@ -37,6 +39,7 @@ type AssetIntelligencePanelProps = {
   asset: SavedMapAsset | null;
   projectName: string;
   projectAssets: SavedMapAsset[];
+  networkGraph?: NetworkGraph;
   onClose?: () => void;
   onOpenTopology?: () => void;
   onOpenQA?: () => void;
@@ -951,6 +954,42 @@ function isDropCable(asset: SavedMapAsset | null): boolean {
   return haystack.includes("drop") || haystack.includes("uprn");
 }
 
+function isTopologyNoise(asset: SavedMapAsset | null): boolean {
+  return !asset || isDropCable(asset) || getPrettyType(asset).toLowerCase().includes("home");
+}
+
+function TracePathList({
+  rows,
+  onSelectAsset,
+}: {
+  rows: TopologyTraceStep[];
+  onSelectAsset?: (asset: SavedMapAsset) => void;
+}) {
+  if (!rows.length) {
+    return <div style={mutedText}>No infrastructure path resolved yet. Check snapped cable endpoints or uploaded joint references.</div>;
+  }
+
+  return (
+    <div style={tracePathList}>
+      {rows.map((row, index) => (
+        <button
+          key={`${row.id}-${index}`}
+          type="button"
+          style={tracePathRow}
+          onClick={() => row.asset && onSelectAsset?.(row.asset as SavedMapAsset)}
+        >
+          <span style={traceStepNo}>{index + 1}</span>
+          <span style={traceStepBody}>
+            <span style={traceStepTitle}>{row.title}</span>
+            <span style={traceStepSubtitle}>{row.subtitle}</span>
+          </span>
+          {row.fibreText ? <span style={traceFibrePill}>{row.fibreText}</span> : null}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function buildDpIntelligence(
   asset: SavedMapAsset | null,
   projectAssets: SavedMapAsset[],
@@ -1052,6 +1091,7 @@ export default function AssetIntelligencePanel({
   asset,
   projectName,
   projectAssets,
+  networkGraph,
   onClose,
   onOpenTopology,
   onOpenQA,
@@ -1107,11 +1147,16 @@ export default function AssetIntelligencePanel({
 
   const relatedAssets = useMemo(() => {
     if (!asset) return [];
-    if (selectedAssetType.cable) return [...nearbyPointAssets(asset, deferredProjectAssets), ...relatedByName(asset, deferredProjectAssets)].slice(0, 6);
+    if (selectedAssetType.cable) {
+      return [...nearbyPointAssets(asset, deferredProjectAssets), ...relatedByName(asset, deferredProjectAssets)]
+        .filter((candidate) => !isTopologyNoise(candidate))
+        .slice(0, 6);
+    }
     const selectedPoint = pointFor(asset);
-    if (!selectedPoint) return relatedByName(asset, deferredProjectAssets);
+    if (!selectedPoint) return relatedByName(asset, deferredProjectAssets).filter((candidate) => !isTopologyNoise(candidate));
     return deferredProjectAssets
       .filter((candidate) => candidate.id !== asset.id)
+      .filter((candidate) => !isTopologyNoise(candidate))
       .map((candidate) => {
         const point = pointFor(candidate);
         const line = linePoints(candidate);
@@ -1127,6 +1172,16 @@ export default function AssetIntelligencePanel({
       .map(({ candidate }) => candidate)
       .slice(0, 6);
   }, [asset, deferredProjectAssets, selectedAssetType.cable]);
+
+  const topologyTrace = useMemo(() => {
+    if (!asset || !networkGraph) return null;
+    return buildTopologyTrace({
+      selectedAsset: asset,
+      assets: deferredProjectAssets,
+      graph: networkGraph,
+      auditIssues: [],
+    });
+  }, [asset, deferredProjectAssets, networkGraph]);
 
   const qaFlags = useMemo(() => buildQaFlags(asset), [asset]);
 
@@ -1362,7 +1417,11 @@ export default function AssetIntelligencePanel({
         </PanelSection>
       )}
 
-      <PanelSection title="Topology Links">
+      <PanelSection title="Fibre Path">
+        <TracePathList rows={topologyTrace?.path || []} onSelectAsset={onSelectAsset} />
+      </PanelSection>
+
+      <PanelSection title="Direct Infrastructure Links">
         {relatedAssets.length ? (
           <div style={relatedList}>
             {relatedAssets.map((related) => (
@@ -1376,7 +1435,7 @@ export default function AssetIntelligencePanel({
             ))}
           </div>
         ) : (
-          <div style={mutedText}>No nearby or name-matched topology links found yet.</div>
+          <div style={mutedText}>No nearby infrastructure links found yet.</div>
         )}
       </PanelSection>
 
@@ -1777,6 +1836,71 @@ const relatedType: React.CSSProperties = {
   color: "#94a3b8",
   fontSize: 11,
   marginTop: 2,
+};
+
+const tracePathList: React.CSSProperties = {
+  display: "grid",
+  gap: 6,
+};
+
+const tracePathRow: React.CSSProperties = {
+  width: "100%",
+  display: "grid",
+  gridTemplateColumns: "22px 1fr auto",
+  alignItems: "center",
+  gap: 8,
+  border: "1px solid rgba(96, 165, 250, 0.16)",
+  borderRadius: 8,
+  background: "rgba(15, 23, 42, 0.82)",
+  color: "#e5e7eb",
+  padding: "7px 8px",
+  textAlign: "left",
+  cursor: "pointer",
+};
+
+const traceStepNo: React.CSSProperties = {
+  width: 20,
+  height: 20,
+  borderRadius: 999,
+  display: "grid",
+  placeItems: "center",
+  background: "#1d4ed8",
+  color: "#eff6ff",
+  fontSize: 10,
+  fontWeight: 900,
+};
+
+const traceStepBody: React.CSSProperties = {
+  display: "grid",
+  gap: 2,
+  minWidth: 0,
+};
+
+const traceStepTitle: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 900,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const traceStepSubtitle: React.CSSProperties = {
+  color: "#93c5fd",
+  fontSize: 10,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const traceFibrePill: React.CSSProperties = {
+  border: "1px solid rgba(56, 189, 248, 0.28)",
+  borderRadius: 999,
+  color: "#bae6fd",
+  background: "rgba(14, 165, 233, 0.12)",
+  padding: "3px 6px",
+  fontSize: 10,
+  fontWeight: 900,
+  whiteSpace: "nowrap",
 };
 
 

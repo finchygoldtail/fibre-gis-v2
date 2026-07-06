@@ -47,6 +47,7 @@ export type TopologyTraceSummary = {
 export type TopologyTraceResult = {
   selectedAsset: SavedMapAsset | null;
   summary: TopologyTraceSummary;
+  path: TopologyTraceStep[];
   upstream: TopologyTraceStep[];
   downstream: TopologyTraceStep[];
   branches: TopologyTraceStep[];
@@ -292,6 +293,7 @@ function emptyResult(selectedAsset: SavedMapAsset | null): TopologyTraceResult {
       qaMedium: 0,
       qaLow: 0,
     },
+    path: [],
     upstream: [],
     downstream: [],
     branches: [],
@@ -310,6 +312,115 @@ function uniqueSteps(steps: TopologyTraceStep[]): TopologyTraceStep[] {
     seen.add(key);
     return true;
   });
+}
+
+function isInfrastructureEdge(edge: GraphEdge): boolean {
+  return !isDropCable(edge.asset) && edge.kind !== "drop";
+}
+
+function isInfrastructureNode(node: GraphNode): boolean {
+  return !isHome(node.asset) && node.kind !== "home";
+}
+
+function pathTargetScore(node: GraphNode): number {
+  if (node.kind === "exchange") return 1000;
+  if (node.kind === "cabinet") return 850;
+  if (node.kind === "chamber") return 760;
+  if (node.kind === "joint") return 700;
+  if (node.kind === "dp") return 300;
+  if (node.kind === "pole") return 120;
+  return 100;
+}
+
+function buildInfrastructurePath(selectedAsset: SavedMapAsset, graph: NetworkGraph): TopologyTraceStep[] {
+  const selectedNode = findSelectedNode(graph, selectedAsset);
+  const selectedEdge = findSelectedEdge(graph, selectedAsset);
+  const maxDepth = 18;
+
+  type QueueItem = {
+    node: GraphNode;
+    steps: TopologyTraceStep[];
+    visitedNodes: Set<string>;
+    visitedEdges: Set<string>;
+  };
+
+  const queue: QueueItem[] = [];
+
+  if (selectedNode && isInfrastructureNode(selectedNode)) {
+    queue.push({
+      node: selectedNode,
+      steps: [nodeStep(selectedNode, "selected")],
+      visitedNodes: new Set([selectedNode.id]),
+      visitedEdges: new Set(),
+    });
+  }
+
+  if (selectedEdge && isInfrastructureEdge(selectedEdge)) {
+    selectedEdge.connectedNodeIds
+      .map((nodeId) => graph.nodes.get(nodeId))
+      .filter((node): node is GraphNode => Boolean(node && isInfrastructureNode(node)))
+      .forEach((node) => {
+        queue.push({
+          node,
+          steps: [
+            edgeStep(selectedEdge, "selected"),
+            nodeStep(node, "upstream"),
+          ],
+          visitedNodes: new Set([node.id]),
+          visitedEdges: new Set([selectedEdge.id]),
+        });
+      });
+  }
+
+  if (!queue.length) return [];
+
+  let best = queue[0].steps;
+  let bestScore = -Infinity;
+
+  while (queue.length) {
+    const current = queue.shift();
+    if (!current) break;
+
+    const score = pathTargetScore(current.node) * 10 + current.steps.length;
+    if (score > bestScore) {
+      best = current.steps;
+      bestScore = score;
+    }
+
+    if (current.steps.length >= maxDepth) continue;
+
+    current.node.connectedTo
+      .map((edgeId) => graph.edges.get(edgeId))
+      .filter((edge): edge is GraphEdge => Boolean(edge && isInfrastructureEdge(edge)))
+      .forEach((edge) => {
+        if (current.visitedEdges.has(edge.id)) return;
+
+        edge.connectedNodeIds
+          .map((nodeId) => graph.nodes.get(nodeId))
+          .filter((node): node is GraphNode => Boolean(node && isInfrastructureNode(node)))
+          .forEach((nextNode) => {
+            if (current.visitedNodes.has(nextNode.id)) return;
+
+            const visitedNodes = new Set(current.visitedNodes);
+            const visitedEdges = new Set(current.visitedEdges);
+            visitedNodes.add(nextNode.id);
+            visitedEdges.add(edge.id);
+
+            queue.push({
+              node: nextNode,
+              visitedNodes,
+              visitedEdges,
+              steps: [
+                ...current.steps,
+                edgeStep(edge, "upstream"),
+                nodeStep(nextNode, "upstream"),
+              ],
+            });
+          });
+      });
+  }
+
+  return uniqueSteps(best).slice(0, maxDepth);
 }
 
 export function buildTopologyTrace(input: BuildTopologyTraceInput): TopologyTraceResult {
@@ -335,6 +446,7 @@ export function buildTopologyTrace(input: BuildTopologyTraceInput): TopologyTrac
   };
 
   addQa(selectedIssues);
+  result.path = buildInfrastructurePath(selectedAsset, graph);
 
   if (selectedNode) {
     selectedNode.connectedTo.forEach((edgeId, index) => {

@@ -4814,6 +4814,7 @@ export default function ProjectWorkspace({
                     asset={fullSelectedWorkspaceAsset}
                     projectName={projectName}
                     projectAssets={workspaceAssets}
+                    networkGraph={networkGraph}
                     onClose={() => setSelectedWorkspaceAsset(null)}
                     onOpenTopology={openInternalTraceTool}
                     onOpenQA={() => {
