@@ -322,14 +322,63 @@ function isInfrastructureNode(node: GraphNode): boolean {
   return !isHome(node.asset) && node.kind !== "home";
 }
 
+function edgeText(edge: GraphEdge): string {
+  return [
+    edge.kind,
+    edge.asset?.name,
+    edge.asset?.label,
+    edge.asset?.cableId,
+    edge.asset?.cableName,
+    edge.asset?.cableType,
+    edge.asset?.type,
+    edge.asset?.assetType,
+  ]
+    .map((value) => text(value).toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+}
+
+function edgeBackboneScore(edge: GraphEdge): number {
+  const value = edgeText(edge);
+  if (value.includes("link cable") || /\blink\b/.test(value)) return 95;
+  if (value.includes("feeder") || /\bfc\b/.test(value)) return 90;
+  if (/\blc\b/.test(value) || /(?:^|[^a-z0-9])lc\d+/i.test(value)) return 86;
+  if (value.includes("96f")) return 42;
+  if (value.includes("48f")) return 34;
+  if (value.includes("ulw") || value.includes("fulw")) return 20;
+  if (edge.kind === "link") return 92;
+  if (edge.kind === "feeder") return 88;
+  if (edge.kind === "cable") return 30;
+  return 10;
+}
+
 function pathTargetScore(node: GraphNode): number {
   if (node.kind === "exchange") return 1000;
   if (node.kind === "cabinet") return 850;
-  if (node.kind === "chamber") return 760;
-  if (node.kind === "joint") return 700;
-  if (node.kind === "dp") return 300;
-  if (node.kind === "pole") return 120;
+  if (node.kind === "joint") return 820;
+  if (node.kind === "chamber") return 240;
+  if (node.kind === "dp") return 160;
+  if (node.kind === "pole") return 60;
   return 100;
+}
+
+function scoreInfrastructureSteps(steps: TopologyTraceStep[], terminalNode?: GraphNode): number {
+  const edgeScore = steps.reduce((sum, step) => {
+    const asset = step.asset as any;
+    if (!asset || asset.geometry?.type !== "LineString") return sum;
+    return sum + edgeBackboneScore({
+      id: step.id,
+      kind: "cable",
+      asset,
+      from: [0, 0],
+      to: [0, 0],
+      connectedNodeIds: [],
+      lengthMeters: 0,
+      visualStyle: "solid",
+    });
+  }, 0);
+
+  return (terminalNode ? pathTargetScore(terminalNode) : 0) * 10 + edgeScore * 100 + steps.length;
 }
 
 function buildInfrastructurePath(selectedAsset: SavedMapAsset, graph: NetworkGraph): TopologyTraceStep[] {
@@ -381,7 +430,7 @@ function buildInfrastructurePath(selectedAsset: SavedMapAsset, graph: NetworkGra
     const current = queue.shift();
     if (!current) break;
 
-    const score = pathTargetScore(current.node) * 10 + current.steps.length;
+    const score = scoreInfrastructureSteps(current.steps, current.node);
     if (score > bestScore) {
       best = current.steps;
       bestScore = score;
@@ -392,15 +441,26 @@ function buildInfrastructurePath(selectedAsset: SavedMapAsset, graph: NetworkGra
     current.node.connectedTo
       .map((edgeId) => graph.edges.get(edgeId))
       .filter((edge): edge is GraphEdge => Boolean(edge && isInfrastructureEdge(edge)))
+      .sort((a, b) => edgeBackboneScore(b) - edgeBackboneScore(a))
       .forEach((edge) => {
         if (current.visitedEdges.has(edge.id)) return;
 
-        edge.connectedNodeIds
+        const nextNodes = edge.connectedNodeIds
           .map((nodeId) => graph.nodes.get(nodeId))
           .filter((node): node is GraphNode => Boolean(node && isInfrastructureNode(node)))
-          .forEach((nextNode) => {
-            if (current.visitedNodes.has(nextNode.id)) return;
+          .filter((nextNode) => !current.visitedNodes.has(nextNode.id));
 
+        if (!nextNodes.length && edgeBackboneScore(edge) >= 80) {
+          const terminalSteps = [...current.steps, edgeStep(edge, "upstream")];
+          const terminalScore = scoreInfrastructureSteps(terminalSteps, current.node);
+          if (terminalScore > bestScore) {
+            best = terminalSteps;
+            bestScore = terminalScore;
+          }
+          return;
+        }
+
+        nextNodes.forEach((nextNode) => {
             const visitedNodes = new Set(current.visitedNodes);
             const visitedEdges = new Set(current.visitedEdges);
             visitedNodes.add(nextNode.id);
