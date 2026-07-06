@@ -498,6 +498,7 @@ function buildInfrastructurePath(
   const selectedNode = findSelectedNode(graph, selectedAsset);
   const selectedEdge = findSelectedEdge(graph, selectedAsset);
   const maxDepth = 18;
+  const maxExpansions = 700;
 
   type QueueItem = {
     node: GraphNode;
@@ -543,10 +544,13 @@ function buildInfrastructurePath(
 
   let best = queue[0].steps;
   let bestScore = -Infinity;
+  let expansions = 0;
 
   while (queue.length) {
     const current = queue.shift();
     if (!current) break;
+    expansions += 1;
+    if (expansions > maxExpansions) break;
 
     const score = scoreInfrastructureSteps(current.steps, current.node);
     if (score > bestScore) {
@@ -583,10 +587,15 @@ function buildInfrastructurePath(
       .forEach((edge) => {
         const backboneScore = edgeBackboneScore(edge);
 
-        const allNextNodes = edge.connectedNodeIds
+        const rawNextNodes = edge.connectedNodeIds
           .map((nodeId) => graph.nodes.get(nodeId))
           .filter((node): node is GraphNode => Boolean(node && isInfrastructureNode(node)))
           .filter((nextNode) => !current.visitedNodes.has(nextNode.id));
+        const sameCablePassthrough =
+          canReuseIncomingEdge && edge.id === current.incomingEdgeId && edgeBackboneScore(edge) < 80;
+        const allNextNodes = sameCablePassthrough && rawNextNodes.some(isBackboneTransitNode)
+          ? rawNextNodes.filter(isBackboneTransitNode)
+          : rawNextNodes;
         const nextNodes =
           backboneScore >= 80
             ? allNextNodes.filter(isBackboneTransitNode)
