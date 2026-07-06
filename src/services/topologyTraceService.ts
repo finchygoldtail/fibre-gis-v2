@@ -447,10 +447,11 @@ function buildInfrastructurePath(selectedAsset: SavedMapAsset, graph: NetworkGra
       .filter((edge): edge is GraphEdge => Boolean(edge && isInfrastructureEdge(edge)))
       .filter((edge) => !current.visitedEdges.has(edge.id));
     const backboneEdges = availableEdges.filter((edge) => edgeBackboneScore(edge) >= 80);
-    const candidateEdges =
-      isBackboneTransitNode(current.node) && backboneEdges.length
-        ? backboneEdges
-        : availableEdges;
+    const candidateEdges = isBackboneTransitNode(current.node)
+      ? backboneEdges
+      : availableEdges;
+
+    if (isBackboneTransitNode(current.node) && candidateEdges.length === 0) continue;
 
     candidateEdges
       .sort((a, b) => edgeBackboneScore(b) - edgeBackboneScore(a))
