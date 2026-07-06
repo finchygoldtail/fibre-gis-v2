@@ -125,9 +125,6 @@ export default function MeetMeTrayView({
             const visualRows = buildVisualSpliceRows(tray, trayRows);
             const inputCableLabel = shortCableLabel(trayRows[0]?.inputCable, "EBCL");
             const outputCableLabel = shortCableLabel(trayRows[0]?.outputCable, "Feeder");
-            const offTrayOutputRows = trayRows.filter(
-              (row) => row.outputFibre !== null && getTrayNumber(row.outputFibre) !== tray,
-            );
             return (
               <>
           <div style={spliceMatrix}>
@@ -156,7 +153,7 @@ export default function MeetMeTrayView({
                   const inputLocal = getLocalFibre(row.inputFibre);
                   const outputLocal = getLocalFibre(row.outputFibre);
                   const x1 = getColumnX(inputLocal);
-                  const x2 = getColumnX(outputLocal);
+                  const x2 = getColumnX(getTrayNumber(row.outputFibre) !== tray ? inputLocal : outputLocal);
                   const selected =
                     selectedFibre === row.inputFibre || selectedFibre === row.outputFibre;
                   const matched =
@@ -191,7 +188,9 @@ export default function MeetMeTrayView({
               {Array.from({ length: 12 }, (_, index) => {
                 const localFibre = index + 1;
                 const mappedRow = trayRows.find(
-                  (row) => getTrayNumber(row.outputFibre) === tray && getLocalFibre(row.outputFibre) === localFibre,
+                  (row) =>
+                    (getTrayNumber(row.outputFibre) === tray && getLocalFibre(row.outputFibre) === localFibre) ||
+                    (getTrayNumber(row.outputFibre) !== tray && getLocalFibre(row.inputFibre) === localFibre),
                 );
                 return renderFibreButton({
                   tray,
@@ -210,24 +209,6 @@ export default function MeetMeTrayView({
               })}
             </div>
           </div>
-          {offTrayOutputRows.length > 0 && (
-            <div style={offTrayPanel}>
-              <div style={offTrayTitle}>Off-tray feeder destinations</div>
-              <div style={offTrayGrid}>
-                {offTrayOutputRows.map((row) =>
-                  renderOffTrayButton({
-                    row,
-                    moveMode,
-                    moveSrc,
-                    selectedFibre,
-                    searchMatches,
-                    onSelectFibre,
-                    onFibreClick,
-                  }),
-                )}
-              </div>
-            </div>
-          )}
               </>
             );
           })()}
@@ -350,64 +331,6 @@ function renderFibreButton({
       title={`Tray ${tray} ${side === "output" ? "Output" : "Input"} F${fibreNo}`}
     >
       F{fibreNo}
-    </button>
-  );
-}
-
-function renderOffTrayButton({
-  row,
-  moveMode,
-  moveSrc,
-  selectedFibre,
-  searchMatches,
-  onSelectFibre,
-  onFibreClick,
-}: {
-  row: MeetMeSpliceRow;
-  moveMode: boolean;
-  moveSrc: FibreCell | null;
-  selectedFibre: number | null;
-  searchMatches: Set<number>;
-  onSelectFibre: (fibre: number | null) => void;
-  onFibreClick?: (cell: FibreCell, target?: { side: "input" | "output"; tray: number; localFibre: number; fibreNo?: number }) => void;
-}) {
-  const fibreNo = row.outputFibre;
-  if (fibreNo === null) return null;
-
-  const localFibre = getLocalFibre(fibreNo);
-  const destinationTray = getTrayNumber(fibreNo);
-  const isSelected = selectedFibre === fibreNo;
-  const isMoveSource = moveMode && moveSrc?.globalNo === fibreNo;
-  const isMatch = searchMatches.has(fibreNo);
-
-  return (
-    <button
-      key={`off-tray-${row.id}`}
-      type="button"
-      onClick={() => {
-        if (onFibreClick) {
-          onFibreClick(
-            {
-              tray: destinationTray - 1,
-              pos: localFibre - 1,
-              globalNo: fibreNo,
-              label: "",
-            },
-            { side: "output", tray: row.tray, localFibre, fibreNo },
-          );
-          return;
-        }
-        onSelectFibre(fibreNo);
-      }}
-      style={{
-        ...offTrayButton,
-        borderColor: isMoveSource ? "#ffffff" : isSelected || isMatch ? "#fb923c" : "rgba(251, 146, 60, 0.8)",
-        boxShadow: isMoveSource || isSelected || isMatch ? "0 0 0 3px rgba(251, 146, 60, 0.25)" : "none",
-      }}
-      title={`${shortCableLabel(row.outputCable, "Feeder")} F${fibreNo}`}
-    >
-      <strong>F{fibreNo}</strong>
-      <span>Tray {destinationTray}</span>
     </button>
   );
 }
