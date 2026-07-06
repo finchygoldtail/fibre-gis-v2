@@ -362,6 +362,10 @@ function pathTargetScore(node: GraphNode): number {
   return 100;
 }
 
+function isBackboneTransitNode(node: GraphNode): boolean {
+  return node.kind === "joint" || node.kind === "cabinet" || node.kind === "exchange";
+}
+
 function scoreInfrastructureSteps(steps: TopologyTraceStep[], terminalNode?: GraphNode): number {
   const edgeScore = steps.reduce((sum, step) => {
     const asset = step.asset as any;
@@ -444,13 +448,18 @@ function buildInfrastructurePath(selectedAsset: SavedMapAsset, graph: NetworkGra
       .sort((a, b) => edgeBackboneScore(b) - edgeBackboneScore(a))
       .forEach((edge) => {
         if (current.visitedEdges.has(edge.id)) return;
+        const backboneScore = edgeBackboneScore(edge);
 
-        const nextNodes = edge.connectedNodeIds
+        const allNextNodes = edge.connectedNodeIds
           .map((nodeId) => graph.nodes.get(nodeId))
           .filter((node): node is GraphNode => Boolean(node && isInfrastructureNode(node)))
           .filter((nextNode) => !current.visitedNodes.has(nextNode.id));
+        const nextNodes =
+          backboneScore >= 80
+            ? allNextNodes.filter(isBackboneTransitNode)
+            : allNextNodes;
 
-        if (!nextNodes.length && edgeBackboneScore(edge) >= 80) {
+        if (!nextNodes.length && backboneScore >= 80) {
           const terminalSteps = [...current.steps, edgeStep(edge, "upstream")];
           const terminalScore = scoreInfrastructureSteps(terminalSteps, current.node);
           if (terminalScore > bestScore) {
