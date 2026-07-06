@@ -24,6 +24,7 @@ import AuditModal from "../audits/AuditModal";
 import AuditFormEngine from "../audits/AuditFormEngine";
 import { walkOffAuditTemplate } from "../audits/auditTemplates";
 import {
+  createAssetChangeLog,
   createAuditFormLog,
   loadAssetAuditLogs,
   type AuditLog,
@@ -31,6 +32,7 @@ import {
 import AuditCommercialDashboard from "../audits/AuditCommercialDashboard";
 import AuditPaymentBlockerPanel from "../audits/AuditPaymentBlockerPanel";
 import AuditHistoryPanel from "../audits/AuditHistoryPanel";
+import { useUserRole } from "../../context/UserRoleContext";
 import AreaOperationsCentre from "../operations/AreaOperationsCentre";
 import EngineeringDeliveryWorkspace from "../delivery/EngineeringDeliveryWorkspace";
 import { buildCanonicalHomeSummary } from "./workspace/canonicalHomeStatus";
@@ -1745,6 +1747,8 @@ export default function ProjectWorkspace({
   onApplySbRouteAssignments,
 }: ProjectWorkspaceProps) {
   const { isPhone, isTablet, isCompact } = useWorkspaceViewport();
+  const { isAdmin, isSuperUser } = useUserRole();
+  const canManageWalkOff = isAdmin || isSuperUser;
 
   // Keep the Project Workspace as the desktop engineering view on mobile/tablet.
   // Same principle as FibreTrayEditor, StreetCabDesigner and ExchangeDesigner:
@@ -3288,17 +3292,29 @@ export default function ProjectWorkspace({
           const payload = log.after as any;
           return (
             log.context === walkOffAuditTemplate.auditType ||
+            log.context === `${walkOffAuditTemplate.auditType}-cancelled` ||
             payload?.auditType === walkOffAuditTemplate.auditType ||
             payload?.auditTitle === walkOffAuditTemplate.title
           );
         });
 
         if (cancelled) return;
-        setLatestWalkOffAudit(latest || null);
 
         if (latest) {
           const payload = latest.after as any;
           const result = String(payload?.result || "");
+          const isCancelled =
+            result === "Cancelled" ||
+            latest.context === `${walkOffAuditTemplate.auditType}-cancelled`;
+
+          setLatestWalkOffAudit(isCancelled ? null : latest);
+
+          if (isCancelled) {
+            setWalkOffStatus("Pending");
+            setWalkOffSavedAt("");
+            return;
+          }
+
           setWalkOffStatus(
             result === "Pass"
               ? "Approved"
@@ -3314,6 +3330,7 @@ export default function ProjectWorkspace({
               : "",
           );
         } else {
+          setLatestWalkOffAudit(null);
           setWalkOffStatus("Pending");
           setWalkOffSavedAt("");
         }
@@ -3361,6 +3378,44 @@ export default function ProjectWorkspace({
     );
     setWalkOffSavedAt(new Date().toLocaleString("en-GB"));
     setWalkOffAuditOpen(false);
+  };
+
+  const handleCancelWalkOffAudit = async () => {
+    if (!canManageWalkOff || !latestWalkOffAudit) return;
+
+    const reason = window.prompt(
+      "Reason for cancelling this Walk-Off audit? This will be kept in the audit history.",
+    );
+    const cleanReason = String(reason || "").trim();
+    if (!cleanReason) return;
+
+    const confirmed = window.confirm(
+      "Cancel the current Walk-Off audit and return the area to Pending?",
+    );
+    if (!confirmed) return;
+
+    await createAssetChangeLog({
+      projectId:
+        activeWorkspaceProjectId || activeProjectId || projectArea?.id || null,
+      asset: walkOffAreaAsset,
+      action: "updated",
+      reason: `${walkOffAuditTemplate.title} cancelled`,
+      comment: cleanReason,
+      context: `${walkOffAuditTemplate.auditType}-cancelled`,
+      before: latestWalkOffAudit.after,
+      after: {
+        auditType: walkOffAuditTemplate.auditType,
+        auditTitle: walkOffAuditTemplate.title,
+        result: "Cancelled",
+        cancelledAuditId: latestWalkOffAudit.id,
+        cancelledAuditAt: latestWalkOffAudit.changedAt,
+        cancellationReason: cleanReason,
+      },
+    });
+
+    setLatestWalkOffAudit(null);
+    setWalkOffStatus("Pending");
+    setWalkOffSavedAt("");
   };
 
   const workspaceLayerCounts = useMemo(() => {
@@ -5116,6 +5171,15 @@ export default function ProjectWorkspace({
                         >
                           {piaGatePassedForWalkOff ? "Launch Walk-Off Audit" : "Walk-Off Locked - PIA Not Passed"}
                         </button>
+                        {canManageWalkOff && latestWalkOffAudit ? (
+                          <button
+                            type="button"
+                            style={dangerWideButton}
+                            onClick={handleCancelWalkOffAudit}
+                          >
+                            Cancel Current Walk-Off
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           style={wideButton}
@@ -5714,6 +5778,15 @@ export default function ProjectWorkspace({
                       >
                         {piaGatePassedForWalkOff ? "Launch Walk-Off Audit" : "Walk-Off Locked - PIA Not Passed"}
                       </button>
+                      {canManageWalkOff && latestWalkOffAudit ? (
+                        <button
+                          type="button"
+                          style={dangerWideButton}
+                          onClick={handleCancelWalkOffAudit}
+                        >
+                          Cancel Current Walk-Off
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         style={wideButton}
@@ -7175,6 +7248,13 @@ const wideButton: React.CSSProperties = {
   width: "100%",
   marginTop: 14,
   background: "#1e3a5f",
+};
+
+const dangerWideButton: React.CSSProperties = {
+  ...wideButton,
+  borderColor: "rgba(248, 113, 113, 0.42)",
+  background: "rgba(127, 29, 29, 0.32)",
+  color: "#fecaca",
 };
 
 const donutWrap: React.CSSProperties = {
