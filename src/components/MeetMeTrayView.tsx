@@ -124,6 +124,7 @@ export default function MeetMeTrayView({
           {(() => {
             const visualRows = buildVisualSpliceRows(tray, trayRows);
             const inputCableLabel = shortCableLabel(trayRows[0]?.inputCable, "EBCL");
+            const primaryOutputCable = cleanCell(trayRows[0]?.outputCable) || "Feeder";
             const outputCableLabel = shortCableLabel(trayRows[0]?.outputCable, "Feeder");
             return (
               <>
@@ -155,6 +156,7 @@ export default function MeetMeTrayView({
                   const x2 = getColumnX(visualLocal);
                   const selected =
                     selectedFibre === row.inputFibre || selectedFibre === row.outputFibre;
+                  const cableMismatch = isDifferentCable(row.outputCable, primaryOutputCable);
                   const matched =
                     (row.inputFibre !== null && searchMatches.has(row.inputFibre)) ||
                     (row.outputFibre !== null && searchMatches.has(row.outputFibre));
@@ -166,13 +168,15 @@ export default function MeetMeTrayView({
                         stroke={
                           getTrayNumber(row.outputFibre) !== tray
                             ? "#fb923c"
-                            : selected
+                            : cableMismatch
+                              ? "#a78bfa"
+                              : selected
                               ? "#60a5fa"
                               : matched
                                 ? "#facc15"
                                 : "#38bdf8"
                         }
-                        strokeWidth={getTrayNumber(row.outputFibre) !== tray || selected || matched ? 5 : 3}
+                        strokeWidth={getTrayNumber(row.outputFibre) !== tray || cableMismatch || selected || matched ? 5 : 3}
                         opacity={selected || matched ? 0.95 : 0.72}
                       />
                       <circle cx={x1} cy={4} r={5} fill="#0ea5e9" />
@@ -197,6 +201,10 @@ export default function MeetMeTrayView({
                   modelByGlobalNo,
                   searchMatches,
                   selectedFibre,
+                  cableLabel:
+                    mappedRow && isDifferentCable(mappedRow.outputCable, primaryOutputCable)
+                      ? shortCableLabel(mappedRow.outputCable, "Feeder")
+                      : undefined,
                   moveMode,
                   moveSrc,
                   onSelectFibre,
@@ -210,7 +218,13 @@ export default function MeetMeTrayView({
             );
           })()}
 
-          {trayRows.filter((row) => row.inputFibre !== row.outputFibre).length > 0 && (
+          {(() => {
+            const primaryOutputCable = cleanCell(trayRows[0]?.outputCable) || "Feeder";
+            const exceptionRows = trayRows.filter(
+              (row) => row.inputFibre !== row.outputFibre || isDifferentCable(row.outputCable, primaryOutputCable),
+            );
+
+            return exceptionRows.length > 0 && (
             <>
               <div style={gridHeader}>
                 <span>EBCL</span>
@@ -218,9 +232,7 @@ export default function MeetMeTrayView({
                 <span style={{ textAlign: "right" }}>Feeder</span>
               </div>
 
-              {trayRows
-                .filter((row) => row.inputFibre !== row.outputFibre)
-                .map((row) => {
+              {exceptionRows.map((row) => {
                 const fibreNo = row.inputFibre ?? row.outputFibre;
                 const selected = fibreNo !== null && selectedFibre === fibreNo;
                 const matched = fibreNo !== null && searchMatches.has(fibreNo);
@@ -237,6 +249,7 @@ export default function MeetMeTrayView({
                     }}
                   >
                     <span style={sideText}>
+                      <small>{shortCableLabel(row.inputCable, "EBCL")}</small>
                       <strong>{formatAbsoluteFibre(row.inputFibre)}</strong>
                     </span>
 
@@ -249,13 +262,15 @@ export default function MeetMeTrayView({
                     </span>
 
                     <span style={{ ...sideText, textAlign: "right" }}>
+                      <small>{shortCableLabel(row.outputCable, "Feeder")}</small>
                       <strong>{formatAbsoluteFibre(row.outputFibre)}</strong>
                     </span>
                   </button>
                 );
               })}
             </>
-          )}
+            );
+          })()}
         </div>
       ))}
     </div>
@@ -270,6 +285,7 @@ function renderFibreButton({
   modelByGlobalNo,
   searchMatches,
   selectedFibre,
+  cableLabel,
   moveMode,
   moveSrc,
   onSelectFibre,
@@ -283,6 +299,7 @@ function renderFibreButton({
   modelByGlobalNo: Map<number, FibreCell>;
   searchMatches: Set<number>;
   selectedFibre: number | null;
+  cableLabel?: string;
   moveMode: boolean;
   moveSrc: FibreCell | null;
   onSelectFibre: (fibre: number | null) => void;
@@ -325,9 +342,16 @@ function renderFibreButton({
             ? "0 0 0 3px rgba(96, 165, 250, 0.22)"
             : "none",
       }}
-      title={`Tray ${tray} ${side === "output" ? "Output" : "Input"} F${fibreNo}`}
+      title={`${cableLabel ? `${cableLabel} ` : ""}Tray ${tray} ${side === "output" ? "Output" : "Input"} F${fibreNo}`}
     >
-      F{fibreNo}
+      {cableLabel ? (
+        <span style={buttonStack}>
+          <span style={buttonCableLabel}>{cableLabel}</span>
+          <span>F{fibreNo}</span>
+        </span>
+      ) : (
+        `F${fibreNo}`
+      )}
     </button>
   );
 }
@@ -387,6 +411,14 @@ function formatAbsoluteFibre(fibre: number | null) {
 function shortCableLabel(value: string | undefined, fallback: string) {
   const text = cleanCell(value) || fallback;
   return text.length > 28 ? `${text.slice(0, 25)}...` : text;
+}
+
+function isDifferentCable(value: string | undefined, baseline: string | undefined) {
+  return normalizeCable(value) !== normalizeCable(baseline);
+}
+
+function normalizeCable(value: string | undefined) {
+  return cleanCell(value).toLowerCase();
 }
 
 function readMeetMeRow(row: any[], rowIndex: number) {
@@ -513,6 +545,26 @@ const fibreButton: React.CSSProperties = {
   fontWeight: 950,
   fontSize: 12,
   cursor: "pointer",
+  display: "grid",
+  placeItems: "center",
+  lineHeight: 1,
+  overflow: "hidden",
+};
+
+const buttonStack: React.CSSProperties = {
+  display: "grid",
+  gap: 1,
+  justifyItems: "center",
+  maxWidth: "100%",
+};
+
+const buttonCableLabel: React.CSSProperties = {
+  maxWidth: "100%",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  fontSize: 9,
+  fontWeight: 900,
 };
 
 const gridHeader: React.CSSProperties = {
