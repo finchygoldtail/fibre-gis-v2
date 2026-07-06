@@ -352,78 +352,67 @@ function swapMeetMeFibreRowsBetweenTargets(
   source: MeetMeMoveTarget,
   destination: MeetMeMoveTarget,
 ) {
-  if (source.tray !== destination.tray) return rows;
+  const sourceFibre =
+    source.fibreNo ??
+    getMeetMeGlobalFibre(source.tray, source.localFibre) ??
+    source.localFibre;
+  const destinationFibre =
+    destination.fibreNo ??
+    getMeetMeGlobalFibre(destination.tray, destination.localFibre) ??
+    destination.localFibre;
 
   if (source.side !== destination.side) {
     const fromSide = source.side;
     const toSide = destination.side;
     const toIndex = toSide === "input" ? 3 : 5;
-    let previousTargetLocal: number | null = null;
-    const destinationFibre =
-      destination.fibreNo ??
-      getMeetMeGlobalFibre(destination.tray, destination.localFibre) ??
-      destination.localFibre;
+    let previousTargetFibre: number | null = null;
 
     const nextRows = rows.map((row, rowIndex) => {
       const fields = readMeetMeRow(row, rowIndex);
-      if (fields.tray !== source.tray) return row;
-
-      const sourceLocal =
+      const currentSourceFibre =
         fromSide === "input"
-          ? getMeetMeLocalFibre(fields.inputFibre)
-          : getMeetMeLocalFibre(fields.outputFibre);
+          ? fields.inputFibre
+          : fields.outputFibre;
 
-      if (sourceLocal !== source.localFibre) return row;
+      if (currentSourceFibre !== sourceFibre) return row;
 
       const nextRow = [...row];
-      previousTargetLocal = parseFibreNumber(nextRow[toIndex]);
+      previousTargetFibre = parseFibreNumber(nextRow[toIndex]);
       nextRow[toIndex] = destinationFibre;
       return nextRow;
     });
 
-    if (previousTargetLocal === null) return nextRows;
+    if (previousTargetFibre === null) return nextRows;
 
     return nextRows.map((row, rowIndex) => {
       const fields = readMeetMeRow(row, rowIndex);
-      if (fields.tray !== destination.tray) return row;
-
-      const targetLocal =
+      const currentTargetFibre =
         toSide === "input"
-          ? getMeetMeLocalFibre(fields.inputFibre)
-          : getMeetMeLocalFibre(fields.outputFibre);
-      const oppositeLocal =
+          ? fields.inputFibre
+          : fields.outputFibre;
+      const currentOppositeFibre =
         fromSide === "input"
-          ? getMeetMeLocalFibre(fields.inputFibre)
-          : getMeetMeLocalFibre(fields.outputFibre);
+          ? fields.inputFibre
+          : fields.outputFibre;
 
-      if (targetLocal !== destination.localFibre || oppositeLocal === source.localFibre) return row;
+      if (currentTargetFibre !== destinationFibre || currentOppositeFibre === sourceFibre) return row;
 
       const nextRow = [...row];
-      nextRow[toIndex] = previousTargetLocal;
+      nextRow[toIndex] = previousTargetFibre;
       return nextRow;
     });
   }
 
-  return rows.map((row, rowIndex) => {
-    const fields = readMeetMeRow(row, rowIndex);
-    if (fields.tray !== source.tray) return row;
-
+  return rows.map((row) => {
     const nextRow = [...row];
     const index = source.side === "input" ? 3 : 5;
     const fibre = parseFibreNumber(nextRow[index]);
-    const localFibre = getMeetMeLocalFibre(fibre);
 
-    if (localFibre === source.localFibre) {
-      nextRow[index] =
-        destination.fibreNo ??
-        getMeetMeGlobalFibre(destination.tray, destination.localFibre) ??
-        destination.localFibre;
+    if (fibre === sourceFibre) {
+      nextRow[index] = destinationFibre;
     }
-    if (localFibre === destination.localFibre) {
-      nextRow[index] =
-        source.fibreNo ??
-        getMeetMeGlobalFibre(source.tray, source.localFibre) ??
-        source.localFibre;
+    if (fibre === destinationFibre) {
+      nextRow[index] = sourceFibre;
     }
 
     return nextRow;
