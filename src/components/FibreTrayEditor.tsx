@@ -328,8 +328,8 @@ function swapMeetMeFibreRows(rows: any[][], aNo: number, bNo: number) {
     const fields = readMeetMeRow(nextRow, 0);
     ([3, 5] as const).forEach((index, sideIndex) => {
       const fibre = sideIndex === 0 ? fields.inputFibre : fields.outputFibre;
-      if (fibre === aNo) nextRow[index] = getMeetMeLocalFibre(bNo) ?? bNo;
-      if (fibre === bNo) nextRow[index] = getMeetMeLocalFibre(aNo) ?? aNo;
+      if (fibre === aNo) nextRow[index] = bNo;
+      if (fibre === bNo) nextRow[index] = aNo;
     });
     return nextRow;
   });
@@ -341,8 +341,8 @@ function swapMeetMeFibreRowsOnSide(rows: any[][], aNo: number, bNo: number, side
     const fields = readMeetMeRow(nextRow, 0);
     const index = side === "input" ? 3 : 5;
     const fibre = side === "input" ? fields.inputFibre : fields.outputFibre;
-    if (fibre === aNo) nextRow[index] = getMeetMeLocalFibre(bNo) ?? bNo;
-    if (fibre === bNo) nextRow[index] = getMeetMeLocalFibre(aNo) ?? aNo;
+    if (fibre === aNo) nextRow[index] = bNo;
+    if (fibre === bNo) nextRow[index] = aNo;
     return nextRow;
   });
 }
@@ -357,9 +357,12 @@ function swapMeetMeFibreRowsBetweenTargets(
   if (source.side !== destination.side) {
     const fromSide = source.side;
     const toSide = destination.side;
-    const fromIndex = fromSide === "input" ? 3 : 5;
     const toIndex = toSide === "input" ? 3 : 5;
     let previousTargetLocal: number | null = null;
+    const destinationFibre =
+      destination.fibreNo ??
+      getMeetMeGlobalFibre(destination.tray, destination.localFibre) ??
+      destination.localFibre;
 
     const nextRows = rows.map((row, rowIndex) => {
       const fields = readMeetMeRow(row, rowIndex);
@@ -374,7 +377,7 @@ function swapMeetMeFibreRowsBetweenTargets(
 
       const nextRow = [...row];
       previousTargetLocal = parseFibreNumber(nextRow[toIndex]);
-      nextRow[toIndex] = destination.localFibre;
+      nextRow[toIndex] = destinationFibre;
       return nextRow;
     });
 
@@ -408,13 +411,19 @@ function swapMeetMeFibreRowsBetweenTargets(
     const nextRow = [...row];
     const index = source.side === "input" ? 3 : 5;
     const fibre = parseFibreNumber(nextRow[index]);
-    const localFibre = fibre;
+    const localFibre = getMeetMeLocalFibre(fibre);
 
     if (localFibre === source.localFibre) {
-      nextRow[index] = destination.localFibre;
+      nextRow[index] =
+        destination.fibreNo ??
+        getMeetMeGlobalFibre(destination.tray, destination.localFibre) ??
+        destination.localFibre;
     }
     if (localFibre === destination.localFibre) {
-      nextRow[index] = source.localFibre;
+      nextRow[index] =
+        source.fibreNo ??
+        getMeetMeGlobalFibre(source.tray, source.localFibre) ??
+        source.localFibre;
     }
 
     return nextRow;
@@ -455,9 +464,9 @@ function readMeetMeRows(row: any[], rowIndex: number) {
     tray,
     position: inputLocalFibre ?? outputLocalFibre ?? 1,
     inputCable: cleanCell(row?.[2]) || "EBCL",
-    inputFibre: getMeetMeGlobalFibre(tray, inputLocalFibre),
+    inputFibre: inputLocalFibre,
     outputCable: cleanCell(row?.[4]) || "Feeder",
-    outputFibre: getMeetMeGlobalFibre(tray, outputLocalFibre),
+    outputFibre: outputLocalFibre,
     status: cleanCell(row?.[6]) || "Through splice",
     notes: cleanCell(row?.[7]),
     };
@@ -473,12 +482,12 @@ function parseMeetMeFibreRange(value: any): number[] {
     const start = Number(range[1]);
     const end = Number(range[2]);
     if (Number.isFinite(start) && Number.isFinite(end) && end >= start) {
-      return Array.from({ length: end - start + 1 }, (_, index) => ((start + index - 1) % 12) + 1);
+      return Array.from({ length: end - start + 1 }, (_, index) => start + index);
     }
   }
 
   const single = parseFibreNumber(value);
-  return single === null ? [] : [((single - 1) % 12) + 1];
+  return single === null ? [] : [single];
 }
 
 function normalizeMeetMeRows(rows: any[][]) {
@@ -487,9 +496,9 @@ function normalizeMeetMeRows(rows: any[][]) {
       cleanCell(row?.[0]) || "Meet Me Chamber",
       fields.tray,
       fields.inputCable,
-      getMeetMeLocalFibre(fields.inputFibre) ?? "",
+      fields.inputFibre ?? "",
       fields.outputCable,
-      getMeetMeLocalFibre(fields.outputFibre) ?? "",
+      fields.outputFibre ?? "",
       fields.status,
       fields.notes,
     ]),
@@ -732,6 +741,7 @@ type MeetMeMoveTarget = {
   side: "input" | "output";
   tray: number;
   localFibre: number;
+  fibreNo?: number;
 };
 
 /* -------------------------------------------------------------
