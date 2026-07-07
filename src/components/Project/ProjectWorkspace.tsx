@@ -53,6 +53,13 @@ import {
   type QaIssueSeverity,
   type QaPanelViewMode,
 } from "./workspace/qaIssueGrouping";
+import {
+  AssetDrilldownButton,
+  InfoRow,
+  IssueCard,
+  SideGroup,
+  StatCard,
+} from "./workspace/WorkspaceUi";
 // =====================================================
 // FILE: ProjectWorkspace.tsx
 // PURPOSE: Dedicated project workspace shell for Alistra GIS.
@@ -1461,52 +1468,6 @@ function formatAreaSize(squareMeters: number | undefined): string {
   if (value >= 1000000) return `${(value / 1000000).toFixed(2)} km²`;
   if (value >= 10000) return `${(value / 10000).toFixed(2)} ha`;
   return `${Math.round(value).toLocaleString("en-GB")} m²`;
-}
-
-function StatCard({
-  label,
-  value,
-  tone = "default",
-  onClick,
-  title,
-  active = false,
-}: {
-  label: string;
-  value: React.ReactNode;
-  tone?: "default" | "good" | "warn" | "bad";
-  onClick?: () => void;
-  title?: string;
-  active?: boolean;
-}) {
-  const toneColour =
-    tone === "good"
-      ? "#4ade80"
-      : tone === "warn"
-        ? "#fbbf24"
-        : tone === "bad"
-          ? "#fb7185"
-          : "#e5e7eb";
-  const clickable = typeof onClick === "function";
-  return (
-    <button
-      type="button"
-      style={{
-        ...metricCard,
-        textAlign: "left",
-        cursor: clickable ? "pointer" : "default",
-        border: active ? "1px solid #60a5fa" : (metricCard as any).border,
-        boxShadow: active
-          ? "0 0 0 1px rgba(96,165,250,0.35) inset"
-          : (metricCard as any).boxShadow,
-      }}
-      onClick={onClick}
-      title={title}
-      disabled={!clickable}
-    >
-      <div style={metricLabel}>{label}</div>
-      <div style={{ ...metricValue, color: toneColour }}>{value}</div>
-    </button>
-  );
 }
 
 type TraceHighlightKind =
@@ -5465,6 +5426,8 @@ export default function ProjectWorkspace({
                             <AssetDrilldownButton
                               key={asset.id}
                               asset={asset}
+                              title={getWorkspaceAssetTitle(asset)}
+                              assetType={getWorkspaceAssetType(asset)}
                               subtitle={getWorkspaceHomeConnectionStatus(
                                 asset,
                                 workspaceAssets,
@@ -5503,6 +5466,8 @@ export default function ProjectWorkspace({
                               <AssetDrilldownButton
                                 key={asset.id}
                                 asset={asset}
+                                title={getWorkspaceAssetTitle(asset)}
+                                assetType={getWorkspaceAssetType(asset)}
                                 subtitle={getWorkspaceAssetType(asset)}
                                 detail="Disconnected from current topology graph"
                                 onClick={() => {
@@ -5535,6 +5500,8 @@ export default function ProjectWorkspace({
                                 key={asset.id}
                                 asset={asset}
                                 subtitle={`${capacity.risk} — ${capacity.percent}%`}
+                                title={getWorkspaceAssetTitle(asset)}
+                                assetType={getWorkspaceAssetType(asset)}
                                 detail={capacity.warning}
                                 onClick={() => {
                                   setSelectedWorkspaceAsset(asset);
@@ -6033,110 +6000,6 @@ export default function ProjectWorkspace({
   );
 }
 
-function AssetDrilldownButton({
-  asset,
-  subtitle,
-  detail,
-  onClick,
-}: {
-  asset: SavedMapAsset;
-  subtitle?: React.ReactNode;
-  detail?: React.ReactNode;
-  onClick?: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      style={{
-        ...operationListItem,
-        textAlign: "left",
-        cursor: "pointer",
-      }}
-      onClick={onClick}
-    >
-      <strong>{getWorkspaceAssetTitle(asset)}</strong>
-      <span>{subtitle || getWorkspaceAssetType(asset)}</span>
-      {detail ? <small>{detail}</small> : null}
-      <small style={{ color: "#93c5fd" }}>
-        Click to select and highlight on map
-      </small>
-    </button>
-  );
-}
-
-function SideGroup({
-  title,
-  items,
-}: {
-  title: string;
-  items: [string, () => void][];
-}) {
-  return (
-    <div style={sideGroup}>
-      <div style={sideGroupTitle}>{title}</div>
-      {items.map(([label, onClick]) => (
-        <button key={label} type="button" style={railButton} onClick={onClick}>
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function InfoRow({
-  label,
-  value,
-  highlight = false,
-}: {
-  label: string;
-  value: React.ReactNode;
-  highlight?: boolean;
-}) {
-  return (
-    <div style={infoRow}>
-      <span style={{ color: "#cbd5e1" }}>{label}</span>
-      <strong style={{ color: highlight ? "#4ade80" : "#f8fafc" }}>
-        {value}
-      </strong>
-    </div>
-  );
-}
-
-function IssueCard({
-  label,
-  value,
-  tone,
-  active = false,
-  onClick,
-}: {
-  label: string;
-  value: number;
-  tone: string;
-  active?: boolean;
-  onClick?: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      style={{
-        ...issueCard,
-        background: tone,
-        border: active
-          ? "2px solid #93c5fd"
-          : "1px solid rgba(255,255,255,0.12)",
-        cursor: "pointer",
-        textAlign: "left",
-        color: "#fff",
-      }}
-      onClick={onClick}
-    >
-      <div style={{ fontSize: 12, opacity: 0.9 }}>{label}</div>
-      <div style={{ fontSize: 28, fontWeight: 900 }}>{value}</div>
-      <small style={{ opacity: 0.75 }}>Open assets</small>
-    </button>
-  );
-}
-
 const operationDrawer: React.CSSProperties = {
   gridColumn: "1 / -1",
   background: "#0f1b2d",
@@ -6195,16 +6058,6 @@ const operationList: React.CSSProperties = {
   gap: 8,
   maxHeight: 320,
   overflow: "auto",
-};
-
-const operationListItem: React.CSSProperties = {
-  display: "grid",
-  gap: 4,
-  background: "#111827",
-  border: "1px solid rgba(148, 163, 184, 0.16)",
-  borderRadius: 10,
-  padding: 12,
-  color: "#e5e7eb",
 };
 
 const emptyPanel: React.CSSProperties = {
@@ -6377,30 +6230,6 @@ const topMetrics: React.CSSProperties = {
   overflowY: "hidden",
   paddingBottom: 2,
   scrollbarWidth: "thin",
-};
-const metricCard: React.CSSProperties = {
-  minWidth: 0,
-  background:
-    "linear-gradient(180deg, rgba(15, 23, 42, 0.90), rgba(15, 23, 42, 0.68))",
-  border: "1px solid rgba(148, 163, 184, 0.16)",
-  borderRadius: 10,
-  padding: "7px 9px",
-  minHeight: 42,
-  boxShadow: "0 8px 18px rgba(0,0,0,0.16)",
-};
-const metricLabel: React.CSSProperties = {
-  color: "#cbd5e1",
-  fontSize: 10,
-  marginBottom: 3,
-  whiteSpace: "nowrap",
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-};
-const metricValue: React.CSSProperties = {
-  fontSize: 17,
-  fontWeight: 950,
-  lineHeight: 1.02,
-  whiteSpace: "nowrap",
 };
 const smallButton: React.CSSProperties = {
   background: "#132640",
@@ -6643,28 +6472,6 @@ const brandIcon: React.CSSProperties = {
   placeItems: "center",
   fontSize: 22,
   fontWeight: 900,
-};
-const sideGroup: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 6,
-};
-const sideGroupTitle: React.CSSProperties = {
-  color: "#94a3b8",
-  fontSize: 11,
-  fontWeight: 900,
-  letterSpacing: 0.5,
-  margin: "8px 0",
-};
-const railButton: React.CSSProperties = {
-  textAlign: "left",
-  background: "transparent",
-  color: "#cbd5e1",
-  border: "none",
-  borderRadius: 8,
-  padding: "9px 10px",
-  cursor: "pointer",
-  fontWeight: 650,
 };
 const contentGrid: React.CSSProperties = {
   padding: 16,
@@ -7108,14 +6915,6 @@ function walkOffStatusPill(
 
 const panelTitle: React.CSSProperties = { margin: "0 0 14px", fontSize: 18 };
 
-const infoRow: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 12,
-  padding: "7px 0",
-  fontSize: 13,
-};
-
 const wideButton: React.CSSProperties = {
   ...smallButton,
   width: "100%",
@@ -7151,15 +6950,6 @@ const issueGrid: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(3, 1fr)",
   gap: 8,
-};
-
-const issueCard: React.CSSProperties = {
-  borderRadius: 8,
-  padding: 12,
-  minHeight: 68,
-  display: "flex",
-  flexDirection: "column",
-  justifyContent: "space-between",
 };
 
 const qaStickyHeader: React.CSSProperties = {
