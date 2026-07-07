@@ -839,7 +839,7 @@ export default function JointMapManager({
   onOpenAutoNetwork,
 }: Props) {
   const { activeMode, requiresAuditReason } = useAppMode();
-  const { permissions, isSuperUser, isAdmin } = useUserRole();
+  const { profile, permissions, isSuperUser, isAdmin, isMaintenanceUser } = useUserRole();
   const canManageNetworkDesign = isSuperUser || permissions.build;
   const canUseSurveyTools = canManageNetworkDesign || permissions.survey;
   // =====================================================
@@ -1002,7 +1002,10 @@ export default function JointMapManager({
       ? "maintenance"
       : "survey";
   const [isFieldPhotoPanelOpen, setIsFieldPhotoPanelOpen] = useState(false);
-  const canOpenFullProjectWorkspace = canManageNetworkDesign && !isMobile;
+  const canOpenFullProjectWorkspace =
+    (canManageNetworkDesign || isAdmin || profile?.role === "client_admin") &&
+    profile?.role !== "client_viewer" &&
+    !isMobile;
 
   const normalizedSavedJoints = useMemo(
     () => (savedJoints ?? []).map(normalizeMapAsset),
@@ -1701,6 +1704,22 @@ export default function JointMapManager({
     writeAssetAuditLog,
   });
 
+  const handleAdminToggleSurveyDeleteHomesMode = () => {
+    if (!isAdmin) {
+      alert("Administrator access required to delete homes.");
+      return;
+    }
+    handleToggleSurveyDeleteHomesMode();
+  };
+
+  const handleAdminDeleteSelectedSurveyHomes = () => {
+    if (!isAdmin) {
+      alert("Administrator access required to delete homes.");
+      return;
+    }
+    void handleDeleteSelectedSurveyHomes();
+  };
+
   const { handleSaveEdits, handleSaveJoint, handleDeleteAsset } =
     useAssetSaveHandlers({
       activeProjectId,
@@ -1734,6 +1753,14 @@ export default function JointMapManager({
       stampHomesForActiveArea,
       writeAssetAuditLog,
     });
+
+  const handleAdminDeleteAsset = (id: string) => {
+    if (!isAdmin) {
+      alert("Administrator access required to delete map assets.");
+      return;
+    }
+    void handleDeleteAsset(id);
+  };
   const handleSaveReferenceAssetEvidence = async () => {
     if (
       !currentEditingAsset ||
@@ -3782,7 +3809,7 @@ export default function JointMapManager({
             : "Whole network"}
         </div>
 
-        {canUseSurveyTools && (
+        {canUseSurveyTools && isAdmin && (
           <details style={card}>
             <summary style={sectionSummary}>Survey Cleanup</summary>
             <div style={sectionBody}>
@@ -3794,7 +3821,7 @@ export default function JointMapManager({
 
               <button
                 type="button"
-                onClick={handleToggleSurveyDeleteHomesMode}
+                onClick={handleAdminToggleSurveyDeleteHomesMode}
                 style={
                   mapMode === "survey-delete-homes" ? btnDanger : btnSecondary
                 }
@@ -3830,7 +3857,7 @@ export default function JointMapManager({
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button
                   type="button"
-                  onClick={handleDeleteSelectedSurveyHomes}
+                  onClick={handleAdminDeleteSelectedSurveyHomes}
                   style={btnDanger}
                   disabled={selectedSurveyDeleteHomeIds.length === 0}
                 >
@@ -4593,7 +4620,7 @@ export default function JointMapManager({
               setIsPanelOpen(true);
             }}
             onOpenAudit={(asset) => setAuditFormAsset(asset)}
-            onDeleteAsset={handleDeleteAsset}
+            onDeleteAsset={handleAdminDeleteAsset}
             onEditAsset={(asset) => {
               // Keep Edit Details as metadata editing.
               // The dedicated DP Operations editor is opened via the map Open/Operations path
@@ -4602,6 +4629,9 @@ export default function JointMapManager({
               handleEditAsset(asset);
               setIsPanelOpen(true);
             }}
+            canAuditJoints={!isMaintenanceUser}
+            canDeleteAssets={isAdmin}
+            canMoveJoints={isAdmin}
             moveHomesMode={mapMode === "move-homes"}
             selectedMoveHomeIds={selectedMoveHomeIds}
             onToggleMoveHome={handleToggleMoveHomeSelection}
@@ -4745,15 +4775,15 @@ export default function JointMapManager({
                 isAreaVisibleForLevel(asset, visibleLayers),
               )}
               activeProjectId={activeProjectId}
-              editingAreaId={editingAreaId}
-              polygonEditingEnabled={polygonBulkSelectEnabled}
-              polygonBulkSelectEnabled={polygonBulkSelectEnabled}
+              editingAreaId={isAdmin ? editingAreaId : null}
+              polygonEditingEnabled={isAdmin && polygonBulkSelectEnabled}
+              polygonBulkSelectEnabled={isAdmin && polygonBulkSelectEnabled}
               selectedAreaIds={selectedPolygonIds}
-              onUnlockPolygon={setEditingAreaId}
+              onUnlockPolygon={isAdmin ? setEditingAreaId : undefined}
               onSelect={handleSelectProject}
-              onToggleSelect={togglePolygonBulkSelection}
+              onToggleSelect={isAdmin ? togglePolygonBulkSelection : undefined}
               onEdit={handleEditAsset}
-              onDelete={handleDeleteAsset}
+              onDelete={handleAdminDeleteAsset}
             />
           )}
 
@@ -4808,7 +4838,7 @@ export default function JointMapManager({
             visibleLayers={visibleLayers}
             showCableDistances={visibleLayers.cableDistances}
             cableDrawingMode={mapMode === "draw-cable"}
-            onDeleteAsset={handleDeleteAsset}
+            onDeleteAsset={handleAdminDeleteAsset}
             onEditAsset={handleEditAsset}
             onUpdateAsset={(asset) => {
               saveMapAssetToState(asset, {
@@ -5294,7 +5324,7 @@ export default function JointMapManager({
           onOpenLayers={() => setIsLayersOpen((prev) => !prev)}
           onGpsLocate={handleGpsLocate}
           onToggleMoveHomes={handleToggleMoveHomesMode}
-          onToggleDeleteHomes={handleToggleSurveyDeleteHomesMode}
+          onToggleDeleteHomes={handleAdminToggleSurveyDeleteHomesMode}
           onOpenMaintenance={() => {
             if (currentEditingAsset) {
               openMaintenanceHistory(currentEditingAsset);
@@ -5348,7 +5378,7 @@ export default function JointMapManager({
           onOpenLayers={() => setIsLayersOpen((prev) => !prev)}
           onGpsLocate={handleGpsLocate}
           onToggleMoveHomes={handleToggleMoveHomesMode}
-          onToggleDeleteHomes={handleToggleSurveyDeleteHomesMode}
+          onToggleDeleteHomes={handleAdminToggleSurveyDeleteHomesMode}
         />
       )}
 
@@ -5377,7 +5407,7 @@ export default function JointMapManager({
           onOpenLayers={() => setIsLayersOpen((prev) => !prev)}
           onGpsLocate={handleGpsLocate}
           onToggleMoveHomes={handleToggleMoveHomesMode}
-          onToggleDeleteHomes={handleToggleSurveyDeleteHomesMode}
+          onToggleDeleteHomes={handleAdminToggleSurveyDeleteHomesMode}
         />
       )}
 
@@ -5416,7 +5446,7 @@ export default function JointMapManager({
               if (mapMode === "move-homes") {
                 handleToggleMoveHomesMode();
               } else {
-                handleToggleSurveyDeleteHomesMode();
+                handleAdminToggleSurveyDeleteHomesMode();
               }
             }}
           />

@@ -1233,6 +1233,12 @@ export default function ProjectWorkspace({
   const { isPhone, isTablet, isCompact } = useWorkspaceViewport();
   const { isAdmin, isSuperUser } = useUserRole();
   const canManageWalkOff = isAdmin || isSuperUser;
+  const canViewCommercial = isAdmin || isSuperUser;
+  const visibleWorkspaceTabs = useMemo(
+    () =>
+      tabs.filter((tab) => canViewCommercial || tab.id !== "commercial"),
+    [canViewCommercial],
+  );
 
   // Keep the Project Workspace as the desktop engineering view on mobile/tablet.
   // Same principle as FibreTrayEditor, StreetCabDesigner and ExchangeDesigner:
@@ -1256,7 +1262,10 @@ export default function ProjectWorkspace({
       const requestedTab = window.localStorage.getItem(
         "alistra-workspace-return-tab",
       ) as WorkspaceTab | null;
-      if (requestedTab && tabs.some((tab) => tab.id === requestedTab)) {
+      if (
+        requestedTab &&
+        visibleWorkspaceTabs.some((tab) => tab.id === requestedTab)
+      ) {
         window.localStorage.removeItem("alistra-workspace-return-tab");
         return requestedTab;
       }
@@ -1480,9 +1489,21 @@ export default function ProjectWorkspace({
   };
 
   const handleWorkspaceTabChange = (tab: WorkspaceTab) => {
+    if (tab === "commercial" && !canViewCommercial) {
+      setActiveTab("overview");
+      clearWorkspaceOperationState();
+      return;
+    }
     setActiveTab(tab);
     clearWorkspaceOperationState();
   };
+
+  useEffect(() => {
+    if (activeTab === "commercial" && !canViewCommercial) {
+      setActiveTab("overview");
+      clearWorkspaceOperationState();
+    }
+  }, [activeTab, canViewCommercial]);
 
   useEffect(() => {
     setWorkspaceHeavyPassReady(false);
@@ -3681,7 +3702,7 @@ export default function ProjectWorkspace({
       action: "View Readiness",
       onClick: () => openOperationPanel("rfsBreakdown", "build"),
     },
-  ];
+  ].filter((item) => canViewCommercial || item.label !== "Commercial");
 
   const shouldShowOperationPanel =
     activeOperationPanel !== "none" &&
@@ -3932,7 +3953,7 @@ export default function ProjectWorkspace({
           WORKSPACE TAB BAR
       ===================================================== */}
           <nav style={responsiveTabBar}>
-            {tabs.map((tab) => (
+            {visibleWorkspaceTabs.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
@@ -3951,7 +3972,7 @@ export default function ProjectWorkspace({
               aria-label="Workspace navigation"
             >
               <div style={railSectionTitle}>Workspace</div>
-              {tabs.map((tab) => (
+              {visibleWorkspaceTabs.map((tab) => (
                 <button
                   key={`rail-tab-${tab.id}`}
                   type="button"

@@ -84,6 +84,9 @@ type Props = {
   onOpenAudit?: (asset: SavedMapAsset) => void;
   onDeleteAsset: (id: string) => void;
   onEditAsset: (asset: SavedMapAsset) => void;
+  canAuditJoints?: boolean;
+  canDeleteAssets?: boolean;
+  canMoveJoints?: boolean;
   onMoveAsset?: (id: string, lat: number, lng: number) => void;
   assetMovementEnabled?: boolean;
   activeMoveAssetId?: string;
@@ -657,6 +660,9 @@ export default function AssetMarkersLayer({
   onOpenAudit,
   onDeleteAsset,
   onEditAsset,
+  canAuditJoints = true,
+  canDeleteAssets = true,
+  canMoveJoints = true,
   onMoveAsset,
   assetMovementEnabled = false,
   activeMoveAssetId,
@@ -849,6 +855,19 @@ React.useEffect(() => {
     const isPositionMoveHome = asset.assetType === "home" && positionMoveHomeId === asset.id;
     const isSelectedSurveyDeleteHome = surveyDeleteHomesMode && asset.assetType === "home" && selectedSurveyDeleteHomeIds.includes(asset.id);
     const cachedHomeStatus = asset.assetType === "home" ? homeStatusById.get(asset.id) : undefined;
+    const assetTypeText = String(
+      (asset as any).assetType ||
+        (asset as any).type ||
+        (asset as any).jointType ||
+        "",
+    ).toLowerCase();
+    const isJointAsset =
+      asset.assetType === "ag-joint" ||
+      assetTypeText.includes("joint") ||
+      assetTypeText.includes("cmj") ||
+      assetTypeText.includes("lmj");
+    const canShowAuditAction =
+      hasAuditFormTemplate(asset) && (canAuditJoints || !isJointAsset);
     const baseIcon = isSelectedSurveyDeleteHome
   ? homeUnconnectedIcon
   : isPositionMoveHome
@@ -1112,7 +1131,7 @@ const icon = asset.id === highlightedAssetId
                 </button>
               ) : null}
 
-              {hasAuditFormTemplate(asset) ? (
+              {canShowAuditAction ? (
                 <button style={actionButtonStyle} onClick={() => onOpenAudit?.(asset)}>
                   {getAuditButtonLabel(asset)}
                 </button>
@@ -1148,17 +1167,21 @@ const icon = asset.id === highlightedAssetId
                 </button>
               ) : null}
 
-              <button style={actionButtonStyle} onClick={() => onEditAsset(asset)}>
-                {asset.assetType === "ag-joint" || String((asset as any).type || "").toLowerCase().includes("joint")
-                  ? "Move Joint"
-                  : asset.assetType === "cable"
-                  ? "Edit Details"
-                  : "Edit Details"}
-              </button>
+              {isJointAsset && !canMoveJoints ? null : (
+                <button style={actionButtonStyle} onClick={() => onEditAsset(asset)}>
+                  {isJointAsset
+                    ? "Move Joint"
+                    : asset.assetType === "cable"
+                    ? "Edit Details"
+                    : "Edit Details"}
+                </button>
+              )}
 
-              <button style={deleteButtonStyle} onClick={() => onDeleteAsset(asset.id)}>
-                Delete
-              </button>
+              {canDeleteAssets ? (
+                <button style={deleteButtonStyle} onClick={() => onDeleteAsset(asset.id)}>
+                  Delete
+                </button>
+              ) : null}
             </div>
           </div>
         </Popup>
