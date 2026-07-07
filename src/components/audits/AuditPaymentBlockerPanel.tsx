@@ -146,6 +146,9 @@ function AuditEvidenceViewer({ blocker }: { blocker: CommercialAuditBlocker }) {
                 style={photoLink}
               >
                 <img src={src} alt={attachment.fileName || "Audit evidence"} style={photoThumb} />
+                {attachment.questionLabel ? (
+                  <span style={photoQuestion}>For: {attachment.questionLabel}</span>
+                ) : null}
                 <span>{attachment.fileName || "Photo"}</span>
               </a>
             ) : (
@@ -307,6 +310,13 @@ const photoLink: React.CSSProperties = {
   color: "#bfdbfe",
   fontSize: 11,
   textDecoration: "none",
+};
+
+const photoQuestion: React.CSSProperties = {
+  color: "#fed7aa",
+  fontSize: 10,
+  fontWeight: 900,
+  lineHeight: 1.25,
 };
 
 const photoThumb: React.CSSProperties = {

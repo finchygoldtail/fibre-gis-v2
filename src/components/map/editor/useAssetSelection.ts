@@ -18,7 +18,14 @@ import type { ChamberDetails } from "../modals/ChamberDetailsModal";
 import { getDpOperationalStatus } from "./assetEditCoordinator";
 
 type AreaLevel = "L0" | "L1" | "L2" | "L3";
-type MapMode = "pick" | "measure" | "draw-cable" | "draw-area" | "move-homes" | "survey-delete-homes";
+type MapMode =
+  | "pick"
+  | "measure"
+  | "draw-cable"
+  | "draw-area"
+  | "drive-to-location"
+  | "move-homes"
+  | "survey-delete-homes";
 
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 

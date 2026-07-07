@@ -1,6 +1,13 @@
 import React from "react";
 
-type MapMode = "pick" | "measure" | "draw-cable" | "draw-area" | "move-homes" | "survey-delete-homes";
+type MapMode =
+  | "pick"
+  | "measure"
+  | "draw-cable"
+  | "draw-area"
+  | "drive-to-location"
+  | "move-homes"
+  | "survey-delete-homes";
 
 type Props = {
   mapMode: MapMode;

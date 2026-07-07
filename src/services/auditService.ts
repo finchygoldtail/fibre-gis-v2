@@ -34,6 +34,8 @@ export type AuditAttachment = {
   url?: string;
   dataUrl?: string;
   uploadedAt: string;
+  questionId?: string;
+  questionLabel?: string;
 };
 
 export type AuditLog = {
@@ -275,6 +277,32 @@ export type CreateAuditFormInput = {
 export async function createAuditFormLog(
   input: CreateAuditFormInput,
 ): Promise<AuditLog> {
+  const evidencePhotosByQuestion = (input.photos || []).reduce(
+    (acc, photo) => {
+      if (!photo.questionId) return acc;
+      const current = acc[photo.questionId] || {
+        questionId: photo.questionId,
+        questionLabel: photo.questionLabel || photo.questionId,
+        photos: [],
+      };
+      current.photos.push({
+        id: photo.id,
+        fileName: photo.fileName,
+        uploadedAt: photo.uploadedAt,
+      });
+      acc[photo.questionId] = current;
+      return acc;
+    },
+    {} as Record<
+      string,
+      {
+        questionId: string;
+        questionLabel: string;
+        photos: Array<{ id: string; fileName: string; uploadedAt: string }>;
+      }
+    >,
+  );
+
   return createAssetChangeLog({
     projectId: input.projectId,
     asset: input.asset,
@@ -289,6 +317,7 @@ export async function createAuditFormLog(
       contractor: input.contractor?.trim() || "",
       answers: input.answers,
       signature: input.signature,
+      evidencePhotosByQuestion,
     },
     attachments: input.photos,
   });

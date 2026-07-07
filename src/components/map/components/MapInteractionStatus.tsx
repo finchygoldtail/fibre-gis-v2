@@ -12,6 +12,7 @@ const labels: Record<MapMode, string> = {
   measure: "Measure",
   "draw-cable": "Draw Cable",
   "draw-area": "Draw Area",
+  "drive-to-location": "Drive To Location",
   "move-homes": "Move Homes",
   "survey-delete-homes": "Delete Survey Homes",
 };
@@ -39,6 +40,9 @@ export default function MapInteractionStatus({
       ) : null}
       {mode === "survey-delete-homes" && selectedDeleteHomeCount > 0 ? (
         <div>{selectedDeleteHomeCount} home(s) selected for deletion.</div>
+      ) : null}
+      {mode === "drive-to-location" ? (
+        <div>Click a point on the map to open Google Maps directions.</div>
       ) : null}
     </div>
   );

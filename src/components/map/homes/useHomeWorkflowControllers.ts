@@ -19,6 +19,7 @@ type MapModeLike =
   | "measure"
   | "draw-cable"
   | "draw-area"
+  | "drive-to-location"
   | "move-homes"
   | "survey-delete-homes";
 

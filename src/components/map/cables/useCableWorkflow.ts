@@ -10,7 +10,14 @@ import type {
   SavedMapAsset,
 } from "../types";
 
-type MapMode = "pick" | "measure" | "draw-cable" | "draw-area" | "move-homes" | "survey-delete-homes";
+type MapMode =
+  | "pick"
+  | "measure"
+  | "draw-cable"
+  | "draw-area"
+  | "drive-to-location"
+  | "move-homes"
+  | "survey-delete-homes";
 
 type UseCableWorkflowArgs = {
   jointName: string;

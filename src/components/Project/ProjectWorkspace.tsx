@@ -116,6 +116,7 @@ type ProjectWorkspaceProps = {
   onOpenQA?: () => void;
   onOpenFibreTopology?: () => void;
   onOpenJointEditor?: (asset: SavedMapAsset) => void;
+  onOpenAudit?: (asset: SavedMapAsset) => void;
   onExport?: () => void;
   onUpdateWorkspaceAsset?: (asset: SavedMapAsset) => void;
   projectArea?: SavedMapAsset | null;
@@ -1729,6 +1730,7 @@ export default function ProjectWorkspace({
   onOpenQA,
   onOpenFibreTopology,
   onOpenJointEditor,
+  onOpenAudit,
   onExport,
   onUpdateWorkspaceAsset,
   projectArea = null,
@@ -4636,15 +4638,6 @@ export default function ProjectWorkspace({
                       setSelectedWorkspaceAsset(asset);
 
                       if (
-                        assetType === "ag-joint" ||
-                        assetType === "joint" ||
-                        assetType.includes("joint")
-                      ) {
-                        onOpenJointEditor?.(asset);
-                        return;
-                      }
-
-                      if (
                         asset.geometry?.type === "LineString" ||
                         assetType.includes("cable")
                       ) {
@@ -4655,6 +4648,7 @@ export default function ProjectWorkspace({
 
                       setActiveOperationPanel("none");
                     }}
+                    onOpenAudit={onOpenAudit}
                   />
 
                   <div style={responsiveMapAssetInspector}>

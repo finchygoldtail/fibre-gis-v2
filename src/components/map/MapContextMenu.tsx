@@ -10,6 +10,7 @@ export type MapContextAction =
   | "cable"
   | "area"
   | "measure"
+  | "drive-to-location"
   | "pick-location";
 
 type Props = {
@@ -114,6 +115,7 @@ export default function MapContextMenu({
         {openSubmenu === "tools" && (
           <Submenu top={64}>
             <MenuRow label="Measure Distance" onClick={() => select("measure")} />
+            <MenuRow label="Drive To Location" onClick={() => select("drive-to-location")} />
             <MenuRow label="Pick Location" onClick={() => select("pick-location")} />
           </Submenu>
         )}

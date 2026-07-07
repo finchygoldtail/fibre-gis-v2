@@ -59,6 +59,7 @@ type Props = {
   cableDrawingMode?: boolean;
   onCablePointAsset?: (asset: SavedMapAsset) => void;
   onOpenAsset: (asset: SavedMapAsset) => void;
+  onOpenAudit?: (asset: SavedMapAsset) => void;
   onDeleteAsset: (id: string) => void;
   onEditAsset: (asset: SavedMapAsset) => void;
   onMoveAsset?: (id: string, lat: number, lng: number) => void;
@@ -108,6 +109,32 @@ function createCircleIcon(background: string, border: string) {
     iconAnchor: [8, 8],
     popupAnchor: [0, -8],
   });
+}
+
+function getAuditButtonLabel(asset: SavedMapAsset): string {
+  const type = String(
+    (asset as any).assetType || (asset as any).type || (asset as any).jointType || "",
+  ).toLowerCase();
+  if (type.includes("joint") || type.includes("cmj") || type.includes("lmj")) return "Audit Joint";
+  if (type.includes("chamber")) return "Audit Chamber";
+  if (type.includes("pole")) return "Audit Pole";
+  if (type.includes("distribution") || type === "dp") return "Audit DP";
+  if (type.includes("cab")) return "Audit Street Cab";
+  if (type.includes("home")) return "Audit Home";
+  return "Audit Asset";
+}
+
+function hasAuditFormTemplate(asset: SavedMapAsset): boolean {
+  const type = String(
+    (asset as any).assetType || (asset as any).type || (asset as any).jointType || "",
+  ).toLowerCase();
+  return (
+    type.includes("joint") ||
+    type.includes("cmj") ||
+    type.includes("lmj") ||
+    type.includes("chamber") ||
+    type.includes("pole")
+  );
 }
 
 function createHomeIcon(fill = "#94a3b8", border = "#111827", glow = "rgba(15, 23, 42, 0.35)") {
@@ -1350,6 +1377,7 @@ export default function AssetMarkersLayer({
   cableDrawingMode = false,
   onCablePointAsset,
   onOpenAsset,
+  onOpenAudit,
   onDeleteAsset,
   onEditAsset,
   onMoveAsset,
@@ -1804,7 +1832,13 @@ const icon = asset.id === highlightedAssetId
             <div style={actionsStyle}>
               {asset.assetType === "ag-joint" || asset.assetType === "street-cab" ? (
                 <button style={actionButtonStyle} onClick={() => onOpenAsset(asset)}>
-                  Open
+                  {asset.assetType === "ag-joint" ? "Open Fibre Tray" : "Open Operations"}
+                </button>
+              ) : null}
+
+              {hasAuditFormTemplate(asset) ? (
+                <button style={actionButtonStyle} onClick={() => onOpenAudit?.(asset)}>
+                  {getAuditButtonLabel(asset)}
                 </button>
               ) : null}
 

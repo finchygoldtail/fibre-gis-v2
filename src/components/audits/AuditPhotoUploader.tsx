@@ -8,10 +8,15 @@ export type AuditPhotoAttachment = {
   sizeBytes?: number;
   dataUrl?: string;
   uploadedAt: string;
+  questionId?: string;
+  questionLabel?: string;
 };
 
 type Props = {
   onChange?: (photos: AuditPhotoAttachment[]) => void;
+  title?: string;
+  hintText?: string;
+  emptyText?: string;
 };
 
 function fileToDataUrl(file: File): Promise<string> {
@@ -25,7 +30,12 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-export default function AuditPhotoUploader({ onChange }: Props) {
+export default function AuditPhotoUploader({
+  onChange,
+  title = "Audit Photos",
+  hintText = "Photos are saved into the audit log as evidence. Storage upload can be added later.",
+  emptyText = "No photos added yet.",
+}: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [photos, setPhotos] = useState<AuditPhotoAttachment[]>([]);
   const [isReading, setIsReading] = useState(false);
@@ -71,7 +81,7 @@ export default function AuditPhotoUploader({ onChange }: Props) {
 
   return (
     <div style={section}>
-      <h3 style={heading}>Audit Photos</h3>
+      <h3 style={heading}>{title}</h3>
 
       <input
         ref={inputRef}
@@ -84,9 +94,7 @@ export default function AuditPhotoUploader({ onChange }: Props) {
       {isReading ? (
         <div style={hint}>Preparing selected photos...</div>
       ) : (
-        <div style={hint}>
-          Photos are saved into the audit log as evidence. Storage upload can be added later.
-        </div>
+        <div style={hint}>{hintText}</div>
       )}
 
       {photos.length ? (
@@ -113,7 +121,7 @@ export default function AuditPhotoUploader({ onChange }: Props) {
           ))}
         </div>
       ) : (
-        <div style={emptyState}>No photos added yet.</div>
+        <div style={emptyState}>{emptyText}</div>
       )}
     </div>
   );

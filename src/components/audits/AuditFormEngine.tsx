@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import AuditPhotoUploader, { type AuditPhotoAttachment } from "./AuditPhotoUploader";
 import AuditSignaturePad from "./AuditSignaturePad";
 
@@ -40,6 +40,9 @@ export default function AuditFormEngine({
   const [contractor, setContractor] = useState("");
   const [result, setResult] = useState<"Pass" | "Advisory" | "Fail">("Pass");
   const [photos, setPhotos] = useState<AuditPhotoAttachment[]>([]);
+  const [questionEvidencePhotos, setQuestionEvidencePhotos] = useState<
+    Record<string, AuditPhotoAttachment[]>
+  >({});
   const [signature, setSignature] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [validationMessage, setValidationMessage] = useState("");
@@ -52,14 +55,36 @@ export default function AuditFormEngine({
     });
   }, [answers, template.questions]);
 
-  const evidenceWarnings = useMemo(() => {
+  const evidenceRequiredQuestions = useMemo(() => {
     return template.questions
       .filter((question) => {
         const answer = answers[question.id];
         return question.requireEvidenceOn?.includes(answer);
-      })
-      .map((question) => question.label);
+      });
   }, [answers, template.questions]);
+
+  const missingEvidenceQuestions = useMemo(
+    () =>
+      evidenceRequiredQuestions.filter(
+        (question) => !(questionEvidencePhotos[question.id]?.length > 0),
+      ),
+    [evidenceRequiredQuestions, questionEvidencePhotos],
+  );
+
+  useEffect(() => {
+    const activeEvidenceQuestionIds = new Set(
+      evidenceRequiredQuestions.map((question) => question.id),
+    );
+
+    setQuestionEvidencePhotos((current) => {
+      const next = Object.fromEntries(
+        Object.entries(current).filter(([questionId]) =>
+          activeEvidenceQuestionIds.has(questionId),
+        ),
+      );
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [evidenceRequiredQuestions]);
 
   const updateAnswer = (id: string, value: any) => {
     setAnswers((prev) => ({
@@ -76,6 +101,15 @@ export default function AuditFormEngine({
       return;
     }
 
+    if (missingEvidenceQuestions.length > 0) {
+      setValidationMessage(
+        `Please add evidence photo(s) for: ${missingEvidenceQuestions
+          .map((question) => question.label)
+          .join(", ")}`,
+      );
+      return;
+    }
+
     if (result === "Fail" && !comments.trim()) {
       setValidationMessage("Please add comments explaining the failed audit.");
       return;
@@ -88,6 +122,9 @@ export default function AuditFormEngine({
       contractor: contractorName,
     };
 
+    const sectionPhotos = Object.values(questionEvidencePhotos).flat();
+    const allPhotos = [...sectionPhotos, ...photos];
+
     const auditRecord = {
       auditType: template.auditType,
       assetId,
@@ -98,7 +135,8 @@ export default function AuditFormEngine({
       result,
       comments,
       answers: answersWithCommercialMetadata,
-      photos,
+      photos: allPhotos,
+      evidencePhotosByQuestion: questionEvidencePhotos,
       signature,
       createdAt: new Date().toISOString(),
     };
@@ -179,22 +217,35 @@ export default function AuditFormEngine({
                 ))}
               </div>
             )}
+
+            {needsEvidence ? (
+              <div style={questionEvidenceBox}>
+                <AuditPhotoUploader
+                  title="Evidence photos for this item"
+                  hintText="Attach the photo(s) that prove this specific failed/advisory item."
+                  emptyText="No evidence photo attached for this item yet."
+                  onChange={(nextPhotos) => {
+                    setQuestionEvidencePhotos((current) => ({
+                      ...current,
+                      [question.id]: nextPhotos.map((photo) => ({
+                        ...photo,
+                        questionId: question.id,
+                        questionLabel: question.label,
+                      })),
+                    }));
+                  }}
+                />
+              </div>
+            ) : null}
           </div>
         );
       })}
 
-      <AuditPhotoUploader onChange={setPhotos} />
-
-      {evidenceWarnings.length ? (
-        <div style={warningBox}>
-          <strong>Evidence requested for:</strong>
-          <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
-            {evidenceWarnings.map((warning) => (
-              <li key={warning}>{warning}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+      <AuditPhotoUploader
+        title="General audit photos"
+        hintText="Use this for wider context photos that are not tied to one failed item."
+        onChange={setPhotos}
+      />
 
       <AuditSignaturePad onChange={setSignature} />
 
@@ -404,13 +455,12 @@ const evidencePill: React.CSSProperties = {
   whiteSpace: "nowrap",
 };
 
-const warningBox: React.CSSProperties = {
+const questionEvidenceBox: React.CSSProperties = {
   marginTop: 12,
-  background: "rgba(120,53,15,0.35)",
+  background: "rgba(15,23,42,0.62)",
   border: "1px solid rgba(251,146,60,0.4)",
-  color: "#fed7aa",
   borderRadius: 8,
-  padding: 12,
+  padding: 10,
 };
 
 const outcomeGrid: React.CSSProperties = {

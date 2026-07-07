@@ -10,7 +10,7 @@
 // =====================================================
 
 import { getDistanceMeters as distanceBetweenWorkspacePointsMeters, getPathDistanceMeters } from "../../utils/mapMeasure";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 import {
   MapContainer,
@@ -79,6 +79,7 @@ type WorkspaceMapProps = {
   onManagerAreaPointAdd?: (point: LatLngLiteral) => void;
   onManagerAreaClear?: () => void;
   onAssetSelect?: (asset: SavedMapAsset) => void;
+  onOpenAudit?: (asset: SavedMapAsset) => void;
 };
 
 type WorkspaceBounds = [[number, number], [number, number]];
@@ -119,7 +120,7 @@ function WorkspaceBaseLayers({ basemap }: { basemap: WorkspaceBasemap }) {
     <>
       <TileLayer
         url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-        attribution="Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community"
+        attribution="Tiles &copy; Esri - Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community"
         maxZoom={22}
         maxNativeZoom={19}
       />
@@ -166,6 +167,35 @@ function SafeMapLifecycle({ bounds }: { bounds: WorkspaceBounds | null }) {
     return () => window.clearTimeout(timeoutId);
   }, [map, bounds]);
 
+
+  return null;
+}
+
+function SelectedWorkspaceAssetPopupHandler({
+  selectedAssetId,
+  assets,
+  markerRefs,
+}: {
+  selectedAssetId?: string | null;
+  assets: SavedMapAsset[];
+  markerRefs: React.MutableRefObject<Map<string, L.Marker>>;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!selectedAssetId) return;
+    const asset = assets.find((item) => item.id === selectedAssetId);
+    const point = getPoint(asset);
+    if (!point) return;
+
+    map.setView([point.lat, point.lng], Math.max(map.getZoom(), 18), {
+      animate: true,
+    });
+
+    window.setTimeout(() => {
+      markerRefs.current.get(selectedAssetId)?.openPopup();
+    }, 180);
+  }, [assets, map, markerRefs, selectedAssetId]);
 
   return null;
 }
@@ -699,7 +729,7 @@ function getWorkspaceCableUsageDisplay(
       ? Math.min(100, Math.round((used / capacity) * 100))
       : cableState?.utilisationPercent;
 
-  return `${used}/${capacity || "?"}F${percent !== undefined ? ` · ${percent}%` : ""}`;
+  return `${used}/${capacity || "?"}F${percent !== undefined ? ` - ${percent}%` : ""}`;
 }
 
 function getCablePiaLabel(asset: SavedMapAsset): string {
@@ -821,6 +851,28 @@ function selectWorkspaceAsset(asset: SavedMapAsset, onAssetSelect?: (asset: Save
     // Defensive only: Leaflet event shape can differ by layer type.
   }
   onAssetSelect?.(asset);
+}
+
+function getAuditButtonLabel(asset: SavedMapAsset): string {
+  const type = getAssetType(asset).toLowerCase();
+  if (type.includes("joint") || type.includes("cmj") || type.includes("lmj")) return "Audit Joint";
+  if (type.includes("chamber")) return "Audit Chamber";
+  if (type.includes("pole")) return "Audit Pole";
+  if (type.includes("distribution") || type === "dp") return "Audit DP";
+  if (type.includes("cab")) return "Audit Street Cab";
+  if (type.includes("home")) return "Audit Home";
+  return "Audit Asset";
+}
+
+function hasAuditFormTemplate(asset: SavedMapAsset): boolean {
+  const type = getAssetType(asset).toLowerCase();
+  return (
+    type.includes("joint") ||
+    type.includes("cmj") ||
+    type.includes("lmj") ||
+    type.includes("chamber") ||
+    type.includes("pole")
+  );
 }
 
 function isLayerVisibleForAsset(asset: SavedMapAsset, visibleLayers: WorkspaceLayerVisibility): boolean {
@@ -977,12 +1029,14 @@ export default function WorkspaceMap({
   onManagerAreaPointAdd,
   onManagerAreaClear,
   onAssetSelect,
+  onOpenAudit,
 }: WorkspaceMapProps) {
   const [viewportBounds, setViewportBounds] = useState<WorkspaceBounds | null>(null);
   const [viewportZoom, setViewportZoom] = useState(15);
   const [isTouchWorkspace, setIsTouchWorkspace] = useState(false);
   const [basemap, setBasemap] = useState<WorkspaceBasemap>("street");
   const [showMapLabels, setShowMapLabels] = useState(true);
+  const markerRefs = useRef<Map<string, L.Marker>>(new Map());
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -998,6 +1052,14 @@ export default function WorkspaceMap({
       window.removeEventListener("orientationchange", update);
     };
   }, []);
+
+  useEffect(() => {
+    if (!selectedAssetId) return;
+    const marker = markerRefs.current.get(selectedAssetId);
+    if (!marker) return;
+    window.setTimeout(() => marker.openPopup(), 0);
+  }, [selectedAssetId, viewportBounds, viewportZoom]);
+
   const jobPackCaptureAssets = useMemo(
     () => jobPackCaptureRequest
       ? assets.filter((asset) => assetMatchesJobPackCaptureTarget(asset, jobPackCaptureRequest.target))
@@ -1104,6 +1166,11 @@ export default function WorkspaceMap({
             setViewportZoom(nextZoom);
           }}
         />
+        <SelectedWorkspaceAssetPopupHandler
+          selectedAssetId={selectedAssetId}
+          assets={assets}
+          markerRefs={markerRefs}
+        />
         <ManagerAreaDrawingHandler
           enabled={managerAreaDrawMode}
           onPointAdd={onManagerAreaPointAdd}
@@ -1190,8 +1257,8 @@ export default function WorkspaceMap({
                 eventHandlers={{ click: (event) => selectWorkspaceAsset(asset, onAssetSelect, event) }}
               >
                 <Tooltip sticky>
-                  {getAssetName(asset)} · drop · {formatDistance(getPathDistanceMeters(points))}
-                  {cableUsageDisplay ? ` � ${cableUsageDisplay}` : ""}
+                  {getAssetName(asset)} - drop - {formatDistance(getPathDistanceMeters(points))}
+                  {cableUsageDisplay ? ` - ${cableUsageDisplay}` : ""}
                 </Tooltip>
               </Polyline>
 
@@ -1244,8 +1311,8 @@ export default function WorkspaceMap({
                 eventHandlers={{ click: (event) => selectWorkspaceAsset(asset, onAssetSelect, event) }}
               >
                 <Tooltip sticky>
-                  {getAssetName(asset)} · {formatDistance(getPathDistanceMeters(points))}
-                  {cableUsageDisplay ? ` � ${cableUsageDisplay}` : ""}
+                  {getAssetName(asset)} - {formatDistance(getPathDistanceMeters(points))}
+                  {cableUsageDisplay ? ` - ${cableUsageDisplay}` : ""}
                 </Tooltip>
               </Polyline>
 
@@ -1284,7 +1351,7 @@ export default function WorkspaceMap({
                     <div key={home.id} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: 8 }}>
                       <div style={{ fontWeight: 800 }}>{getWorkspaceHomeDisplayName(home)}</div>
                       <div style={{ fontSize: 12, color: "#475569" }}>
-                        {status} · {point ? `${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}` : "No coordinates"}
+                        {status} - {point ? `${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}` : "No coordinates"}
                       </div>
                       <button
                         type="button"
@@ -1314,9 +1381,16 @@ export default function WorkspaceMap({
               key={`workspace-point-${asset.id}`}
               position={[point.lat, point.lng]}
               icon={getAssetMarkerIcon(asset, selected, traceKind, homeStatus, isTouchWorkspace, assets, showMapLabels)}
+              ref={(marker) => {
+                if (marker) {
+                  markerRefs.current.set(asset.id, marker);
+                } else {
+                  markerRefs.current.delete(asset.id);
+                }
+              }}
               eventHandlers={{ click: (event) => selectWorkspaceAsset(asset, onAssetSelect, event) }}
             >
-              <Popup>
+              <Popup minWidth={260}>
                 <strong>{getAssetName(asset)}</strong>
                 <br />
                 {getAssetType(asset)}
@@ -1336,6 +1410,24 @@ export default function WorkspaceMap({
                     Capacity Warning: {dpCapacityState.capacityWarning}
                   </>
                 ) : null}
+                <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {hasAuditFormTemplate(asset) ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpenAudit?.(asset)}
+                      style={workspacePopupButton}
+                    >
+                      {getAuditButtonLabel(asset)}
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => onAssetSelect?.(asset)}
+                    style={workspacePopupSecondaryButton}
+                  >
+                    Inspect
+                  </button>
+                </div>
               </Popup>
             </Marker>
           );
@@ -1364,7 +1456,7 @@ export default function WorkspaceMap({
 
       {isTouchWorkspace && visibleAssets.length > 0 && (
         <div style={touchMapHint}>
-          Tap asset to select · pinch to zoom · drag to pan
+          Tap asset to select - pinch to zoom - drag to pan
         </div>
       )}
 
@@ -1422,6 +1514,21 @@ const basemapButtonActive: React.CSSProperties = {
   background: "#2563eb",
   color: "#fff",
   borderColor: "rgba(147,197,253,0.75)",
+};
+
+const workspacePopupButton: React.CSSProperties = {
+  border: "none",
+  borderRadius: 7,
+  background: "#2563eb",
+  color: "#ffffff",
+  padding: "7px 10px",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const workspacePopupSecondaryButton: React.CSSProperties = {
+  ...workspacePopupButton,
+  background: "#334155",
 };
 
 const touchMapHint: React.CSSProperties = {

@@ -18,10 +18,13 @@ type Props = {
   measurementDistance?: number;
   measurementPointCount?: number;
   isMeasuring?: boolean;
+  isDrivingToLocation?: boolean;
   onStartMeasurement?: () => void;
   onStopMeasurement?: () => void;
   onUndoMeasurementPoint?: () => void;
   onClearMeasurements?: () => void;
+  onStartDriveToLocation?: () => void;
+  onStopDriveToLocation?: () => void;
 };
 
 type LayerOption = { label: string; key: string };
@@ -286,10 +289,13 @@ export default function LayersPanel({
   measurementDistance = 0,
   measurementPointCount = 0,
   isMeasuring = false,
+  isDrivingToLocation = false,
   onStartMeasurement,
   onStopMeasurement,
   onUndoMeasurementPoint,
   onClearMeasurements,
+  onStartDriveToLocation,
+  onStopDriveToLocation,
 }: Props) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     openreachReference: true,
@@ -502,6 +508,42 @@ export default function LayersPanel({
             </div>
           );
         })}
+      </div>
+
+      <div style={{ ...card, padding: "0.7rem" }}>
+        <div style={label}>Map Tools</div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto",
+            gap: 6,
+            marginTop: 7,
+          }}
+        >
+          <button
+            type="button"
+            onClick={onStartDriveToLocation}
+            style={isDrivingToLocation ? btnPrimary : btnSecondary}
+            disabled={!onStartDriveToLocation}
+          >
+            Drive To Location
+          </button>
+
+          <button
+            type="button"
+            onClick={onStopDriveToLocation}
+            style={btnSecondary}
+            disabled={!onStopDriveToLocation || !isDrivingToLocation}
+          >
+            Stop
+          </button>
+        </div>
+
+        {isDrivingToLocation ? (
+          <div style={{ marginTop: 8, color: "#cbd5e1", fontSize: "0.82rem" }}>
+            Click a point on the map to open Google Maps directions.
+          </div>
+        ) : null}
       </div>
 
       <div style={{ ...card, padding: "0.7rem" }}>

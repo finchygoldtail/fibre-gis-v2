@@ -51,26 +51,15 @@ const button: React.CSSProperties = {
   cursor: "pointer",
 };
 
-function getAssetKind(asset: SavedMapAsset): string {
-  const item = asset as any;
-  return String(item.assetType || item.type || item.jointType || "").toLowerCase();
-}
-
 export default function WorkspaceAssets({
   projectAssets,
   stats,
   onBackToMap,
   onSelectAsset,
-  onOpenJointEditor,
   onOpenTrace,
   onBulkUpdateCablePiaNoi,
 }: Props) {
   const openAsset = (asset: SavedMapAsset) => {
-    const kind = getAssetKind(asset);
-    if (kind.includes("joint") || kind.includes("cmj") || kind.includes("lmj") || kind.includes("mmj") || kind.includes("ag")) {
-      onOpenJointEditor?.(asset);
-      return;
-    }
     onSelectAsset?.(asset);
   };
 

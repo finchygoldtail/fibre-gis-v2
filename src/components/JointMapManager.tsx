@@ -64,6 +64,7 @@ import ChamberDetailsModal, {
   type ChamberDetails,
 } from "./map/modals/ChamberDetailsModal";
 import MaintenanceAuditOverlay from "./map/audit/MaintenanceAuditOverlay";
+import MapAssetAuditFormOverlay from "./map/audit/MapAssetAuditFormOverlay";
 import { useMaintenanceHistory } from "./map/maintenance/useMaintenanceHistory";
 import type { AssetChangeAction } from "./map/audit/types";
 import {
@@ -426,6 +427,7 @@ function MapClickHandler({
   onCablePoint,
   onCablePreviewPoint,
   onAreaPoint,
+  onDriveToLocation,
   onRightClick,
 }: {
   mode: MapMode;
@@ -436,6 +438,7 @@ function MapClickHandler({
   onCablePoint: (pos: LatLngLiteral) => void;
   onCablePreviewPoint?: (pos: LatLngLiteral | null) => void;
   onAreaPoint: (pos: LatLngLiteral) => void;
+  onDriveToLocation: (pos: LatLngLiteral) => void;
   onRightClick: (pos: LatLngLiteral, screen: { x: number; y: number }) => void;
 }) {
   useMapEvents({
@@ -444,6 +447,11 @@ function MapClickHandler({
         lat: e.latlng.lat,
         lng: e.latlng.lng,
       };
+
+      if (mode === "drive-to-location") {
+        onDriveToLocation(point);
+        return;
+      }
 
       if (mode === "measure") {
         onMeasurePoint(point);
@@ -1094,6 +1102,7 @@ export default function JointMapManager({
     openMaintenanceHistory,
     closeMaintenanceHistory,
   } = useMaintenanceHistory();
+  const [auditFormAsset, setAuditFormAsset] = useState<SavedMapAsset | null>(null);
 
   const [openStreetCabAsset, setOpenStreetCabAsset] =
     useState<SavedMapAsset | null>(null);
@@ -2083,6 +2092,13 @@ export default function JointMapManager({
     setMapMode("pick");
   };
 
+  const handleDriveToLocation = (point: LatLngLiteral) => {
+    const { lat, lng } = point;
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+    window.open(url, "_blank", "noopener,noreferrer");
+    setMapMode("pick");
+  };
+
   const handleUndoMeasurementPoint = () => {
     setMeasurePoints((prev) => prev.slice(0, -1));
   };
@@ -2122,6 +2138,13 @@ export default function JointMapManager({
       if (clickedPoint) setPickedLocation(clickedPoint);
       setMapMode("pick");
       setIsPanelOpen(true);
+      handleCloseContextMenu();
+      return;
+    }
+
+    if (type === "drive-to-location") {
+      setMapMode("drive-to-location");
+      setIsPanelOpen(false);
       handleCloseContextMenu();
       return;
     }
@@ -3636,6 +3659,7 @@ export default function JointMapManager({
           }
           onOpenJoint(asset);
         }}
+        onOpenAudit={(asset) => setAuditFormAsset(asset)}
         onBulkUpdateDpStatus={handleWorkspaceBulkDpStatusUpdate}
         onBulkUpdateCablePiaNoi={handleWorkspaceBulkCablePiaNoiUpdate}
         onUpdateDpStatus={handleWorkspaceSingleDpStatusUpdate}
@@ -4213,6 +4237,12 @@ export default function JointMapManager({
                       Pick Location
                     </button>
                     <button
+                      onClick={() => setMapMode("drive-to-location")}
+                      style={mapMode === "drive-to-location" ? btnPrimary : btnSecondary}
+                    >
+                      Drive To Location
+                    </button>
+                    <button
                       onClick={handleSaveJoint}
                       style={btnPrimary}
                       disabled={
@@ -4330,6 +4360,20 @@ export default function JointMapManager({
                       </button>
                     )}
                   </div>
+                </div>
+              ) : null}
+
+              {mapMode === "drive-to-location" ? (
+                <div
+                  style={{
+                    marginTop: 14,
+                    paddingTop: 12,
+                    borderTop: "1px solid #334155",
+                    color: "#bfdbfe",
+                    fontSize: 12,
+                  }}
+                >
+                  Click a point on the map to open Google Maps directions.
                 </div>
               ) : null}
 
@@ -4493,6 +4537,7 @@ export default function JointMapManager({
               );
             }}
             onAreaPoint={handleAreaPoint}
+            onDriveToLocation={handleDriveToLocation}
             onRightClick={handleMapRightClick}
           />
           {/* =====================================================
@@ -4558,6 +4603,7 @@ export default function JointMapManager({
               handleEditAsset(asset);
               setIsPanelOpen(true);
             }}
+            onOpenAudit={(asset) => setAuditFormAsset(asset)}
             onDeleteAsset={handleDeleteAsset}
             onEditAsset={(asset) => {
               // Keep Edit Details as metadata editing.
@@ -5106,6 +5152,13 @@ export default function JointMapManager({
           projectId={activeProjectId}
           onClose={closeMaintenanceHistory}
         />
+
+        <MapAssetAuditFormOverlay
+          asset={auditFormAsset}
+          areaName={activeProjectAreaName || activeProjectArea?.name || assetSearchScopeLabel}
+          projectId={activeProjectId}
+          onClose={() => setAuditFormAsset(null)}
+        />
       </div>
 
       <LayerControls
@@ -5123,10 +5176,13 @@ export default function JointMapManager({
         measurementDistance={measuredDistance}
         measurementPointCount={measurePoints.length}
         isMeasuring={mapMode === "measure"}
+        isDrivingToLocation={mapMode === "drive-to-location"}
         onStartMeasurement={() => setMapMode("measure")}
         onStopMeasurement={() => setMapMode("pick")}
         onUndoMeasurementPoint={handleUndoMeasurementPoint}
         onClearMeasurements={handleClearMeasurement}
+        onStartDriveToLocation={() => setMapMode("drive-to-location")}
+        onStopDriveToLocation={() => setMapMode("pick")}
         onClose={() => setIsLayersOpen(false)}
       />
 

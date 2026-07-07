@@ -20,10 +20,13 @@ type Props = {
   measurementDistance?: number;
   measurementPointCount?: number;
   isMeasuring?: boolean;
+  isDrivingToLocation?: boolean;
   onStartMeasurement?: () => void;
   onStopMeasurement?: () => void;
   onUndoMeasurementPoint?: () => void;
   onClearMeasurements?: () => void;
+  onStartDriveToLocation?: () => void;
+  onStopDriveToLocation?: () => void;
   onClose?: () => void;
 };
 
@@ -42,10 +45,13 @@ export default function LayerControls({
   measurementDistance,
   measurementPointCount,
   isMeasuring,
+  isDrivingToLocation,
   onStartMeasurement,
   onStopMeasurement,
   onUndoMeasurementPoint,
   onClearMeasurements,
+  onStartDriveToLocation,
+  onStopDriveToLocation,
   onClose,
 }: Props) {
   const { isMobile, isTabletPortrait } = useDeviceLayout();
@@ -120,10 +126,13 @@ export default function LayerControls({
           measurementDistance={measurementDistance}
           measurementPointCount={measurementPointCount}
           isMeasuring={isMeasuring}
+          isDrivingToLocation={isDrivingToLocation}
           onStartMeasurement={onStartMeasurement}
           onStopMeasurement={onStopMeasurement}
           onUndoMeasurementPoint={onUndoMeasurementPoint}
           onClearMeasurements={onClearMeasurements}
+          onStartDriveToLocation={onStartDriveToLocation}
+          onStopDriveToLocation={onStopDriveToLocation}
         />
       </div>
     </>
