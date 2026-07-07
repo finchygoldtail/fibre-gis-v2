@@ -27,7 +27,7 @@ import type { LatLngLiteral } from "leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { SavedMapAsset } from "../map/types";
-import OpenreachOverlayLayer, { type OpenreachLayerVisibility } from "../map/OpenreachOverlayLayer";
+import OpenreachOverlayLayer, { type OpenreachLayerVisibility } from "../map/layers/OpenreachOverlayLayer";
 import type { NetworkState } from "../../services/network";
 import { getDpIntelligence, isDpLikeAsset } from "../../services/dpIntelligence";
 import { getHomeConnectionStatus } from "../../services/homeIntelligence";

@@ -5,7 +5,7 @@ import WorkspaceMap, {
   type JobPackMapCaptureTarget,
   type WorkspaceLayerVisibility,
 } from "./WorkspaceMap";
-import type { OpenreachLayerVisibility } from "../map/OpenreachOverlayLayer";
+import type { OpenreachLayerVisibility } from "../map/layers/OpenreachOverlayLayer";
 import AssetIntelligencePanel from "./AssetIntelligencePanel";
 import WorkspaceTabContent from "./workspace/WorkspaceTabContent";
 import AreaBulkStatusPanel from "./workspace/AreaBulkStatusPanel";

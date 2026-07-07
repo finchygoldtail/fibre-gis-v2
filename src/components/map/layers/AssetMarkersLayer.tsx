@@ -1,17 +1,17 @@
-import { getTupleDistanceMeters as distanceBetweenLatLngMeters } from "../../utils/mapMeasure";
+import { getTupleDistanceMeters as distanceBetweenLatLngMeters } from "../../../utils/mapMeasure";
 import React, { useMemo, useState } from "react";
 import { Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
-import { getPaddedRenderBounds, isLatLngInsideRenderBounds } from "./utils/renderBounds";
-import type { SavedMapAsset } from "./types";
-import { getAssetTypeLabel } from "../../utils/assetDisplay";
-import { getDpCapacitySummary } from "../../services/dpIntelligence";
+import { getPaddedRenderBounds, isLatLngInsideRenderBounds } from "../utils/renderBounds";
+import type { SavedMapAsset } from "../types";
+import { getAssetTypeLabel } from "../../../utils/assetDisplay";
+import { getDpCapacitySummary } from "../../../services/dpIntelligence";
 import {
   getPiaQaIconForAsset,
   getPiaQaStatusLabel,
   isPiaQaModeEnabled,
   shouldShowAssetForPiaQaFilters,
-} from "./pia/piaQaWorkflow";
+} from "../pia/piaQaWorkflow";
 
 type LayerVisibility = {
   agJoints: boolean;

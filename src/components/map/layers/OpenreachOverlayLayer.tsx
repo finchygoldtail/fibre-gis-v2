@@ -7,8 +7,8 @@
 import React, { useState } from "react";
 import { Marker, Polyline, Popup, Tooltip } from "react-leaflet";
 import L from "leaflet";
-import type { SavedMapAsset } from "./types";
-import { isOpenreachReferenceAsset } from "../../services/orAssetStorage";
+import type { SavedMapAsset } from "../types";
+import { isOpenreachReferenceAsset } from "../../../services/orAssetStorage";
 
 export type OpenreachLayerVisibility = {
   ducts: boolean;
