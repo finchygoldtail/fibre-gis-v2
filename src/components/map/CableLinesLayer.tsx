@@ -1233,6 +1233,7 @@ export default function CableLinesLayer({
   const [mapViewBounds, setMapViewBounds] = useState(() => map.getBounds());
   const [mapViewZoom, setMapViewZoom] = useState(() => map.getZoom());
   const cableCanvasRenderer = useMemo(() => L.canvas({ padding: 0.5 }), []);
+  const shouldRunCableIntelligence = Boolean(selectedCableId || editingCableId);
 
   const networkAnalysisAssets = useMemo(() => {
     const sourceAssets = endpointAssetOptions?.length ? endpointAssetOptions : assets;
@@ -1257,63 +1258,33 @@ export default function CableLinesLayer({
 
   const mappingAssetKey = useMemo(
     () =>
-      networkAnalysisAssets
-        .filter((asset) => Boolean((asset as any).mappingRowsRef || (asset as any).mappingRowsCount))
-        .map((asset) => `${asset.id}:${(asset as any).mappingRowsCount || 0}:${(asset as any).updatedAt || ""}`)
-        .sort()
-        .join("|"),
-    [networkAnalysisAssets]
+      shouldRunCableIntelligence
+        ? networkAnalysisAssets
+            .filter((asset) => Boolean((asset as any).mappingRowsRef || (asset as any).mappingRowsCount))
+            .map((asset) => `${asset.id}:${(asset as any).mappingRowsCount || 0}:${(asset as any).updatedAt || ""}`)
+            .sort()
+            .join("|")
+        : "",
+    [networkAnalysisAssets, shouldRunCableIntelligence]
   );
 
-  useEffect(() => {
-    let cancelled = false;
+  const mappingSourceAssets = useMemo(
+    () =>
+      shouldRunCableIntelligence
+        ? networkAnalysisAssets.filter((asset) =>
+            Boolean((asset as any).mappingRowsRef || (asset as any).mappingRowsCount)
+          )
+        : [],
+    [networkAnalysisAssets, shouldRunCableIntelligence],
+  );
 
-    const assetsWithSharedMappings = networkAnalysisAssets.filter((asset) =>
-      Boolean((asset as any).mappingRowsRef || (asset as any).mappingRowsCount)
-    );
-
-    if (!assetsWithSharedMappings.length) {
-      setMappingRowsByAssetId({});
-      return;
-    }
-
-    Promise.all(
-      assetsWithSharedMappings.map(async (asset) => {
-        try {
-          const rows = await loadJointMappingRowsFromFirestore(asset.id);
-          return [asset.id, rows] as const;
-        } catch (err) {
-          console.error(`Failed to load mapping rows for ${asset.name || asset.id}`, err);
-          return [asset.id, []] as const;
-        }
-      })
-    ).then((entries) => {
-      if (cancelled) return;
-      setMappingRowsByAssetId(Object.fromEntries(entries));
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [mappingAssetKey, networkAnalysisAssets]);
-
-  useMapEvents({
-    click: () => {
-      setSelectedCableId(null);
-    },
-    moveend: () => {
-      setMapViewBounds(map.getBounds());
-      setMapViewZoom(map.getZoom());
-    },
-    zoomend: () => {
-      setMapViewBounds(map.getBounds());
-      setMapViewZoom(map.getZoom());
-    },
-  });
-
-  const renderBounds = useMemo(() => getPaddedRenderBounds(mapViewBounds), [mapViewBounds]);
-
-  const networkState = useMemo(() => buildNetworkState(networkAnalysisAssets as any), [networkAnalysisAssets]);
+  const networkState = useMemo(
+    () =>
+      shouldRunCableIntelligence
+        ? buildNetworkState(networkAnalysisAssets as any)
+        : null,
+    [networkAnalysisAssets, shouldRunCableIntelligence],
+  );
 
   const connectionAssets = useMemo(() => {
     const sourceAssets = endpointAssetOptions?.length ? endpointAssetOptions : assets;
@@ -1332,6 +1303,50 @@ export default function CableLinesLayer({
         getAssetDisplayName(a).localeCompare(getAssetDisplayName(b)),
     );
   }, [assets, endpointAssetOptions]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!mappingSourceAssets.length) {
+      setMappingRowsByAssetId({});
+      return;
+    }
+
+    Promise.all(
+      mappingSourceAssets.map(async (asset) => {
+        try {
+          const rows = await loadJointMappingRowsFromFirestore(asset.id);
+          return [asset.id, rows] as const;
+        } catch (err) {
+          console.error(`Failed to load mapping rows for ${asset.name || asset.id}`, err);
+          return [asset.id, []] as const;
+        }
+      })
+    ).then((entries) => {
+      if (cancelled) return;
+      setMappingRowsByAssetId(Object.fromEntries(entries));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mappingAssetKey, mappingSourceAssets]);
+
+  useMapEvents({
+    click: () => {
+      setSelectedCableId(null);
+    },
+    moveend: () => {
+      setMapViewBounds(map.getBounds());
+      setMapViewZoom(map.getZoom());
+    },
+    zoomend: () => {
+      setMapViewBounds(map.getBounds());
+      setMapViewZoom(map.getZoom());
+    },
+  });
+
+  const renderBounds = useMemo(() => getPaddedRenderBounds(mapViewBounds), [mapViewBounds]);
 
   const allCableLayersVisible = cablesVisible || visibleLayers?.cables !== false;
 
@@ -1479,6 +1494,7 @@ export default function CableLinesLayer({
         const isHovered = hoveredCableId === asset.id;
         const isSelected = selectedCableId === asset.id;
         const isEditing = editingCableId === asset.id;
+        const shouldCalculateCableDetails = isSelected || isEditing;
         const baseColor = getCableColor(asset, length);
         const cableColor = isSelected ? "#f59e0b" : baseColor;
         const routeEditHandleIndexes = isEditing ? getRouteEditHandleIndexes(points) : [];
@@ -1486,39 +1502,50 @@ export default function CableLinesLayer({
           ? new Set(getRouteEditInsertSegmentIndexes(points, routeEditHandleIndexes))
           : new Set<number>();
 
-        const startAsset =
-          points.length >= 2
+        const startAsset = shouldCalculateCableDetails
+          ? points.length >= 2
             ? resolveCableEndpointAsset(asset, connectionAssets, "from", points[0])
-            : resolveCableEndpointAsset(asset, connectionAssets, "from");
+            : resolveCableEndpointAsset(asset, connectionAssets, "from")
+          : null;
 
-        const endAsset =
-          points.length >= 2
+        const endAsset = shouldCalculateCableDetails
+          ? points.length >= 2
             ? resolveCableEndpointAsset(asset, connectionAssets, "to", points[points.length - 1])
-            : resolveCableEndpointAsset(asset, connectionAssets, "to");
+            : resolveCableEndpointAsset(asset, connectionAssets, "to")
+          : null;
 
         
 
-        const routeGroupUsage = getRouteGroupUsage(
-          networkAnalysisAssets,
-          mappingRowsByAssetId,
-          asset,
-        );
+        const routeGroupUsage: RouteGroupUsage = shouldCalculateCableDetails
+          ? getRouteGroupUsage(networkAnalysisAssets, mappingRowsByAssetId, asset)
+          : {
+              totalUsed: 0,
+              usedFibreNumbers: [],
+              source: "deferred",
+              breakdown: [],
+            };
 
-        const usedFibreNumbersFromMappings = collectUsedFibreNumbersForCable(
-          networkAnalysisAssets,
-          mappingRowsByAssetId,
-          asset,
-        );
-
-        const usedFibresFromSharedMappings = usedFibreNumbersFromMappings.length
-          ? usedFibreNumbersFromMappings.length
-          : countRowsMatching(
+        const usedFibreNumbersFromMappings = shouldCalculateCableDetails
+          ? collectUsedFibreNumbersForCable(
               networkAnalysisAssets,
               mappingRowsByAssetId,
-              (row) => rowMentionsCable(row, asset),
-            );
+              asset,
+            )
+          : [];
 
-        const cableState = networkState.cableStates[asset.id];
+        const usedFibresFromSharedMappings = shouldCalculateCableDetails
+          ? usedFibreNumbersFromMappings.length
+            ? usedFibreNumbersFromMappings.length
+            : countRowsMatching(
+                networkAnalysisAssets,
+                mappingRowsByAssetId,
+                (row) => rowMentionsCable(row, asset),
+              )
+          : 0;
+
+        const cableState = shouldCalculateCableDetails
+          ? networkState?.cableStates?.[asset.id]
+          : undefined;
 
         const usedFibreNumbers = usedFibreNumbersFromMappings.length
           ? usedFibreNumbersFromMappings
@@ -1526,7 +1553,9 @@ export default function CableLinesLayer({
             ? routeGroupUsage.usedFibreNumbers
             : cableState?.usedFibreNumbers || [];
 
-        const localLegacyUsedFibres = getCableUsedFibres(asset, networkAnalysisAssets);
+        const localLegacyUsedFibres = shouldCalculateCableDetails
+          ? getCableUsedFibres(asset, networkAnalysisAssets)
+          : 0;
         const usedFibres = usedFibreNumbers.length
           ? usedFibreNumbers.length
           : usedFibresFromSharedMappings > 0
@@ -1541,7 +1570,9 @@ export default function CableLinesLayer({
             ? "joint-mapping-engine"
             : cableState?.source || (localLegacyUsedFibres > 0 ? "network-state-cable-usage" : "network-state");
 
-        const usedFibreRangeLabel = formatFibreRanges(usedFibreNumbers);
+        const usedFibreRangeLabel = shouldCalculateCableDetails
+          ? formatFibreRanges(usedFibreNumbers)
+          : "Select cable to calculate";
         const capacityWarning = cableState?.warnings?.length
           ? cableState.warnings.join(" • ")
           : getCableCapacityWarning(asset, usedFibres);
@@ -1581,7 +1612,7 @@ export default function CableLinesLayer({
                 color: cableColor,
                 weight: isSelected ? 9 : isHovered || isEditing ? 7 : 4,
                 opacity: isSelected || isHovered || isEditing ? 1 : 0.85,
-                dashArray: getDashArray(asset, startAsset, endAsset),
+                dashArray: getDashArray(asset),
                 className: isSelected ? "selected-cable-glow" : "",
               }}
               eventHandlers={{

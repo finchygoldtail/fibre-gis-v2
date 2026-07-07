@@ -1940,6 +1940,7 @@ export default function ProjectWorkspace({
   const [qaPanelViewMode, setQaPanelViewMode] =
     useState<QaPanelViewMode>("navigator");
   const [issueNavigatorIndex, setIssueNavigatorIndex] = useState(0);
+  const [workspaceHeavyPassReady, setWorkspaceHeavyPassReady] = useState(false);
   const [walkOffAuditOpen, setWalkOffAuditOpen] = useState(false);
   const [walkOffStatus, setWalkOffStatus] = useState<
     "Pending" | "Approved" | "Review Required" | "Blocked"
@@ -2000,6 +2001,35 @@ export default function ProjectWorkspace({
     setActiveTab(tab);
     clearWorkspaceOperationState();
   };
+
+  useEffect(() => {
+    setWorkspaceHeavyPassReady(false);
+    const timeoutId = window.setTimeout(() => {
+      setWorkspaceHeavyPassReady(true);
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [activeProjectId, projectArea?.id, projectName]);
+
+  const needsQaAnalysis =
+    workspaceHeavyPassReady &&
+    (activeTab === "qa" ||
+      activeTab === "reports" ||
+      activeOperationPanel === "qa" ||
+      activeOperationPanel === "issues" ||
+      activeOperationPanel === "handover" ||
+      activeOperationPanel === "report");
+
+  const needsNetworkAnalysis =
+    workspaceHeavyPassReady &&
+    (activeTab === "topology" ||
+      activeTab === "pia" ||
+      activeTab === "reports" ||
+      activeOperationPanel === "topology" ||
+      activeOperationPanel === "trace" ||
+      activeOperationPanel === "disconnected" ||
+      activeOperationPanel === "report" ||
+      Boolean(fullSelectedWorkspaceAsset && activeTab !== "pia"));
 
   // =====================================================
   // QA AREA SCOPE GUARD
@@ -2166,6 +2196,8 @@ export default function ProjectWorkspace({
   }, [activeProjectId, projectArea, projectName, workspaceAssets]);
 
   const auditIssues = useMemo(() => {
+    if (!needsQaAnalysis) return [];
+
     const rawIssues = auditAreaAssets(qaWorkspaceAssets, workspaceAssets);
 
     return rawIssues.filter((issue) => {
@@ -2198,10 +2230,14 @@ export default function ProjectWorkspace({
 
       return true;
     });
-  }, [qaWorkspaceAssets, workspaceAssets]);
+  }, [needsQaAnalysis, qaWorkspaceAssets, workspaceAssets]);
+  const emptyNetworkState = useMemo(() => buildNetworkState([]), []);
   const networkState = useMemo(
-    () => buildNetworkState(workspaceAssets),
-    [workspaceAssets],
+    () =>
+      needsNetworkAnalysis
+        ? buildNetworkState(workspaceAssets)
+        : emptyNetworkState,
+    [emptyNetworkState, needsNetworkAnalysis, workspaceAssets],
   );
 
   const networkGraph = networkState.graph;

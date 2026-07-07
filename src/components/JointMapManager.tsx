@@ -78,10 +78,6 @@ import {
   snapPointToAssets,
   traceReferenceDuctRouteBetweenPoints,
 } from "./map/utils/snapToAssets";
-import {
-  buildNetworkGraph,
-  findDisconnectedAssets,
-} from "../services/networkGraph";
 import { clearDpFibreAllocationsForAssets } from "../services/network";
 
 import { routePointsToRoads } from "./map/utils/routeToRoads";
@@ -1164,16 +1160,6 @@ export default function JointMapManager({
     currentEditingAsset && isOpenreachReferenceAsset(currentEditingAsset),
   );
 
-  const networkGraph = useMemo(
-    () => buildNetworkGraph(allMapAssets),
-    [allMapAssets],
-  );
-
-  const disconnectedAssets = useMemo(
-    () => findDisconnectedAssets(networkGraph),
-    [networkGraph],
-  );
-
   const mapCenter = useMemo<[number, number]>(() => {
     if (pickedLocation) return [pickedLocation.lat, pickedLocation.lng];
     if (draftCablePoints.length > 0) {
@@ -1291,6 +1277,14 @@ export default function JointMapManager({
     [allNetworkAssetsWithExchanges, mapMode, networkSnapCandidateAssets],
   );
 
+  const visibleTopologyLinks = useMemo(
+    () =>
+      visibleProjectAssets.filter(
+        (asset) => asset.geometry?.type === "LineString",
+      ).length,
+    [visibleProjectAssets],
+  );
+
   const offlineFieldMode = useOfflineFieldMode({
     projectId: activeProjectId,
     assets: visibleProjectAssets,
@@ -1378,7 +1372,7 @@ export default function JointMapManager({
   // =====================================================
   const projectWorkspaceStats = useProjectWorkspaceStats({
     visibleProjectAssets,
-    topologyLinks: networkGraph.edges.size,
+    topologyLinks: visibleTopologyLinks,
   });
 
   // =====================================================
@@ -1399,13 +1393,8 @@ export default function JointMapManager({
       return;
     }
 
-    setIsProjectWorkspaceLoading(true);
-    const timer = window.setTimeout(() => {
-      setIsProjectWorkspaceLoading(false);
-      setIsProjectWorkspaceOpen(true);
-    }, 650);
-
-    return () => window.clearTimeout(timer);
+    setIsProjectWorkspaceLoading(false);
+    setIsProjectWorkspaceOpen(true);
   }, [activeProjectArea?.id, canOpenFullProjectWorkspace]);
 
   const { handleSelectProject, handleZoomToAsset } = useMapNavigation({

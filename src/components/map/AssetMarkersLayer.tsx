@@ -5,7 +5,6 @@ import L from "leaflet";
 import { getPaddedRenderBounds, isLatLngInsideRenderBounds } from "./utils/renderBounds";
 import type { SavedMapAsset } from "./types";
 import { getAssetTypeLabel } from "../../utils/assetDisplay";
-import { buildNetworkState } from "../../services/network";
 import { getDpCapacitySummary } from "../../services/dpIntelligence";
 import {
   getPiaQaIconForAsset,
@@ -1441,7 +1440,6 @@ React.useEffect(() => {
   };
 }, []);
   const renderBounds = useMemo(() => getPaddedRenderBounds(mapView.bounds), [mapView.bounds]);
-  const networkState = useMemo(() => buildNetworkState(assets as any), [assets]);
 
   // =====================================================
   // MARKER RENDER INDEXES
@@ -1527,10 +1525,10 @@ React.useEffect(() => {
   const dpUsageById = useMemo(() => {
     const next = new Map<string, ReturnType<typeof getDpUsage>>();
     visibleDpAssets.forEach((dp) => {
-      next.set(dp.id, getDpUsage(dp, assets, networkState));
+      next.set(dp.id, getDpUsage(dp, assets));
     });
     return next;
-  }, [visibleDpAssets, assets, networkState]);
+  }, [visibleDpAssets, assets]);
 
   const parentSbSummaryById = useMemo(() => {
     const next = new Map<string, ParentSbPopupSummary | null>();
