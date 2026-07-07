@@ -1902,6 +1902,11 @@ export default function ProjectWorkspace({
   const handleDeliveryPhaseChange = (phaseId: DeliveryPhaseId) => {
     const phase = getDeliveryPhaseConfig(phaseId);
 
+    if (!canManageWalkOff) {
+      alert("Administrator or Super User access required to change delivery stage.");
+      return;
+    }
+
     if (!projectArea?.id || !onUpdateWorkspaceAsset) {
       alert("Select a project area before changing the delivery phase.");
       return;
@@ -4597,9 +4602,16 @@ export default function ProjectWorkspace({
                                     ? "rgba(147,197,253,0.7)"
                                     : "rgba(148,163,184,0.22)",
                                   color: selected ? "#ffffff" : "#e5e7eb",
+                                  opacity: canManageWalkOff ? 1 : 0.55,
+                                  cursor: canManageWalkOff ? "pointer" : "not-allowed",
                                 }}
+                                disabled={!canManageWalkOff}
                                 onClick={() => handleDeliveryPhaseChange(phase.id)}
-                                title={phase.description}
+                                title={
+                                  canManageWalkOff
+                                    ? phase.description
+                                    : "Administrator or Super User access required"
+                                }
                               >
                                 {phase.gateLabel ? (
                                   <span
