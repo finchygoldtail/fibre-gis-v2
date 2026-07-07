@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 export type CommercialRegisterValues = {
+  boqValue: number;
   originalContractValue: number;
   approvedVariations: number;
   currentContractValue: number;
@@ -30,6 +31,7 @@ type Props = {
 };
 
 const emptyValues: CommercialRegisterValues = {
+  boqValue: 0,
   originalContractValue: 0,
   approvedVariations: 0,
   currentContractValue: 0,
@@ -208,6 +210,7 @@ function valuesFromText(text: string): CommercialRegisterValues {
     Math.max(0, currentContractValue - paidToDate - heldValue);
 
   return {
+    boqValue: 0,
     originalContractValue,
     approvedVariations,
     currentContractValue,
@@ -218,12 +221,48 @@ function valuesFromText(text: string): CommercialRegisterValues {
   };
 }
 
+function valuesFromBoqText(text: string): CommercialRegisterValues {
+  const lines = text
+    .split(/\r?\n/g)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length < 2) return emptyValues;
+
+  const headers = parseCsvLine(lines[0]).map(normaliseHeader);
+  const findIndex = (...names: string[]) => {
+    const wanted = names.map(normaliseHeader);
+    return headers.findIndex((header) => wanted.includes(header));
+  };
+  const quantityIndex = findIndex("Quantity", "Qty");
+  const rateIndex = findIndex("Rate", "Unit Rate", "Unit Price");
+  const totalIndex = findIndex("Total", "Line Total", "Value");
+
+  const boqValue = lines.slice(1).reduce((sum, line) => {
+    const cells = parseCsvLine(line);
+    const explicitTotal = totalIndex >= 0 ? parseMoney(cells[totalIndex]) : 0;
+    if (explicitTotal) return sum + explicitTotal;
+    const quantity = quantityIndex >= 0 ? parseMoney(cells[quantityIndex]) : 0;
+    const rate = rateIndex >= 0 ? parseMoney(cells[rateIndex]) : 0;
+    return sum + quantity * rate;
+  }, 0);
+
+  return {
+    ...emptyValues,
+    boqValue,
+    originalContractValue: boqValue,
+    currentContractValue: boqValue,
+    remainingValue: boqValue,
+  };
+}
+
 function mergeValues(documents: CommercialDocument[]): CommercialRegisterValues {
   if (!documents.length) return emptyValues;
   return documents.reduce<CommercialRegisterValues>((latest, document) => {
     const values = document.values || emptyValues;
     return {
       originalContractValue: values.originalContractValue || latest.originalContractValue,
+      boqValue: values.boqValue || latest.boqValue,
       approvedVariations: values.approvedVariations || latest.approvedVariations,
       currentContractValue: values.currentContractValue || latest.currentContractValue,
       paidToDate: values.paidToDate || latest.paidToDate,
@@ -254,6 +293,28 @@ export function buildCommercialTemplateCsv(areaName: string): string {
   ];
   const row = [areaName, "Contract Award", "", "", "", "", "", "", "", ""];
   return `${headers.map(csvEscape).join(",")}\n${row.map(csvEscape).join(",")}\n`;
+}
+
+export function buildBoqTemplateCsv(areaName: string): string {
+  const headers = [
+    "Area",
+    "Item No",
+    "Section",
+    "Description",
+    "Unit",
+    "Quantity",
+    "Rate",
+    "Total",
+    "Notes",
+  ];
+  const rows = [
+    [areaName, "1.1", "Civils", "Install chamber", "each", "", "", "", ""],
+    [areaName, "1.2", "Cabling", "Install fibre cable", "m", "", "", "", ""],
+    [areaName, "1.3", "Splicing", "Joint/splice works", "each", "", "", "", ""],
+  ];
+  return `${headers.map(csvEscape).join(",")}\n${rows
+    .map((row) => row.map(csvEscape).join(","))
+    .join("\n")}\n`;
 }
 
 export default function CommercialDocumentRegister({
@@ -307,10 +368,28 @@ export default function CommercialDocumentRegister({
     URL.revokeObjectURL(url);
   }
 
+  function downloadBoqTemplate() {
+    const blob = new Blob([buildBoqTemplateCsv(areaName)], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${cleanKey(areaName)}-boq-template.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
   async function uploadDocument(file: File) {
     if (!canManageCommercialDocuments) return;
     const text = await file.text();
-    const values = file.name.toLowerCase().endsWith(".csv") || file.type.includes("text") ? valuesFromText(text) : emptyValues;
+    const isTextUpload =
+      file.name.toLowerCase().endsWith(".csv") || file.type.includes("text");
+    const values = isTextUpload
+      ? documentType === "BOQ"
+        ? valuesFromBoqText(text)
+        : valuesFromText(text)
+      : emptyValues;
     const nextDoc: CommercialDocument = {
       id: `commercial-doc-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       documentType,
@@ -323,7 +402,9 @@ export default function CommercialDocumentRegister({
 
     save([nextDoc, ...documents]);
     setMessage(
-      values.currentContractValue
+      values.boqValue
+        ? "BOQ imported and totalled from the template."
+        : values.currentContractValue
         ? "Commercial values imported from template."
         : "Document registered. Use the CSV template to import commercial values.",
     );
@@ -344,7 +425,10 @@ export default function CommercialDocumentRegister({
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button type="button" style={smallButton} onClick={downloadTemplate}>
-            Download Blank Template
+            Download Commercial Template
+          </button>
+          <button type="button" style={smallButton} onClick={downloadBoqTemplate}>
+            Download BOQ Template
           </button>
           <button
             type="button"
@@ -379,6 +463,7 @@ export default function CommercialDocumentRegister({
 
       <div style={valueGrid}>
         <ValueCard label="Original Contract" value={canViewCommercialMoney ? money(totals.originalContractValue) : "Locked"} />
+        <ValueCard label="BOQ Total" value={canViewCommercialMoney ? money(totals.boqValue) : "Locked"} />
         <ValueCard label="Variations" value={canViewCommercialMoney ? money(totals.approvedVariations) : "Locked"} />
         <ValueCard label="Current Value" value={canViewCommercialMoney ? money(totals.currentContractValue) : "Locked"} />
         <ValueCard label="Ready For Payment" value={canViewCommercialMoney ? money(totals.readyForPayment) : "Locked"} />
@@ -406,7 +491,11 @@ export default function CommercialDocumentRegister({
                 <td style={td}>{document.documentType}</td>
                 <td style={td}>{document.status}</td>
                 <td style={td}>{new Date(document.uploadedAt).toLocaleString()}</td>
-                <td style={td}>{canViewCommercialMoney ? money(document.values.currentContractValue) : "Locked"}</td>
+                <td style={td}>
+                  {canViewCommercialMoney
+                    ? money(document.values.boqValue || document.values.currentContractValue)
+                    : "Locked"}
+                </td>
                 <td style={td}>
                   {canManageCommercialDocuments ? (
                     <button type="button" style={{ ...smallButton, padding: "5px 8px" }} onClick={() => removeDocument(document.id)}>
