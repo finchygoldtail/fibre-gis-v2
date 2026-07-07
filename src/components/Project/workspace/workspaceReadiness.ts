@@ -24,16 +24,25 @@ export type AreaReadiness = {
 };
 
 export type DeliveryPhaseId =
+  | "area-identified"
+  | "gate-1-area-identified"
+  | "completion-survey"
+  | "building-job-packs"
+  | "ready-for-build"
+  | "survey-stage"
   | "build"
-  | "customer-live"
+  | "customers-live"
   | "pia-ready"
-  | "walkoff-ready"
-  | "complete";
+  | "walkoff"
+  | "as-builds-complete"
+  | "handover"
+  | "handed-over";
 
 export type DeliveryPhaseConfig = {
   id: DeliveryPhaseId;
   label: string;
   shortLabel: string;
+  gateLabel?: string;
   description: string;
   statusLabel: string;
   allowsCustomerLiveWithoutPia: boolean;
@@ -41,6 +50,65 @@ export type DeliveryPhaseConfig = {
 };
 
 export const deliveryPhaseOptions: DeliveryPhaseConfig[] = [
+  {
+    id: "area-identified",
+    label: "Gate 101 - Area Abandoned",
+    shortLabel: "Area Abandoned",
+    gateLabel: "Gate 101",
+    description: "Area is marked as abandoned before progressing through the delivery gates.",
+    statusLabel: "Gate 101 - Area Abandoned",
+    allowsCustomerLiveWithoutPia: false,
+    allowsWalkOffWithoutPia: false,
+  },
+  {
+    id: "gate-1-area-identified",
+    label: "Gate 1 - Area Identified",
+    shortLabel: "Area Identified",
+    gateLabel: "Gate 1",
+    description: "Gate 1 checkpoint confirming the area boundary and initial commercial intent.",
+    statusLabel: "Gate 1 - Area Identified",
+    allowsCustomerLiveWithoutPia: false,
+    allowsWalkOffWithoutPia: false,
+  },
+  {
+    id: "completion-survey",
+    label: "Gate 2 - Completion Survey",
+    shortLabel: "Completion Survey",
+    gateLabel: "Gate 2",
+    description: "Survey completion gate before build packs are prepared.",
+    statusLabel: "Gate 2 - Completion Survey",
+    allowsCustomerLiveWithoutPia: false,
+    allowsWalkOffWithoutPia: false,
+  },
+  {
+    id: "building-job-packs",
+    label: "Gate 3 - Building Job Packs",
+    shortLabel: "Building Job Packs",
+    gateLabel: "Gate 3",
+    description: "Job packs are being prepared for field delivery.",
+    statusLabel: "Gate 3 - Building Job Packs",
+    allowsCustomerLiveWithoutPia: false,
+    allowsWalkOffWithoutPia: false,
+  },
+  {
+    id: "ready-for-build",
+    label: "Gate 4 - Ready For Build",
+    shortLabel: "Ready For Build",
+    gateLabel: "Gate 4",
+    description: "Build pack and dependencies are ready for construction.",
+    statusLabel: "Gate 4 - Ready For Build",
+    allowsCustomerLiveWithoutPia: false,
+    allowsWalkOffWithoutPia: false,
+  },
+  {
+    id: "survey-stage",
+    label: "Survey Stage",
+    shortLabel: "Survey Stage",
+    description: "Survey activity is underway before build starts.",
+    statusLabel: "Survey Stage",
+    allowsCustomerLiveWithoutPia: false,
+    allowsWalkOffWithoutPia: false,
+  },
   {
     id: "build",
     label: "Build Phase",
@@ -51,11 +119,11 @@ export const deliveryPhaseOptions: DeliveryPhaseConfig[] = [
     allowsWalkOffWithoutPia: false,
   },
   {
-    id: "customer-live",
-    label: "Customer Live Override",
-    shortLabel: "Customer Live",
+    id: "customers-live",
+    label: "Customers Live",
+    shortLabel: "Customers Live",
     description: "Allows customers to go live while PIA evidence is still being completed.",
-    statusLabel: "Customer Live",
+    statusLabel: "Customers Live",
     allowsCustomerLiveWithoutPia: true,
     allowsWalkOffWithoutPia: false,
   },
@@ -69,20 +137,38 @@ export const deliveryPhaseOptions: DeliveryPhaseConfig[] = [
     allowsWalkOffWithoutPia: false,
   },
   {
-    id: "walkoff-ready",
-    label: "Walk-Off Override",
+    id: "walkoff",
+    label: "Walk-Off",
     shortLabel: "Walk-Off",
     description: "Manager override to allow formal walk-off before every PIA item is complete.",
-    statusLabel: "Walk-Off Override",
+    statusLabel: "Walk-Off",
     allowsCustomerLiveWithoutPia: true,
     allowsWalkOffWithoutPia: true,
   },
   {
-    id: "complete",
-    label: "Complete",
-    shortLabel: "Complete",
-    description: "Final commercial and delivery close-out state.",
-    statusLabel: "Complete",
+    id: "as-builds-complete",
+    label: "As-Builts Complete",
+    shortLabel: "As-Builts Complete",
+    description: "As-built records are complete and ready for handover review.",
+    statusLabel: "As-Builts Complete",
+    allowsCustomerLiveWithoutPia: false,
+    allowsWalkOffWithoutPia: true,
+  },
+  {
+    id: "handover",
+    label: "Handover",
+    shortLabel: "Handover",
+    description: "Area is in final handover review.",
+    statusLabel: "Handover",
+    allowsCustomerLiveWithoutPia: false,
+    allowsWalkOffWithoutPia: true,
+  },
+  {
+    id: "handed-over",
+    label: "Handed Over",
+    shortLabel: "Handed Over",
+    description: "Final delivery handover is complete.",
+    statusLabel: "Handed Over",
     allowsCustomerLiveWithoutPia: false,
     allowsWalkOffWithoutPia: true,
   },
@@ -98,25 +184,79 @@ export function getDeliveryPhaseConfig(id: DeliveryPhaseId): DeliveryPhaseConfig
 function normaliseDeliveryPhase(value: unknown): DeliveryPhaseId | null {
   const text = String(value || "").trim().toLowerCase();
   if (!text) return null;
+  if (text === "area-identified" || text === "area identified")
+    return "area-identified";
+  if (
+    text === "gate-1-area-identified" ||
+    text.includes("gate 1") ||
+    text.includes("gate 1 - area identified")
+  )
+    return "gate-1-area-identified";
+  if (
+    text === "completion-survey" ||
+    text === "completion_survey" ||
+    text.includes("completion survey") ||
+    text.includes("competion survey")
+  )
+    return "completion-survey";
+  if (
+    text === "building-job-packs" ||
+    text === "building_job_packs" ||
+    text.includes("building job packs") ||
+    text.includes("job pack")
+  )
+    return "building-job-packs";
+  if (
+    text === "ready-for-build" ||
+    text === "ready_for_build" ||
+    text.includes("ready for build")
+  )
+    return "ready-for-build";
+  if (
+    text === "survey-stage" ||
+    text === "survey_stage" ||
+    text.includes("survey stage") ||
+    text === "survey"
+  )
+    return "survey-stage";
+  if (
+    text === "as-builds-complete" ||
+    text === "as_builts_complete" ||
+    text.includes("as builds complete") ||
+    text.includes("as-builds complete") ||
+    text.includes("as builts complete")
+  )
+    return "as-builds-complete";
   if (text === "build" || text.includes("build")) return "build";
   if (
     text === "customer-live" ||
+    text === "customers-live" ||
     text === "customer_live" ||
-    text.includes("customer live")
+    text === "customers_live" ||
+    text.includes("customer live") ||
+    text.includes("customers live")
   )
-    return "customer-live";
+    return "customers-live";
   if (text === "pia-ready" || text === "pia_ready" || text.includes("pia ready"))
     return "pia-ready";
   if (
+    text === "walkoff" ||
     text === "walkoff-ready" ||
     text === "walk-off-ready" ||
     text === "walkoff_override" ||
     text.includes("walk-off") ||
     text.includes("walkoff")
   )
-    return "walkoff-ready";
-  if (text === "complete" || text.includes("complete")) return "complete";
-  if (text === "live") return "customer-live";
+    return "walkoff";
+  if (text === "handover" || text.includes("handover")) return "handover";
+  if (
+    text === "handed-over" ||
+    text === "handed_over" ||
+    text.includes("handed over")
+  )
+    return "handed-over";
+  if (text === "complete" || text.includes("complete")) return "handed-over";
+  if (text === "live") return "customers-live";
   return null;
 }
 
@@ -131,7 +271,7 @@ export function getWorkspaceDeliveryPhase(
     normaliseDeliveryPhase(item?.phase) ||
     normaliseDeliveryPhase(item?.properties?.phase) ||
     normaliseDeliveryPhase(fallbackStatus) ||
-    "build"
+    "area-identified"
   );
 }
 

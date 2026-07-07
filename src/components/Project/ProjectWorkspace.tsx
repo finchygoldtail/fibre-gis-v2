@@ -32,6 +32,7 @@ import {
 import AuditCommercialDashboard from "../audits/AuditCommercialDashboard";
 import AuditPaymentBlockerPanel from "../audits/AuditPaymentBlockerPanel";
 import AuditHistoryPanel from "../audits/AuditHistoryPanel";
+import UserMenu from "../UserMenu";
 import { useUserRole } from "../../context/UserRoleContext";
 import AreaOperationsCentre from "../operations/AreaOperationsCentre";
 import EngineeringDeliveryWorkspace from "../delivery/EngineeringDeliveryWorkspace";
@@ -3526,6 +3527,9 @@ export default function ProjectWorkspace({
 
   const responsiveHeaderActions: React.CSSProperties = {
     display: "flex",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    flexWrap: "wrap",
     gap: 8,
   };
 
@@ -3920,6 +3924,7 @@ export default function ProjectWorkspace({
               >
                 Back To Map
               </button>
+              <UserMenu />
             </div>
           </header>
 
@@ -4503,11 +4508,11 @@ export default function ProjectWorkspace({
                         <div>
                           <div style={operationKicker}>AREA HANDOVER</div>
                           <h3 style={areaHandoverTitle}>
-                            Delivery Phase / Commercial Sign-Off
+                            Delivery Stage / Commercial Sign-Off
                           </h3>
                           <div style={areaHandoverHint}>
-                            Control whether the area is still in build, live under PIA override,
-                            or ready for formal walk-off.
+                            Track the area from identification and survey gates through build,
+                            PIA, walk-off and final handover.
                           </div>
                         </div>
                         <span style={walkOffStatusPill(walkOffStatus)}>
@@ -4575,7 +4580,21 @@ export default function ProjectWorkspace({
                                 onClick={() => handleDeliveryPhaseChange(phase.id)}
                                 title={phase.description}
                               >
-                                {phase.shortLabel}
+                                {phase.gateLabel ? (
+                                  <span
+                                    style={{
+                                      display: "block",
+                                      color: selected ? "#bfdbfe" : "#93c5fd",
+                                      fontSize: 10,
+                                      fontWeight: 950,
+                                      textTransform: "uppercase",
+                                      marginBottom: 2,
+                                    }}
+                                  >
+                                    {phase.gateLabel}
+                                  </span>
+                                ) : null}
+                                <span>{phase.shortLabel}</span>
                               </button>
                             );
                           })}
