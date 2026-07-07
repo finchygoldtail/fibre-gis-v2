@@ -15,6 +15,16 @@ import {
   loadJointMappingRowsFromFirestore,
   type MappingRowsByAssetId,
 } from "./cableMappingRows";
+import {
+  getCableDistanceLabelIcon,
+  getCableSpanAngleDegrees,
+  getMidpoint,
+  getOffsetCableLabelPosition,
+  getRouteEditHandleIndexes,
+  getRouteEditInsertSegmentIndexes,
+  ROUTE_EDIT_MIN_INSERT_SPAN_METERS,
+  sanitizeCableCoordinates,
+} from "./cableRouteGeometry";
 import { getCableUsedFibres } from "../cableUsage";
 import { buildNetworkState } from "../../../services/network";
 import { isOpenreachReferenceAsset } from "../../../services/orAssetStorage";
@@ -225,170 +235,6 @@ function getDashArray(
   return undefined;
 }
 /* ======================= END CABLE STYLE HELPERS ======================= */
-
-function getMidpoint(a: [number, number], b: [number, number]): [number, number] {
-  return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-}
-
-const ROUTE_EDIT_MIN_INSERT_SPAN_METERS = 20;
-const ROUTE_COORDINATE_DEDUPE_METERS = 0.35;
-
-function sanitizeCableCoordinates(coordinates: [number, number][]): [number, number][] {
-  if (!Array.isArray(coordinates)) return [];
-
-  const cleaned: [number, number][] = [];
-
-  coordinates.forEach((coord) => {
-    if (!Array.isArray(coord) || coord.length < 2) return;
-
-    const lat = Number(coord[0]);
-    const lng = Number(coord[1]);
-
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-
-    const next: [number, number] = [lat, lng];
-    const previous = cleaned[cleaned.length - 1];
-
-    // Route edit must not multiply identical / near-identical vertices.
-    if (previous && getDistanceMeters(previous, next) <= ROUTE_COORDINATE_DEDUPE_METERS) {
-      return;
-    }
-
-    cleaned.push(next);
-  });
-
-  return cleaned;
-}
-
-function getRouteEditHandleIndexes(points: [number, number][]): number[] {
-  // Keep route editing simple and readable:
-  // only show Start, Middle, End handles.
-  // Extra vertices stay in the saved geometry but do not create marker clutter.
-  if (points.length <= 3) return points.map((_, index) => index);
-
-  const totalLength = getTuplePathDistanceMeters(points);
-  const targetMiddleDistance = totalLength / 2;
-
-  let walked = 0;
-  let middleIndex = 1;
-
-  for (let i = 1; i < points.length; i += 1) {
-    const spanLength = getDistanceMeters(points[i - 1], points[i]);
-    walked += spanLength;
-
-    if (walked >= targetMiddleDistance) {
-      middleIndex = i;
-      break;
-    }
-  }
-
-  middleIndex = Math.max(1, Math.min(points.length - 2, middleIndex));
-
-  return Array.from(new Set([0, middleIndex, points.length - 1])).sort(
-    (a, b) => a - b,
-  );
-}
-
-function getRouteEditInsertSegmentIndexes(
-  points: [number, number][],
-  visibleHandleIndexes: number[]
-): number[] {
-  // Show one add-point control between Start -> Middle and one between
-  // Middle -> End. This keeps the edit UI clean while still letting the
-  // engineer add extra shaping points when needed.
-  if (points.length < 2 || visibleHandleIndexes.length < 2) return [];
-
-  const insertSegments = new Set<number>();
-  const sortedHandles = [...visibleHandleIndexes].sort((a, b) => a - b);
-
-  for (let pairIndex = 0; pairIndex < sortedHandles.length - 1; pairIndex += 1) {
-    const startIndex = sortedHandles[pairIndex];
-    const endIndex = sortedHandles[pairIndex + 1];
-
-    if (endIndex <= startIndex) continue;
-
-    let sectionLength = 0;
-    for (let i = startIndex; i < endIndex; i += 1) {
-      sectionLength += getDistanceMeters(points[i], points[i + 1]);
-    }
-
-    if (sectionLength < ROUTE_EDIT_MIN_INSERT_SPAN_METERS) continue;
-
-    const targetDistance = sectionLength / 2;
-    let walked = 0;
-
-    for (let i = startIndex; i < endIndex; i += 1) {
-      const spanLength = getDistanceMeters(points[i], points[i + 1]);
-      walked += spanLength;
-
-      if (walked >= targetDistance) {
-        insertSegments.add(i);
-        break;
-      }
-    }
-  }
-
-  return Array.from(insertSegments).sort((a, b) => a - b);
-}
-
-function getCableSpanAngleDegrees(a: [number, number], b: [number, number]): number {
-  const midLat = ((a[0] + b[0]) / 2) * (Math.PI / 180);
-  const dx = (b[1] - a[1]) * Math.cos(midLat);
-  const dy = b[0] - a[0];
-
-  return (Math.atan2(dy, dx) * 180) / Math.PI;
-}
-
-function getOffsetCableLabelPosition(
-  a: [number, number],
-  b: [number, number],
-  offsetMeters = 7
-): [number, number] {
-  const midpoint = getMidpoint(a, b);
-  const midLatRad = midpoint[0] * (Math.PI / 180);
-
-  const eastMeters = (b[1] - a[1]) * 111320 * Math.cos(midLatRad);
-  const northMeters = (b[0] - a[0]) * 111320;
-  const lengthMeters = Math.sqrt(eastMeters ** 2 + northMeters ** 2);
-
-  if (!lengthMeters) return midpoint;
-
-  const offsetEastMeters = (-northMeters / lengthMeters) * offsetMeters;
-  const offsetNorthMeters = (eastMeters / lengthMeters) * offsetMeters;
-
-  return [
-    midpoint[0] + offsetNorthMeters / 111320,
-    midpoint[1] + offsetEastMeters / (111320 * Math.cos(midLatRad)),
-  ];
-}
-
-function getCableDistanceLabelIcon(label: string, angleDegrees: number) {
-  return L.divIcon({
-    className: "",
-    html: `
-      <div style="
-        pointer-events: none;
-        background: transparent;
-        border: none;
-        padding: 0;
-        font-size: 11px;
-        font-weight: 800;
-        line-height: 1;
-        color: rgba(147, 51, 234, 0.72);
-        white-space: nowrap;
-        text-shadow:
-          0 1px 2px rgba(255,255,255,0.9),
-          0 -1px 2px rgba(255,255,255,0.9),
-          1px 0 2px rgba(255,255,255,0.9),
-          -1px 0 2px rgba(255,255,255,0.9);
-        transform: translate(-50%, -50%) rotate(${angleDegrees}deg);
-        transform-origin: center;
-      ">${label}</div>
-    `,
-    iconSize: [0, 0],
-    iconAnchor: [0, 0],
-  });
-}
 
 function getAssetPoint(asset: SavedMapAsset): [number, number] | null {
   if (asset.geometry?.type === "Point" && Array.isArray(asset.geometry.coordinates)) {
