@@ -26,6 +26,10 @@ type Props = {
   isSavingMap: boolean;
   onSaveMap: () => void;
   onGpsLocate: () => void;
+  isSharingLocation?: boolean;
+  liveUserCount?: number;
+  locationShareError?: string;
+  onToggleLocationSharing?: () => void;
   isLayersOpen: boolean;
   onToggleLayers: () => void;
 
@@ -57,6 +61,10 @@ export default function MapToolbar({
   isSavingMap,
   onSaveMap,
   onGpsLocate,
+  isSharingLocation = false,
+  liveUserCount = 0,
+  locationShareError = "",
+  onToggleLocationSharing,
   isLayersOpen,
   onToggleLayers,
   areaKey,
@@ -258,6 +266,11 @@ export default function MapToolbar({
           {moreMenuOpen ? (
             <div style={mobileMoreMenuStyle}>
               <button style={mobileMenuRowStyle} onClick={() => { setMoreMenuOpen(false); onGpsLocate(); }}>GPS</button>
+              {onToggleLocationSharing ? (
+                <button style={mobileMenuRowStyle} onClick={() => { setMoreMenuOpen(false); onToggleLocationSharing(); }}>
+                  {isSharingLocation ? "Stop Sharing Location" : "Share My Location"}
+                </button>
+              ) : null}
               <button style={mobileMenuRowStyle} onClick={() => { setMoreMenuOpen(false); onToggleLayers(); }}>{isLayersOpen ? "Hide Layers" : "Layers"}</button>
               <button style={mobileMenuRowStyle} onClick={() => { setMoreMenuOpen(false); setMessagesOpen((value) => !value); }}>Messages {areaMessages.length ? `(${areaMessages.length})` : ""}</button>
               {canSaveMap && <button style={mobileMenuRowStyle} onClick={() => { setMoreMenuOpen(false); onSaveMap(); }} disabled={isSavingMap}>{isSavingMap ? "Saving..." : "Save Map"}</button>}
@@ -356,6 +369,25 @@ export default function MapToolbar({
         <button onClick={onGpsLocate} style={actionButtonStyle}>
           GPS
         </button>
+
+        {onToggleLocationSharing ? (
+          <button
+            onClick={onToggleLocationSharing}
+            style={{
+              ...actionButtonStyle,
+              background: isSharingLocation ? "#16a34a" : "#334155",
+            }}
+            title={
+              locationShareError ||
+              (isSharingLocation
+                ? "Stop sharing your live field location"
+                : "Share your live field location")
+            }
+          >
+            {isSharingLocation ? "Sharing" : "Share Location"}
+            {liveUserCount > 0 ? ` (${liveUserCount})` : ""}
+          </button>
+        ) : null}
 
         <button
           onClick={onToggleLayers}

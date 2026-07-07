@@ -10,6 +10,7 @@ export type LayerVisibility = {
   dropCables: boolean;
   areas: boolean;
   measurements: boolean;
+  liveUsers: boolean;
   cableDistances: boolean;
   homes: boolean;
   homesConnected: boolean;
@@ -67,6 +68,7 @@ export const DEFAULT_VISIBLE_LAYERS: LayerVisibility = {
   dropCables: false,
   areas: false,
   measurements: false,
+  liveUsers: false,
   cableDistances: false,
   homes: false,
   homesConnected: true,

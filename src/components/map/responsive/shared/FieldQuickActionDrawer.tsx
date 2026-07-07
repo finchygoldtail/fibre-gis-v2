@@ -14,6 +14,9 @@ type Props = {
   onOpenPanel: () => void;
   onOpenLayers: () => void;
   onGpsLocate: () => void;
+  isSharingLocation?: boolean;
+  liveUserCount?: number;
+  onToggleLocationSharing?: () => void;
   onToggleMoveHomes: () => void;
   onToggleDeleteHomes: () => void;
   onOpenMaintenance: () => void;
@@ -62,6 +65,9 @@ export default function FieldQuickActionDrawer({
   onOpenPanel,
   onOpenLayers,
   onGpsLocate,
+  isSharingLocation = false,
+  liveUserCount = 0,
+  onToggleLocationSharing,
   onToggleMoveHomes,
   onToggleDeleteHomes,
   onOpenMaintenance,
@@ -152,6 +158,16 @@ export default function FieldQuickActionDrawer({
             <button type="button" onClick={() => run(onGpsLocate)} style={drawerButton("primary")}>
               GPS Locate
             </button>
+            {onToggleLocationSharing ? (
+              <button
+                type="button"
+                onClick={() => run(onToggleLocationSharing, false)}
+                style={drawerButton("secondary", isSharingLocation)}
+              >
+                {isSharingLocation ? "Stop Sharing Location" : "Share My Location"}
+                {liveUserCount > 0 ? ` (${liveUserCount})` : ""}
+              </button>
+            ) : null}
 
             {role === "survey" ? (
               <>

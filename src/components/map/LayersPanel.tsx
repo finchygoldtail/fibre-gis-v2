@@ -122,6 +122,11 @@ const layerGroups: LayerGroup[] = [
       { label: "Live not ready", key: "liveNotReady" },
     ],
   },
+  {
+    id: "fieldUsers",
+    title: "Field Users",
+    options: [{ label: "Live Field Users", key: "liveUsers" }],
+  },
   PIA_QA_LAYER_GROUP,
   {
     id: "measurements",

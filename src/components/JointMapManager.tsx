@@ -56,6 +56,7 @@ import ImportExportPanel from "./map/panels/ImportExportPanel";
 import AssetMarkersLayer from "./map/layers/AssetMarkersLayer";
 import CableLinesLayer from "./map/cables/CableLinesLayer";
 import OpenreachOverlayLayer from "./map/layers/OpenreachOverlayLayer";
+import LiveUsersLayer from "./map/layers/LiveUsersLayer";
 import CableDetailsModal from "./map/CableDetailsModal";
 import { loadMapView, saveMapView } from "./map/mapViewMemory";
 import PoleDetailsModal from "./map/modals/PoleDetailsModal";
@@ -121,6 +122,7 @@ import {
 } from "./map/hooks/useMapDrawingState";
 import { useRoleMobileMode } from "./map/responsive/useRoleMobileMode";
 import { useDeviceLayout } from "./map/responsive/useDeviceLayout";
+import { useLiveUserLocationSharing } from "./map/hooks/useLiveUserLocationSharing";
 import SurveyMobileControls from "./map/responsive/mobile/SurveyMobileControls";
 import MaintenanceMobileControls from "./map/responsive/mobile/MaintenanceMobileControls";
 import FieldModeStatusPill from "./map/responsive/shared/FieldModeStatusPill";
@@ -1243,6 +1245,18 @@ export default function JointMapManager({
     mapBounds,
     mapZoom,
     visibleLayers,
+  });
+
+  const {
+    sharingEnabled: isSharingLocation,
+    setSharingEnabled: setIsSharingLocation,
+    shareError: locationShareError,
+    liveUsers,
+  } = useLiveUserLocationSharing({
+    profile,
+    activeProjectId,
+    activeProjectName: activeProjectAreaName || activeProjectArea?.name || null,
+    subscribeEnabled: visibleLayers.liveUsers !== false,
   });
 
   const networkSnapCandidateAssets = useMemo(
@@ -4769,6 +4783,13 @@ export default function JointMapManager({
             }}
           />
 
+          {visibleLayers.liveUsers ? (
+            <LiveUsersLayer
+              users={liveUsers}
+              currentUid={profile?.uid}
+            />
+          ) : null}
+
           {visibleLayers.areas && (
             <AreaPolygonsLayer
               areas={visibleProjectAreas.filter((asset) =>
@@ -5224,6 +5245,12 @@ export default function JointMapManager({
           isSavingMap={isSavingMapNow}
           onSaveMap={handleSaveMapNow}
           onGpsLocate={handleGpsLocate}
+          isSharingLocation={isSharingLocation}
+          liveUserCount={liveUsers.length}
+          locationShareError={locationShareError}
+          onToggleLocationSharing={() =>
+            setIsSharingLocation((enabled) => !enabled)
+          }
           isLayersOpen={isLayersOpen}
           onToggleLayers={() => setIsLayersOpen(!isLayersOpen)}
           areaKey={activeProjectId}
@@ -5323,6 +5350,11 @@ export default function JointMapManager({
           onOpenPanel={() => setIsPanelOpen(true)}
           onOpenLayers={() => setIsLayersOpen((prev) => !prev)}
           onGpsLocate={handleGpsLocate}
+          isSharingLocation={isSharingLocation}
+          liveUserCount={liveUsers.length}
+          onToggleLocationSharing={() =>
+            setIsSharingLocation((enabled) => !enabled)
+          }
           onToggleMoveHomes={handleToggleMoveHomesMode}
           onToggleDeleteHomes={handleAdminToggleSurveyDeleteHomesMode}
           onOpenMaintenance={() => {
