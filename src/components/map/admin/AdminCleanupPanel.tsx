@@ -21,6 +21,7 @@ type AdminCleanupPanelProps = {
   onRemoveSelectedPolygons: () => void;
   onRemoveSelectedPolygon: () => void;
   onRemoveAllPolygons: () => void;
+  onRemoveImportedDistributionPoints: () => void;
   onSetAllPolygonsToL3: () => void;
   onRepairAreaStamps: () => void | Promise<void>;
   onDeletePiaOverlayForActiveProject: () => void | Promise<void>;
@@ -47,6 +48,7 @@ export default function AdminCleanupPanel({
   onRemoveSelectedPolygons,
   onRemoveSelectedPolygon,
   onRemoveAllPolygons,
+  onRemoveImportedDistributionPoints,
   onSetAllPolygonsToL3,
   onRepairAreaStamps,
   onDeletePiaOverlayForActiveProject,
@@ -162,6 +164,15 @@ export default function AdminCleanupPanel({
 
         <button type="button" onClick={onRemoveAllPolygons} style={btnDanger}>
           Remove ALL Polygons
+        </button>
+
+        <button
+          type="button"
+          onClick={onRemoveImportedDistributionPoints}
+          style={btnDanger}
+          title="Remove QGIS/GeoJSON imported Distribution Points / SBs before re-importing them"
+        >
+          Remove Imported DPs / SBs
         </button>
 
         <button

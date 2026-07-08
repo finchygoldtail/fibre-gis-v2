@@ -7,6 +7,7 @@ import type {
   PoleDetails,
 } from "../types";
 import type { ChamberDetails } from "../modals/ChamberDetailsModal";
+import { DEFAULT_DISTRIBUTION_CLOSURE_TYPE } from "../../../services/assetNameValidation";
 
 export type AreaLevel = "L0" | "L1" | "L2" | "L3";
 
@@ -40,7 +41,7 @@ export function useAssetEditorState(
   const [poleDetails, setPoleDetails] = useState<PoleDetails>({});
   const [dpDetails, setDpDetails] = useState<DistributionPointDetails>({
     powerReadings: ["", "", "", ""],
-    closureType: "CBT",
+    closureType: DEFAULT_DISTRIBUTION_CLOSURE_TYPE,
     connectionsToHomes: 8,
     afnDetails: undefined,
   });

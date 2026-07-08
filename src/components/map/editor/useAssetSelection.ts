@@ -16,6 +16,7 @@ import type {
 } from "../types";
 import type { ChamberDetails } from "../modals/ChamberDetailsModal";
 import { getDpOperationalStatus } from "./assetEditCoordinator";
+import { DEFAULT_DISTRIBUTION_CLOSURE_TYPE } from "../../../services/assetNameValidation";
 
 type AreaLevel = "L0" | "L1" | "L2" | "L3";
 type MapMode =
@@ -133,7 +134,7 @@ export function useAssetSelection({
         ...(viewedAsset.dpDetails ||
           (viewedAsset as any).properties?.dpDetails || {
             powerReadings: ["", "", "", ""],
-            closureType: "CBT",
+            closureType: DEFAULT_DISTRIBUTION_CLOSURE_TYPE,
             connectionsToHomes: 8,
           }),
         buildStatus: getDpOperationalStatus(viewedAsset),

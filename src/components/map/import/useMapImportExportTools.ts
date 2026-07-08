@@ -15,6 +15,10 @@ import {
   normaliseOpenreachAsset,
 } from "../../../services/orAssetStorage";
 import { withAreaAssetIndex } from "../../../services/areaAssetIndex";
+import {
+  filterUniqueAssetsForAreaImport,
+  normaliseDistributionPointAsset,
+} from "../../../services/assetNameValidation";
 
 type UseMapImportExportToolsArgs = {
   savedJoints: SavedMapAsset[];
@@ -48,6 +52,13 @@ function getAreaDisplayName(activeProjectArea: SavedMapAsset | null): string | u
       (activeProjectArea as any)?.areaName ||
       "",
   ).trim() || undefined;
+}
+
+function alertSkippedDuplicateImports(count: number): void {
+  if (count <= 0) return;
+  alert(
+    `${count} duplicate asset name(s) were skipped because the same local asset number already exists in this AG.`,
+  );
 }
 
 export function useMapImportExportTools({
@@ -277,30 +288,44 @@ export function useMapImportExportTools({
           savedOrCount = importedOrAssets.length;
         }
 
+        let savedDesignedCount = 0;
         if (designedNetworkAssets.length) {
           const existingIds = new Set(
             savedJoints.map((asset) => String(asset.id)),
           );
-          const dedupedNetworkAssets = designedNetworkAssets.filter((asset) => {
-            const id = String(asset.id);
-            if (existingIds.has(id)) return false;
-            existingIds.add(id);
-            return true;
+          const areaStampedAssets = designedNetworkAssets
+            .filter((asset) => {
+              const id = String(asset.id);
+              if (existingIds.has(id)) return false;
+              existingIds.add(id);
+              return true;
+            })
+            .map((asset) =>
+              normaliseDistributionPointAsset(
+                withAreaAssetIndex(
+                  asset,
+                  activeProjectId,
+                  getAreaDisplayName(activeProjectArea),
+                ),
+              ),
+            );
+          const dedupedNetworkAssets = filterUniqueAssetsForAreaImport({
+            existingAssets: savedJoints,
+            importedAssets: areaStampedAssets,
+            activeAreaName: activeProjectAreaName || getAreaDisplayName(activeProjectArea),
+            activeAreaId: activeProjectId,
           });
+
+          alertSkippedDuplicateImports(dedupedNetworkAssets.duplicates.length);
+          savedDesignedCount = dedupedNetworkAssets.assets.length;
           setSavedJoints((prev) => [
             ...prev,
-            ...dedupedNetworkAssets.map((asset) =>
-              withAreaAssetIndex(
-                asset,
-                activeProjectId,
-                getAreaDisplayName(activeProjectArea),
-              ),
-            ),
+            ...dedupedNetworkAssets.assets,
           ]);
         }
 
         alert(
-          `Imported ${designedNetworkAssets.length} designed network asset(s), ${savedOrCount} OR reference asset(s), and ${savedHomeCount} home(s) from GeoJSON.`,
+          `Imported ${savedDesignedCount} designed network asset(s), ${savedOrCount} OR reference asset(s), and ${savedHomeCount} home(s) from GeoJSON.`,
         );
       } catch (err: any) {
         console.error(err);
@@ -334,9 +359,17 @@ export function useMapImportExportTools({
             getAreaDisplayName(activeProjectArea),
           ),
         );
-      const importedDesignedAssets = importedAssets.filter(
-        (asset) => !isOpenreachReferenceAsset(asset),
-      );
+      const importedDesignedAssets = importedAssets
+        .filter((asset) => !isOpenreachReferenceAsset(asset))
+        .map((asset) =>
+          normaliseDistributionPointAsset(
+            withAreaAssetIndex(
+              asset,
+              activeProjectId,
+              getAreaDisplayName(activeProjectArea),
+            ),
+          ),
+        );
 
       if (importedOrAssets.length) {
         const mergedOrAssets = await mergeAndSaveOrAssets(importedOrAssets, {
@@ -345,17 +378,17 @@ export function useMapImportExportTools({
         setOrAssets(mergedOrAssets);
       }
 
-      setSavedJoints(
-        importedDesignedAssets.map((asset) =>
-          withAreaAssetIndex(
-            asset,
-            activeProjectId,
-            getAreaDisplayName(activeProjectArea),
-          ),
-        ),
-      );
+      const dedupedDesignedAssets = filterUniqueAssetsForAreaImport({
+        existingAssets: [],
+        importedAssets: importedDesignedAssets,
+        activeAreaName: activeProjectAreaName || getAreaDisplayName(activeProjectArea),
+        activeAreaId: activeProjectId,
+      });
+      alertSkippedDuplicateImports(dedupedDesignedAssets.duplicates.length);
+
+      setSavedJoints(dedupedDesignedAssets.assets);
       alert(
-        `Imported ${importedDesignedAssets.length} designed asset(s) and ${importedOrAssets.length} OR reference asset(s).`,
+        `Imported ${dedupedDesignedAssets.assets.length} designed asset(s) and ${importedOrAssets.length} OR reference asset(s).`,
       );
     } catch (err: any) {
       alert("Import failed: " + err.message);

@@ -6,6 +6,7 @@
 // =====================================================
 
 import type { NetworkAsset, DpRoutingState } from "./types";
+import { DEFAULT_DISTRIBUTION_CLOSURE_TYPE } from "../assetNameValidation";
 
 function valueText(value: unknown): string {
   return String(value ?? "").trim();
@@ -82,7 +83,12 @@ export function buildDpRoutingState(asset: NetworkAsset): DpRoutingState {
   const mduDetails = details.mduDetails || item.mduDetails || {};
 
   const closureType = valueText(
-    details.closureType || details.networkArchitecture || item.closureType || item.dpType || item.jointType || "CBT",
+    details.closureType ||
+      details.networkArchitecture ||
+      item.closureType ||
+      item.dpType ||
+      item.jointType ||
+      DEFAULT_DISTRIBUTION_CLOSURE_TYPE,
   ).toUpperCase();
   const dpRole = getDpOperationalRole(asset);
   const isServingDp = dpRole === "serving";

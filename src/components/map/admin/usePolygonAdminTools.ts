@@ -23,6 +23,29 @@ function isImportedAreaAsset(asset: any): boolean {
   );
 }
 
+function isImportedDistributionPointAsset(asset: any): boolean {
+  const assetType = String(asset?.assetType || "").trim().toLowerCase();
+  const source = String(asset?.source || "").trim().toLowerCase();
+  const importedProps = asset?.importedProperties || {};
+  const name = String(asset?.name || asset?.jointName || asset?.notes || "").trim().toUpperCase();
+  const importedDescription = String(
+    importedProps?.description || importedProps?.Description || "",
+  )
+    .trim()
+    .toUpperCase();
+
+  if (assetType !== "distribution-point") return false;
+
+  // Only remove assets that came from GeoJSON/QGIS imports.
+  // This avoids deleting manually created DPs.
+  if (source === "geojson-import") return true;
+  if (Object.keys(importedProps || {}).length > 0) return true;
+
+  // Safety fallback for the QGIS SB closure import where the name/description
+  // uses standard SB naming, but older imports may not have a source stamp.
+  return /(^|[-_\s])SB\d+$/i.test(name) || /(^|[-_\s])SB\d+$/i.test(importedDescription);
+}
+
 type UsePolygonAdminToolsArgs = {
   isAdmin: boolean;
   operationalSavedJoints: SavedMapAsset[];
@@ -216,6 +239,45 @@ export function usePolygonAdminTools({
     removePolygonAssetsFromMapState(allPolygons, "polygon area(s)");
   };
 
+  const handleAdminRemoveImportedDistributionPoints = () => {
+    if (!isAdmin) {
+      alert("Administrator access required.");
+      return;
+    }
+
+    const importedDps = operationalSavedJoints.filter(isImportedDistributionPointAsset);
+
+    if (!importedDps.length) {
+      alert("No imported Distribution Points / SBs were found.");
+      return;
+    }
+
+    const typed = window.prompt(
+      `Found ${importedDps.length} imported Distribution Point / SB asset(s).\n\nThis is intended for removing QGIS-imported SB/AFN DPs before re-importing them. Manually created DPs are protected where possible.\n\nType DELETE IMPORTED DPS to remove them from the map.\n\nYou must still press Save Map afterwards to persist the cleanup.`,
+      "",
+    );
+
+    if (typed !== "DELETE IMPORTED DPS") return;
+
+    const importedDpIds = new Set(
+      importedDps.map((asset) => String(asset.id || "")),
+    );
+
+    setSavedJoints((prev) =>
+      (prev ?? []).filter(
+        (asset: any) => !importedDpIds.has(String(asset?.id || "")),
+      ),
+    );
+
+    if (editingAssetId && importedDpIds.has(String(editingAssetId))) {
+      resetEditor();
+    }
+
+    alert(
+      `${importedDps.length} imported Distribution Point / SB asset(s) removed from the map.\n\nPress Save Map to make this permanent in Firestore.`,
+    );
+  };
+
   const handleAdminSetAllPolygonsToL3 = () => {
     if (!isAdmin) {
       alert("Administrator access required.");
@@ -280,6 +342,7 @@ export function usePolygonAdminTools({
     handleAdminRemoveSelectedPolygons,
     handleAdminRemoveSelectedPolygon,
     handleAdminRemoveAllPolygons,
+    handleAdminRemoveImportedDistributionPoints,
     handleAdminSetAllPolygonsToL3,
   };
 }

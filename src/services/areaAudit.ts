@@ -1,4 +1,5 @@
 import { buildNetworkGraph, findDisconnectedAssets } from "./networkGraph";
+import { DEFAULT_DISTRIBUTION_CLOSURE_TYPE } from "./assetNameValidation";
 
 export type AuditSeverity = "high" | "medium" | "low";
 
@@ -381,7 +382,7 @@ function getCableUsedFibres(asset: any): number {
 type DistributionArchitecture = "CBT" | "AFN" | "MDU" | "MDU_SPLITTER";
 
 function normaliseArchitecture(value: unknown): DistributionArchitecture {
-  const raw = String(value || "CBT").trim().toUpperCase();
+  const raw = String(value || DEFAULT_DISTRIBUTION_CLOSURE_TYPE).trim().toUpperCase();
   if (raw === "AFN") return "AFN";
   if (raw === "MDU") return "MDU";
   if (raw === "MDU_SPLITTER") return "MDU_SPLITTER";

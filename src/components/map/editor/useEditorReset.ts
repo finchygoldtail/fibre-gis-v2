@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import type { DistributionPointDetails } from "../types";
+import { DEFAULT_DISTRIBUTION_CLOSURE_TYPE } from "../../../services/assetNameValidation";
 
 type Setter<T = any> = (value: T) => void;
 
@@ -51,7 +52,7 @@ export function useEditorReset(args: UseEditorResetArgs) {
     args.setPoleDetails({});
     args.setDpDetails({
       powerReadings: ["", "", "", ""],
-      closureType: "CBT",
+      closureType: DEFAULT_DISTRIBUTION_CLOSURE_TYPE,
       connectionsToHomes: 8,
       buildStatus: "Planned",
     } as DistributionPointDetails);

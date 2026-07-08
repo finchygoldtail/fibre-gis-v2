@@ -21,6 +21,7 @@ import {
   rebuildThroughCableReservations,
   type RebuildThroughCableReservationResult,
 } from "../../services/dpFibreAutoAllocator";
+import { DEFAULT_DISTRIBUTION_CLOSURE_TYPE } from "../../services/assetNameValidation";
 
 type ConnectedHome = {
   port: number;
@@ -1326,7 +1327,7 @@ export default function AssetDetailsSidebarSections({
   const dpAutoFibrePlan = useMemo(
     () =>
       buildDpFibrePlan({
-        closureType: dpDetails.closureType || "CBT",
+        closureType: dpDetails.closureType || DEFAULT_DISTRIBUTION_CLOSURE_TYPE,
         connectedHomes: dpUsed,
         currentInputFibres,
         mduFibres: dpDetails.mduDetails?.mduFibres,
@@ -1345,7 +1346,7 @@ export default function AssetDetailsSidebarSections({
     () =>
       getArchitectureConsistencyWarnings({
         currentDpId,
-        currentClosureType: dpDetails.closureType || "CBT",
+        currentClosureType: dpDetails.closureType || DEFAULT_DISTRIBUTION_CLOSURE_TYPE,
         currentThroughCableId:
           selectedCableId || dpDetails.mduDetails?.throughCableId || null,
         allDistributionPoints,
@@ -1809,7 +1810,7 @@ export default function AssetDetailsSidebarSections({
 
         <div style={labelStyle}>Closure Type</div>
         <select
-          value={dpDetails.closureType || "CBT"}
+          value={dpDetails.closureType || DEFAULT_DISTRIBUTION_CLOSURE_TYPE}
           onChange={(e) => {
             const closureType = e.target.value as "CBT" | "AFN" | "MDU" | "MDU_SPLITTER";
             onChangeDpDetails({

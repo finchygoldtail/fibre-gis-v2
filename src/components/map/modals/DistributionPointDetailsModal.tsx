@@ -5,6 +5,7 @@ import { storage } from "../../../firebase";
 import type { DistributionPointDetails, SavedMapAsset } from "../types";
 import { buildNetworkState } from "../../../services/network";
 import { buildDpRelationshipRouting } from "../../../services/dpRelationshipRouting";
+import { DEFAULT_DISTRIBUTION_CLOSURE_TYPE } from "../../../services/assetNameValidation";
 
 type ConnectedHome = {
   port: number;
@@ -983,7 +984,7 @@ export default function DistributionPointDetailsModal({
 
         <label>DP Type</label>
         <select
-          value={details.closureType || "CBT"}
+          value={details.closureType || DEFAULT_DISTRIBUTION_CLOSURE_TYPE}
           onChange={(e) => {
             const nextClosureType = e.target.value as
               | "CBT"

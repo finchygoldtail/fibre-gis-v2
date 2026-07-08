@@ -11,6 +11,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import type { DistributionPointDetails, SavedMapAsset } from "../map/types";
 import { buildDpRoutingState, buildNetworkState } from "../../services/network";
 import { getDpCapacityStateColour, getDpCapacitySummary } from "../../services/dpIntelligence";
+import { DEFAULT_DISTRIBUTION_CLOSURE_TYPE } from "../../services/assetNameValidation";
 import CapacityPanel from "./dp/CapacityPanel";
 import RoutePanel from "./dp/RoutePanel";
 import FibreIntakePanel from "./dp/FibreIntakePanel";
@@ -297,7 +298,7 @@ function getClosureType(asset: SavedMapAsset | null): string {
       item?.dpType ||
       item?.distributionPointType ||
       item?.jointType ||
-      "CBT",
+      DEFAULT_DISTRIBUTION_CLOSURE_TYPE,
   ).toUpperCase();
 }
 

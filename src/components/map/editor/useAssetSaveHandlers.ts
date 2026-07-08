@@ -20,6 +20,10 @@ import {
 } from "../utils/mapAssetGeometry";
 import { recordLocalEngineeringChange } from "../../../core/engineering";
 import {
+  buildDuplicateAssetNameMessage,
+  findDuplicateAssetNameInArea,
+} from "../../../services/assetNameValidation";
+import {
   getAssetDetailPatch,
   getDpOperationalStatus,
   getPointJointType,
@@ -117,7 +121,10 @@ function getEngineeringAreaId(
   activeProjectId: string | null,
   activeProjectAreaName: string | null | undefined,
 ): string {
-  return String(activeProjectId || activeProjectAreaName || "global-map").trim() || "global-map";
+  return (
+    String(activeProjectId || activeProjectAreaName || "global-map").trim() ||
+    "global-map"
+  );
 }
 
 function getEngineeringSnapshot(asset?: SavedMapAsset | null): any | null {
@@ -129,13 +136,19 @@ function getEngineeringSnapshot(asset?: SavedMapAsset | null): any | null {
     id: String(anyAsset.id ?? ""),
     type: anyAsset.assetType || anyAsset.jointType || anyAsset.type,
     name: anyAsset.name || anyAsset.label || anyAsset.properties?.name,
-    status: anyAsset.status || anyAsset.buildStatus || anyAsset.properties?.status,
+    status:
+      anyAsset.status || anyAsset.buildStatus || anyAsset.properties?.status,
     notes: anyAsset.notes || anyAsset.properties?.notes,
     geometry: anyAsset.geometry,
     coordinates: anyAsset.geometry?.coordinates,
-    fibreAllocation: anyAsset.allocatedInputFibres || anyAsset.fibreAllocation || anyAsset.properties?.fibreAllocation,
-    fibres: anyAsset.fibres || anyAsset.fibreCount || anyAsset.properties?.fibres,
-    photos: anyAsset.photos || anyAsset.photoUrls || anyAsset.properties?.photos,
+    fibreAllocation:
+      anyAsset.allocatedInputFibres ||
+      anyAsset.fibreAllocation ||
+      anyAsset.properties?.fibreAllocation,
+    fibres:
+      anyAsset.fibres || anyAsset.fibreCount || anyAsset.properties?.fibres,
+    photos:
+      anyAsset.photos || anyAsset.photoUrls || anyAsset.properties?.photos,
     commercial: anyAsset.commercial || anyAsset.properties?.commercial,
   };
 }
@@ -152,14 +165,20 @@ function recordEngineeringChangeSafely(args: {
     recordLocalEngineeringChange({
       before: getEngineeringSnapshot(args.before),
       after: getEngineeringSnapshot(args.after),
-      areaId: getEngineeringAreaId(args.activeProjectId, args.activeProjectAreaName),
+      areaId: getEngineeringAreaId(
+        args.activeProjectId,
+        args.activeProjectAreaName,
+      ),
       areaName: args.activeProjectAreaName || undefined,
       createdBy: "Current User",
       source: args.source,
       reason: args.reason,
     });
   } catch (error) {
-    console.warn("Engineering Core analysis failed; map save continued.", error);
+    console.warn(
+      "Engineering Core analysis failed; map save continued.",
+      error,
+    );
   }
 }
 
@@ -206,6 +225,25 @@ export function useAssetSaveHandlers({
       beforeAsset?.name || jointName,
     );
     if (!reason) return;
+
+    const proposedEditedName = jointName.trim() || beforeAsset?.name || "";
+    const duplicateEditedAsset = findDuplicateAssetNameInArea({
+      assets: savedJoints,
+      name: proposedEditedName,
+      currentAssetId: editingAssetId,
+      activeAreaName: activeProjectAreaName,
+      activeAreaId: activeProjectId,
+    });
+    if (duplicateEditedAsset) {
+      alert(
+        buildDuplicateAssetNameMessage({
+          attemptedName: proposedEditedName,
+          duplicate: duplicateEditedAsset,
+          activeAreaName: activeProjectAreaName,
+        }),
+      );
+      return;
+    }
 
     let savedAfterAsset: SavedMapAsset | null = null;
     const editedCableCoordinates =
@@ -364,12 +402,30 @@ export function useAssetSaveHandlers({
     const nextChamberDetails =
       detailOverrides?.chamberDetails ?? chamberDetails;
 
-    const reason = getChangeReasonForCurrentMode("created", jointName.trim());
+    const proposedNewName = jointName.trim();
+    const duplicateNewAsset = findDuplicateAssetNameInArea({
+      assets: savedJoints,
+      name: proposedNewName,
+      activeAreaName: activeProjectAreaName,
+      activeAreaId: activeProjectId,
+    });
+    if (duplicateNewAsset) {
+      alert(
+        buildDuplicateAssetNameMessage({
+          attemptedName: proposedNewName,
+          duplicate: duplicateNewAsset,
+          activeAreaName: activeProjectAreaName,
+        }),
+      );
+      return;
+    }
+
+    const reason = getChangeReasonForCurrentMode("created", proposedNewName);
     if (!reason) return;
 
     const record: SavedMapAsset = {
       id: crypto.randomUUID(),
-      name: jointName.trim(),
+      name: proposedNewName,
       assetType,
       jointType: getPointJointType(assetType, jointType),
       notes: notes.trim(),

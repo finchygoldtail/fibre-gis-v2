@@ -280,16 +280,23 @@ function getPointLatLng(asset: SavedMapAsset): [number, number] | null {
   return null;
 }
 
-function isEngineeringDrawingJointAsset(asset: SavedMapAsset): boolean {
+function isEngineeringCableDrawTargetAsset(asset: SavedMapAsset): boolean {
   const assetType = String((asset as any).assetType || "").toLowerCase();
   const jointType = String((asset as any).jointType || "").toLowerCase();
   const name = String((asset as any).name || "").toLowerCase();
 
+  // Cable drawing must keep every valid network endpoint visible/selectable.
+  // Previously this only returned joints, which made DPs/SBs and poles vanish
+  // as soon as cable drawing started.
+  if (assetType === "distribution-point" || assetType === "dp") return true;
+  if (assetType === "pole") return true;
+  if (assetType === "chamber") return true;
+  if (assetType === "street-cab") return true;
+  if (assetType === "ag-joint" || assetType === "joint" || assetType.includes("joint")) return true;
+  if (jointType.includes("joint")) return true;
+
   return (
-    assetType === "ag-joint" ||
-    assetType === "joint" ||
-    assetType.includes("joint") ||
-    jointType.includes("joint") ||
+    name.includes("sb") ||
     name.includes("cmj") ||
     name.includes("mmj") ||
     name.includes("lmj") ||
@@ -766,7 +773,7 @@ React.useEffect(() => {
     // Engineering drawing mode keeps the global map uncluttered while drawing
     // long feeder/link routes: show only joints as cable snap targets.
     if (cableDrawingMode) {
-      return isEngineeringDrawingJointAsset(asset);
+      return isEngineeringCableDrawTargetAsset(asset);
     }
 
     // Handle homes separately so SDU/MDU/Flats filters don't accidentally hide them

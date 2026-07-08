@@ -5,6 +5,11 @@ import { withAreaAssetIndex } from "../../../services/areaAssetIndex";
 import { createAssetChangeLog } from "../audit/assetChangeLogStorage";
 import type { AssetChangeAction } from "../audit/types";
 import type { SavedMapAsset } from "../types";
+import {
+  buildDuplicateAssetNameMessage,
+  findDuplicateAssetInArea,
+  normaliseDistributionPointAsset,
+} from "../../../services/assetNameValidation";
 
 // =====================================================
 // LIVE SYNC TRACKING
@@ -61,12 +66,14 @@ export function markAssetForLiveSync(
 type UseAssetPersistenceArgs = {
   activeProjectIdRef: React.MutableRefObject<string | null>;
   activeProjectArea: SavedMapAsset | null;
+  savedJoints: SavedMapAsset[];
   setSavedJoints: React.Dispatch<React.SetStateAction<SavedMapAsset[]>>;
 };
 
 export function useAssetPersistence({
   activeProjectIdRef,
   activeProjectArea,
+  savedJoints,
   setSavedJoints,
 }: UseAssetPersistenceArgs) {
   // =====================================================
@@ -80,7 +87,7 @@ export function useAssetPersistence({
     options?: { isNew?: boolean; message?: string },
   ): SavedMapAsset => {
     const activeArea = activeProjectArea;
-    const areaIndexedAsset = withAreaAssetIndex(
+    const areaIndexedAsset = normaliseDistributionPointAsset(withAreaAssetIndex(
       asset,
       activeProjectIdRef.current ||
         (asset as any).areaId ||
@@ -89,20 +96,48 @@ export function useAssetPersistence({
         (activeArea as any)?.label ||
         (asset as any).areaName ||
         (asset as any).projectAreaName,
-    );
+    ));
     const syncedAsset = markAssetForLiveSync(
       areaIndexedAsset,
       options?.isNew ?? false,
     );
+    const activeAreaName =
+      (activeArea as any)?.name ||
+      (activeArea as any)?.label ||
+      (syncedAsset as any).areaName ||
+      (syncedAsset as any).projectAreaName;
+    const activeAreaId =
+      activeProjectIdRef.current ||
+      (activeArea as any)?.id ||
+      (syncedAsset as any).areaId ||
+      (syncedAsset as any).projectAreaId;
+    const duplicateAsset = findDuplicateAssetInArea({
+      assets: savedJoints,
+      asset: syncedAsset,
+      activeAreaName,
+      activeAreaId,
+    });
+
+    if (duplicateAsset) {
+      alert(
+        buildDuplicateAssetNameMessage({
+          attemptedName: syncedAsset.name,
+          duplicate: duplicateAsset,
+          activeAreaName,
+        }),
+      );
+      return duplicateAsset;
+    }
 
     setSavedJoints((prev) => {
-      const exists = (prev ?? []).some((item) => item.id === syncedAsset.id);
+      const currentAssets = prev ?? [];
+      const exists = currentAssets.some((item) => item.id === syncedAsset.id);
 
       if (!exists) {
-        return [...(prev ?? []), syncedAsset];
+        return [...currentAssets, syncedAsset];
       }
 
-      return (prev ?? []).map((item) =>
+      return currentAssets.map((item) =>
         item.id === syncedAsset.id ? syncedAsset : item,
       );
     });

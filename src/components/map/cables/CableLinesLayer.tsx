@@ -297,8 +297,10 @@ function isCableEndpointSelectableAsset(asset: SavedMapAsset): boolean {
   if (asset.assetType === "area") return false;
   if (asset.assetType === "cable") return false;
   if (asset.assetType === "home") return false;
-  if (asset.assetType === "distribution-point") return false;
-  if (asset.assetType === "dp") return false;
+
+  // DPs/SBs are valid endpoints for distribution cables. Do not filter them out.
+  // The old logic removed distribution-point/dp here, which is why the cable
+  // popup dropdown showed poles/chambers/joints but not the DPs in the area.
   if (isOpenreachReferenceAsset(asset)) return false;
   return Boolean(getAssetPoint(asset));
 }
@@ -308,11 +310,12 @@ function getEndpointOptionPriority(asset: SavedMapAsset): number {
     `${(asset as any).assetType || ""} ${(asset as any).jointType || ""} ${(asset as any).name || ""}`,
   );
 
-  if (text.includes("joint") || text.includes("cmj") || text.includes("mmj") || text.includes("lmj") || text.includes("midj")) return 0;
-  if (text.includes("chamber") || text.includes("fw")) return 1;
-  if (text.includes("pole")) return 2;
-  if (text.includes("street") || text.includes("cab")) return 3;
-  if (text.includes("exchange")) return 4;
+  if (text.includes("distribution point") || text.includes("distribution-point") || text.includes(" dp") || text.includes("sb")) return 0;
+  if (text.includes("joint") || text.includes("cmj") || text.includes("mmj") || text.includes("lmj") || text.includes("midj")) return 1;
+  if (text.includes("chamber") || text.includes("fw")) return 2;
+  if (text.includes("pole")) return 3;
+  if (text.includes("street") || text.includes("cab")) return 4;
+  if (text.includes("exchange")) return 5;
   return 9;
 }
 

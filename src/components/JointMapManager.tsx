@@ -174,6 +174,7 @@ import {
   normaliseOpenreachAsset,
 } from "../services/orAssetStorage";
 import { withAreaAssetIndex } from "../services/areaAssetIndex";
+import { DEFAULT_DISTRIBUTION_CLOSURE_TYPE } from "../services/assetNameValidation";
 export type SavedJoint = SavedMapAsset;
 export type { SavedMapAsset };
 
@@ -192,6 +193,35 @@ function isEngineeringDrawingJointAsset(asset: SavedMapAsset): boolean {
     name.includes("lmj") ||
     name.includes("midj")
   );
+}
+
+function isEngineeringDrawingDistributionPointAsset(asset: SavedMapAsset): boolean {
+  const assetType = String((asset as any).assetType || "").toLowerCase();
+  const name = String((asset as any).name || "").toLowerCase();
+
+  return (
+    assetType === "distribution-point" ||
+    assetType === "dp" ||
+    assetType.includes("distribution") ||
+    /(^|[-_\s])sb\d+$/i.test(name)
+  );
+}
+
+function isEngineeringDrawingPoleAsset(asset: SavedMapAsset): boolean {
+  const assetType = String((asset as any).assetType || "").toLowerCase();
+  const jointType = String((asset as any).jointType || "").toLowerCase();
+  return assetType === "pole" || jointType === "pole" || jointType.includes("pole");
+}
+
+function isEngineeringDrawingChamberAsset(asset: SavedMapAsset): boolean {
+  const assetType = String((asset as any).assetType || "").toLowerCase();
+  const jointType = String((asset as any).jointType || "").toLowerCase();
+  return assetType === "chamber" || jointType === "chamber" || jointType.includes("chamber");
+}
+
+function isEngineeringDrawingStreetCabAsset(asset: SavedMapAsset): boolean {
+  const assetType = String((asset as any).assetType || "").toLowerCase();
+  return assetType === "street-cab" || assetType === "street cab" || assetType === "cabinet";
 }
 
 function getEngineeringDrawingCableFibreCount(asset: SavedMapAsset): number | null {
@@ -244,6 +274,10 @@ function isEngineeringDrawingVisibleAsset(asset: SavedMapAsset): boolean {
 
   if (assetType === "exchange") return true;
   if (isEngineeringDrawingJointAsset(asset)) return true;
+  if (isEngineeringDrawingDistributionPointAsset(asset)) return true;
+  if (isEngineeringDrawingPoleAsset(asset)) return true;
+  if (isEngineeringDrawingChamberAsset(asset)) return true;
+  if (isEngineeringDrawingStreetCabAsset(asset)) return true;
   if (isEngineeringDrawingTrunkCableAsset(asset)) return true;
 
   return false;
@@ -1274,24 +1308,33 @@ export default function JointMapManager({
     [allMapAssets, exchangeNetworkAssets],
   );
 
+  const engineeringDrawingSourceAssets = useMemo(
+    () => (activeProjectId ? renderProjectAssetsWithExchanges : allNetworkAssetsWithExchanges),
+    [activeProjectId, allNetworkAssetsWithExchanges, renderProjectAssetsWithExchanges],
+  );
+
   const engineeringDrawingAssets = useMemo(
     () =>
       mapMode === "draw-cable"
-        ? allNetworkAssetsWithExchanges.filter(isEngineeringDrawingVisibleAsset)
+        ? engineeringDrawingSourceAssets.filter(isEngineeringDrawingVisibleAsset)
         : renderProjectAssetsWithExchanges,
-    [allNetworkAssetsWithExchanges, mapMode, renderProjectAssetsWithExchanges],
+    [engineeringDrawingSourceAssets, mapMode, renderProjectAssetsWithExchanges],
   );
 
   const engineeringDrawingSnapCandidateAssets = useMemo(
     () =>
       mapMode === "draw-cable"
-        ? allNetworkAssetsWithExchanges.filter(
+        ? engineeringDrawingSourceAssets.filter(
             (asset) =>
               asset.geometry?.type === "Point" &&
-              isEngineeringDrawingJointAsset(asset),
+              (isEngineeringDrawingJointAsset(asset) ||
+                isEngineeringDrawingDistributionPointAsset(asset) ||
+                isEngineeringDrawingPoleAsset(asset) ||
+                isEngineeringDrawingChamberAsset(asset) ||
+                isEngineeringDrawingStreetCabAsset(asset)),
           )
         : networkSnapCandidateAssets,
-    [allNetworkAssetsWithExchanges, mapMode, networkSnapCandidateAssets],
+    [engineeringDrawingSourceAssets, mapMode, networkSnapCandidateAssets],
   );
 
   const visibleTopologyLinks = useMemo(
@@ -1316,6 +1359,7 @@ export default function JointMapManager({
   const { saveMapAssetToState, writeAssetAuditLog } = useAssetPersistence({
     activeProjectIdRef,
     activeProjectArea,
+    savedJoints,
     setSavedJoints,
   });
 
@@ -1461,6 +1505,7 @@ export default function JointMapManager({
     handleAdminRemoveSelectedPolygons,
     handleAdminRemoveSelectedPolygon,
     handleAdminRemoveAllPolygons,
+    handleAdminRemoveImportedDistributionPoints,
     handleAdminSetAllPolygonsToL3,
   } = usePolygonAdminTools({
     isAdmin,
@@ -2259,7 +2304,7 @@ export default function JointMapManager({
       setJointType("Distribution Point");
       setDpDetails({
         powerReadings: ["", "", "", ""],
-        closureType: "CBT",
+        closureType: DEFAULT_DISTRIBUTION_CLOSURE_TYPE,
         connectionsToHomes: 8,
         buildStatus: "Planned",
       });
@@ -3189,7 +3234,7 @@ export default function JointMapManager({
             dpDetails: {
               ...((existingSplitter as any)?.dpDetails || {}),
               closureType: ((existingSplitter as any)?.dpDetails?.closureType ||
-                "CBT") as any,
+                DEFAULT_DISTRIBUTION_CLOSURE_TYPE) as any,
               connectionsToHomes: matchedHomes.length,
               connectedHomes: matchedHomes.length,
               splitterRatio,
@@ -3787,6 +3832,7 @@ export default function JointMapManager({
           onRemoveSelectedPolygons={handleAdminRemoveSelectedPolygons}
           onRemoveSelectedPolygon={handleAdminRemoveSelectedPolygon}
           onRemoveAllPolygons={handleAdminRemoveAllPolygons}
+          onRemoveImportedDistributionPoints={handleAdminRemoveImportedDistributionPoints}
           onSetAllPolygonsToL3={handleAdminSetAllPolygonsToL3}
           onRepairAreaStamps={handleAdminRepairAreaStamps}
           onDeletePiaOverlayForActiveProject={
@@ -4854,7 +4900,7 @@ export default function JointMapManager({
 
           <CableLinesLayer
             assets={mapMode === "draw-cable" ? engineeringDrawingAssets : renderProjectAssetsWithExchanges}
-            endpointAssetOptions={allNetworkAssetsWithExchanges}
+            endpointAssetOptions={engineeringDrawingSourceAssets}
             cablesVisible={visibleLayers.cables}
             visibleLayers={visibleLayers}
             showCableDistances={visibleLayers.cableDistances}

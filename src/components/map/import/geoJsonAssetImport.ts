@@ -1,4 +1,10 @@
 import type { AssetType, SavedMapAsset } from "../types";
+import {
+  DEFAULT_DISTRIBUTION_CLOSURE_TYPE,
+  inferTelecomAssetTypeFromName,
+  isTelecomDistributionPointName,
+  normaliseDistributionPointAsset,
+} from "../../../services/assetNameValidation";
 
 type MarkAssetForLiveSync = (asset: SavedMapAsset, isNew?: boolean) => SavedMapAsset;
 
@@ -326,6 +332,11 @@ const classifyGeoJsonFeature = (
 
   if (text.includes("pole")) return "pole" as AssetType;
 
+  if (geometryType === "Point") {
+    const telecomType = inferTelecomAssetTypeFromName(text);
+    if (telecomType) return telecomType;
+  }
+
   if (
     text.includes("distribution") ||
     text.includes(" dp") ||
@@ -333,7 +344,15 @@ const classifyGeoJsonFeature = (
     text.includes(" afn") ||
     text.startsWith("afn") ||
     text.includes(" cbt") ||
-    text.startsWith("cbt")
+    text.startsWith("cbt") ||
+    // QGIS closure exports can have names like BA-POG-AG4-SB50 in the
+    // description field, with no explicit asset type. Treat SB references as DPs
+    // before checking for AG, otherwise AG4 makes them import as AG joints.
+    isTelecomDistributionPointName(text) ||
+    // Some closure exports identify DPs only by telecom closure fields.
+    (geometryType === "Point" &&
+      (Object.prototype.hasOwnProperty.call(props, "ports_count") ||
+        Object.prototype.hasOwnProperty.call(props, "slots_count")))
   ) {
     return "distribution-point" as AssetType;
   }
@@ -478,6 +497,9 @@ const buildImportedAssetBase = (
     "Label",
     "ref",
     "Ref",
+    // QGIS closure files commonly store the usable DP label here.
+    "description",
+    "Description",
     "id",
     "ID",
   ],
@@ -648,11 +670,29 @@ export const createMapAssetsFromAnyGeoJson = (
               ? "OR Chamber"
               : String(classifiedType),
       );
+      const importedDpName =
+        classifiedType === "distribution-point"
+          ? readGeoJsonProp(
+              props,
+              [
+                "description",
+                "Description",
+                "name",
+                "Name",
+                "label",
+                "Label",
+                "ref",
+                "Ref",
+              ],
+              base.name,
+            )
+          : base.name;
 
       networkAssets.push(
         markAssetForLiveSync(
-          {
+          normaliseDistributionPointAsset({
             ...base,
+            name: importedDpName,
             assetType: classifiedType as AssetType,
             jointType,
             source: isOrPole || isOrChamber ? "openreach" : base.source,
@@ -674,13 +714,35 @@ export const createMapAssetsFromAnyGeoJson = (
                 : undefined,
             dpDetails:
               classifiedType === "distribution-point"
-                ? ({ dpType: jointType || "DP", status: base.status } as any)
+                ? ({
+                    dpType: jointType || "DP",
+                    // QGIS closure exports with SB references are AFN serving DPs by default.
+                    // Without this, the editor falls back to CBT.
+                    closureType: isTelecomDistributionPointName(importedDpName)
+                      ? DEFAULT_DISTRIBUTION_CLOSURE_TYPE
+                      : readGeoJsonProp(
+                          props,
+                          ["closureType", "ClosureType", "closure_type", "Closure_Type"],
+                          DEFAULT_DISTRIBUTION_CLOSURE_TYPE,
+                        ),
+                    dpRole: "serving",
+                    connectionsToHomes: Number.isFinite(Number(props.ports_count))
+                      ? Number(props.ports_count)
+                      : 8,
+                    status: base.status,
+                    ports: Number.isFinite(Number(props.ports_count))
+                      ? Number(props.ports_count)
+                      : undefined,
+                    slots: Number.isFinite(Number(props.slots_count))
+                      ? Number(props.slots_count)
+                      : undefined,
+                  } as any)
                 : undefined,
             geometry: {
               type: "Point",
               coordinates: point,
             },
-          } as SavedMapAsset,
+          } as SavedMapAsset),
           true,
         ),
       );
@@ -826,4 +888,3 @@ export const createMapAssetsFromAnyGeoJson = (
 
   return { networkAssets, homeAssets, counts };
 };
-
