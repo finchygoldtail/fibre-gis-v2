@@ -24,6 +24,9 @@ type Props = {
 
   canSaveMap: boolean;
   isSavingMap: boolean;
+  autosaveStatus?: "idle" | "pending" | "saving" | "saved" | "error";
+  autosaveSavedAt?: string;
+  autosaveError?: string;
   onSaveMap: () => void;
   onGpsLocate: () => void;
   isSharingLocation?: boolean;
@@ -59,6 +62,9 @@ export default function MapToolbar({
   onSelectSearchResult,
   canSaveMap,
   isSavingMap,
+  autosaveStatus = "idle",
+  autosaveSavedAt = "",
+  autosaveError = "",
   onSaveMap,
   onGpsLocate,
   isSharingLocation = false,
@@ -79,6 +85,28 @@ export default function MapToolbar({
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [messageStateVersion, setMessageStateVersion] = useState(0);
   const { isMobile, isTablet, isSmallPhone } = useDeviceLayout();
+  const autosaveLabel =
+    autosaveStatus === "pending"
+      ? "Autosave queued"
+      : autosaveStatus === "saving"
+        ? "Autosaving..."
+        : autosaveStatus === "saved"
+          ? autosaveSavedAt
+            ? `Saved ${autosaveSavedAt}`
+            : "Saved"
+          : autosaveStatus === "error"
+            ? "Autosave failed"
+            : "Autosave ready";
+  const autosaveTone =
+    autosaveStatus === "error"
+      ? "#dc2626"
+      : autosaveStatus === "pending"
+        ? "#f59e0b"
+        : autosaveStatus === "saving"
+          ? "#2563eb"
+          : autosaveStatus === "saved"
+            ? "#16a34a"
+            : "#475569";
 
   useEffect(() => {
     const refresh = () => setMessageStateVersion((value) => value + 1);
@@ -273,7 +301,8 @@ export default function MapToolbar({
               ) : null}
               <button style={mobileMenuRowStyle} onClick={() => { setMoreMenuOpen(false); onToggleLayers(); }}>{isLayersOpen ? "Hide Layers" : "Layers"}</button>
               <button style={mobileMenuRowStyle} onClick={() => { setMoreMenuOpen(false); setMessagesOpen((value) => !value); }}>Messages {areaMessages.length ? `(${areaMessages.length})` : ""}</button>
-              {canSaveMap && <button style={mobileMenuRowStyle} onClick={() => { setMoreMenuOpen(false); onSaveMap(); }} disabled={isSavingMap}>{isSavingMap ? "Saving..." : "Save Map"}</button>}
+              <div style={{ ...mobileMenuRowStyle, cursor: "default", background: "#111827", color: "#cbd5e1" }} title={autosaveError || autosaveLabel}>{autosaveLabel}</div>
+              {canSaveMap && <button style={mobileMenuRowStyle} onClick={() => { setMoreMenuOpen(false); onSaveMap(); }} disabled={isSavingMap}>{isSavingMap ? "Saving..." : "Save Now"}</button>}
               <div style={mobileUserMenuWrapStyle}><UserMenu variant="topbar" /></div>
             </div>
           ) : null}
@@ -360,11 +389,27 @@ export default function MapToolbar({
               background: isSavingMap ? "#64748b" : "#16a34a",
               cursor: isSavingMap ? "not-allowed" : "pointer",
             }}
-            title="Admin-only manual save"
+            title="Flush pending map changes now"
           >
-            {isSavingMap ? "Saving..." : "Save Map"}
+            {isSavingMap ? "Saving..." : "Save Now"}
           </button>
         )}
+
+        <div
+          style={{
+            padding: "8px 10px",
+            borderRadius: 999,
+            background: "#111827",
+            border: `1px solid ${autosaveTone}`,
+            color: "#e5e7eb",
+            fontSize: 12,
+            fontWeight: 800,
+            whiteSpace: "nowrap",
+          }}
+          title={autosaveError || autosaveLabel}
+        >
+          {autosaveLabel}
+        </div>
 
         <button onClick={onGpsLocate} style={actionButtonStyle}>
           GPS
