@@ -295,7 +295,7 @@ function buildSplitterPanels(rows: TemplateRow[]): HdSplitterPanel[] {
     const panelRows = rows.filter((row) => row.splitterPanel === panelNumber);
     const panelName = `HD Splitter Panel ${panelNumber}`;
 
-    const inputs = Array.from({ length: 32 }, (_, index) => {
+    const inputs = Array.from({ length: 24 }, (_, index) => {
       const inputNumber = index + 1;
       const matchingInputRows = panelRows.filter((row) => getSplitterInputNumber(rows, row) === inputNumber);
       const first = matchingInputRows[0];

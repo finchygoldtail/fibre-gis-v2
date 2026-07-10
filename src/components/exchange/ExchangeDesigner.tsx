@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { convertExchangeWorkbook } from "../../utils/exchangeWorkbookConverter";
+import Compact2USplitterPanel from "../topology/Compact2USplitterPanel";
 
 import type {
   ExchangeAsset,
+  ExchangePortStatus,
   FeederPanel,
   HdSplitterPanel,
   Olt,
@@ -16,7 +18,18 @@ type Props = {
   onSave: (exchange: ExchangeAsset) => void | Promise<void>;
 };
 
-type ExchangeTab = "overview" | "olt" | "splitters" | "feeders";
+type ExchangeTab =
+  | "overview"
+  | "rack"
+  | "olt"
+  | "splitters"
+  | "feeders"
+  | "connections"
+  | "trace"
+  | "capacity"
+  | "wdm"
+  | "documents"
+  | "alarms";
 
 type SelectedNode =
   | null
@@ -83,7 +96,7 @@ function createHdSplitterPanel(panelNumber: number): HdSplitterPanel {
   return {
     id: crypto.randomUUID(),
     name: `HD Splitter Panel ${panelNumber}`,
-    inputs: Array.from({ length: 32 }, (_, inputIndex) => ({
+    inputs: Array.from({ length: 24 }, (_, inputIndex) => ({
       id: crypto.randomUUID(),
       inputNumber: inputIndex + 1,
       splitterRatio: "1:4",
@@ -121,6 +134,97 @@ function matchesSearch(values: unknown[], search: string) {
   return values.some((value) => String(value ?? "").toLowerCase().includes(term));
 }
 
+const statusLabels: Record<ExchangePortStatus, string> = {
+  active: "Active",
+  spare: "Spare",
+  reserved: "Reserved",
+  fault: "Fault",
+};
+
+const statusColours: Record<ExchangePortStatus, { background: string; border: string; text: string; dot: string }> = {
+  active: { background: "#14532d", border: "#22c55e", text: "#bbf7d0", dot: "#22c55e" },
+  spare: { background: "#1f2937", border: "#9ca3af", text: "#e5e7eb", dot: "#9ca3af" },
+  reserved: { background: "#422006", border: "#facc15", text: "#fde68a", dot: "#facc15" },
+  fault: { background: "#450a0a", border: "#ef4444", text: "#fecaca", dot: "#ef4444" },
+};
+
+function getPortStatus(item: { status?: ExchangePortStatus } | null | undefined, connected = false): ExchangePortStatus {
+  return item?.status ?? (connected ? "active" : "spare");
+}
+
+function portStatusStyle(status: ExchangePortStatus): React.CSSProperties {
+  const colours = statusColours[status];
+  return {
+    background: colours.background,
+    borderColor: colours.border,
+    color: colours.text,
+  };
+}
+
+function statusDot(status: ExchangePortStatus): React.CSSProperties {
+  return {
+    background: statusColours[status].dot,
+  };
+}
+
+function extractEbclRefs(values: unknown[]): string[] {
+  const refs = new Set<string>();
+
+  values.forEach((value) => {
+    const text = String(value ?? "");
+    const matches = text.matchAll(/\bEBCL\s*[-:]?\s*([A-Z0-9][A-Z0-9/_-]*)/gi);
+    for (const match of matches) {
+      const ref = match[1]?.trim().toUpperCase();
+      if (ref) refs.add(`EBCL ${ref}`);
+    }
+  });
+
+  return Array.from(refs);
+}
+
+function splitterPanelEbcls(panel: HdSplitterPanel): string[] {
+  return Array.from(
+    new Set(
+      panel.inputs.flatMap((inputItem) =>
+        extractEbclRefs([
+          inputItem.notes,
+          inputItem.connectedPonPortId,
+          ...inputItem.outputs.flatMap((output) => [
+            output.notes,
+            output.connectedFeederFibreId,
+          ]),
+        ]),
+      ),
+    ),
+  );
+}
+
+function feederPanelEbcls(panel: FeederPanel): string[] {
+  return Array.from(
+    new Set(
+      panel.fibres.flatMap((fibre) =>
+        extractEbclRefs([
+          fibre.notes,
+          fibre.connectedCableId,
+          fibre.connectedSplitterOutputId,
+        ]),
+      ),
+    ),
+  );
+}
+
+function splitterPanelMatchesEbcl(panel: HdSplitterPanel, ebcl: string) {
+  return splitterPanelEbcls(panel).includes(ebcl);
+}
+
+function feederFibreMatchesEbcl(fibre: FeederPanel["fibres"][number], ebcl: string) {
+  return extractEbclRefs([
+    fibre.notes,
+    fibre.connectedCableId,
+    fibre.connectedSplitterOutputId,
+  ]).includes(ebcl);
+}
+
 export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
   const [isMobileDesigner, setIsMobileDesigner] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth < 1100 : false,
@@ -147,7 +251,7 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
   // =====================================================
 
   const [draftExchange, setDraftExchange] = useState<ExchangeAsset>(exchange);
-  const [activeTab, setActiveTab] = useState<ExchangeTab>("overview");
+  const [activeTab, setActiveTab] = useState<ExchangeTab>("rack");
   const [selectedNode, setSelectedNode] = useState<SelectedNode>(null);
 
   const [selectedOltId, setSelectedOltId] = useState<string | null>(
@@ -163,6 +267,7 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
   );
 
   const [search, setSearch] = useState("");
+  const [selectedEbcl, setSelectedEbcl] = useState<string>("all");
   const [importWorkbook, setImportWorkbook] = useState<File | null>(null);
   const [importFileName, setImportFileName] = useState<string>("");
   const [importSummary, setImportSummary] = useState<string>("");
@@ -175,16 +280,73 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
   const hdSplitterPanels = draftExchange.hdSplitterPanels ?? [];
   const feederPanels = draftExchange.feederPanels ?? [];
 
+  const ebclTabs = useMemo(() => {
+    return Array.from(
+      new Set([
+        ...hdSplitterPanels.flatMap(splitterPanelEbcls),
+        ...feederPanels.flatMap(feederPanelEbcls),
+      ]),
+    ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [hdSplitterPanels, feederPanels]);
+
+  const activeEbcl = selectedEbcl !== "all" && ebclTabs.includes(selectedEbcl) ? selectedEbcl : "all";
+
+  const visibleHdSplitterPanels = useMemo(() => {
+    if (activeEbcl === "all") return hdSplitterPanels;
+    return hdSplitterPanels.filter((panel) => splitterPanelMatchesEbcl(panel, activeEbcl));
+  }, [activeEbcl, hdSplitterPanels]);
+
+  const visibleFeederPanels = useMemo(() => {
+    if (activeEbcl === "all") return feederPanels;
+    return feederPanels
+      .map((panel) => ({
+        ...panel,
+        fibres: panel.fibres.filter((fibre) => feederFibreMatchesEbcl(fibre, activeEbcl)),
+      }))
+      .filter((panel) => panel.fibres.length > 0);
+  }, [activeEbcl, feederPanels]);
+
+  const visibleOltPanels = useMemo(() => {
+    if (activeEbcl === "all") return olts;
+
+    const ebclPonRefs = new Set<string>();
+    hdSplitterPanels
+      .filter((panel) => splitterPanelMatchesEbcl(panel, activeEbcl))
+      .forEach((panel) => {
+        panel.inputs.forEach((inputItem) => {
+          if (inputItem.connectedPonPortId) ebclPonRefs.add(inputItem.connectedPonPortId);
+        });
+      });
+
+    return olts
+      .map((olt) => ({
+        ...olt,
+        panels: olt.panels
+          .map((panel) => ({
+            ...panel,
+            ports: panel.ports.filter((port) => {
+              const directEbcl = extractEbclRefs([port.notes, port.connectedCableId, port.label]).includes(activeEbcl);
+              const linkedToEbclSplitter = Array.from(ebclPonRefs).some(
+                (ref) => sameRef(ref, port.label) || sameRef(ref, port.connectedCableId),
+              );
+              return directEbcl || linkedToEbclSplitter;
+            }),
+          }))
+          .filter((panel) => panel.ports.length > 0),
+      }))
+      .filter((olt) => olt.panels.length > 0);
+  }, [activeEbcl, hdSplitterPanels, olts]);
+
   const selectedOlt = olts.find((olt) => olt.id === selectedOltId) ?? olts[0] ?? null;
 
   const selectedSplitterPanel =
-    hdSplitterPanels.find((panel) => panel.id === selectedSplitterPanelId) ??
-    hdSplitterPanels[0] ??
+    visibleHdSplitterPanels.find((panel) => panel.id === selectedSplitterPanelId) ??
+    visibleHdSplitterPanels[0] ??
     null;
 
   const selectedFeederPanel =
-    feederPanels.find((panel) => panel.id === selectedFeederPanelId) ??
-    feederPanels[0] ??
+    visibleFeederPanels.find((panel) => panel.id === selectedFeederPanelId) ??
+    visibleFeederPanels[0] ??
     null;
 
   const selectedDetails = useMemo(() => {
@@ -289,6 +451,20 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
       connectedFeederFibres,
     };
   }, [olts, hdSplitterPanels, feederPanels]);
+
+  const selectedPanelStatusSummary = useMemo(() => {
+    const inputCounts: Record<ExchangePortStatus, number> = { active: 0, spare: 0, reserved: 0, fault: 0 };
+    const outputCounts: Record<ExchangePortStatus, number> = { active: 0, spare: 0, reserved: 0, fault: 0 };
+
+    selectedSplitterPanel?.inputs.forEach((inputItem) => {
+      inputCounts[getPortStatus(inputItem, Boolean(inputItem.connectedPonPortId))] += 1;
+      inputItem.outputs.forEach((output) => {
+        outputCounts[getPortStatus(output, Boolean(output.connectedFeederFibreId))] += 1;
+      });
+    });
+
+    return { inputCounts, outputCounts };
+  }, [selectedSplitterPanel]);
 
   // =====================================================
   // 3) UPDATE HELPERS
@@ -610,6 +786,10 @@ const handleConvertImportedWorkbook = async () => {
           flex: undefined,
         }}
       >
+        <div style={brandBlock}>
+          <span>ALISTRA</span>
+          <strong style={{ color: "#22c55e" }}>GIS</strong>
+        </div>
         <button onClick={onClose} style={btnSecondary}>
           ← Back to Map
         </button>
@@ -672,25 +852,6 @@ const handleConvertImportedWorkbook = async () => {
         </div>
 
         <div style={card}>
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>Sections</div>
-          <button onClick={() => setActiveTab("overview")} style={activeTab === "overview" ? btnPrimary : btnSecondary}>
-            Overview
-          </button>
-          <button onClick={() => setActiveTab("olt")} style={activeTab === "olt" ? btnPrimary : btnSecondary}>
-            OLTs
-          </button>
-          <button
-            onClick={() => setActiveTab("splitters")}
-            style={activeTab === "splitters" ? btnPrimary : btnSecondary}
-          >
-            HD Splitter Panels
-          </button>
-          <button onClick={() => setActiveTab("feeders")} style={activeTab === "feeders" ? btnPrimary : btnSecondary}>
-            Feeder Panels
-          </button>
-        </div>
-
-        <div style={card}>
           <div style={{ fontWeight: 700 }}>Search</div>
           <input
             value={search}
@@ -732,13 +893,264 @@ const handleConvertImportedWorkbook = async () => {
       <div style={{ ...mainPanel, padding: mainPanel.padding, minHeight: mainPanel.minHeight, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
         <div style={pageHeader}>
           <div>
-            <div style={{ color: "#cbd5e1", fontSize: 13 }}>Exchange Designer</div>
-            <h1 style={{ margin: "4px 0 0" }}>⭐ {draftExchange.name}</h1>
+            <div style={{ color: "#cbd5e1", fontSize: 13 }}>Exchange Workspace</div>
+            <h1 style={{ margin: "4px 0 0" }}>{draftExchange.name}</h1>
+            <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 4 }}>{draftExchange.code || "No code"}</div>
           </div>
-          <div style={{ color: "#cbd5e1" }}>
-            {draftExchange.code || "No code"}
+          <div style={topActions}>
+            <span style={onlinePill}>Online</span>
+            <button type="button" style={btnSecondary} onClick={() => setActiveTab("splitters")}>Edit Layout</button>
+            <button type="button" style={btnSecondary} onClick={handleSave}>Save Layout</button>
+            <button type="button" style={btnSecondary} onClick={() => setActiveTab("connections")}>Auto Route</button>
           </div>
         </div>
+
+        <div style={workspaceTabBar}>
+          {[
+            { id: "overview", label: "Overview" },
+            { id: "rack", label: "Rack Layout" },
+            { id: "connections", label: "Connections" },
+            { id: "trace", label: "Fibre Trace" },
+            { id: "capacity", label: "Capacity" },
+            { id: "wdm", label: "WDM" },
+            { id: "splitters", label: "Splitters" },
+            { id: "feeders", label: "Feeder Panels" },
+            { id: "documents", label: "Documents" },
+            { id: "alarms", label: "Alarms" },
+          ].map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              onClick={() => setActiveTab(item.id as ExchangeTab)}
+              style={
+                activeTab === item.id
+                  ? workspaceTabActive
+                  : workspaceTab
+              }
+            >
+              {item.label}
+            </button>
+          ))}
+          <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
+            <button type="button" style={zoomButton}>-</button>
+            <span style={zoomReadout}>100%</span>
+            <button type="button" style={zoomButton}>+</button>
+          </div>
+        </div>
+        {ebclTabs.length > 0 && (
+          <div style={ebclTabStrip}>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedEbcl("all");
+                setActiveTab("rack");
+                setSelectedNode(null);
+              }}
+              style={activeEbcl === "all" ? ebclTabActive : ebclTab}
+            >
+              All EBCL
+            </button>
+            {ebclTabs.map((ebcl) => (
+              <button
+                key={ebcl}
+                type="button"
+                onClick={() => {
+                  setSelectedEbcl(ebcl);
+                  setActiveTab("rack");
+                  setSelectedNode(null);
+                }}
+                style={activeEbcl === ebcl ? ebclTabActive : ebclTab}
+              >
+                {ebcl}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {activeTab === "rack" && activeEbcl !== "all" && (
+          <div style={ebclWorkspace}>
+            <div style={ebclWorkspaceHeader}>
+              <div>
+                <h2 style={{ ...sectionTitle, marginBottom: 4 }}>{activeEbcl} Rack Layout</h2>
+                <div style={{ color: "#cbd5e1" }}>OLT, splitter panel and feeder fibres for this EBCL.</div>
+              </div>
+              <div style={ebclMetricPill}>{visibleOltPanels.length} OLT / {visibleHdSplitterPanels.length} splitter / {visibleFeederPanels.length} feeder</div>
+            </div>
+
+            <section style={ebclSection}>
+              <div style={panelTitle}>
+                <span>OLT Ports</span>
+                <span style={{ color: "#cbd5e1" }}>{visibleOltPanels.reduce((total, olt) => total + olt.panels.reduce((sum, panel) => sum + panel.ports.length, 0), 0)} shown</span>
+              </div>
+              {visibleOltPanels.length === 0 ? (
+                <div style={emptyState}>No OLT PON ports found for {activeEbcl}.</div>
+              ) : (
+                <div style={oltRackGrid}>
+                  {visibleOltPanels.flatMap((olt) =>
+                    olt.panels.map((panel) => (
+                      <div key={`${olt.id}-${panel.id}`} style={equipmentCard}>
+                        <div style={panelTitle}>
+                          <span>{olt.name} / Card {panel.panelNumber}</span>
+                          <span style={{ color: "#cbd5e1" }}>{panel.ports.length} PON</span>
+                        </div>
+                        <div style={ponGrid}>
+                          {panel.ports.map((port) => {
+                            const isSelected = selectedNode?.type === "pon" && selectedNode.portId === port.id;
+                            const isChainHighlighted = selectedChain.ponPortIds.has(port.id);
+                            const isConnected = Boolean(port.connectedCableId);
+                            const status = getPortStatus(port, isConnected);
+                            return (
+                              <button
+                                key={port.id}
+                                onClick={() =>
+                                  setSelectedNode({
+                                    type: "pon",
+                                    oltId: olt.id,
+                                    panelId: panel.id,
+                                    portId: port.id,
+                                  })
+                                }
+                                style={{
+                                  ...nodeButton,
+                                  ...(isChainHighlighted ? chainHighlightStyle : {}),
+                                  ...(isSelected ? selectedNodeStyle : {}),
+                                  ...portStatusStyle(status),
+                                }}
+                                title={`${port.label || `PON ${port.portNumber}`} ${port.connectedCableId ? `-> ${port.connectedCableId}` : ""}`}
+                              >
+                                <span style={nodeNumber}>{port.portNumber}</span>
+                                <span style={nodeSmallLabel}>PON</span>
+                                <span style={{ ...connectedDot, ...statusDot(status) }} />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )),
+                  )}
+                </div>
+              )}
+            </section>
+
+            <section style={ebclSection}>
+              <div style={panelTitle}>
+                <span>HD Splitter Panels</span>
+                <span style={{ color: "#cbd5e1" }}>{visibleHdSplitterPanels.length} panel{visibleHdSplitterPanels.length === 1 ? "" : "s"} / 24 inputs x 1:4 = 96 outputs each</span>
+              </div>
+              {visibleHdSplitterPanels.length ? (
+                <div style={splitterPanelStack}>
+                  {visibleHdSplitterPanels.map((panel) => (
+                    <Compact2USplitterPanel
+                      key={panel.id}
+                      panel={panel}
+                      selectedInputId={
+                        selectedNode?.type === "splitter-input" && selectedNode.panelId === panel.id
+                          ? selectedNode.inputId
+                          : null
+                      }
+                      selectedOutputId={
+                        selectedNode?.type === "splitter-output" && selectedNode.panelId === panel.id
+                          ? selectedNode.outputId
+                          : null
+                      }
+                      highlightedInputIds={selectedChain.splitterInputIds}
+                      highlightedOutputIds={selectedChain.splitterOutputIds}
+                      search={search}
+                      inputCount={24}
+                      outputCount={96}
+                      splitterRatio="1:4"
+                      onSelectInput={(inputItem) => {
+                        setSelectedSplitterPanelId(panel.id);
+                        setSelectedNode({
+                          type: "splitter-input",
+                          panelId: panel.id,
+                          inputId: inputItem.id,
+                        });
+                      }}
+                      onSelectOutput={(inputItem, output) => {
+                        setSelectedSplitterPanelId(panel.id);
+                        setSelectedNode({
+                          type: "splitter-output",
+                          panelId: panel.id,
+                          inputId: inputItem.id,
+                          outputId: output.id,
+                        });
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div style={emptyState}>No splitter panel found for {activeEbcl}.</div>
+              )}
+            </section>
+
+            <section style={ebclSection}>
+              <div style={panelTitle}>
+                <span>Feeder Fibres</span>
+                <span style={{ color: "#cbd5e1" }}>{visibleFeederPanels.reduce((total, panel) => total + panel.fibres.length, 0)} fibres</span>
+              </div>
+              {visibleFeederPanels.length === 0 ? (
+                <div style={emptyState}>No feeder fibres found for {activeEbcl}.</div>
+              ) : (
+                <div style={feederRack}>
+                  {visibleFeederPanels.flatMap((panel) =>
+                    panel.fibres
+                      .filter((fibre) => matchesSearch([fibre.fibreNumber, fibre.connectedSplitterOutputId, fibre.connectedCableId, fibre.notes], search))
+                      .map((fibre) => {
+                        const colour = getFibreColour(fibre.fibreNumber);
+                        const isSelected = selectedNode?.type === "feeder-fibre" && selectedNode.fibreId === fibre.id;
+                        const isChainHighlighted = selectedChain.feederFibreIds.has(fibre.id);
+                        const isConnected = Boolean(fibre.connectedSplitterOutputId || fibre.connectedCableId);
+                        const status = getPortStatus(fibre, isConnected);
+
+                        return (
+                          <button
+                            key={`${panel.id}-${fibre.id}`}
+                            onClick={() =>
+                              setSelectedNode({
+                                type: "feeder-fibre",
+                                panelId: panel.id,
+                                fibreId: fibre.id,
+                              })
+                            }
+                            style={{
+                              ...fibreNode,
+                              background: colour.background,
+                              color: colour.text,
+                              ...(status === "active" ? {} : portStatusStyle(status)),
+                              ...(isChainHighlighted ? chainHighlightStyle : {}),
+                              ...(isSelected ? selectedFibreStyle : {}),
+                            }}
+                            title={`${panel.name} / Fibre ${fibre.fibreNumber}${fibre.connectedSplitterOutputId ? ` / Splitter: ${fibre.connectedSplitterOutputId}` : ""}`}
+                          >
+                            {fibre.fibreNumber}
+                            <span style={{ ...fibreConnectedDot, ...statusDot(status) }} />
+                          </button>
+                        );
+                      }),
+                  )}
+                </div>
+              )}
+            </section>
+          </div>
+        )}
+
+        {activeTab === "rack" && activeEbcl === "all" && (
+          <div style={ebclWorkspace}>
+            <div style={ebclWorkspaceHeader}>
+              <div>
+                <h2 style={{ ...sectionTitle, marginBottom: 4 }}>Exchange Rack Layout</h2>
+                <div style={{ color: "#cbd5e1" }}>Select an EBCL tab to open a focused OLT, splitter and feeder rack slice.</div>
+              </div>
+              <div style={ebclMetricPill}>{summary.oltCount} OLT / {summary.splitterPanelCount} splitter / {summary.feederPanelCount} feeder</div>
+            </div>
+            <div style={overviewGrid}>
+              <OverviewCard title="OLT" value={`${summary.connectedPonCount}/${summary.ponPortCount}`} label="PON ports allocated" />
+              <OverviewCard title="HD Splitters" value={`${summary.connectedSplitterOutputs}/${summary.splitterOutputCount}`} label="outputs allocated" />
+              <OverviewCard title="Feeder Panels" value={`${summary.connectedFeederFibres}/${summary.feederFibreCount}`} label="fibres patched or cabled" />
+            </div>
+          </div>
+        )}
 
         {activeTab === "overview" && (
           <div style={overviewGrid}>
@@ -766,7 +1178,7 @@ const handleConvertImportedWorkbook = async () => {
                 <FlowArrow />
                 <FlowBox label="HD Splitter" value="Input 1:4" />
                 <FlowArrow />
-                <FlowBox label="Splitter Output" value="1-4" />
+                <FlowBox label="Splitter Output" value="1-96" />
                 <FlowArrow />
                 <FlowBox label="Feeder Panel" value="144F / 288F" />
                 <FlowArrow />
@@ -774,6 +1186,82 @@ const handleConvertImportedWorkbook = async () => {
               </div>
             </div>
           </div>
+        )}
+
+        {activeTab === "connections" && (
+          <WorkspaceInfoPanel
+            title="Connections"
+            description="Patch route view for OLT to WDM, splitter input, splitter output and feeder fibres."
+            rows={[
+              ["OLT ports", `${summary.connectedPonCount}/${summary.ponPortCount}`],
+              ["Splitter inputs", `${summary.connectedSplitterInputs}/${summary.splitterInputCount}`],
+              ["Splitter outputs", `${summary.connectedSplitterOutputs}/${summary.splitterOutputCount}`],
+              ["Feeder fibres", `${summary.connectedFeederFibres}/${summary.feederFibreCount}`],
+            ]}
+          />
+        )}
+
+        {activeTab === "trace" && (
+          <WorkspaceInfoPanel
+            title="Fibre Trace"
+            description="Select a PON, splitter input/output, or feeder fibre to highlight the route through the exchange."
+            rows={[
+              ["Selected item", selectedDetails ? selectedDetails.type : "None"],
+              ["Highlighted PON", String(selectedChain.ponPortIds.size)],
+              ["Highlighted splitter outputs", String(selectedChain.splitterOutputIds.size)],
+              ["Highlighted feeder fibres", String(selectedChain.feederFibreIds.size)],
+            ]}
+          />
+        )}
+
+        {activeTab === "capacity" && (
+          <WorkspaceInfoPanel
+            title="Capacity"
+            description="Capacity view for exchange rack utilisation."
+            rows={[
+              ["PON utilisation", `${summary.connectedPonCount}/${summary.ponPortCount}`],
+              ["Splitter output utilisation", `${summary.connectedSplitterOutputs}/${summary.splitterOutputCount}`],
+              ["Feeder utilisation", `${summary.connectedFeederFibres}/${summary.feederFibreCount}`],
+              ["Active EBCL", activeEbcl === "all" ? "All EBCL" : activeEbcl],
+            ]}
+          />
+        )}
+
+        {activeTab === "wdm" && (
+          <WorkspaceInfoPanel
+            title="WDM Management"
+            description="WDM shelf view for OLT patch-through into splitter inputs. WDM records can be expanded here without touching map storage."
+            rows={[
+              ["Known EBCL tabs", String(ebclTabs.length)],
+              ["Connected splitter inputs", String(summary.connectedSplitterInputs)],
+              ["OLT cards", String(summary.oltCardCount)],
+            ]}
+          />
+        )}
+
+        {activeTab === "documents" && (
+          <WorkspaceInfoPanel
+            title="Documents"
+            description="Exchange documentation workspace for layout exports, print packs and patching records."
+            rows={[
+              ["Exchange", draftExchange.name],
+              ["Code", draftExchange.code || "-"],
+              ["Notes", draftExchange.notes ? "Available" : "None"],
+            ]}
+          />
+        )}
+
+        {activeTab === "alarms" && (
+          <WorkspaceInfoPanel
+            title="Alarms"
+            description="Fault and reserved-port watch list for exchange equipment."
+            rows={[
+              ["Faulted inputs", String(selectedPanelStatusSummary.inputCounts.fault)],
+              ["Faulted outputs", String(selectedPanelStatusSummary.outputCounts.fault)],
+              ["Reserved inputs", String(selectedPanelStatusSummary.inputCounts.reserved)],
+              ["Reserved outputs", String(selectedPanelStatusSummary.outputCounts.reserved)],
+            ]}
+          />
         )}
 
         {activeTab === "olt" && (
@@ -848,13 +1336,13 @@ const handleConvertImportedWorkbook = async () => {
                                   ...nodeButton,
                                   ...(isChainHighlighted ? chainHighlightStyle : {}),
                                   ...(isSelected ? selectedNodeStyle : {}),
-                                  background: isConnected ? "#0ea5e9" : "#111827",
+                                  ...portStatusStyle(status),
                                 }}
                                 title={`${port.label || `PON ${port.portNumber}`} ${port.connectedCableId ? `→ ${port.connectedCableId}` : ""}`}
                               >
                                 <span style={nodeNumber}>{port.portNumber}</span>
                                 <span style={nodeSmallLabel}>PON</span>
-                                {isConnected && <span style={connectedDot} />}
+                                <span style={{ ...connectedDot, ...statusDot(status) }} />
                               </button>
                             );
                           })}
@@ -872,10 +1360,12 @@ const handleConvertImportedWorkbook = async () => {
           <div>
             <h2 style={sectionTitle}>High Density Splitter Panels</h2>
             <div style={selectorRow}>
-              {hdSplitterPanels.length === 0 ? (
-                <div style={emptyState}>No HD splitter panels added yet.</div>
+              {visibleHdSplitterPanels.length === 0 ? (
+                <div style={emptyState}>
+                  {activeEbcl === "all" ? "No HD splitter panels added yet." : `No HD splitter panels found for ${activeEbcl}.`}
+                </div>
               ) : (
-                hdSplitterPanels.map((panel) => (
+                visibleHdSplitterPanels.map((panel) => (
                   <button
                     key={panel.id}
                     onClick={() => setSelectedSplitterPanelId(panel.id)}
@@ -898,91 +1388,35 @@ const handleConvertImportedWorkbook = async () => {
                   <button onClick={() => handleDeleteSplitterPanel(selectedSplitterPanel.id)} style={btnDanger}>
                     Delete Splitter Panel
                   </button>
-                  <span style={{ color: "#cbd5e1" }}>32 inputs × 1:4 = 128 outputs</span>
+                  <span style={{ color: "#cbd5e1" }}>24 inputs x 1:4 = 96 outputs</span>
                 </div>
 
-                <div style={splitterGrid}>
-                  {selectedSplitterPanel.inputs.map((inputItem) => {
-                    if (
-                      !matchesSearch(
-                        [
-                          inputItem.inputNumber,
-                          inputItem.connectedPonPortId,
-                          inputItem.notes,
-                          ...inputItem.outputs.flatMap((output) => [
-                            output.outputNumber,
-                            output.connectedFeederFibreId,
-                            output.notes,
-                          ]),
-                        ],
-                        search
-                      )
-                    ) {
-                      return null;
-                    }
-
-                    const inputSelected =
-                      selectedNode?.type === "splitter-input" && selectedNode.inputId === inputItem.id;
-                    const inputChainHighlighted = selectedChain.splitterInputIds.has(inputItem.id);
-
-                    return (
-                      <div key={inputItem.id} style={splitterTile}>
-                        <button
-                          onClick={() =>
-                            setSelectedNode({
-                              type: "splitter-input",
-                              panelId: selectedSplitterPanel.id,
-                              inputId: inputItem.id,
-                            })
-                          }
-                          style={{
-                            ...splitterInputNode,
-                            ...(inputChainHighlighted ? chainHighlightStyle : {}),
-                            ...(inputSelected ? selectedNodeStyle : {}),
-                            background: inputItem.connectedPonPortId ? "#7c3aed" : "#111827",
-                          }}
-                          title={inputItem.connectedPonPortId ? `Connected PON: ${inputItem.connectedPonPortId}` : "No PON linked"}
-                        >
-                          IN {inputItem.inputNumber}
-                          {inputItem.connectedPonPortId && <span style={connectedDot} />}
-                        </button>
-
-                        <div style={outputRow}>
-                          {inputItem.outputs.map((output) => {
-                            const outputSelected =
-                              selectedNode?.type === "splitter-output" && selectedNode.outputId === output.id;
-                            const outputChainHighlighted = selectedChain.splitterOutputIds.has(output.id);
-                            const isConnected = Boolean(output.connectedFeederFibreId);
-
-                            return (
-                              <button
-                                key={output.id}
-                                onClick={() =>
-                                  setSelectedNode({
-                                    type: "splitter-output",
-                                    panelId: selectedSplitterPanel.id,
-                                    inputId: inputItem.id,
-                                    outputId: output.id,
-                                  })
-                                }
-                                style={{
-                                  ...outputNode,
-                                  ...(outputChainHighlighted ? chainHighlightStyle : {}),
-                                  ...(outputSelected ? selectedNodeStyle : {}),
-                                  background: isConnected ? "#059669" : "#1f2937",
-                                }}
-                                title={isConnected ? `Feeder fibre: ${output.connectedFeederFibreId}` : "No feeder fibre linked"}
-                              >
-                                {output.outputNumber}
-                                {isConnected && <span style={miniDot} />}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                <Compact2USplitterPanel
+                  panel={selectedSplitterPanel}
+                  selectedInputId={selectedNode?.type === "splitter-input" ? selectedNode.inputId : null}
+                  selectedOutputId={selectedNode?.type === "splitter-output" ? selectedNode.outputId : null}
+                  highlightedInputIds={selectedChain.splitterInputIds}
+                  highlightedOutputIds={selectedChain.splitterOutputIds}
+                  search={search}
+                  inputCount={24}
+                  outputCount={96}
+                  splitterRatio="1:4"
+                  onSelectInput={(inputItem) =>
+                    setSelectedNode({
+                      type: "splitter-input",
+                      panelId: selectedSplitterPanel.id,
+                      inputId: inputItem.id,
+                    })
+                  }
+                  onSelectOutput={(inputItem, output) =>
+                    setSelectedNode({
+                      type: "splitter-output",
+                      panelId: selectedSplitterPanel.id,
+                      inputId: inputItem.id,
+                      outputId: output.id,
+                    })
+                  }
+                />
               </>
             )}
           </div>
@@ -992,10 +1426,12 @@ const handleConvertImportedWorkbook = async () => {
           <div>
             <h2 style={sectionTitle}>Feeder Panels</h2>
             <div style={selectorRow}>
-              {feederPanels.length === 0 ? (
-                <div style={emptyState}>No feeder panels added yet.</div>
+              {visibleFeederPanels.length === 0 ? (
+                <div style={emptyState}>
+                  {activeEbcl === "all" ? "No feeder panels added yet." : `No feeder fibres found for ${activeEbcl}.`}
+                </div>
               ) : (
-                feederPanels.map((panel) => (
+                visibleFeederPanels.map((panel) => (
                   <button
                     key={panel.id}
                     onClick={() => setSelectedFeederPanelId(panel.id)}
@@ -1067,6 +1503,7 @@ const handleConvertImportedWorkbook = async () => {
                       const isSelected = selectedNode?.type === "feeder-fibre" && selectedNode.fibreId === fibre.id;
                       const isChainHighlighted = selectedChain.feederFibreIds.has(fibre.id);
                       const isConnected = Boolean(fibre.connectedSplitterOutputId || fibre.connectedCableId);
+                      const status = getPortStatus(fibre, isConnected);
 
                       return (
                         <button
@@ -1082,6 +1519,7 @@ const handleConvertImportedWorkbook = async () => {
                             ...fibreNode,
                             background: colour.background,
                             color: colour.text,
+                            ...(status === "active" ? {} : portStatusStyle(status)),
                             ...(isChainHighlighted ? chainHighlightStyle : {}),
                             ...(isSelected ? selectedFibreStyle : {}),
                           }}
@@ -1090,7 +1528,7 @@ const handleConvertImportedWorkbook = async () => {
                           }${fibre.connectedCableId ? ` - Cable: ${fibre.connectedCableId}` : ""}`}
                         >
                           {fibre.fibreNumber}
-                          {isConnected && <span style={fibreConnectedDot} />}
+                          <span style={{ ...fibreConnectedDot, ...statusDot(status) }} />
                         </button>
                       );
                     })}
@@ -1103,6 +1541,34 @@ const handleConvertImportedWorkbook = async () => {
 
       {/* RIGHT */}
       <div style={{ ...rightPanel, borderLeft: rightPanel.borderLeft, borderTop: "none", maxHeight: undefined, flex: undefined }}>
+        <div style={rightRailCard}>
+          <div style={rightRailTitle}>Panel Information</div>
+          <InfoRow label="Panel Name" value={selectedSplitterPanel?.name || "-"} />
+          <InfoRow label="Type" value="1:4 PLC Splitter" />
+          <InfoRow label="Form Factor" value="2U Rack Mount" />
+          <InfoRow label="Inputs" value="24 LC/APC" />
+          <InfoRow label="Outputs" value="96 LC/APC" />
+          <InfoRow label="EBCL" value={activeEbcl === "all" ? "All" : activeEbcl} />
+        </div>
+
+        <StatusSummaryCard
+          title="Input Summary"
+          total={24}
+          counts={selectedPanelStatusSummary.inputCounts}
+        />
+        <StatusSummaryCard
+          title="Output Summary"
+          total={96}
+          counts={selectedPanelStatusSummary.outputCounts}
+        />
+
+        <div style={rightRailCard}>
+          <div style={rightRailTitle}>Quick Actions</div>
+          <button type="button" style={quickActionButton} onClick={() => setActiveTab("connections")}>View Connections</button>
+          <button type="button" style={quickActionButton} onClick={() => setActiveTab("trace")}>View Fibre Trace</button>
+          <button type="button" style={quickActionButton} onClick={() => setActiveTab("splitters")}>Edit Splitter Mapping</button>
+        </div>
+
         <SelectionPanel
           selectedDetails={selectedDetails}
           onClear={() => setSelectedNode(null)}
@@ -1263,6 +1729,73 @@ function buildSelectedExchangeChain(
   return chain;
 }
 
+function WorkspaceInfoPanel({
+  title,
+  description,
+  rows,
+}: {
+  title: string;
+  description: string;
+  rows: Array<[string, string]>;
+}) {
+  return (
+    <div style={workspaceInfoPanel}>
+      <div>
+        <h2 style={{ ...sectionTitle, marginBottom: 6 }}>{title}</h2>
+        <div style={{ color: "#cbd5e1", lineHeight: 1.5 }}>{description}</div>
+      </div>
+      <div style={workspaceInfoGrid}>
+        {rows.map(([label, value]) => (
+          <div key={label} style={overviewCard}>
+            <div style={{ color: "#cbd5e1", fontSize: 13 }}>{label}</div>
+            <div style={{ fontSize: 24, fontWeight: 900, marginTop: 8 }}>{value}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={infoRow}>
+      <span style={{ color: "#94a3b8" }}>{label}</span>
+      <strong style={{ color: "#f8fafc", textAlign: "right" }}>{value}</strong>
+    </div>
+  );
+}
+
+function StatusSummaryCard({
+  title,
+  total,
+  counts,
+}: {
+  title: string;
+  total: number;
+  counts: Record<ExchangePortStatus, number>;
+}) {
+  return (
+    <div style={rightRailCard}>
+      <div style={rightRailTitle}>{title}</div>
+      <div style={statusSummaryLayout}>
+        <div style={statusDonut}>
+          <strong>{total}</strong>
+          <span>Total</span>
+        </div>
+        <div style={{ display: "grid", gap: 7 }}>
+          {(Object.keys(statusLabels) as ExchangePortStatus[]).map((status) => (
+            <div key={status} style={statusLegendRow}>
+              <span style={{ ...legendSwatch, background: statusColours[status].dot }} />
+              <span>{statusLabels[status]}</span>
+              <strong>{counts[status]}</strong>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SelectionPanel({
   selectedDetails,
   onClear,
@@ -1295,6 +1828,7 @@ function SelectionPanel({
       <div style={card}>
         <PanelHeader title="OLT PON Port" subtitle={`${olt.name} / Card ${panel.panelNumber} / Port ${port.portNumber}`} onClear={onClear} />
         <Field label="Label" value={port.label ?? ""} onChange={(value) => onUpdatePon({ label: value })} />
+        <StatusField value={getPortStatus(port, Boolean(port.connectedCableId))} onChange={(status) => onUpdatePon({ status })} />
         <Field
           label="Linked splitter input ID"
           value={port.connectedCableId ?? ""}
@@ -1315,6 +1849,7 @@ function SelectionPanel({
           value={inputItem.connectedPonPortId ?? ""}
           onChange={(value) => onUpdateSplitterInput({ connectedPonPortId: value })}
         />
+        <StatusField value={getPortStatus(inputItem, Boolean(inputItem.connectedPonPortId))} onChange={(status) => onUpdateSplitterInput({ status })} />
         <Field label="Notes" value={inputItem.notes ?? ""} onChange={(value) => onUpdateSplitterInput({ notes: value })} multiline />
       </div>
     );
@@ -1334,6 +1869,7 @@ function SelectionPanel({
           value={output.connectedFeederFibreId ?? ""}
           onChange={(value) => onUpdateSplitterOutput({ connectedFeederFibreId: value })}
         />
+        <StatusField value={getPortStatus(output, Boolean(output.connectedFeederFibreId))} onChange={(status) => onUpdateSplitterOutput({ status })} />
         <Field label="Notes" value={output.notes ?? ""} onChange={(value) => onUpdateSplitterOutput({ notes: value })} multiline />
       </div>
     );
@@ -1353,6 +1889,7 @@ function SelectionPanel({
         value={fibre.connectedSplitterOutputId ?? ""}
         onChange={(value) => onUpdateFeederFibre({ connectedSplitterOutputId: value })}
       />
+      <StatusField value={getPortStatus(fibre, Boolean(fibre.connectedSplitterOutputId || fibre.connectedCableId))} onChange={(status) => onUpdateFeederFibre({ status })} />
       <Field
         label="Cable / fibre ref"
         value={fibre.connectedCableId ?? ""}
@@ -1397,6 +1934,31 @@ function Field({
       ) : (
         <input value={value} onChange={(event) => onChange(event.target.value)} style={input} />
       )}
+    </label>
+  );
+}
+
+function StatusField({
+  value,
+  onChange,
+}: {
+  value: ExchangePortStatus;
+  onChange: (value: ExchangePortStatus) => void;
+}) {
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <span style={smallLabel}>Status</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value as ExchangePortStatus)}
+        style={{ ...input, ...portStatusStyle(value), fontWeight: 800 }}
+      >
+        {(Object.keys(statusLabels) as ExchangePortStatus[]).map((status) => (
+          <option key={status} value={status}>
+            {statusLabels[status]}
+          </option>
+        ))}
+      </select>
     </label>
   );
 }
@@ -1462,6 +2024,16 @@ const leftPanel: React.CSSProperties = {
   minHeight: 0,
 };
 
+const brandBlock: React.CSSProperties = {
+  display: "flex",
+  alignItems: "baseline",
+  gap: 6,
+  fontSize: 25,
+  fontWeight: 900,
+  letterSpacing: 0.2,
+  color: "#ffffff",
+};
+
 const mainPanel: React.CSSProperties = {
   padding: "1rem",
   paddingBottom: 80,
@@ -1484,6 +2056,215 @@ const pageHeader: React.CSSProperties = {
   gap: 16,
   alignItems: "flex-start",
   marginBottom: 18,
+};
+
+const topActions: React.CSSProperties = {
+  display: "flex",
+  gap: 8,
+  alignItems: "center",
+  flexWrap: "wrap",
+  justifyContent: "flex-end",
+};
+
+const onlinePill: React.CSSProperties = {
+  border: "1px solid #14532d",
+  background: "#052e16",
+  color: "#86efac",
+  borderRadius: 999,
+  padding: "0.35rem 0.65rem",
+  fontWeight: 900,
+  fontSize: 12,
+};
+
+const workspaceTabBar: React.CSSProperties = {
+  display: "flex",
+  gap: 6,
+  alignItems: "center",
+  flexWrap: "wrap",
+  borderBottom: "1px solid #374151",
+  margin: "0 0 14px",
+  paddingBottom: 8,
+};
+
+const workspaceTab: React.CSSProperties = {
+  border: "none",
+  borderBottom: "2px solid transparent",
+  background: "transparent",
+  color: "#cbd5e1",
+  padding: "0.5rem 0.65rem",
+  cursor: "pointer",
+  fontWeight: 800,
+};
+
+const workspaceTabActive: React.CSSProperties = {
+  ...workspaceTab,
+  color: "#22c55e",
+  borderBottomColor: "#22c55e",
+  background: "rgba(34,197,94,0.08)",
+};
+
+const zoomButton: React.CSSProperties = {
+  background: "#374151",
+  color: "white",
+  padding: "0.35rem 0.55rem",
+  borderRadius: 6,
+  cursor: "pointer",
+  border: "1px solid #4b5563",
+};
+
+const zoomReadout: React.CSSProperties = {
+  color: "#e5e7eb",
+  fontWeight: 900,
+  padding: "0 0.25rem",
+};
+
+const ebclTabStrip: React.CSSProperties = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+  alignItems: "center",
+  margin: "0 0 18px",
+  padding: 8,
+  border: "1px solid #374151",
+  borderRadius: 10,
+  background: "#111827",
+};
+
+const ebclTab: React.CSSProperties = {
+  border: "1px solid #475569",
+  background: "#1f2937",
+  color: "#cbd5e1",
+  borderRadius: 6,
+  padding: "0.45rem 0.7rem",
+  cursor: "pointer",
+  fontWeight: 800,
+};
+
+const ebclTabActive: React.CSSProperties = {
+  ...ebclTab,
+  borderColor: "#22c55e",
+  background: "#052e16",
+  color: "#86efac",
+  boxShadow: "0 0 0 1px rgba(34,197,94,0.24)",
+};
+
+const ebclWorkspace: React.CSSProperties = {
+  display: "grid",
+  gap: 16,
+  minWidth: 1200,
+};
+
+const ebclWorkspaceHeader: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "flex-start",
+  gap: 16,
+  border: "1px solid #374151",
+  background: "#111827",
+  borderRadius: 10,
+  padding: "1rem",
+};
+
+const ebclMetricPill: React.CSSProperties = {
+  border: "1px solid #334155",
+  background: "#020617",
+  borderRadius: 6,
+  color: "#dbeafe",
+  fontSize: 12,
+  fontWeight: 900,
+  padding: "7px 10px",
+};
+
+const ebclSection: React.CSSProperties = {
+  display: "grid",
+  gap: 12,
+};
+
+const splitterPanelStack: React.CSSProperties = {
+  display: "grid",
+  gap: 14,
+};
+
+const workspaceInfoPanel: React.CSSProperties = {
+  display: "grid",
+  gap: 18,
+  border: "1px solid #374151",
+  background: "#111827",
+  borderRadius: 10,
+  padding: "1rem",
+};
+
+const workspaceInfoGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+  gap: 12,
+};
+
+const rightRailCard: React.CSSProperties = {
+  background: "#111827",
+  border: "1px solid #374151",
+  borderRadius: 10,
+  padding: "1rem",
+  display: "grid",
+  gap: 10,
+  marginBottom: 12,
+};
+
+const rightRailTitle: React.CSSProperties = {
+  color: "#f8fafc",
+  textTransform: "uppercase",
+  fontSize: 13,
+  fontWeight: 900,
+};
+
+const infoRow: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr auto",
+  gap: 10,
+  alignItems: "center",
+  fontSize: 12,
+};
+
+const statusSummaryLayout: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "88px 1fr",
+  gap: 12,
+  alignItems: "center",
+};
+
+const statusDonut: React.CSSProperties = {
+  width: 78,
+  height: 78,
+  borderRadius: 999,
+  background: "conic-gradient(#22c55e 0 70%, #9ca3af 70% 82%, #facc15 82% 94%, #ef4444 94% 100%)",
+  color: "#f8fafc",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  boxShadow: "inset 0 0 0 16px #111827",
+};
+
+const statusLegendRow: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "14px 1fr auto",
+  gap: 7,
+  alignItems: "center",
+  color: "#cbd5e1",
+  fontSize: 12,
+};
+
+const quickActionButton: React.CSSProperties = {
+  background: "#374151",
+  color: "white",
+  padding: "0.55rem 0.75rem",
+  borderRadius: 6,
+  cursor: "pointer",
+  border: "1px solid #4b5563",
+  width: "100%",
+  textAlign: "left",
+  display: "flex",
+  justifyContent: "space-between",
 };
 
 const card: React.CSSProperties = {
@@ -1683,57 +2464,6 @@ const connectedDot: React.CSSProperties = {
   height: 9,
   borderRadius: 999,
   background: "#22c55e",
-};
-
-const miniDot: React.CSSProperties = {
-  position: "absolute",
-  right: 4,
-  top: 4,
-  width: 7,
-  height: 7,
-  borderRadius: 999,
-  background: "#22c55e",
-};
-
-const splitterGrid: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-  gap: 12,
-};
-
-const splitterTile: React.CSSProperties = {
-  background: "#111827",
-  border: "1px solid #374151",
-  borderRadius: 12,
-  padding: 10,
-};
-
-const splitterInputNode: React.CSSProperties = {
-  width: "100%",
-  minHeight: 44,
-  border: "1px solid #475569",
-  borderRadius: 8,
-  color: "white",
-  cursor: "pointer",
-  fontWeight: 800,
-  position: "relative",
-};
-
-const outputRow: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(4, 1fr)",
-  gap: 7,
-  marginTop: 8,
-};
-
-const outputNode: React.CSSProperties = {
-  height: 34,
-  border: "1px solid #475569",
-  borderRadius: 999,
-  color: "white",
-  cursor: "pointer",
-  fontWeight: 800,
-  position: "relative",
 };
 
 const feederRack: React.CSSProperties = {

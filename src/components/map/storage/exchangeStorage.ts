@@ -8,11 +8,14 @@ import {
 } from "firebase/firestore";
 import { db } from "../../../firebase";
 
+export type ExchangePortStatus = "active" | "spare" | "reserved" | "fault";
+
 export type PonPort = {
   id: string;
   portNumber: number;
   label?: string;
   connectedCableId?: string;
+  status?: ExchangePortStatus;
   notes?: string;
 };
 
@@ -38,6 +41,7 @@ export type FeederPanel = {
     fibreNumber: number;
     connectedSplitterOutputId?: string;
     connectedCableId?: string;
+    status?: ExchangePortStatus;
     notes?: string;
   }[];
 };
@@ -49,12 +53,14 @@ export type HdSplitterPanel = {
     id: string;
     inputNumber: number;
     connectedPonPortId?: string;
+    status?: ExchangePortStatus;
     notes?: string;
     splitterRatio: "1:4";
     outputs: {
       id: string;
       outputNumber: number;
       connectedFeederFibreId?: string;
+      status?: ExchangePortStatus;
       notes?: string;
     }[];
   }[];
