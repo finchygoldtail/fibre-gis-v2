@@ -1,0 +1,18 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "dry-run-dp-001",
+      "properties": {
+        "assetType": "dp",
+        "name": "Dry Run DP 001",
+        "status": "planned"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-1.7767, 53.8348]
+      }
+    }
+  ]
+}

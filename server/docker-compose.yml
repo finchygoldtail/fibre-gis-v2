@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: alistra-postgis
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-alistra_gis}
+      POSTGRES_USER: ${POSTGRES_USER:-alistra}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - alistra-postgis-data:/var/lib/postgresql/data
+      - ./src/database/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-alistra} -d ${POSTGRES_DB:-alistra_gis}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+    container_name: alistra-spatial-api
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      API_HOST: 0.0.0.0
+      DATABASE_URL: postgres://${POSTGRES_USER:-alistra}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-alistra_gis}
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  alistra-postgis-data:

@@ -1,0 +1,29 @@
+{
+  "name": "alistra-spatial-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "db:migrate": "tsx src/database/runMigrations.ts",
+    "db:seed": "tsx src/database/runSeed.ts",
+    "db:import:geojson": "tsx src/database/importGeoJson.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
