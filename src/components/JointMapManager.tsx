@@ -913,6 +913,7 @@ export default function JointMapManager({
     () => initialMapViewRef.current?.activeProjectId ?? null,
   );
   const activeProjectIdRef = useRef<string | null>(activeProjectId);
+  const lastAssetPanelProjectIdRef = useRef<string | null>(activeProjectId);
   // =====================================================
   // PROJECT WORKSPACE STATE
   // First-stage migration from crowded map sidebar into a
@@ -1372,6 +1373,44 @@ export default function JointMapManager({
   useEffect(() => {
     activeProjectIdRef.current = activeProjectId;
   }, [activeProjectId]);
+
+  useEffect(() => {
+    if (lastAssetPanelProjectIdRef.current === activeProjectId) return;
+
+    lastAssetPanelProjectIdRef.current = activeProjectId;
+    setEditingAssetId(null);
+    setEditingAreaId(null);
+    setPickedLocation(null);
+    setDraftCablePoints([]);
+    setDraftAreaPoints([]);
+    setSelectedReferenceDuctId(null);
+    setSelectedReferenceDuctName("");
+    setMapMode("pick");
+    setShowCableModal(false);
+    setShowPoleModal(false);
+    setShowDpModal(false);
+    setShowChamberModal(false);
+    setOpenStreetCabAsset(null);
+    setOpenDistributionPointAsset(null);
+    setContextMenu({
+      visible: false,
+      x: 0,
+      y: 0,
+      latlng: null,
+    });
+    setIsPanelOpen(false);
+  }, [
+    activeProjectId,
+    setDraftAreaPoints,
+    setDraftCablePoints,
+    setEditingAreaId,
+    setEditingAssetId,
+    setIsPanelOpen,
+    setMapMode,
+    setPickedLocation,
+    setSelectedReferenceDuctId,
+    setSelectedReferenceDuctName,
+  ]);
 
   // =====================================================
   // PROJECT AREA / VIEWPORT ASSET VIEW
