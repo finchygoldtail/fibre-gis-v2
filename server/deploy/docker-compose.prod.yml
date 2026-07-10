@@ -37,6 +37,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ../imports:/app/imports:ro
     depends_on:
       postgres:
         condition: service_healthy

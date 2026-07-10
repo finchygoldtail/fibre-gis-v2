@@ -6,3 +6,5 @@ cleanup-backup-*/
 .env.local
 .env.production
 server/deploy/backups/
+server/imports/*
+!server/imports/.gitkeep
