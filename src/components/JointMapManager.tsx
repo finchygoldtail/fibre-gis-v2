@@ -231,13 +231,13 @@ function SpatialApiStatusPanel({
       style={{
         position: "absolute",
         right: 16,
-        bottom: 18,
-        zIndex: 440,
+        top: 84,
+        zIndex: 650,
         maxWidth: 360,
         padding: "9px 12px",
         borderRadius: 8,
         border: "1px solid rgba(148, 163, 184, 0.28)",
-        background: "rgba(15, 23, 42, 0.88)",
+        background: "rgba(15, 23, 42, 0.94)",
         color: "#e5e7eb",
         boxShadow: "0 12px 32px rgba(0, 0, 0, 0.28)",
         fontSize: 12,
@@ -246,7 +246,7 @@ function SpatialApiStatusPanel({
       }}
     >
       <strong style={{ color: error ? "#fca5a5" : "#86efac" }}>
-        Spatial API
+        Hetzner / PostGIS
       </strong>
       <span style={{ marginLeft: 8 }}>
         {error
