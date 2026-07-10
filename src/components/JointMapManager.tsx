@@ -1503,7 +1503,7 @@ export default function JointMapManager({
 
   const spatialViewport = useSpatialViewportAssets({
     businessId: "fibre-gis-v2",
-    areaId: activeProjectAreaName || null,
+    areaId: null,
     bounds: mapBounds,
     zoom: mapZoom,
     visibleLayers,
