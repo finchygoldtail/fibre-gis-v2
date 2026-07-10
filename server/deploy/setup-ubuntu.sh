@@ -13,8 +13,17 @@ apt-get install -y \
   git \
   ufw \
   unattended-upgrades \
-  docker.io \
-  docker-compose-plugin
+  docker.io
+
+if apt-cache show docker-compose-plugin >/dev/null 2>&1; then
+  apt-get install -y docker-compose-plugin
+elif apt-cache show docker-compose-v2 >/dev/null 2>&1; then
+  apt-get install -y docker-compose-v2
+else
+  echo "No Docker Compose v2 package found in apt repositories." >&2
+  echo "Install Docker Compose manually, then re-run this script." >&2
+  exit 1
+fi
 
 systemctl enable --now docker
 systemctl enable --now unattended-upgrades
