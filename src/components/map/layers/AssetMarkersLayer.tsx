@@ -1209,9 +1209,9 @@ const icon = asset.id === highlightedAssetId
             ) : null}
 
             <div style={actionsStyle}>
-              {asset.assetType === "ag-joint" || asset.assetType === "street-cab" ? (
+              {isJointAsset || asset.assetType === "street-cab" ? (
                 <button style={actionButtonStyle} onClick={() => onOpenAsset(asset)}>
-                  {asset.assetType === "ag-joint" ? "Open Fibre Tray" : "Open Operations"}
+                  {isJointAsset ? "Open Joint" : "Open Operations"}
                 </button>
               ) : null}
 
