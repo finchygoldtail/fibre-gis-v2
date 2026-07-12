@@ -50,6 +50,7 @@ export type SpatialAssetBoundsRequest = {
   businessId: string;
   projectId?: string;
   areaId?: string;
+  source?: string;
   assetTypes?: string[];
   minLng: number;
   minLat: number;

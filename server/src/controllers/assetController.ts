@@ -29,6 +29,7 @@ export async function getAssetsByBounds(req: Request, res: Response): Promise<vo
     businessId,
     projectId: getStringParam(req.query.projectId),
     areaId: getStringParam(req.query.areaId),
+    source: getStringParam(req.query.source),
     assetTypes: getAssetTypes(req.query.assetTypes),
     minLng: bounds.minLng,
     minLat: bounds.minLat,

@@ -6,6 +6,7 @@ export type AssetBoundsQuery = {
   projectId?: string;
   areaId?: string;
   assetTypes: string[];
+  source?: string;
   minLng: number;
   minLat: number;
   maxLng: number;
@@ -97,11 +98,12 @@ export async function queryAssetsByBounds(
     WHERE business_id = $1
       AND ($2::text IS NULL OR project_id = $2)
       AND ($3::text IS NULL OR area_id = $3 OR area_id IS NULL)
-      AND (array_length($8::text[], 1) IS NULL OR asset_type = ANY($8::text[]))
+      AND ($8::text IS NULL OR source = $8)
+      AND (array_length($9::text[], 1) IS NULL OR asset_type = ANY($9::text[]))
       AND map_assets.geometry && bounds.geom
       AND ST_Intersects(map_assets.geometry, bounds.geom)
     ORDER BY asset_type, name NULLS LAST, id
-    LIMIT $9
+    LIMIT $10
   `;
 
   const result = await pool.query<AssetRow>(sql, [
@@ -112,6 +114,7 @@ export async function queryAssetsByBounds(
     query.minLat,
     query.maxLng,
     query.maxLat,
+    query.source ?? null,
     query.assetTypes,
     query.limit + 1,
   ]);

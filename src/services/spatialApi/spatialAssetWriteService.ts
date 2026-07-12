@@ -8,6 +8,8 @@ type SaveSpatialAssetsOptions = {
   projectId?: string | null;
   areaId?: string | null;
   reason: string;
+  source?: string;
+  sourceRevision?: string;
 };
 
 export async function saveSpatialMapAssets(
@@ -89,8 +91,8 @@ function toWritableSpatialAsset(
       ...importedProperties,
       originalAsset,
     },
-    source: "alistra-app",
-    sourceRevision: "frontend-save",
+    source: options.source || "alistra-app",
+    sourceRevision: options.sourceRevision || "frontend-save",
   };
 }
 

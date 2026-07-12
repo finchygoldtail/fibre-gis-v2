@@ -23,6 +23,10 @@ import {
 } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import type { SavedMapAsset } from "../components/map/types";
+import { spatialApiConfig } from "./spatialApi/spatialApiConfig";
+import { fetchSpatialAssetsByBounds } from "./spatialApi/spatialAssetService";
+import { deleteSpatialMapAsset, saveSpatialMapAssets } from "./spatialApi/spatialAssetWriteService";
+import type { SpatialApiFeature } from "./spatialApi/spatialApiTypes";
 
 const BUSINESS_ID = "fibre-gis-v2";
 const OR_ASSET_BUCKET = "orAssets";
@@ -306,6 +310,22 @@ async function deleteExtraChunks(keepCount: number) {
 }
 
 export async function loadOrAssets(): Promise<SavedMapAsset[]> {
+  if (spatialApiConfig.postgisOnly) {
+    const collection = await fetchSpatialAssetsByBounds({
+      businessId: BUSINESS_ID,
+      source: "openreach",
+      minLng: -180,
+      minLat: -85,
+      maxLng: 180,
+      maxLat: 85,
+      limit: 10000,
+    });
+
+    return collection.features
+      .map(orFeatureToMapAsset)
+      .filter((asset): asset is SavedMapAsset => Boolean(asset));
+  }
+
   const snapshot = await getDocs(query(chunksCollection(), orderBy("order", "asc")));
   const assets: SavedMapAsset[] = [];
 
@@ -332,9 +352,49 @@ export async function saveOrAssets(
     throw new Error("Refusing to save OR assets: assets is not an array.");
   }
 
-  const safeAssets = assets
+  const normalisedAssets = assets
     .filter(isOpenreachReferenceAsset)
-    .map(normaliseOpenreachAsset)
+    .map(normaliseOpenreachAsset);
+
+  if (spatialApiConfig.postgisOnly) {
+    const existingAssets = await loadOrAssets();
+
+    if (
+      existingAssets.length > 0 &&
+      normalisedAssets.length === 0 &&
+      !options.allowDestructiveSave
+    ) {
+      console.warn("ALISTRA OR POSTGIS STORAGE GUARD BLOCKED EMPTY SAVE", {
+        existingCount: existingAssets.length,
+        nextCount: normalisedAssets.length,
+      });
+      return;
+    }
+
+    const nextIds = new Set(normalisedAssets.map((asset) => asset.id).filter(Boolean));
+    await saveSpatialMapAssets(normalisedAssets, {
+      businessId: BUSINESS_ID,
+      reason: options.reason || "or-reference-save",
+      source: "openreach",
+      sourceRevision: "or-reference-save",
+    });
+
+    await Promise.all(
+      existingAssets
+        .filter((asset) => asset.id && !nextIds.has(asset.id))
+        .map((asset) =>
+          deleteSpatialMapAsset(asset.id, {
+            businessId: BUSINESS_ID,
+            reason: options.reason || "or-reference-delete",
+          }).catch((err) => {
+            console.warn("Failed to delete stale OR PostGIS asset", asset.id, err);
+          }),
+        ),
+    );
+    return;
+  }
+
+  const safeAssets = normalisedAssets
     .map(toFirestoreSafeAsset);
 
   const existingAssets = await loadOrAssets();
@@ -385,6 +445,65 @@ export async function saveOrAssets(
   );
 
   await deleteExtraChunks(chunks.length);
+}
+
+function orFeatureToMapAsset(feature: SpatialApiFeature): SavedMapAsset | null {
+  const originalAsset = feature.properties.metadata?.originalAsset;
+  if (originalAsset && typeof originalAsset === "object") {
+    return normaliseOpenreachAsset(originalAsset as SavedMapAsset);
+  }
+
+  const geometry = feature.geometry;
+  if (
+    geometry.type !== "Point" &&
+    geometry.type !== "LineString" &&
+    geometry.type !== "Polygon"
+  ) {
+    return null;
+  }
+
+  return normaliseOpenreachAsset({
+    id: `postgis:${feature.id}`,
+    name: feature.properties.name || feature.id,
+    assetType: feature.properties.assetType as SavedMapAsset["assetType"],
+    jointType: feature.properties.assetSubtype || "OR Asset",
+    source: "openreach",
+    readOnly: true,
+    isReferenceAsset: true,
+    referenceSubtype: feature.properties.assetSubtype || "or",
+    importedProperties: {
+      ...feature.properties.metadata,
+      postgisId: feature.id,
+      sourceRevision: feature.properties.sourceRevision,
+    },
+    geometry: fromSpatialGeometry(geometry),
+  } as SavedMapAsset);
+}
+
+function fromSpatialGeometry(geometry: SpatialApiFeature["geometry"]): SavedMapAsset["geometry"] {
+  if (geometry.type === "Point") {
+    return {
+      type: "Point",
+      coordinates: lngLatToLatLng(geometry.coordinates),
+    };
+  }
+
+  if (geometry.type === "LineString") {
+    return {
+      type: "LineString",
+      coordinates: geometry.coordinates.map(lngLatToLatLng),
+    };
+  }
+
+  return {
+    type: "Polygon",
+    coordinates: geometry.coordinates.map((ring) => ring.map(lngLatToLatLng)),
+  };
+}
+
+function lngLatToLatLng(position: [number, number]): [number, number] {
+  const [lng, lat] = position;
+  return [lat, lng];
 }
 
 export async function mergeAndSaveOrAssets(
