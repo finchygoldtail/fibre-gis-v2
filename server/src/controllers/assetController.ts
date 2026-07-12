@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { HttpError } from "../middleware/errorMiddleware.js";
 import {
   normaliseLimit,
+  queryAssetAuditLogs,
   queryAssetsByBounds,
   queryAssetStats,
   queryImportRuns,
@@ -85,6 +86,22 @@ export async function getImportRuns(req: Request, res: Response): Promise<void> 
   res.json(runs);
 }
 
+export async function getAssetAudit(req: Request, res: Response): Promise<void> {
+  const businessId = getStringParam(req.query.businessId);
+  if (!businessId) {
+    throw new HttpError(400, "businessId is required");
+  }
+
+  const assetId = getUuidParam(req.params.id, "asset id");
+  const logs = await queryAssetAuditLogs({
+    businessId,
+    assetId,
+    limit: normaliseLimit(getOptionalNumberParam(req.query.limit, "limit")),
+  });
+
+  res.json(logs);
+}
+
 export async function saveAsset(req: Request, res: Response): Promise<void> {
   const asset = await upsertMapAsset(
     {
@@ -134,6 +151,14 @@ function getNumberParam(value: unknown, name: string): number {
     throw new HttpError(400, `${name} is required`);
   }
   return parsed;
+}
+
+function getUuidParam(value: unknown, name: string): string {
+  const text = getStringParam(value);
+  if (!text || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text)) {
+    throw new HttpError(400, `${name} must be a UUID`);
+  }
+  return text;
 }
 
 function getOptionalNumberParam(value: unknown, name: string): number | null {

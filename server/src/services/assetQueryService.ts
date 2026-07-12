@@ -30,6 +30,12 @@ export type ImportRunsQuery = {
   limit: number;
 };
 
+export type AssetAuditQuery = {
+  businessId: string;
+  assetId: string;
+  limit: number;
+};
+
 type AssetRow = {
   id: string;
   business_id: string;
@@ -43,6 +49,19 @@ type AssetRow = {
   source: string | null;
   source_revision: string | null;
   geometry: GeoJsonGeometry;
+};
+
+type AssetAuditRow = {
+  id: string;
+  asset_id: string;
+  business_id: string;
+  action: string;
+  actor_uid: string | null;
+  actor_email: string | null;
+  before_asset: Record<string, unknown> | null;
+  after_asset: Record<string, unknown> | null;
+  reason: string | null;
+  created_at: Date;
 };
 
 const MAX_LIMIT = 10_000;
@@ -230,6 +249,48 @@ export async function queryImportRuns(query: ImportRunsQuery) {
       insertedOrUpdated: row.inserted_or_updated_count,
       skipped: row.skipped_count,
       byType: row.by_type ?? {},
+      createdAt: row.created_at,
+    })),
+  };
+}
+
+export async function queryAssetAuditLogs(query: AssetAuditQuery) {
+  const result = await pool.query<AssetAuditRow>(
+    `
+      SELECT
+        id::text,
+        asset_id::text,
+        business_id,
+        action,
+        actor_uid,
+        actor_email,
+        before_asset,
+        after_asset,
+        reason,
+        created_at
+      FROM asset_audit_logs
+      WHERE business_id = $1
+        AND asset_id = $2::uuid
+      ORDER BY created_at DESC
+      LIMIT $3
+    `,
+    [query.businessId, query.assetId, query.limit],
+  );
+
+  return {
+    businessId: query.businessId,
+    assetId: query.assetId,
+    count: result.rows.length,
+    logs: result.rows.map((row) => ({
+      id: row.id,
+      assetId: row.asset_id,
+      businessId: row.business_id,
+      action: row.action,
+      actorUid: row.actor_uid,
+      actorEmail: row.actor_email,
+      beforeAsset: row.before_asset,
+      afterAsset: row.after_asset,
+      reason: row.reason,
       createdAt: row.created_at,
     })),
   };
