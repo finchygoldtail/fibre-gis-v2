@@ -146,32 +146,38 @@ async function getSubcollectionDeletes<T extends { id: string }>(
 export async function loadExchanges(): Promise<ExchangeAsset[]> {
   if (spatialApiConfig.postgisOnly) {
     const records = await listSpatialRecords<Omit<ExchangeAsset, "id">>(EXCHANGE_RECORD);
-    return records.map((record) => ({
+    const postgisExchanges = records.map((record) => ({
       id: record.recordId,
       ...record.data,
       olts: [],
       feederPanels: [],
       hdSplitterPanels: [],
     }));
+
+    if (postgisExchanges.length > 0) return postgisExchanges;
+
+    const firestoreExchanges = await loadExchangeMarkersFromFirestore();
+    if (firestoreExchanges.length > 0) {
+      await Promise.all(
+        firestoreExchanges.map((exchange) => migrateFirestoreExchangeToPostgis(exchange.id)),
+      );
+    }
+
+    return firestoreExchanges;
   }
 
-  const snap = await getDocs(exchangesCollection);
-
-  // Map markers only need the root exchange document.
-  // Heavy OLT / splitter / feeder data is lazy-loaded when the exchange is opened.
-  return snap.docs.map((docSnap) => ({
-    id: docSnap.id,
-    ...(docSnap.data() as Omit<ExchangeAsset, "id">),
-    olts: [],
-    feederPanels: [],
-    hdSplitterPanels: [],
-  }));
+  return loadExchangeMarkersFromFirestore();
 }
 
 export async function loadExchange(exchangeId: string): Promise<ExchangeAsset | null> {
   if (spatialApiConfig.postgisOnly) {
     const root = await getSpatialRecord<Omit<ExchangeAsset, "id">>(EXCHANGE_RECORD, exchangeId);
-    if (!root) return null;
+    if (!root) {
+      const firestoreExchange = await loadExchangeFromFirestore(exchangeId);
+      if (!firestoreExchange) return null;
+      await saveExchange(firestoreExchange);
+      return firestoreExchange;
+    }
 
     const [oltRecords, splitterRecords, feederRecords] = await Promise.all([
       listSpatialRecords<Omit<Olt, "id">>(OLT_RECORD, {
@@ -197,6 +203,24 @@ export async function loadExchange(exchangeId: string): Promise<ExchangeAsset | 
     };
   }
 
+  return loadExchangeFromFirestore(exchangeId);
+}
+
+async function loadExchangeMarkersFromFirestore(): Promise<ExchangeAsset[]> {
+  const snap = await getDocs(exchangesCollection);
+
+  // Map markers only need the root exchange document.
+  // Heavy OLT / splitter / feeder data is lazy-loaded when the exchange is opened.
+  return snap.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...(docSnap.data() as Omit<ExchangeAsset, "id">),
+    olts: [],
+    feederPanels: [],
+    hdSplitterPanels: [],
+  }));
+}
+
+async function loadExchangeFromFirestore(exchangeId: string): Promise<ExchangeAsset | null> {
   const rootSnap = await getDoc(exchangeDoc(exchangeId));
   if (!rootSnap.exists()) return null;
 
@@ -219,6 +243,15 @@ export async function loadExchange(exchangeId: string): Promise<ExchangeAsset | 
       ...(docSnap.data() as Omit<FeederPanel, "id">),
     })),
   };
+}
+
+async function migrateFirestoreExchangeToPostgis(exchangeId: string) {
+  try {
+    const exchange = await loadExchangeFromFirestore(exchangeId);
+    if (exchange) await saveExchange(exchange);
+  } catch (err) {
+    console.warn("Failed to migrate Firestore exchange into PostGIS records", exchangeId, err);
+  }
 }
 
 export async function saveExchange(exchange: ExchangeAsset) {
