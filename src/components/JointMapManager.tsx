@@ -125,6 +125,7 @@ import { useDeviceLayout } from "./map/responsive/useDeviceLayout";
 import { useLiveUserLocationSharing } from "./map/hooks/useLiveUserLocationSharing";
 import { isSpatialApiAsset } from "../services/spatialApi/spatialAssetAdapter";
 import { spatialApiConfig } from "../services/spatialApi/spatialApiConfig";
+import { deleteSpatialMapAsset } from "../services/spatialApi/spatialAssetWriteService";
 import { useSpatialViewportAssets } from "../services/spatialApi/useSpatialViewportAssets";
 import SurveyMobileControls from "./map/responsive/mobile/SurveyMobileControls";
 import MaintenanceMobileControls from "./map/responsive/mobile/MaintenanceMobileControls";
@@ -1603,6 +1604,9 @@ export default function JointMapManager({
   );
   const [showPostgisAssets, setShowPostgisAssets] = useState(true);
   const [highlightPostgisAssets, setHighlightPostgisAssets] = useState(true);
+  const [deletedPostgisAssetIds, setDeletedPostgisAssetIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   useEffect(() => {
     if (!isPostgisOnlyMapMode) return;
@@ -1629,7 +1633,13 @@ export default function JointMapManager({
 
   const visibleFirebaseProjectAssets = showFirebaseAssets ? renderProjectAssets : [];
   const visibleExchangeNetworkAssets = showFirebaseAssets ? exchangeNetworkAssets : [];
-  const visibleSpatialAssets = showPostgisAssets ? spatialViewport.assets : [];
+  const visibleSpatialAssets = useMemo(
+    () =>
+      showPostgisAssets
+        ? spatialViewport.assets.filter((asset) => !deletedPostgisAssetIds.has(asset.id))
+        : [],
+    [deletedPostgisAssetIds, showPostgisAssets, spatialViewport.assets],
+  );
 
   const renderProjectAssetsWithExchanges = useMemo(
     () => [...visibleFirebaseProjectAssets, ...visibleExchangeNetworkAssets],
@@ -1656,10 +1666,10 @@ export default function JointMapManager({
       mergeMapAssets(
         showFirebaseAssets ? visibleProjectAreas : [],
         showPostgisAssets
-          ? spatialViewport.assets.filter((asset) => asset.assetType === "area")
+          ? visibleSpatialAssets.filter((asset) => asset.assetType === "area")
           : [],
       ),
-    [showFirebaseAssets, showPostgisAssets, spatialViewport.assets, visibleProjectAreas],
+    [showFirebaseAssets, showPostgisAssets, visibleProjectAreas, visibleSpatialAssets],
   );
 
   const allNetworkAssetsWithExchanges = useMemo(
@@ -2159,6 +2169,29 @@ export default function JointMapManager({
       alert("Administrator access required to delete map assets.");
       return;
     }
+
+    if (id.startsWith("postgis:") && isPostgisOnlyMapMode) {
+      if (!window.confirm("Delete this asset from PostGIS?")) return;
+
+      void deleteSpatialMapAsset(id, {
+        businessId: "fibre-gis-v2",
+        reason: "map-delete",
+      })
+        .then(() => {
+          setDeletedPostgisAssetIds((current) => {
+            const next = new Set(current);
+            next.add(id);
+            return next;
+          });
+          setSavedJoints((prev) => (prev ?? []).filter((asset) => asset.id !== id));
+        })
+        .catch((error) => {
+          console.error("PostGIS asset delete failed", error);
+          alert("Delete failed. The asset was not removed from PostGIS.");
+        });
+      return;
+    }
+
     void handleDeleteAsset(id);
   };
   const handleSaveReferenceAssetEvidence = async () => {

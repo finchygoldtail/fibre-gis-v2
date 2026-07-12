@@ -31,6 +31,13 @@ export function getSpatialAssetTypesForLayers(
 
   if (visibleLayers.homes) types.add("home");
 
+  if (visibleLayers.areas) {
+    types.add("area");
+    types.add("polygon");
+    types.add("project-area");
+    types.add("ag-polygon");
+  }
+
   return Array.from(types).filter((assetType) =>
     shouldRequestSpatialAssetType(assetType, zoom),
   );

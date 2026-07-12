@@ -39,6 +39,29 @@ export async function saveSpatialMapAssets(
   return saved;
 }
 
+export async function deleteSpatialMapAsset(
+  assetId: string,
+  options: { businessId: string; reason?: string },
+): Promise<{ deleted: true; id: string }> {
+  if (!spatialApiConfig.enabled || !spatialApiConfig.writesEnabled) {
+    throw new Error("Spatial API writes are disabled.");
+  }
+
+  const params = new URLSearchParams({
+    businessId: options.businessId,
+  });
+
+  if (options.reason) params.set("reason", options.reason);
+
+  return spatialApiJson<{ deleted: true; id: string }>(
+    `/api/assets/${toStablePostgisId(assetId)}`,
+    {
+      method: "DELETE",
+      params,
+    },
+  );
+}
+
 function toWritableSpatialAsset(
   asset: SavedMapAsset,
   options: SaveSpatialAssetsOptions,
