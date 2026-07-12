@@ -13,6 +13,8 @@ type EnvConfig = {
   postgresDb?: string;
   postgresUser?: string;
   postgresPassword?: string;
+  requireFirebaseAuth: boolean;
+  firebaseProjectId: string;
 };
 
 function parsePort(value: string | undefined): number {
@@ -21,6 +23,10 @@ function parsePort(value: string | undefined): number {
     throw new Error("API_PORT must be an integer between 1 and 65535");
   }
   return port;
+}
+
+function parseBoolean(value: string | undefined): boolean {
+  return ["1", "true", "yes", "on"].includes(String(value || "").trim().toLowerCase());
 }
 
 export const env: EnvConfig = {
@@ -34,6 +40,8 @@ export const env: EnvConfig = {
   postgresDb: process.env.POSTGRES_DB,
   postgresUser: process.env.POSTGRES_USER,
   postgresPassword: process.env.POSTGRES_PASSWORD,
+  requireFirebaseAuth: parseBoolean(process.env.REQUIRE_FIREBASE_AUTH),
+  firebaseProjectId: process.env.FIREBASE_PROJECT_ID || "fibre-gis-v2",
 };
 
 if (!env.databaseUrl && (!env.postgresHost || !env.postgresDb || !env.postgresUser || !env.postgresPassword)) {
