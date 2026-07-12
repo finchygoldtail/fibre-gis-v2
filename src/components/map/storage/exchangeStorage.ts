@@ -154,16 +154,23 @@ export async function loadExchanges(): Promise<ExchangeAsset[]> {
       hdSplitterPanels: [],
     }));
 
-    if (postgisExchanges.length > 0) return postgisExchanges;
-
     const firestoreExchanges = await loadExchangeMarkersFromFirestore();
-    if (firestoreExchanges.length > 0) {
+    const postgisIds = new Set(postgisExchanges.map((exchange) => exchange.id));
+    const missingFirestoreExchanges = firestoreExchanges.filter(
+      (exchange) => !postgisIds.has(exchange.id),
+    );
+
+    if (missingFirestoreExchanges.length > 0) {
       await Promise.all(
-        firestoreExchanges.map((exchange) => migrateFirestoreExchangeToPostgis(exchange.id)),
+        missingFirestoreExchanges.map((exchange) => migrateFirestoreExchangeToPostgis(exchange.id)),
       );
     }
 
-    return firestoreExchanges;
+    const byId = new Map<string, ExchangeAsset>();
+    postgisExchanges.forEach((exchange) => byId.set(exchange.id, exchange));
+    missingFirestoreExchanges.forEach((exchange) => byId.set(exchange.id, exchange));
+
+    return Array.from(byId.values());
   }
 
   return loadExchangeMarkersFromFirestore();

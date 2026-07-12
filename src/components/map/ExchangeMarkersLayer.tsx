@@ -4,9 +4,9 @@ import type { ExchangeAsset } from "./storage/exchangeStorage";
 
 const exchangeIcon = L.divIcon({
   className: "exchange-star-marker",
-  html: "EX",
-  iconSize: [34, 24],
-  iconAnchor: [17, 12],
+  html: "&#11088;",
+  iconSize: [28, 28],
+  iconAnchor: [14, 14],
 });
 
 type Props = {
