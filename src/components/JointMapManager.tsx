@@ -1565,32 +1565,7 @@ export default function JointMapManager({
     setSelectedReferenceDuctName,
   ]);
 
-  // =====================================================
-  // PROJECT AREA / VIEWPORT ASSET VIEW
-  // Project scoping, viewport filtering and OR layer visibility are now kept
-  // outside the main map component so this file stays easier to maintain.
-  // =====================================================
-  const {
-    projectAreas,
-    activeProjectArea,
-    activeProjectAreaName,
-    stampHomesForActiveArea,
-    visibleProjectAssets,
-    visibleProjectAreas,
-    visibleOpenreachAssets,
-    renderProjectAssets,
-    renderOpenreachAssets,
-    snapCandidateAssets,
-    openreachLayerVisibility,
-  } = useProjectAreaView({
-    allMapAssets,
-    openreachReferenceAssets,
-    activeProjectId,
-    mapBounds,
-    mapZoom,
-    visibleLayers,
-  });
-
+  const isPostgisOnlyMapMode = spatialApiConfig.postgisOnly;
   const spatialViewport = useSpatialViewportAssets({
     businessId: "fibre-gis-v2",
     areaId: null,
@@ -1598,7 +1573,7 @@ export default function JointMapManager({
     zoom: mapZoom,
     visibleLayers,
   });
-  const isPostgisOnlyMapMode = spatialApiConfig.postgisOnly;
+
   const [showFirebaseAssets, setShowFirebaseAssets] = useState(
     !isPostgisOnlyMapMode,
   );
@@ -1613,6 +1588,50 @@ export default function JointMapManager({
     setShowFirebaseAssets(false);
     setShowPostgisAssets(true);
   }, [isPostgisOnlyMapMode]);
+
+  const visibleSpatialAssets = useMemo(
+    () =>
+      showPostgisAssets
+        ? spatialViewport.assets.filter((asset) => !deletedPostgisAssetIds.has(asset.id))
+        : [],
+    [deletedPostgisAssetIds, showPostgisAssets, spatialViewport.assets],
+  );
+
+  const projectViewMapAssets = useMemo(
+    () =>
+      isPostgisOnlyMapMode
+        ? mergeMapAssets(allMapAssets, visibleSpatialAssets)
+        : allMapAssets,
+    [allMapAssets, isPostgisOnlyMapMode, visibleSpatialAssets],
+  );
+
+  // =====================================================
+  // PROJECT AREA / VIEWPORT ASSET VIEW
+  // Project scoping, viewport filtering and OR layer visibility are now kept
+  // outside the main map component so this file stays easier to maintain.
+  // In PostGIS-only mode, selectable/searchable project areas come from
+  // the spatial API viewport rather than the old Firestore-local map state.
+  // =====================================================
+  const {
+    projectAreas,
+    activeProjectArea,
+    activeProjectAreaName,
+    stampHomesForActiveArea,
+    visibleProjectAssets,
+    visibleProjectAreas,
+    visibleOpenreachAssets,
+    renderProjectAssets,
+    renderOpenreachAssets,
+    snapCandidateAssets,
+    openreachLayerVisibility,
+  } = useProjectAreaView({
+    allMapAssets: projectViewMapAssets,
+    openreachReferenceAssets,
+    activeProjectId,
+    mapBounds,
+    mapZoom,
+    visibleLayers,
+  });
 
   const {
     sharingEnabled: isSharingLocation,
@@ -1633,13 +1652,6 @@ export default function JointMapManager({
 
   const visibleFirebaseProjectAssets = showFirebaseAssets ? renderProjectAssets : [];
   const visibleExchangeNetworkAssets = showFirebaseAssets ? exchangeNetworkAssets : [];
-  const visibleSpatialAssets = useMemo(
-    () =>
-      showPostgisAssets
-        ? spatialViewport.assets.filter((asset) => !deletedPostgisAssetIds.has(asset.id))
-        : [],
-    [deletedPostgisAssetIds, showPostgisAssets, spatialViewport.assets],
-  );
 
   const renderProjectAssetsWithExchanges = useMemo(
     () => [...visibleFirebaseProjectAssets, ...visibleExchangeNetworkAssets],
