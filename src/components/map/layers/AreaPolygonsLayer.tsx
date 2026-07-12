@@ -19,6 +19,7 @@ type Props = {
   onToggleSelect?: (id: string) => void;
   onEdit: (asset: SavedMapAsset) => void;
   onDelete: (id: string) => void;
+  highlightPostgisAssets?: boolean;
 };
 
 const COLORS = [
@@ -36,6 +37,10 @@ function getColor(id: string) {
     hash = id.charCodeAt(i) + ((hash << 5) - hash);
   }
   return COLORS[Math.abs(hash) % COLORS.length];
+}
+
+function isPostgisAsset(asset: SavedMapAsset): boolean {
+  return String((asset as any).source || "").toLowerCase() === "postgis";
 }
 
 const AREA_LABEL_MIN_ZOOM = 15;
@@ -62,6 +67,7 @@ export default function AreaPolygonsLayer({
   onToggleSelect,
   onEdit,
   onDelete,
+  highlightPostgisAssets = false,
 }: Props) {
   const map = useMap();
   const [mapZoom, setMapZoom] = useState(() => map.getZoom());
@@ -82,6 +88,7 @@ export default function AreaPolygonsLayer({
         );
 
         const baseColor = getColor(asset.id);
+        const isPostgisHighlighted = highlightPostgisAssets && isPostgisAsset(asset);
         const isActive = asset.id === activeProjectId;
         const isSecretEditing = asset.id === editingAreaId;
         const isBulkSelected = selectedAreaIds.includes(asset.id);
@@ -107,11 +114,17 @@ export default function AreaPolygonsLayer({
             positions={positions}
             interactive={isInteractive}
             pathOptions={{
-              color: isSecretEditing ? "#ef4444" : isBulkSelected ? "#facc15" : baseColor,
-              weight: isSecretEditing ? 7 : isBulkSelected ? 6 : isActive ? 6 : 3,
-              fillOpacity: isSecretEditing ? 0.22 : isBulkSelected ? 0.32 : 0.15,
+              color: isPostgisHighlighted
+                ? "#06b6d4"
+                : isSecretEditing
+                  ? "#ef4444"
+                  : isBulkSelected
+                    ? "#facc15"
+                    : baseColor,
+              weight: isPostgisHighlighted ? 5 : isSecretEditing ? 7 : isBulkSelected ? 6 : isActive ? 6 : 3,
+              fillOpacity: isPostgisHighlighted ? 0.12 : isSecretEditing ? 0.22 : isBulkSelected ? 0.32 : 0.15,
               opacity: 1,
-              dashArray: isSecretEditing ? "10 8" : isBulkSelected ? "6 6" : undefined,
+              dashArray: isPostgisHighlighted ? "12 8" : isSecretEditing ? "10 8" : isBulkSelected ? "6 6" : undefined,
               className: isActive ? "glow-polygon" : "",
             }}
             eventHandlers={

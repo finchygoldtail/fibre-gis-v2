@@ -264,6 +264,86 @@ function SpatialApiStatusPanel({
   );
 }
 
+function DataSourceTogglePanel({
+  showFirebaseAssets,
+  showPostgisAssets,
+  highlightPostgisAssets,
+  onShowFirebaseAssetsChange,
+  onShowPostgisAssetsChange,
+  onHighlightPostgisAssetsChange,
+}: {
+  showFirebaseAssets: boolean;
+  showPostgisAssets: boolean;
+  highlightPostgisAssets: boolean;
+  onShowFirebaseAssetsChange: (value: boolean) => void;
+  onShowPostgisAssetsChange: (value: boolean) => void;
+  onHighlightPostgisAssetsChange: (value: boolean) => void;
+}) {
+  const rowStyle: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    fontSize: 12,
+    fontWeight: 700,
+    color: "#e5e7eb",
+    cursor: "pointer",
+    userSelect: "none",
+  };
+
+  const checkboxStyle: React.CSSProperties = {
+    width: 14,
+    height: 14,
+    accentColor: "#22c55e",
+  };
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        right: 16,
+        top: 128,
+        zIndex: 650,
+        display: "flex",
+        flexDirection: "column",
+        gap: 7,
+        padding: "10px 12px",
+        borderRadius: 8,
+        border: "1px solid rgba(148, 163, 184, 0.28)",
+        background: "rgba(15, 23, 42, 0.94)",
+        boxShadow: "0 12px 32px rgba(0, 0, 0, 0.28)",
+      }}
+    >
+      <label style={rowStyle}>
+        <input
+          type="checkbox"
+          checked={showFirebaseAssets}
+          onChange={(event) => onShowFirebaseAssetsChange(event.target.checked)}
+          style={checkboxStyle}
+        />
+        Firebase / local assets
+      </label>
+      <label style={rowStyle}>
+        <input
+          type="checkbox"
+          checked={showPostgisAssets}
+          onChange={(event) => onShowPostgisAssetsChange(event.target.checked)}
+          style={checkboxStyle}
+        />
+        Hetzner / PostGIS assets
+      </label>
+      <label style={{ ...rowStyle, color: "#67e8f9" }}>
+        <input
+          type="checkbox"
+          checked={highlightPostgisAssets}
+          onChange={(event) => onHighlightPostgisAssetsChange(event.target.checked)}
+          style={{ ...checkboxStyle, accentColor: "#06b6d4" }}
+        />
+        Highlight PostGIS
+      </label>
+    </div>
+  );
+}
+
 function isEngineeringDrawingJointAsset(asset: SavedMapAsset): boolean {
   const assetType = String((asset as any).assetType || "").toLowerCase();
   const jointType = String((asset as any).jointType || "").toLowerCase();
@@ -1508,6 +1588,9 @@ export default function JointMapManager({
     zoom: mapZoom,
     visibleLayers,
   });
+  const [showFirebaseAssets, setShowFirebaseAssets] = useState(true);
+  const [showPostgisAssets, setShowPostgisAssets] = useState(true);
+  const [highlightPostgisAssets, setHighlightPostgisAssets] = useState(true);
 
   const {
     sharingEnabled: isSharingLocation,
@@ -1526,24 +1609,39 @@ export default function JointMapManager({
     [snapCandidateAssets, exchangeNetworkAssets],
   );
 
+  const visibleFirebaseProjectAssets = showFirebaseAssets ? renderProjectAssets : [];
+  const visibleExchangeNetworkAssets = showFirebaseAssets ? exchangeNetworkAssets : [];
+  const visibleSpatialAssets = showPostgisAssets ? spatialViewport.assets : [];
+
   const renderProjectAssetsWithExchanges = useMemo(
-    () => [...renderProjectAssets, ...exchangeNetworkAssets],
-    [renderProjectAssets, exchangeNetworkAssets],
+    () => [...visibleFirebaseProjectAssets, ...visibleExchangeNetworkAssets],
+    [visibleExchangeNetworkAssets, visibleFirebaseProjectAssets],
   );
 
   const renderProjectAssetsWithSpatial = useMemo(
-    () => mergeMapAssets(renderProjectAssets, spatialViewport.assets),
-    [renderProjectAssets, spatialViewport.assets],
+    () => mergeMapAssets(visibleFirebaseProjectAssets, visibleSpatialAssets),
+    [visibleFirebaseProjectAssets, visibleSpatialAssets],
   );
 
   const renderProjectAssetsWithExchangesAndSpatial = useMemo(
     () =>
       mergeMapAssets(
-        renderProjectAssets,
-        exchangeNetworkAssets,
-        spatialViewport.assets,
+        visibleFirebaseProjectAssets,
+        visibleExchangeNetworkAssets,
+        visibleSpatialAssets,
       ),
-    [exchangeNetworkAssets, renderProjectAssets, spatialViewport.assets],
+    [visibleExchangeNetworkAssets, visibleFirebaseProjectAssets, visibleSpatialAssets],
+  );
+
+  const renderAreaAssetsWithSpatial = useMemo(
+    () =>
+      mergeMapAssets(
+        showFirebaseAssets ? visibleProjectAreas : [],
+        showPostgisAssets
+          ? spatialViewport.assets.filter((asset) => asset.assetType === "area")
+          : [],
+      ),
+    [showFirebaseAssets, showPostgisAssets, spatialViewport.assets, visibleProjectAreas],
   );
 
   const allNetworkAssetsWithExchanges = useMemo(
@@ -4858,6 +4956,7 @@ export default function JointMapManager({
             assets={mapMode === "draw-cable" ? engineeringDrawingAssets : renderProjectAssetsWithSpatial}
             visibleLayers={visibleLayers}
             highlightedAssetId={highlightedSearchAssetId}
+            highlightPostgisAssets={highlightPostgisAssets}
             cableDrawingMode={mapMode === "draw-cable"}
             onCablePointAsset={handleCableAssetPoint}
             onOpenAsset={(asset) => {
@@ -5076,10 +5175,11 @@ export default function JointMapManager({
 
           {visibleLayers.areas && (
             <AreaPolygonsLayer
-              areas={visibleProjectAreas.filter((asset) =>
+              areas={renderAreaAssetsWithSpatial.filter((asset) =>
                 isAreaVisibleForLevel(asset, visibleLayers),
               )}
               activeProjectId={activeProjectId}
+              highlightPostgisAssets={highlightPostgisAssets}
               editingAreaId={isAdmin ? editingAreaId : null}
               polygonEditingEnabled={isAdmin && polygonBulkSelectEnabled}
               polygonBulkSelectEnabled={isAdmin && polygonBulkSelectEnabled}
@@ -5143,6 +5243,7 @@ export default function JointMapManager({
             visibleLayers={visibleLayers}
             showCableDistances={visibleLayers.cableDistances}
             cableDrawingMode={mapMode === "draw-cable"}
+            highlightPostgisAssets={highlightPostgisAssets}
             onDeleteAsset={(id) => {
               if (id.startsWith("postgis:")) return;
               handleAdminDeleteAsset(id);
@@ -5388,6 +5489,17 @@ export default function JointMapManager({
           truncated={spatialViewport.truncated}
           error={spatialViewport.error}
         />
+
+        {spatialViewport.enabled ? (
+          <DataSourceTogglePanel
+            showFirebaseAssets={showFirebaseAssets}
+            showPostgisAssets={showPostgisAssets}
+            highlightPostgisAssets={highlightPostgisAssets}
+            onShowFirebaseAssetsChange={setShowFirebaseAssets}
+            onShowPostgisAssetsChange={setShowPostgisAssets}
+            onHighlightPostgisAssetsChange={setHighlightPostgisAssets}
+          />
+        ) : null}
 
         <MapContextMenu
           visible={contextMenu.visible}

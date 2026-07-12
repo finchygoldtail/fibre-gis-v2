@@ -104,6 +104,7 @@ type Props = {
   selectedMoveHomeIds?: string[];
   onToggleMoveHome?: (asset: SavedMapAsset) => void;
   onMoveHomesTargetDp?: (asset: SavedMapAsset) => void;
+  highlightPostgisAssets?: boolean;
 };
 
 function createSquareIcon(background: string, border: string) {
@@ -629,6 +630,44 @@ function createHighlightedIcon(baseIcon: L.DivIcon) {
   });
 }
 
+function createPostgisHighlightedIcon(baseIcon: L.DivIcon) {
+  const html = baseIcon.options.html || "";
+
+  return L.divIcon({
+    className: "",
+    html: `
+      <div style="
+        position: relative;
+        width: 30px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+      ">
+        <div style="
+          position: absolute;
+          inset: 0;
+          border-radius: 999px;
+          border: 3px solid #06b6d4;
+          box-shadow: 0 0 0 4px rgba(6,182,212,0.28), 0 0 18px rgba(6,182,212,0.8);
+        "></div>
+        <div style="
+          position: relative;
+          z-index: 2;
+        ">
+          ${html}
+        </div>
+      </div>
+    `,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+    popupAnchor: [0, -15],
+  });
+}
+
+function isPostgisAsset(asset: SavedMapAsset): boolean {
+  return String((asset as any).source || "").toLowerCase() === "postgis";
+}
+
 function createCableDrawIcon(baseIcon: L.DivIcon) {
   const html = baseIcon.options.html || "";
 
@@ -687,6 +726,7 @@ export default function AssetMarkersLayer({
   onToggleMoveHome,
   onToggleSurveyDeleteHome,
   onMoveHomesTargetDp,
+  highlightPostgisAssets = false,
 }: Props) {
   const map = useMap();
   const [mapView, setMapView] = useState(() => ({
@@ -927,6 +967,8 @@ const icon = asset.id === highlightedAssetId
   ? createHighlightedIcon(baseIcon as L.DivIcon)
   : shouldCableHighlight
     ? createCableDrawIcon(baseIcon as L.DivIcon)
+    : highlightPostgisAssets && isPostgisAsset(asset)
+      ? createPostgisHighlightedIcon(baseIcon as L.DivIcon)
     : baseIcon;
     const connectedDp = asset.assetType === "home" ? homeConnectedDpById.get(asset.id) || null : null;
     const dpUsage = asset.assetType === "distribution-point" ? dpUsageById.get(asset.id) || null : null;
