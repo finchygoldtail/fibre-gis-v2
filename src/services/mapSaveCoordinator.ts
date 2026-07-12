@@ -1,5 +1,7 @@
 import type { SavedJoint, SavedMapAsset } from "../components/JointMapManager";
 import { saveMapAssetsToFirestore } from "./mapAssetStorage";
+import { spatialApiConfig } from "./spatialApi/spatialApiConfig";
+import { saveSpatialMapAssets } from "./spatialApi/spatialAssetWriteService";
 
 export type MapSaveSource =
   | "joint-map-manager"
@@ -38,6 +40,17 @@ export async function saveMapAssetsViaCoordinator(
 
   if (!Array.isArray(assets)) {
     throw new Error("Map save failed: assets must be an array.");
+  }
+
+  if (spatialApiConfig.enabled && spatialApiConfig.writesEnabled) {
+    try {
+      await saveSpatialMapAssets(assets as SavedMapAsset[], {
+        businessId: "fibre-gis-v2",
+        reason,
+      });
+    } catch (err) {
+      console.warn("PostGIS map save failed; falling back to Firestore save.", err);
+    }
   }
 
   const savedAssets = (await saveMapAssetsToFirestore(assets, {
