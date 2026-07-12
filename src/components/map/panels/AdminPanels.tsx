@@ -30,6 +30,7 @@ type AdminPanelsProps = {
   onRepairAreaStamps: (reason?: string) => void | Promise<void>;
   onDeletePiaOverlayForActiveProject: (reason?: string) => void | Promise<void>;
   onDeleteAllOrReferenceAssets: (reason?: string) => void | Promise<void>;
+  onWipePostgisMapData: (reason?: string) => void | Promise<void>;
 };
 
 export default function AdminPanels({
@@ -57,6 +58,7 @@ export default function AdminPanels({
   onRepairAreaStamps,
   onDeletePiaOverlayForActiveProject,
   onDeleteAllOrReferenceAssets,
+  onWipePostgisMapData,
 }: AdminPanelsProps) {
   if (!isAdmin) return null;
 
@@ -86,6 +88,7 @@ export default function AdminPanels({
       onRepairAreaStamps={onRepairAreaStamps}
       onDeletePiaOverlayForActiveProject={onDeletePiaOverlayForActiveProject}
       onDeleteAllOrReferenceAssets={onDeleteAllOrReferenceAssets}
+      onWipePostgisMapData={onWipePostgisMapData}
     />
   );
 }

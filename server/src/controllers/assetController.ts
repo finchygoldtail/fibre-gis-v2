@@ -7,7 +7,7 @@ import {
   queryAssetStats,
   queryImportRuns,
 } from "../services/assetQueryService.js";
-import { deleteMapAsset, upsertMapAsset } from "../services/assetWriteService.js";
+import { deleteMapAsset, upsertMapAsset, wipeMapData } from "../services/assetWriteService.js";
 
 const REQUIRED_BOUNDS = ["minLng", "minLat", "maxLng", "maxLat"] as const;
 
@@ -127,6 +127,31 @@ export async function removeAsset(req: Request, res: Response): Promise<void> {
   const result = await deleteMapAsset(businessId, String(req.params.id || ""), {
     actor: getRequestActor(req),
     reason: getStringParam(req.query.reason),
+  });
+
+  res.json(result);
+}
+
+export async function wipeAssetsAndMapRecords(req: Request, res: Response): Promise<void> {
+  const body = req.body && typeof req.body === "object" ? req.body : {};
+  const businessId = getStringParam((body as Record<string, unknown>).businessId);
+  const confirmText = getStringParam((body as Record<string, unknown>).confirm);
+
+  if (!businessId) {
+    throw new HttpError(400, "businessId is required");
+  }
+
+  if (confirmText !== "WIPE MAP DATA") {
+    throw new HttpError(400, "Type WIPE MAP DATA to confirm this cleanup");
+  }
+
+  const result = await wipeMapData(businessId, {
+    actor: getRequestActor(req),
+    reason: getStringParam((body as Record<string, unknown>).reason),
+    includeExchangeRecords:
+      (body as Record<string, unknown>).includeExchangeRecords !== false,
+    includeJointMappingRecords:
+      (body as Record<string, unknown>).includeJointMappingRecords !== false,
   });
 
   res.json(result);

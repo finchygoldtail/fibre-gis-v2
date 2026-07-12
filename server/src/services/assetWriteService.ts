@@ -27,6 +27,23 @@ type AssetWriteOptions = {
   reason?: string | null;
 };
 
+type WipeMapDataOptions = AssetWriteOptions & {
+  includeExchangeRecords?: boolean;
+  includeJointMappingRecords?: boolean;
+};
+
+const EXCHANGE_RECORD_TYPES = [
+  "exchange",
+  "exchange-olt",
+  "exchange-hd-splitter-panel",
+  "exchange-feeder-panel",
+] as const;
+
+const JOINT_MAPPING_RECORD_TYPES = [
+  "joint-mapping",
+  "joint-mapping-chunk",
+] as const;
+
 export async function upsertMapAsset(
   input: WritableMapAsset,
   options: AssetWriteOptions = {},
@@ -165,6 +182,77 @@ export async function deleteMapAsset(
   }
 }
 
+export async function wipeMapData(
+  businessId: string,
+  options: WipeMapDataOptions = {},
+): Promise<{
+  deleted: true;
+  businessId: string;
+  mapAssetsDeleted: number;
+  appRecordsDeleted: number;
+  recordTypesDeleted: string[];
+}> {
+  const cleanBusinessId = normaliseRequiredText(businessId, "businessId");
+  const recordTypes = [
+    ...(options.includeExchangeRecords === false ? [] : EXCHANGE_RECORD_TYPES),
+    ...(options.includeJointMappingRecords === false ? [] : JOINT_MAPPING_RECORD_TYPES),
+  ];
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const mapAssetResult = await client.query<{ id: string }>(
+      `
+        DELETE FROM map_assets
+        WHERE business_id = $1
+        RETURNING id::text
+      `,
+      [cleanBusinessId],
+    );
+
+    const appRecordResult = recordTypes.length
+      ? await client.query<{ id: string }>(
+          `
+            DELETE FROM app_records
+            WHERE business_id = $1
+              AND record_type = ANY($2::text[])
+            RETURNING id::text
+          `,
+          [cleanBusinessId, recordTypes],
+        )
+      : { rowCount: 0 };
+
+    await insertAuditLog(client, {
+      assetId: null,
+      businessId: cleanBusinessId,
+      action: "bulk-delete",
+      actor: options.actor,
+      before: {
+        mapAssetsDeleted: mapAssetResult.rowCount ?? 0,
+        appRecordsDeleted: appRecordResult.rowCount ?? 0,
+        recordTypesDeleted: recordTypes,
+      },
+      after: null,
+      reason: options.reason,
+    });
+
+    await client.query("COMMIT");
+    return {
+      deleted: true,
+      businessId: cleanBusinessId,
+      mapAssetsDeleted: mapAssetResult.rowCount ?? 0,
+      appRecordsDeleted: appRecordResult.rowCount ?? 0,
+      recordTypesDeleted: [...recordTypes],
+    };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 function normaliseWritableAsset(input: WritableMapAsset): Required<WritableMapAsset> {
   if (!input || typeof input !== "object") {
     throw new HttpError(400, "Asset payload is required");
@@ -260,12 +348,12 @@ async function getAssetRow(
 async function insertAuditLog(
   client: PoolClient,
   args: {
-    assetId: string;
+    assetId: string | null;
     businessId: string;
-    action: "create" | "update" | "delete";
+    action: "create" | "update" | "delete" | "bulk-delete";
     actor?: AssetWriteActor;
-    before: AssetRow | null;
-    after: AssetRow | null;
+    before: AssetRow | Record<string, unknown> | null;
+    after: AssetRow | Record<string, unknown> | null;
     reason?: string | null;
   },
 ): Promise<void> {
@@ -290,10 +378,24 @@ async function insertAuditLog(
       args.action,
       args.actor?.uid || null,
       args.actor?.email || null,
-      args.before ? JSON.stringify(rowToFeature(args.before)) : null,
-      args.after ? JSON.stringify(rowToFeature(args.after)) : null,
+      args.before ? JSON.stringify(toAuditPayload(args.before)) : null,
+      args.after ? JSON.stringify(toAuditPayload(args.after)) : null,
       normaliseOptionalText(args.reason),
     ],
+  );
+}
+
+function toAuditPayload(value: AssetRow | Record<string, unknown>) {
+  return isAssetRow(value) ? rowToFeature(value) : value;
+}
+
+function isAssetRow(value: AssetRow | Record<string, unknown>): value is AssetRow {
+  return (
+    value &&
+    typeof value === "object" &&
+    "business_id" in value &&
+    "asset_type" in value &&
+    "geometry" in value
   );
 }
 

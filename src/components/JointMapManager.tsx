@@ -125,7 +125,10 @@ import { useDeviceLayout } from "./map/responsive/useDeviceLayout";
 import { useLiveUserLocationSharing } from "./map/hooks/useLiveUserLocationSharing";
 import { isSpatialApiAsset } from "../services/spatialApi/spatialAssetAdapter";
 import { spatialApiConfig } from "../services/spatialApi/spatialApiConfig";
-import { deleteSpatialMapAsset } from "../services/spatialApi/spatialAssetWriteService";
+import {
+  deleteSpatialMapAsset,
+  wipeSpatialMapData,
+} from "../services/spatialApi/spatialAssetWriteService";
 import { useSpatialViewportAssets } from "../services/spatialApi/useSpatialViewportAssets";
 import SurveyMobileControls from "./map/responsive/mobile/SurveyMobileControls";
 import MaintenanceMobileControls from "./map/responsive/mobile/MaintenanceMobileControls";
@@ -1884,6 +1887,57 @@ export default function JointMapManager({
     setOrAssets,
     setSavedJoints,
   });
+
+  const handleAdminWipePostgisMapData = async () => {
+    if (!isAdmin) return;
+
+    if (!spatialApiConfig.enabled || !spatialApiConfig.writesEnabled) {
+      alert("PostGIS writes are disabled, so the map reset cannot run.");
+      return;
+    }
+
+    const typed = window.prompt(
+      [
+        "This will delete ALL PostGIS map assets.",
+        "",
+        "It also deletes exchange records and joint tray/mapping records.",
+        "Street cabs, joints, homes, cables, chambers, poles, DPs and polygons stored as map assets will be removed.",
+        "",
+        "Type WIPE MAP DATA to continue.",
+      ].join("\n"),
+    );
+
+    if (typed !== "WIPE MAP DATA") {
+      if (typed !== null) alert("Map reset cancelled. The confirmation text did not match.");
+      return;
+    }
+
+    try {
+      const result = await wipeSpatialMapData({
+        businessId: "fibre-gis-v2",
+        confirm: "WIPE MAP DATA",
+        reason: "administrator-full-postgis-map-reset",
+        includeExchangeRecords: true,
+        includeJointMappingRecords: true,
+      });
+
+      setDeletedPostgisAssetIds(new Set(visibleSpatialAssets.map((asset) => asset.id)));
+      setOpenExchangeAsset(null);
+      setEditingAssetId(null);
+      setEditingAreaId(null);
+      setPickedLocation(null);
+      setOpenStreetCabAsset(null);
+      setOpenDistributionPointAsset(null);
+
+      alert(
+        `PostGIS map data wiped.\n\nMap assets deleted: ${result.mapAssetsDeleted}\nExchange/joint records deleted: ${result.appRecordsDeleted}\n\nThe page will reload now.`,
+      );
+      window.location.reload();
+    } catch (error) {
+      console.error("Failed to wipe PostGIS map data", error);
+      alert("PostGIS map reset failed. Check the console/API logs before trying again.");
+    }
+  };
 
   // =====================================================
   // CABLE WORKFLOW
@@ -4206,6 +4260,7 @@ export default function JointMapManager({
             handleDeletePiaOverlayForActiveProject
           }
           onDeleteAllOrReferenceAssets={handleAdminDeleteAllOrReferenceAssets}
+          onWipePostgisMapData={handleAdminWipePostgisMapData}
         />
 
         {activeProjectArea && canOpenFullProjectWorkspace && (

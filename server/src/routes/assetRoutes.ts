@@ -4,6 +4,7 @@ import {
   getAssetAudit,
   getAssetStats,
   getImportRuns,
+  wipeAssetsAndMapRecords,
   removeAsset,
   saveAsset,
 } from "../controllers/assetController.js";
@@ -18,4 +19,5 @@ assetRoutes.get("/:id/audit", authMiddleware, asyncHandler(getAssetAudit));
 assetRoutes.get("/", authMiddleware, asyncHandler(getAssetsByBounds));
 assetRoutes.post("/", authMiddleware, asyncHandler(saveAsset));
 assetRoutes.put("/:id", authMiddleware, asyncHandler(saveAsset));
+assetRoutes.delete("/admin/wipe-map-data", authMiddleware, asyncHandler(wipeAssetsAndMapRecords));
 assetRoutes.delete("/:id", authMiddleware, asyncHandler(removeAsset));

@@ -12,6 +12,14 @@ type SaveSpatialAssetsOptions = {
   sourceRevision?: string;
 };
 
+type WipeSpatialMapDataOptions = {
+  businessId: string;
+  confirm: "WIPE MAP DATA";
+  reason?: string;
+  includeExchangeRecords?: boolean;
+  includeJointMappingRecords?: boolean;
+};
+
 export async function saveSpatialMapAssets(
   assets: SavedMapAsset[],
   options: SaveSpatialAssetsOptions,
@@ -62,6 +70,31 @@ export async function deleteSpatialMapAsset(
       params,
     },
   );
+}
+
+export async function wipeSpatialMapData(
+  options: WipeSpatialMapDataOptions,
+): Promise<{
+  deleted: true;
+  businessId: string;
+  mapAssetsDeleted: number;
+  appRecordsDeleted: number;
+  recordTypesDeleted: string[];
+}> {
+  if (!spatialApiConfig.enabled || !spatialApiConfig.writesEnabled) {
+    throw new Error("Spatial API writes are disabled.");
+  }
+
+  return spatialApiJson("/api/assets/admin/wipe-map-data", {
+    method: "DELETE",
+    body: {
+      businessId: options.businessId,
+      confirm: options.confirm,
+      reason: options.reason,
+      includeExchangeRecords: options.includeExchangeRecords ?? true,
+      includeJointMappingRecords: options.includeJointMappingRecords ?? true,
+    },
+  });
 }
 
 function toWritableSpatialAsset(

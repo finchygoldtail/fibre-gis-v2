@@ -26,6 +26,7 @@ type AdminCleanupPanelProps = {
   onRepairAreaStamps: () => void | Promise<void>;
   onDeletePiaOverlayForActiveProject: () => void | Promise<void>;
   onDeleteAllOrReferenceAssets: () => void | Promise<void>;
+  onWipePostgisMapData: () => void | Promise<void>;
 };
 
 export default function AdminCleanupPanel({
@@ -53,6 +54,7 @@ export default function AdminCleanupPanel({
   onRepairAreaStamps,
   onDeletePiaOverlayForActiveProject,
   onDeleteAllOrReferenceAssets,
+  onWipePostgisMapData,
 }: AdminCleanupPanelProps) {
   const canRemoveCurrentPolygon =
     Boolean(currentEditingAsset) && isPolygonAreaAsset(currentEditingAsset);
@@ -227,6 +229,38 @@ export default function AdminCleanupPanel({
         <button type="button" onClick={onDeleteAllOrReferenceAssets} style={btnDanger}>
           Delete ALL OR / PIA Reference Layers
         </button>
+
+        <div
+          style={{
+            marginTop: 12,
+            padding: 10,
+            border: "1px solid #7f1d1d",
+            borderRadius: 10,
+            background: "#1f1115",
+          }}
+        >
+          <div style={{ fontSize: 12, color: "#fecaca", fontWeight: 900 }}>
+            Full PostGIS map reset
+          </div>
+          <div
+            style={{
+              marginTop: 4,
+              fontSize: 11,
+              color: "#fca5a5",
+              lineHeight: 1.4,
+            }}
+          >
+            Removes all map assets, exchange records and joint mapping records
+            from PostGIS. Use this before re-uploading the clean source data.
+          </div>
+          <button
+            type="button"
+            onClick={onWipePostgisMapData}
+            style={{ ...btnDanger, width: "100%", marginTop: 8 }}
+          >
+            Wipe ALL PostGIS Map Data
+          </button>
+        </div>
 
         <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.4 }}>
           Imported area cleanup removes polygons from the map state first; press
