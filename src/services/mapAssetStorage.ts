@@ -52,6 +52,15 @@ export type SaveMapAssetsOptions = {
   reason?: string;
 };
 
+export type WipeLegacyFirestoreMapDataResult = {
+  mapAssetDocsDeleted: number;
+  mapAssetChunksDeleted: number;
+  jointMappingDocsDeleted: number;
+  jointMappingChunksDeleted: number;
+  projectHomeDocsDeleted: number;
+  projectHomeChunksDeleted: number;
+};
+
 function safeJsonParse<T = any>(value: unknown, fallback: T): T {
   if (typeof value !== "string") return fallback;
 
@@ -631,4 +640,78 @@ export async function saveMapAssets(
     },
     { merge: true },
   );
+}
+
+export async function wipeLegacyFirestoreMapData(): Promise<WipeLegacyFirestoreMapDataResult> {
+  const result: WipeLegacyFirestoreMapDataResult = {
+    mapAssetDocsDeleted: 0,
+    mapAssetChunksDeleted: 0,
+    jointMappingDocsDeleted: 0,
+    jointMappingChunksDeleted: 0,
+    projectHomeDocsDeleted: 0,
+    projectHomeChunksDeleted: 0,
+  };
+
+  const mapAssetDocs = await getDocs(collection(db, ...FIRESTORE_REF_PATH, "mapAssets"));
+  for (const mapAssetDoc of mapAssetDocs.docs) {
+    const chunks = await getDocs(
+      collection(db, ...FIRESTORE_REF_PATH, "mapAssets", mapAssetDoc.id, "chunks"),
+    );
+
+    for (const chunk of chunks.docs) {
+      await deleteDoc(chunk.ref);
+      result.mapAssetChunksDeleted += 1;
+    }
+
+    await deleteDoc(mapAssetDoc.ref);
+    result.mapAssetDocsDeleted += 1;
+  }
+
+  const jointMappingDocs = await getDocs(collection(db, ...FIRESTORE_REF_PATH, "jointMappings"));
+  for (const jointMappingDoc of jointMappingDocs.docs) {
+    const chunks = await getDocs(
+      collection(db, ...FIRESTORE_REF_PATH, "jointMappings", jointMappingDoc.id, "chunks"),
+    );
+
+    for (const chunk of chunks.docs) {
+      await deleteDoc(chunk.ref);
+      result.jointMappingChunksDeleted += 1;
+    }
+
+    await deleteDoc(jointMappingDoc.ref);
+    result.jointMappingDocsDeleted += 1;
+  }
+
+  const projectHomeDocs = await getDocs(collection(db, ...FIRESTORE_REF_PATH, "projectHomes"));
+  for (const projectHomeDoc of projectHomeDocs.docs) {
+    const chunks = await getDocs(
+      collection(db, ...FIRESTORE_REF_PATH, "projectHomes", projectHomeDoc.id, "chunks"),
+    );
+
+    for (const chunk of chunks.docs) {
+      await deleteDoc(chunk.ref);
+      result.projectHomeChunksDeleted += 1;
+    }
+
+    await deleteDoc(projectHomeDoc.ref);
+    result.projectHomeDocsDeleted += 1;
+  }
+
+  await setDoc(
+    doc(db, ...FIRESTORE_REF_PATH),
+    {
+      savedJoints: [],
+      mapAssetsChunked: false,
+      mapAssetsPath: null,
+      mapAssetsCount: 0,
+      mapAssetsSafetyGuarded: true,
+      updatedAt: new Date().toISOString(),
+      updatedByUid: auth.currentUser?.uid || "unknown",
+      updatedByEmail: auth.currentUser?.email || "unknown",
+      saveReason: "administrator-full-map-reset",
+    },
+    { merge: true },
+  );
+
+  return result;
 }

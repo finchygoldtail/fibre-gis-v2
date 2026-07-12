@@ -49,6 +49,7 @@ import ExchangeDesigner from "./exchange/ExchangeDesigner";
 import { formatDistance, getPathDistanceMeters } from "../utils/mapMeasure";
 import { getNextAssetName } from "../utils/mapAssetNames";
 import { saveMapAssetsViaCoordinator } from "../services/mapSaveCoordinator";
+import { wipeLegacyFirestoreMapData } from "../services/mapAssetStorage";
 import MapContextMenu, { type MapContextAction } from "./map/MapContextMenu";
 import LayerControls from "./map/panels/LayerControls";
 import MapToolbar from "./map/panels/MapToolbar";
@@ -1913,15 +1914,23 @@ export default function JointMapManager({
     }
 
     try {
-      const result = await wipeSpatialMapData({
-        businessId: "fibre-gis-v2",
-        confirm: "WIPE MAP DATA",
-        reason: "administrator-full-postgis-map-reset",
-        includeExchangeRecords: true,
-        includeJointMappingRecords: true,
-      });
+      const [postgisResult, firestoreResult] = await Promise.all([
+        wipeSpatialMapData({
+          businessId: "fibre-gis-v2",
+          confirm: "WIPE MAP DATA",
+          reason: "administrator-full-postgis-map-reset",
+          includeExchangeRecords: true,
+          includeJointMappingRecords: true,
+        }),
+        wipeLegacyFirestoreMapData(),
+      ]);
 
+      setSavedJoints([]);
+      setProjectHomes([]);
+      setLoadedHomesProjectId(null);
+      setOrAssets([]);
       setDeletedPostgisAssetIds(new Set(visibleSpatialAssets.map((asset) => asset.id)));
+      setShowFirebaseAssets(false);
       setOpenExchangeAsset(null);
       setEditingAssetId(null);
       setEditingAreaId(null);
@@ -1930,12 +1939,25 @@ export default function JointMapManager({
       setOpenDistributionPointAsset(null);
 
       alert(
-        `PostGIS map data wiped.\n\nMap assets deleted: ${result.mapAssetsDeleted}\nExchange/joint records deleted: ${result.appRecordsDeleted}\n\nThe page will reload now.`,
+        [
+          "Map data wiped.",
+          "",
+          `PostGIS map assets deleted: ${postgisResult.mapAssetsDeleted}`,
+          `PostGIS exchange/joint records deleted: ${postgisResult.appRecordsDeleted}`,
+          `Firestore map docs deleted: ${firestoreResult.mapAssetDocsDeleted}`,
+          `Firestore map chunks deleted: ${firestoreResult.mapAssetChunksDeleted}`,
+          `Firestore joint mappings deleted: ${firestoreResult.jointMappingDocsDeleted}`,
+          `Firestore joint mapping chunks deleted: ${firestoreResult.jointMappingChunksDeleted}`,
+          `Firestore project home docs deleted: ${firestoreResult.projectHomeDocsDeleted}`,
+          `Firestore project home chunks deleted: ${firestoreResult.projectHomeChunksDeleted}`,
+          "",
+          "The page will reload now.",
+        ].join("\n"),
       );
       window.location.reload();
     } catch (error) {
-      console.error("Failed to wipe PostGIS map data", error);
-      alert("PostGIS map reset failed. Check the console/API logs before trying again.");
+      console.error("Failed to wipe map data", error);
+      alert("Map reset failed. Check the console/API logs before trying again.");
     }
   };
 
