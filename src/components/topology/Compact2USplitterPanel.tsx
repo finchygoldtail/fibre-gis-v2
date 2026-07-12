@@ -260,7 +260,9 @@ const rackWrap: React.CSSProperties = {
   borderRadius: 8,
   background: "#111827",
   padding: 12,
-  minWidth: 1000,
+  minWidth: 0,
+  width: "100%",
+  boxSizing: "border-box",
 };
 
 const rackHeader: React.CSSProperties = {
@@ -297,15 +299,16 @@ const rackBadge: React.CSSProperties = {
 const faceplate: React.CSSProperties = {
   minHeight: 245,
   display: "grid",
-  gridTemplateColumns: "42px 470px minmax(920px, 1fr) 42px",
-  gap: 14,
+  gridTemplateColumns: "34px minmax(330px, 0.42fr) minmax(620px, 1fr) 34px",
+  gap: 10,
   alignItems: "stretch",
   border: "1px solid #020617",
   borderRadius: 8,
   background:
     "radial-gradient(circle at 30% 12%, rgba(255,255,255,0.08), transparent 28%), linear-gradient(180deg, #1f2328 0%, #0b0e11 100%)",
   boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -12px 24px rgba(0,0,0,0.45), 0 18px 34px rgba(0,0,0,0.38)",
-  padding: 18,
+  padding: 14,
+  overflow: "hidden",
 };
 
 const rackEar: React.CSSProperties = {
@@ -358,7 +361,7 @@ const labelRule: React.CSSProperties = {
 
 const inputGroupGrid: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(6, minmax(64px, 1fr))",
+  gridTemplateColumns: "repeat(6, minmax(48px, 1fr))",
   gridTemplateRows: "1fr",
   gap: 10,
   flex: 1,
@@ -392,7 +395,7 @@ const outputBankLabel: React.CSSProperties = {
 
 const outputGroupGrid: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(12, minmax(68px, 1fr))",
+  gridTemplateColumns: "repeat(12, minmax(48px, 1fr))",
   gridTemplateRows: "repeat(2, 1fr)",
   gap: 8,
   flex: 1,

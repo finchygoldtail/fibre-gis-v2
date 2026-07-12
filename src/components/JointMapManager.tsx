@@ -6019,7 +6019,11 @@ export default function JointMapManager({
       )}
       {openExchangeAsset && (
         <div
-          style={mobileEditorOverlayStyle(isMobile)}
+          style={{
+            ...mobileEditorOverlayStyle(isMobile),
+            overflow: "hidden",
+            paddingBottom: 0,
+          }}
         >
           <ExchangeDesigner
             exchange={openExchangeAsset}
