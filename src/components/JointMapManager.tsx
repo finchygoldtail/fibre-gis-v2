@@ -1899,7 +1899,7 @@ export default function JointMapManager({
 
     const typed = window.prompt(
       [
-        "This will delete ALL PostGIS map assets.",
+        "This will clear ALL map assets from PostGIS and legacy Firestore.",
         "",
         "It also deletes exchange records and joint tray/mapping records.",
         "Street cabs, joints, homes, cables, chambers, poles, DPs and polygons stored as map assets will be removed.",
@@ -1950,6 +1950,7 @@ export default function JointMapManager({
           `Firestore joint mapping chunks deleted: ${firestoreResult.jointMappingChunksDeleted}`,
           `Firestore project home docs deleted: ${firestoreResult.projectHomeDocsDeleted}`,
           `Firestore project home chunks deleted: ${firestoreResult.projectHomeChunksDeleted}`,
+          `Firestore delete blocks bypassed with empty writes: ${firestoreResult.deleteFailures}`,
           "",
           "The page will reload now.",
         ].join("\n"),

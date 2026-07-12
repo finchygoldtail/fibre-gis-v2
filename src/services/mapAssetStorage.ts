@@ -59,6 +59,7 @@ export type WipeLegacyFirestoreMapDataResult = {
   jointMappingChunksDeleted: number;
   projectHomeDocsDeleted: number;
   projectHomeChunksDeleted: number;
+  deleteFailures: number;
 };
 
 function safeJsonParse<T = any>(value: unknown, fallback: T): T {
@@ -650,6 +651,7 @@ export async function wipeLegacyFirestoreMapData(): Promise<WipeLegacyFirestoreM
     jointMappingChunksDeleted: 0,
     projectHomeDocsDeleted: 0,
     projectHomeChunksDeleted: 0,
+    deleteFailures: 0,
   };
 
   const mapAssetDocs = await getDocs(collection(db, ...FIRESTORE_REF_PATH, "mapAssets"));
@@ -659,11 +661,36 @@ export async function wipeLegacyFirestoreMapData(): Promise<WipeLegacyFirestoreM
     );
 
     for (const chunk of chunks.docs) {
-      await deleteDoc(chunk.ref);
+      await setDoc(
+        chunk.ref,
+        {
+          assetsJson: "[]",
+          assets: [],
+          homesJson: "[]",
+          rowsJson: "[]",
+          count: 0,
+          updatedAt: serverTimestamp(),
+          saveReason: "administrator-full-map-reset",
+        },
+        { merge: true },
+      );
+      if (!(await tryDeleteDoc(chunk.ref))) result.deleteFailures += 1;
       result.mapAssetChunksDeleted += 1;
     }
 
-    await deleteDoc(mapAssetDoc.ref);
+    await setDoc(
+      mapAssetDoc.ref,
+      {
+        assetCount: 0,
+        chunkCount: 0,
+        mapAssetsCount: 0,
+        safetyGuarded: true,
+        updatedAt: serverTimestamp(),
+        saveReason: "administrator-full-map-reset",
+      },
+      { merge: true },
+    );
+    if (!(await tryDeleteDoc(mapAssetDoc.ref))) result.deleteFailures += 1;
     result.mapAssetDocsDeleted += 1;
   }
 
@@ -674,11 +701,31 @@ export async function wipeLegacyFirestoreMapData(): Promise<WipeLegacyFirestoreM
     );
 
     for (const chunk of chunks.docs) {
-      await deleteDoc(chunk.ref);
+      await setDoc(
+        chunk.ref,
+        {
+          rowsJson: "[]",
+          count: 0,
+          updatedAt: new Date().toISOString(),
+          saveReason: "administrator-full-map-reset",
+        },
+        { merge: true },
+      );
+      if (!(await tryDeleteDoc(chunk.ref))) result.deleteFailures += 1;
       result.jointMappingChunksDeleted += 1;
     }
 
-    await deleteDoc(jointMappingDoc.ref);
+    await setDoc(
+      jointMappingDoc.ref,
+      {
+        rowCount: 0,
+        chunkCount: 0,
+        updatedAt: new Date().toISOString(),
+        saveReason: "administrator-full-map-reset",
+      },
+      { merge: true },
+    );
+    if (!(await tryDeleteDoc(jointMappingDoc.ref))) result.deleteFailures += 1;
     result.jointMappingDocsDeleted += 1;
   }
 
@@ -689,11 +736,32 @@ export async function wipeLegacyFirestoreMapData(): Promise<WipeLegacyFirestoreM
     );
 
     for (const chunk of chunks.docs) {
-      await deleteDoc(chunk.ref);
+      await setDoc(
+        chunk.ref,
+        {
+          homesJson: "[]",
+          assets: [],
+          count: 0,
+          updatedAt: new Date().toISOString(),
+          saveReason: "administrator-full-map-reset",
+        },
+        { merge: true },
+      );
+      if (!(await tryDeleteDoc(chunk.ref))) result.deleteFailures += 1;
       result.projectHomeChunksDeleted += 1;
     }
 
-    await deleteDoc(projectHomeDoc.ref);
+    await setDoc(
+      projectHomeDoc.ref,
+      {
+        homeCount: 0,
+        chunkCount: 0,
+        updatedAt: new Date().toISOString(),
+        saveReason: "administrator-full-map-reset",
+      },
+      { merge: true },
+    );
+    if (!(await tryDeleteDoc(projectHomeDoc.ref))) result.deleteFailures += 1;
     result.projectHomeDocsDeleted += 1;
   }
 
@@ -714,4 +782,14 @@ export async function wipeLegacyFirestoreMapData(): Promise<WipeLegacyFirestoreM
   );
 
   return result;
+}
+
+async function tryDeleteDoc(ref: Parameters<typeof deleteDoc>[0]): Promise<boolean> {
+  try {
+    await deleteDoc(ref);
+    return true;
+  } catch (err) {
+    console.warn("Firestore delete blocked after reset write; leaving empty document in place.", err);
+    return false;
+  }
 }

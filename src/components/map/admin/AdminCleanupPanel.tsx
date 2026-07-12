@@ -251,7 +251,8 @@ export default function AdminCleanupPanel({
             }}
           >
             Removes all map assets, exchange records and joint mapping records
-            from PostGIS. Use this before re-uploading the clean source data.
+            from PostGIS and the old Firestore map stores. Use this before
+            re-uploading the clean source data.
           </div>
           <button
             type="button"
