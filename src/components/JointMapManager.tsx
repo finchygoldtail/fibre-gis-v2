@@ -1551,6 +1551,7 @@ export default function JointMapManager({
   ]);
 
   const isPostgisOnlyMapMode = spatialApiConfig.postgisOnly;
+  const showSpatialDebugControls = false;
   const spatialViewport = useSpatialViewportAssets({
     businessId: "fibre-gis-v2",
     areaId: null,
@@ -5587,15 +5588,17 @@ export default function JointMapManager({
             })}
         </MapContainer>
 
-        <SpatialApiStatusPanel
-          enabled={spatialViewport.enabled}
-          loading={spatialViewport.loading}
-          count={spatialViewport.count}
-          truncated={spatialViewport.truncated}
-          error={spatialViewport.error}
-        />
+        {showSpatialDebugControls ? (
+          <SpatialApiStatusPanel
+            enabled={spatialViewport.enabled}
+            loading={spatialViewport.loading}
+            count={spatialViewport.count}
+            truncated={spatialViewport.truncated}
+            error={spatialViewport.error}
+          />
+        ) : null}
 
-        {spatialViewport.enabled ? (
+        {showSpatialDebugControls && spatialViewport.enabled ? (
           <DataSourceTogglePanel
             showFirebaseAssets={showFirebaseAssets}
             showPostgisAssets={showPostgisAssets}

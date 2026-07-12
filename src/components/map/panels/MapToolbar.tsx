@@ -85,6 +85,7 @@ export default function MapToolbar({
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [messageStateVersion, setMessageStateVersion] = useState(0);
   const { isMobile, isTablet, isSmallPhone } = useDeviceLayout();
+  const hasAreaContext = Boolean(activeProjectId || areaKey);
   const autosaveLabel =
     autosaveStatus === "pending"
       ? "Autosave queued"
@@ -315,6 +316,164 @@ export default function MapToolbar({
   }
 
   return (
+    <>
+      <div style={advancedTopRailStyle(isLayersOpen)}>
+        <div style={advancedBrandStyle}>
+          <span>ALISTRA</span>
+          <strong style={{ color: "#22c55e" }}>GIS</strong>
+        </div>
+
+        <div style={advancedNavStyle}>
+          <button type="button" onClick={onOpenAssetPanel} style={advancedNavButtonStyle(showAssetPanelButton)}>
+            Assets
+          </button>
+          <button type="button" style={advancedNavButtonStyle(false)}>
+            Overview
+          </button>
+          {onQaModeChange ? (
+            <>
+              <button
+                type="button"
+                onClick={() => onQaModeChange("qa")}
+                style={advancedNavButtonStyle(qaMode === "qa")}
+              >
+                QA
+              </button>
+              <button
+                type="button"
+                onClick={() => onQaModeChange("piaQa")}
+                style={advancedNavButtonStyle(qaMode === "piaQa")}
+              >
+                PIA
+              </button>
+            </>
+          ) : null}
+          <button type="button" style={advancedNavButtonStyle(false)}>
+            Capacity
+          </button>
+          <button type="button" style={advancedNavButtonStyle(false)}>
+            Exchanges
+          </button>
+        </div>
+
+        <div style={advancedViewStyle}>
+          <span>Current View</span>
+          <strong>{hasAreaContext ? areaName || searchScopeLabel : "Whole Map"}</strong>
+        </div>
+
+        <div style={advancedActionsStyle}>
+          <button
+            type="button"
+            onClick={() => hasAreaContext && setIsSearchFocused(true)}
+            style={advancedCommandButtonStyle(!hasAreaContext)}
+            title={hasAreaContext ? "Search selected area" : "Select an area to search assets"}
+          >
+            Search
+          </button>
+
+          <div style={messageButtonWrapStyle}>
+            <button
+              type="button"
+              onClick={() => setMessagesOpen((value) => !value)}
+              style={advancedCommandButtonStyle(false)}
+              title="Area messages"
+            >
+              Messages
+              {areaMessages.length ? <strong style={messageBadgeStyle}>{areaMessages.length}</strong> : null}
+            </button>
+            {messagesPanel}
+          </div>
+
+          {canSaveMap ? (
+            <button
+              type="button"
+              onClick={onSaveMap}
+              disabled={isSavingMap}
+              style={{
+                ...advancedCommandButtonStyle(false),
+                borderColor: isSavingMap ? "#475569" : "#166534",
+                color: isSavingMap ? "#94a3b8" : "#dcfce7",
+                cursor: isSavingMap ? "not-allowed" : "pointer",
+              }}
+            >
+              {isSavingMap ? "Saving" : "Save"}
+            </button>
+          ) : null}
+
+          <div style={advancedAutosaveStyle(autosaveTone)} title={autosaveError || autosaveLabel}>
+            {autosaveLabel}
+          </div>
+
+          <button type="button" onClick={onGpsLocate} style={advancedCommandButtonStyle(false)}>
+            GPS
+          </button>
+
+          {onToggleLocationSharing ? (
+            <button
+              type="button"
+              onClick={onToggleLocationSharing}
+              style={{
+                ...advancedCommandButtonStyle(false),
+                borderColor: isSharingLocation ? "#22c55e" : "rgba(148,163,184,0.26)",
+                color: isSharingLocation ? "#bbf7d0" : "#e5e7eb",
+              }}
+              title={locationShareError || "Share your live field location"}
+            >
+              Share{liveUserCount > 0 ? ` ${liveUserCount}` : ""}
+            </button>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={onToggleLayers}
+            style={{
+              ...advancedCommandButtonStyle(false),
+              borderColor: isLayersOpen ? "#22c55e" : "rgba(148,163,184,0.26)",
+              color: isLayersOpen ? "#bbf7d0" : "#e5e7eb",
+            }}
+          >
+            Layers
+          </button>
+
+          <UserMenu variant="topbar" />
+        </div>
+      </div>
+
+      {hasAreaContext ? (
+        <div style={advancedAreaDrawerStyle}>
+          <div style={advancedAreaHeaderStyle}>
+            <div>
+              <span>Area Context</span>
+              <strong>{areaName || searchScopeLabel}</strong>
+            </div>
+            {onSelectProject && onClearProject ? (
+              <div style={advancedAreaSelectorStyle}>
+                <ProjectAreaSelector
+                  projectAreas={projectAreas}
+                  activeProjectId={activeProjectId}
+                  onSelectProject={onSelectProject}
+                  onClearProject={onClearProject}
+                  variant="compact"
+                />
+              </div>
+            ) : null}
+          </div>
+
+          <div style={advancedAreaTabsStyle}>
+            {["Summary", "Assets", "QA", "PIA", "Build", "Export"].map((tab, index) => (
+              <button key={tab} type="button" style={advancedAreaTabStyle(index === 0)}>
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          <div style={advancedSearchHostStyle}>{searchCard}</div>
+        </div>
+      ) : null}
+    </>
+  );
+
+  return (
     <div style={mapTopBarStyle(isLayersOpen, isTablet)}>
       {showAssetPanelButton ? (
         <button onClick={onOpenAssetPanel} style={topBarGhostButtonStyle}>
@@ -481,6 +640,160 @@ function formatMessageDate(value: string): string {
   if (Number.isNaN(date.getTime())) return value || "Unknown date";
   return date.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 }
+
+const advancedTopRailStyle = (isLayersOpen: boolean): React.CSSProperties => ({
+  position: "absolute",
+  top: 0,
+  left: 0,
+  right: isLayersOpen ? 286 : 0,
+  zIndex: 1500,
+  minHeight: 58,
+  display: "grid",
+  gridTemplateColumns: "184px minmax(420px, 1fr) minmax(150px, 210px) auto",
+  alignItems: "center",
+  gap: 10,
+  padding: "8px 14px",
+  borderBottom: "1px solid rgba(51,65,85,0.86)",
+  background:
+    "linear-gradient(180deg, rgba(10,17,30,0.98), rgba(15,23,42,0.94))",
+  boxShadow: "0 16px 42px rgba(2,6,23,0.38)",
+  backdropFilter: "blur(14px)",
+  overflow: "visible",
+});
+
+const advancedBrandStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "baseline",
+  gap: 7,
+  color: "#f8fafc",
+  fontSize: 22,
+  fontWeight: 950,
+  letterSpacing: 0,
+  whiteSpace: "nowrap",
+};
+
+const advancedNavStyle: React.CSSProperties = {
+  minWidth: 0,
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+  overflow: "hidden",
+};
+
+const advancedNavButtonStyle = (active: boolean): React.CSSProperties => ({
+  height: 38,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  border: `1px solid ${active ? "rgba(34,197,94,0.72)" : "rgba(148,163,184,0.18)"}`,
+  borderRadius: 7,
+  background: active ? "rgba(22,101,52,0.68)" : "rgba(15,23,42,0.62)",
+  color: active ? "#dcfce7" : "#dbeafe",
+  padding: "0 13px",
+  fontSize: 13,
+  fontWeight: 900,
+  cursor: "pointer",
+  whiteSpace: "nowrap",
+});
+
+const advancedViewStyle: React.CSSProperties = {
+  minWidth: 0,
+  display: "grid",
+  gap: 2,
+  padding: "0 4px",
+  color: "#94a3b8",
+  fontSize: 11,
+  fontWeight: 800,
+  textTransform: "uppercase",
+};
+
+const advancedActionsStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "flex-end",
+  gap: 7,
+  minWidth: 0,
+};
+
+const advancedCommandButtonStyle = (disabled: boolean): React.CSSProperties => ({
+  minHeight: 38,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 7,
+  border: "1px solid rgba(148,163,184,0.26)",
+  borderRadius: 7,
+  background: disabled ? "rgba(15,23,42,0.4)" : "rgba(30,41,59,0.86)",
+  color: disabled ? "#64748b" : "#e5e7eb",
+  padding: "0 11px",
+  fontSize: 12,
+  fontWeight: 900,
+  cursor: disabled ? "not-allowed" : "pointer",
+  whiteSpace: "nowrap",
+});
+
+const advancedAutosaveStyle = (tone: string): React.CSSProperties => ({
+  minHeight: 34,
+  display: "inline-flex",
+  alignItems: "center",
+  border: `1px solid ${tone}`,
+  borderRadius: 999,
+  background: "rgba(2,6,23,0.52)",
+  color: "#cbd5e1",
+  padding: "0 10px",
+  fontSize: 11,
+  fontWeight: 900,
+  whiteSpace: "nowrap",
+});
+
+const advancedAreaDrawerStyle: React.CSSProperties = {
+  position: "absolute",
+  top: 74,
+  left: 14,
+  zIndex: 1420,
+  width: 426,
+  maxWidth: "calc(100vw - 332px)",
+  display: "grid",
+  gap: 10,
+  padding: 12,
+  border: "1px solid rgba(56,189,248,0.2)",
+  borderRadius: 8,
+  background: "rgba(8,13,24,0.94)",
+  boxShadow: "0 18px 46px rgba(2,6,23,0.42)",
+  backdropFilter: "blur(16px)",
+};
+
+const advancedAreaHeaderStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1fr)",
+  gap: 8,
+  color: "#e5e7eb",
+};
+
+const advancedAreaSelectorStyle: React.CSSProperties = {
+  minWidth: 0,
+};
+
+const advancedAreaTabsStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
+  gap: 5,
+};
+
+const advancedAreaTabStyle = (active: boolean): React.CSSProperties => ({
+  minHeight: 30,
+  border: `1px solid ${active ? "rgba(34,197,94,0.65)" : "rgba(148,163,184,0.18)"}`,
+  borderRadius: 6,
+  background: active ? "rgba(20,83,45,0.72)" : "rgba(15,23,42,0.7)",
+  color: active ? "#dcfce7" : "#bfdbfe",
+  fontSize: 11,
+  fontWeight: 900,
+  cursor: "pointer",
+});
+
+const advancedSearchHostStyle: React.CSSProperties = {
+  minWidth: 0,
+};
 
 const mapTopBarStyle = (isLayersOpen: boolean, isTablet: boolean): React.CSSProperties => ({
   position: "absolute",
