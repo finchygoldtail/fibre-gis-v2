@@ -9,7 +9,18 @@ export function createApp() {
   const app = express();
 
   app.disable("x-powered-by");
-  app.use(cors({ origin: env.corsOrigin }));
+  app.use(
+    cors({
+      origin(origin, callback) {
+        if (!origin || env.corsOrigins.includes(origin)) {
+          callback(null, true);
+          return;
+        }
+
+        callback(new Error(`Origin ${origin} is not allowed by CORS`));
+      },
+    }),
+  );
   app.use(express.json({ limit: "1mb" }));
 
   app.use("/api/health", healthRoutes);

@@ -6,7 +6,7 @@ type EnvConfig = {
   nodeEnv: string;
   apiHost: string;
   apiPort: number;
-  corsOrigin: string;
+  corsOrigins: string[];
   databaseUrl?: string;
   postgresHost?: string;
   postgresPort: number;
@@ -29,11 +29,18 @@ function parseBoolean(value: string | undefined): boolean {
   return ["1", "true", "yes", "on"].includes(String(value || "").trim().toLowerCase());
 }
 
+function parseCorsOrigins(value: string | undefined): string[] {
+  return String(value || "http://localhost:5173")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
 export const env: EnvConfig = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   apiHost: process.env.API_HOST ?? "0.0.0.0",
   apiPort: parsePort(process.env.API_PORT),
-  corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:5173",
+  corsOrigins: parseCorsOrigins(process.env.CORS_ORIGIN),
   databaseUrl: process.env.DATABASE_URL,
   postgresHost: process.env.POSTGRES_HOST,
   postgresPort: parsePort(process.env.POSTGRES_PORT ?? "5432"),
