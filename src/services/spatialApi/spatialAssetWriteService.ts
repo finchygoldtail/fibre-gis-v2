@@ -68,6 +68,12 @@ function toWritableSpatialAsset(
 ) {
   const geometry = toSpatialGeometry(asset.geometry);
   if (!geometry) return null;
+  const { originalAsset: _originalAsset, ...importedProperties } =
+    asset.importedProperties || {};
+  const originalAsset = {
+    ...asset,
+    importedProperties,
+  };
 
   return {
     id: toStablePostgisId(asset.id),
@@ -80,8 +86,8 @@ function toWritableSpatialAsset(
     status: asset.status || null,
     geometry,
     metadata: {
-      ...asset.importedProperties,
-      originalAsset: asset,
+      ...importedProperties,
+      originalAsset,
     },
     source: "alistra-app",
     sourceRevision: "frontend-save",
@@ -120,7 +126,7 @@ function latLngToLngLat(position: [number, number]): [number, number] {
   return [lng, lat];
 }
 
-function toStablePostgisId(value: string): string {
+export function toStablePostgisId(value: string): string {
   const postgisId = String(value || "unknown-asset").replace(/^postgis:/, "");
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(postgisId)) {
     return postgisId;
