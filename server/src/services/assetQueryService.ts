@@ -24,6 +24,12 @@ export type AssetStatsQuery = {
   maxLat?: number;
 };
 
+export type ImportRunsQuery = {
+  businessId: string;
+  areaId?: string;
+  limit: number;
+};
+
 type AssetRow = {
   id: string;
   business_id: string;
@@ -164,6 +170,68 @@ export async function queryAssetStats(query: AssetStatsQuery) {
     total: Object.values(byType).reduce((sum, count) => sum + count, 0),
     byType,
     queryMs: Math.round((performance.now() - startedAt) * 10) / 10,
+  };
+}
+
+export async function queryImportRuns(query: ImportRunsQuery) {
+  const result = await pool.query<{
+    id: string;
+    business_id: string;
+    project_id: string | null;
+    area_id: string | null;
+    source: string;
+    source_revision: string | null;
+    source_file: string | null;
+    read_count: number;
+    valid_count: number;
+    inserted_or_updated_count: number;
+    skipped_count: number;
+    by_type: Record<string, number>;
+    created_at: Date;
+  }>(
+    `
+      SELECT
+        id::text,
+        business_id,
+        project_id,
+        area_id,
+        source,
+        source_revision,
+        source_file,
+        read_count,
+        valid_count,
+        inserted_or_updated_count,
+        skipped_count,
+        by_type,
+        created_at
+      FROM import_runs
+      WHERE business_id = $1
+        AND ($2::text IS NULL OR area_id = $2)
+      ORDER BY created_at DESC
+      LIMIT $3
+    `,
+    [query.businessId, query.areaId ?? null, query.limit],
+  );
+
+  return {
+    businessId: query.businessId,
+    areaId: query.areaId ?? null,
+    count: result.rows.length,
+    runs: result.rows.map((row) => ({
+      id: row.id,
+      businessId: row.business_id,
+      projectId: row.project_id,
+      areaId: row.area_id,
+      source: row.source,
+      sourceRevision: row.source_revision,
+      sourceFile: row.source_file,
+      read: row.read_count,
+      valid: row.valid_count,
+      insertedOrUpdated: row.inserted_or_updated_count,
+      skipped: row.skipped_count,
+      byType: row.by_type ?? {},
+      createdAt: row.created_at,
+    })),
   };
 }
 

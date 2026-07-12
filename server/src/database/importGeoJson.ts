@@ -27,6 +27,7 @@ async function importGeoJson(): Promise<void> {
     areaId: args.areaId,
     source: args.source,
     sourceRevision: args.sourceRevision,
+    sourceFile: path.basename(filePath),
     dryRun: args.dryRun,
     features,
   });

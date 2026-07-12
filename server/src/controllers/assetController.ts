@@ -4,6 +4,7 @@ import {
   normaliseLimit,
   queryAssetsByBounds,
   queryAssetStats,
+  queryImportRuns,
 } from "../services/assetQueryService.js";
 
 const REQUIRED_BOUNDS = ["minLng", "minLat", "maxLng", "maxLat"] as const;
@@ -66,6 +67,21 @@ export async function getAssetStats(req: Request, res: Response): Promise<void> 
   });
 
   res.json(stats);
+}
+
+export async function getImportRuns(req: Request, res: Response): Promise<void> {
+  const businessId = getStringParam(req.query.businessId);
+  if (!businessId) {
+    throw new HttpError(400, "businessId is required");
+  }
+
+  const runs = await queryImportRuns({
+    businessId,
+    areaId: getStringParam(req.query.areaId),
+    limit: normaliseLimit(getOptionalNumberParam(req.query.limit, "limit")),
+  });
+
+  res.json(runs);
 }
 
 function getStringParam(value: unknown): string | undefined {

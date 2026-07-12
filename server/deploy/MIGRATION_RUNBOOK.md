@@ -76,6 +76,7 @@ After import:
 
 ```bash
 curl "http://65.108.158.104/api/assets/stats?businessId=fibre-gis-v2"
+curl "http://65.108.158.104/api/assets/import-runs?businessId=fibre-gis-v2&limit=20"
 ```
 
 ### 4. HTTPS And Domain

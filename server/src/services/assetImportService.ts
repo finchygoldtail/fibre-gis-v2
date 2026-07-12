@@ -8,11 +8,13 @@ export type ImportAssetsArgs = {
   areaId?: string | null;
   source: string;
   sourceRevision?: string | null;
+  sourceFile?: string | null;
   features: GeoJsonFeature[];
   dryRun?: boolean;
 };
 
 export type ImportAssetsResult = {
+  importRunId?: string;
   read: number;
   valid: number;
   insertedOrUpdated: number;
@@ -45,6 +47,8 @@ export async function importGeoJsonAssets(args: ImportAssetsArgs): Promise<Impor
     summary[asset.assetType] = (summary[asset.assetType] || 0) + 1;
     return summary;
   }, {});
+
+  let importRunId: string | undefined;
 
   if (!args.dryRun && prepared.length > 0) {
     const client = await pool.connect();
@@ -106,6 +110,40 @@ export async function importGeoJsonAssets(args: ImportAssetsArgs): Promise<Impor
         );
       }
 
+      importRunId = crypto.randomUUID();
+      await client.query(
+        `
+          INSERT INTO import_runs (
+            id,
+            business_id,
+            project_id,
+            area_id,
+            source,
+            source_revision,
+            source_file,
+            read_count,
+            valid_count,
+            inserted_or_updated_count,
+            skipped_count,
+            by_type
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)
+        `,
+        [
+          importRunId,
+          args.businessId,
+          args.projectId || null,
+          args.areaId || null,
+          args.source,
+          args.sourceRevision || null,
+          args.sourceFile || null,
+          args.features.length,
+          prepared.length,
+          prepared.length,
+          args.features.length - prepared.length,
+          JSON.stringify(byType),
+        ],
+      );
+
       await client.query("COMMIT");
     } catch (err) {
       await client.query("ROLLBACK");
@@ -116,6 +154,7 @@ export async function importGeoJsonAssets(args: ImportAssetsArgs): Promise<Impor
   }
 
   return {
+    importRunId,
     read: args.features.length,
     valid: prepared.length,
     insertedOrUpdated: args.dryRun ? 0 : prepared.length,

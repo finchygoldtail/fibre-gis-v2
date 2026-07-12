@@ -247,6 +247,14 @@ The normal `/api/assets` response now includes `meta.queryMs` so viewport query 
 
 Asset type filters expand common aliases. For example, `distribution-point` also matches older `dp` rows, and `feederCable` also matches `feeder-cable`.
 
+Import audit endpoint:
+
+```http
+GET http://localhost:3001/api/assets/import-runs?businessId=fibre-gis-v2&limit=20
+```
+
+Each real GeoJSON import records an import run with source file, area, counts, skipped count, and type breakdown. Dry runs do not write an import run.
+
 ## Current Limitations
 
 - Firebase ID-token verification is stubbed in `authMiddleware.ts`.
