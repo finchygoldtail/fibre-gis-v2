@@ -152,7 +152,8 @@ async function loadJointMappingRowsFromFirestore(
   jointId: string,
 ): Promise<any[][]> {
   if (spatialApiConfig.postgisOnly) {
-    return loadJointMappingRowsFromPostgisRecords(jointId);
+    const postgisRows = await loadJointMappingRowsFromPostgisRecords(jointId);
+    if (postgisRows.length > 0) return postgisRows;
   }
 
   const chunksRef = collection(
@@ -1103,12 +1104,30 @@ export const FibreTrayEditor: React.FC = () => {
       const hasSharedRows = Boolean(
         (joint as any).mappingRowsRef || (joint as any).mappingRowsCount,
       );
-      const rows = hasSharedRows
-        ? await loadJointMappingRowsFromFirestore(joint.id)
-        : Array.isArray((joint as any).mappingRows)
-          ? ((joint as any).mappingRows as any[][])
-          : [];
+      const rowLookupIds = Array.from(
+        new Set(
+          [
+            joint.id,
+            (joint as any).legacyAssetId,
+            (joint as any).importedProperties?.legacyAssetId,
+            (joint as any).importedProperties?.originalAsset?.id,
+          ].filter(Boolean),
+        ),
+      );
+      let rows: any[][] = [];
+      if (hasSharedRows) {
+        for (const rowLookupId of rowLookupIds) {
+          rows = await loadJointMappingRowsFromFirestore(String(rowLookupId));
+          if (rows.length > 0) break;
+        }
+      } else if (Array.isArray((joint as any).mappingRows)) {
+        rows = (joint as any).mappingRows as any[][];
+      }
       const displayRows = jt === "Meet Me Chamber" ? normalizeMeetMeRows(rows) : rows;
+
+      if (spatialApiConfig.postgisOnly && rows.length > 0) {
+        await saveJointMappingRowsToPostgisRecords(joint.id, rows);
+      }
 
       setLoadedFileName(displayRows.length ? joint.name || "" : "");
       setMappingRows(displayRows);
@@ -1134,7 +1153,7 @@ export const FibreTrayEditor: React.FC = () => {
       }
     } catch (err) {
       console.error("Failed to load joint mapping rows:", err);
-      alert("Failed to load this joint's mapping rows from Firestore.");
+      alert("Failed to load this joint's mapping rows.");
     }
   };
 

@@ -161,6 +161,15 @@ import {
 import { useEditorReset } from "./map/editor/useEditorReset";
 import { useMapNavigation } from "./map/navigation/useMapNavigation";
 import AssetDetailsSidebarSections from "./map/AssetDetailsSidebarSections";
+import {
+  getAssetKind,
+  isChamberAsset,
+  isDistributionPointAsset,
+  isExchangeAsset,
+  isJointAsset,
+  isPoleAsset,
+  isStreetCabAsset,
+} from "./map/utils/mapAssetClassifiers";
 import type {
   AssetType,
   CableType,
@@ -351,49 +360,23 @@ function DataSourceTogglePanel({
 }
 
 function isEngineeringDrawingJointAsset(asset: SavedMapAsset): boolean {
-  const assetType = String((asset as any).assetType || "").toLowerCase();
-  const jointType = String((asset as any).jointType || "").toLowerCase();
-  const name = String((asset as any).name || "").toLowerCase();
-
-  return (
-    assetType === "ag-joint" ||
-    assetType === "joint" ||
-    assetType.includes("joint") ||
-    jointType.includes("joint") ||
-    name.includes("cmj") ||
-    name.includes("mmj") ||
-    name.includes("lmj") ||
-    name.includes("midj")
-  );
+  return isJointAsset(asset);
 }
 
 function isEngineeringDrawingDistributionPointAsset(asset: SavedMapAsset): boolean {
-  const assetType = String((asset as any).assetType || "").toLowerCase();
-  const name = String((asset as any).name || "").toLowerCase();
-
-  return (
-    assetType === "distribution-point" ||
-    assetType === "dp" ||
-    assetType.includes("distribution") ||
-    /(^|[-_\s])sb\d+$/i.test(name)
-  );
+  return isDistributionPointAsset(asset);
 }
 
 function isEngineeringDrawingPoleAsset(asset: SavedMapAsset): boolean {
-  const assetType = String((asset as any).assetType || "").toLowerCase();
-  const jointType = String((asset as any).jointType || "").toLowerCase();
-  return assetType === "pole" || jointType === "pole" || jointType.includes("pole");
+  return isPoleAsset(asset);
 }
 
 function isEngineeringDrawingChamberAsset(asset: SavedMapAsset): boolean {
-  const assetType = String((asset as any).assetType || "").toLowerCase();
-  const jointType = String((asset as any).jointType || "").toLowerCase();
-  return assetType === "chamber" || jointType === "chamber" || jointType.includes("chamber");
+  return isChamberAsset(asset);
 }
 
 function isEngineeringDrawingStreetCabAsset(asset: SavedMapAsset): boolean {
-  const assetType = String((asset as any).assetType || "").toLowerCase();
-  return assetType === "street-cab" || assetType === "street cab" || assetType === "cabinet";
+  return isStreetCabAsset(asset);
 }
 
 function getEngineeringDrawingCableFibreCount(asset: SavedMapAsset): number | null {
@@ -442,9 +425,7 @@ function isEngineeringDrawingTrunkCableAsset(asset: SavedMapAsset): boolean {
 }
 
 function isEngineeringDrawingVisibleAsset(asset: SavedMapAsset): boolean {
-  const assetType = String((asset as any).assetType || "").toLowerCase();
-
-  if (assetType === "exchange") return true;
+  if (isExchangeAsset(asset)) return true;
   if (isEngineeringDrawingJointAsset(asset)) return true;
   if (isEngineeringDrawingDistributionPointAsset(asset)) return true;
   if (isEngineeringDrawingPoleAsset(asset)) return true;
@@ -4628,7 +4609,7 @@ export default function JointMapManager({
 
               {editingAssetId ? (
                 <>
-                  {currentEditingAsset?.assetType === "ag-joint" ? (
+                  {isJointAsset(currentEditingAsset) ? (
                     <button
                       onClick={() =>
                         currentEditingAsset && onOpenJoint(currentEditingAsset)
@@ -4639,7 +4620,7 @@ export default function JointMapManager({
                     </button>
                   ) : null}
 
-                  {currentEditingAsset?.assetType === "street-cab" ? (
+                  {isStreetCabAsset(currentEditingAsset) ? (
                     <button
                       onClick={() =>
                         currentEditingAsset &&
@@ -4651,7 +4632,7 @@ export default function JointMapManager({
                     </button>
                   ) : null}
 
-                  {currentEditingAsset?.assetType === "distribution-point" ? (
+                  {isDistributionPointAsset(currentEditingAsset) ? (
                     <button
                       onClick={() =>
                         currentEditingAsset &&
@@ -5028,40 +5009,23 @@ export default function JointMapManager({
                 return;
               }
 
-              const routedType = String(
-                (asset as any).assetType || (asset as any).type || "",
-              ).toLowerCase();
+              const routedKind = getAssetKind(asset);
 
               // WORKSPACE WIRING:
               // Open operational editors directly where possible.
               // This deliberately does not touch storage, cable drawing, drops, AFN/MDU logic,
               // or Firestore chunk persistence.
-              if (
-                routedType === "ag-joint" ||
-                routedType === "joint" ||
-                routedType.includes("joint")
-              ) {
+              if (routedKind === "joint") {
                 onOpenJoint(asset);
                 return;
               }
 
-              if (
-                routedType === "street-cab" ||
-                routedType.includes("street") ||
-                routedType.includes("cab")
-              ) {
+              if (routedKind === "street-cab") {
                 setOpenStreetCabAsset(asset);
                 return;
               }
 
-              if (
-                routedType === "distribution-point" ||
-                routedType.includes("distribution") ||
-                routedType === "dp" ||
-                routedType.includes("afn") ||
-                routedType.includes("cbt") ||
-                routedType.includes("mdu")
-              ) {
+              if (routedKind === "distribution-point") {
                 setOpenDistributionPointAsset(asset);
                 setShowDpModal(false);
                 setIsPanelOpen(false);

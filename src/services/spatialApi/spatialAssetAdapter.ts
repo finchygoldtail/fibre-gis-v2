@@ -14,22 +14,33 @@ export function spatialFeatureToMapAsset(feature: SpatialApiFeature): SavedMapAs
 
   const assetType = mapAssetType(feature.properties.assetType);
   const metadata = feature.properties.metadata || {};
+  const originalAsset =
+    metadata.originalAsset && typeof metadata.originalAsset === "object"
+      ? (metadata.originalAsset as Partial<SavedMapAsset> & Record<string, unknown>)
+      : {};
 
   return {
+    ...originalAsset,
     id: `postgis:${feature.id}`,
-    name: feature.properties.name || feature.id,
-    assetType,
-    jointType: getJointType(assetType, feature.properties.assetSubtype),
+    legacyAssetId: originalAsset.id,
+    name: feature.properties.name || originalAsset.name || feature.id,
+    assetType: originalAsset.assetType || assetType,
+    jointType:
+      originalAsset.jointType ||
+      getJointType(assetType, feature.properties.assetSubtype),
     status: (feature.properties.status as SavedMapAsset["status"]) || "",
     source: SOURCE,
     readOnly: !spatialApiConfig.postgisOnly,
-    notes: spatialApiConfig.postgisOnly
-      ? "Loaded from the authoritative PostGIS map source."
-      : "Loaded read-only from the spatial API.",
+    notes:
+      originalAsset.notes ||
+      (spatialApiConfig.postgisOnly
+        ? "Loaded from the authoritative PostGIS map source."
+        : "Loaded read-only from the spatial API."),
     geometry,
     importedProperties: {
       ...metadata,
       postgisId: feature.id,
+      legacyAssetId: originalAsset.id,
       businessId: feature.properties.businessId,
       projectId: feature.properties.projectId,
       areaId: feature.properties.areaId,
