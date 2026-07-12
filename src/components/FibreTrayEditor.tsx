@@ -54,6 +54,7 @@ import {
   restoreSavedJointsFromFirebase,
 } from "../services/mapAssetStorage";
 import { saveMapAssetsViaCoordinator } from "../services/mapSaveCoordinator";
+import { spatialApiConfig } from "../services/spatialApi/spatialApiConfig";
 
 /* -------------------------------------------------------------
   Persistence
@@ -899,6 +900,12 @@ export const FibreTrayEditor: React.FC = () => {
     Load shared project from Firestore
   ------------------------------------------------------------- */
   useEffect(() => {
+    if (spatialApiConfig.postgisOnly) {
+      setFirebaseLoaded(true);
+      setSavedJoints([]);
+      return;
+    }
+
     const ref = doc(db, ...FIRESTORE_REF_PATH, "mapAssets", "main");
 
     const unsub = onSnapshot(

@@ -124,6 +124,7 @@ import { useRoleMobileMode } from "./map/responsive/useRoleMobileMode";
 import { useDeviceLayout } from "./map/responsive/useDeviceLayout";
 import { useLiveUserLocationSharing } from "./map/hooks/useLiveUserLocationSharing";
 import { isSpatialApiAsset } from "../services/spatialApi/spatialAssetAdapter";
+import { spatialApiConfig } from "../services/spatialApi/spatialApiConfig";
 import { useSpatialViewportAssets } from "../services/spatialApi/useSpatialViewportAssets";
 import SurveyMobileControls from "./map/responsive/mobile/SurveyMobileControls";
 import MaintenanceMobileControls from "./map/responsive/mobile/MaintenanceMobileControls";
@@ -268,6 +269,7 @@ function DataSourceTogglePanel({
   showFirebaseAssets,
   showPostgisAssets,
   highlightPostgisAssets,
+  postgisOnly,
   onShowFirebaseAssetsChange,
   onShowPostgisAssetsChange,
   onHighlightPostgisAssetsChange,
@@ -275,6 +277,7 @@ function DataSourceTogglePanel({
   showFirebaseAssets: boolean;
   showPostgisAssets: boolean;
   highlightPostgisAssets: boolean;
+  postgisOnly: boolean;
   onShowFirebaseAssetsChange: (value: boolean) => void;
   onShowPostgisAssetsChange: (value: boolean) => void;
   onHighlightPostgisAssetsChange: (value: boolean) => void;
@@ -317,19 +320,21 @@ function DataSourceTogglePanel({
         <input
           type="checkbox"
           checked={showFirebaseAssets}
+          disabled={postgisOnly}
           onChange={(event) => onShowFirebaseAssetsChange(event.target.checked)}
           style={checkboxStyle}
         />
-        Firebase / local assets
+        {postgisOnly ? "Firebase / local assets disabled" : "Firebase / local assets"}
       </label>
       <label style={rowStyle}>
         <input
           type="checkbox"
           checked={showPostgisAssets}
+          disabled={postgisOnly}
           onChange={(event) => onShowPostgisAssetsChange(event.target.checked)}
           style={checkboxStyle}
         />
-        Hetzner / PostGIS assets
+        {postgisOnly ? "PostGIS authoritative assets" : "Hetzner / PostGIS assets"}
       </label>
       <label style={{ ...rowStyle, color: "#67e8f9" }}>
         <input
@@ -1302,7 +1307,11 @@ export default function JointMapManager({
       setMapAutosaveStatus("saved");
 
       if (options.showAlert) {
-        alert(`Map saved. ${result.assetCount} asset(s) written to Firestore.`);
+        alert(
+          `Map saved. ${result.assetCount} asset(s) written to ${
+            isPostgisOnlyMapMode ? "PostGIS" : "the map store"
+          }.`,
+        );
       }
 
       return true;
@@ -1588,9 +1597,18 @@ export default function JointMapManager({
     zoom: mapZoom,
     visibleLayers,
   });
-  const [showFirebaseAssets, setShowFirebaseAssets] = useState(true);
+  const isPostgisOnlyMapMode = spatialApiConfig.postgisOnly;
+  const [showFirebaseAssets, setShowFirebaseAssets] = useState(
+    !isPostgisOnlyMapMode,
+  );
   const [showPostgisAssets, setShowPostgisAssets] = useState(true);
   const [highlightPostgisAssets, setHighlightPostgisAssets] = useState(true);
+
+  useEffect(() => {
+    if (!isPostgisOnlyMapMode) return;
+    setShowFirebaseAssets(false);
+    setShowPostgisAssets(true);
+  }, [isPostgisOnlyMapMode]);
 
   const {
     sharingEnabled: isSharingLocation,
@@ -4960,7 +4978,7 @@ export default function JointMapManager({
             cableDrawingMode={mapMode === "draw-cable"}
             onCablePointAsset={handleCableAssetPoint}
             onOpenAsset={(asset) => {
-              if (isSpatialApiAsset(asset)) {
+              if (isSpatialApiAsset(asset) && !isPostgisOnlyMapMode) {
                 alert("This asset is loaded read-only from the spatial API.");
                 return;
               }
@@ -5010,11 +5028,11 @@ export default function JointMapManager({
             }}
             onOpenAudit={(asset) => setAuditFormAsset(asset)}
             onDeleteAsset={(id) => {
-              if (id.startsWith("postgis:")) return;
+              if (id.startsWith("postgis:") && !isPostgisOnlyMapMode) return;
               handleAdminDeleteAsset(id);
             }}
             onEditAsset={(asset) => {
-              if (isSpatialApiAsset(asset)) {
+              if (isSpatialApiAsset(asset) && !isPostgisOnlyMapMode) {
                 alert("This asset is loaded read-only from the spatial API.");
                 return;
               }
@@ -5245,18 +5263,18 @@ export default function JointMapManager({
             cableDrawingMode={mapMode === "draw-cable"}
             highlightPostgisAssets={highlightPostgisAssets}
             onDeleteAsset={(id) => {
-              if (id.startsWith("postgis:")) return;
+              if (id.startsWith("postgis:") && !isPostgisOnlyMapMode) return;
               handleAdminDeleteAsset(id);
             }}
             onEditAsset={(asset) => {
-              if (isSpatialApiAsset(asset)) {
+              if (isSpatialApiAsset(asset) && !isPostgisOnlyMapMode) {
                 alert("This cable is loaded read-only from the spatial API.");
                 return;
               }
               handleEditAsset(asset);
             }}
             onUpdateAsset={(asset) => {
-              if (isSpatialApiAsset(asset)) return;
+              if (isSpatialApiAsset(asset) && !isPostgisOnlyMapMode) return;
               saveMapAssetToState(asset, {
                 isNew: false,
                 message: "Cable endpoints updated.",
@@ -5495,6 +5513,7 @@ export default function JointMapManager({
             showFirebaseAssets={showFirebaseAssets}
             showPostgisAssets={showPostgisAssets}
             highlightPostgisAssets={highlightPostgisAssets}
+            postgisOnly={isPostgisOnlyMapMode}
             onShowFirebaseAssetsChange={setShowFirebaseAssets}
             onShowPostgisAssetsChange={setShowPostgisAssets}
             onHighlightPostgisAssetsChange={setHighlightPostgisAssets}

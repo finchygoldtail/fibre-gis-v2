@@ -1,5 +1,6 @@
 import type { SavedMapAsset } from "../../components/map/types";
 import type { SpatialApiFeature, SpatialApiGeometry } from "./spatialApiTypes";
+import { spatialApiConfig } from "./spatialApiConfig";
 
 const SOURCE = "postgis";
 
@@ -21,8 +22,10 @@ export function spatialFeatureToMapAsset(feature: SpatialApiFeature): SavedMapAs
     jointType: getJointType(assetType, feature.properties.assetSubtype),
     status: (feature.properties.status as SavedMapAsset["status"]) || "",
     source: SOURCE,
-    readOnly: true,
-    notes: "Loaded read-only from the spatial API.",
+    readOnly: !spatialApiConfig.postgisOnly,
+    notes: spatialApiConfig.postgisOnly
+      ? "Loaded from the authoritative PostGIS map source."
+      : "Loaded read-only from the spatial API.",
     geometry,
     importedProperties: {
       ...metadata,
