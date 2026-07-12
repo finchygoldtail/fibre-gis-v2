@@ -1,6 +1,8 @@
 import { collection, getDocs } from "firebase/firestore";
 
 import { db } from "../../../firebase";
+import { spatialApiConfig } from "../../../services/spatialApi/spatialApiConfig";
+import { loadJointMappingRowsFromPostgisRecords } from "../../../services/spatialApi/jointMappingRecordStorage";
 
 export type MappingRowsByAssetId = Record<string, any[][]>;
 
@@ -22,6 +24,10 @@ function safeJsonParse(value: unknown, fallback: any) {
 export async function loadJointMappingRowsFromFirestore(
   jointId: string,
 ): Promise<any[][]> {
+  if (spatialApiConfig.postgisOnly) {
+    return loadJointMappingRowsFromPostgisRecords(jointId);
+  }
+
   const chunksRef = collection(
     db,
     "businesses",

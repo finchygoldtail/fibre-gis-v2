@@ -55,6 +55,10 @@ import {
 } from "../services/mapAssetStorage";
 import { saveMapAssetsViaCoordinator } from "../services/mapSaveCoordinator";
 import { spatialApiConfig } from "../services/spatialApi/spatialApiConfig";
+import {
+  loadJointMappingRowsFromPostgisRecords,
+  saveJointMappingRowsToPostgisRecords,
+} from "../services/spatialApi/jointMappingRecordStorage";
 
 /* -------------------------------------------------------------
   Persistence
@@ -99,6 +103,11 @@ function dedupeMappingRows(rows: any[][]): any[][] {
 }
 
 async function saveJointMappingRowsToFirestore(jointId: string, rows: any[][]) {
+  if (spatialApiConfig.postgisOnly) {
+    await saveJointMappingRowsToPostgisRecords(jointId, rows);
+    return;
+  }
+
   const chunksRef = collection(
     db,
     "businesses",
@@ -142,6 +151,10 @@ async function saveJointMappingRowsToFirestore(jointId: string, rows: any[][]) {
 async function loadJointMappingRowsFromFirestore(
   jointId: string,
 ): Promise<any[][]> {
+  if (spatialApiConfig.postgisOnly) {
+    return loadJointMappingRowsFromPostgisRecords(jointId);
+  }
+
   const chunksRef = collection(
     db,
     "businesses",
