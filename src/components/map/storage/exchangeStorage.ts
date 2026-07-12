@@ -146,31 +146,13 @@ async function getSubcollectionDeletes<T extends { id: string }>(
 export async function loadExchanges(): Promise<ExchangeAsset[]> {
   if (spatialApiConfig.postgisOnly) {
     const records = await listSpatialRecords<Omit<ExchangeAsset, "id">>(EXCHANGE_RECORD);
-    const postgisExchanges = records.map((record) => ({
+    return records.map((record) => ({
       id: record.recordId,
       ...record.data,
       olts: [],
       feederPanels: [],
       hdSplitterPanels: [],
     }));
-
-    const firestoreExchanges = await loadExchangeMarkersFromFirestore();
-    const postgisIds = new Set(postgisExchanges.map((exchange) => exchange.id));
-    const missingFirestoreExchanges = firestoreExchanges.filter(
-      (exchange) => !postgisIds.has(exchange.id),
-    );
-
-    if (missingFirestoreExchanges.length > 0) {
-      await Promise.all(
-        missingFirestoreExchanges.map((exchange) => migrateFirestoreExchangeToPostgis(exchange.id)),
-      );
-    }
-
-    const byId = new Map<string, ExchangeAsset>();
-    postgisExchanges.forEach((exchange) => byId.set(exchange.id, exchange));
-    missingFirestoreExchanges.forEach((exchange) => byId.set(exchange.id, exchange));
-
-    return Array.from(byId.values());
   }
 
   return loadExchangeMarkersFromFirestore();
@@ -179,12 +161,7 @@ export async function loadExchanges(): Promise<ExchangeAsset[]> {
 export async function loadExchange(exchangeId: string): Promise<ExchangeAsset | null> {
   if (spatialApiConfig.postgisOnly) {
     const root = await getSpatialRecord<Omit<ExchangeAsset, "id">>(EXCHANGE_RECORD, exchangeId);
-    if (!root) {
-      const firestoreExchange = await loadExchangeFromFirestore(exchangeId);
-      if (!firestoreExchange) return null;
-      await saveExchange(firestoreExchange);
-      return firestoreExchange;
-    }
+    if (!root) return null;
 
     const [oltRecords, splitterRecords, feederRecords] = await Promise.all([
       listSpatialRecords<Omit<Olt, "id">>(OLT_RECORD, {
@@ -250,15 +227,6 @@ async function loadExchangeFromFirestore(exchangeId: string): Promise<ExchangeAs
       ...(docSnap.data() as Omit<FeederPanel, "id">),
     })),
   };
-}
-
-async function migrateFirestoreExchangeToPostgis(exchangeId: string) {
-  try {
-    const exchange = await loadExchangeFromFirestore(exchangeId);
-    if (exchange) await saveExchange(exchange);
-  } catch (err) {
-    console.warn("Failed to migrate Firestore exchange into PostGIS records", exchangeId, err);
-  }
 }
 
 export async function saveExchange(exchange: ExchangeAsset) {
