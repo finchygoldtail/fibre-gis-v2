@@ -10,9 +10,12 @@ import {
 import { auth, db } from "../../../firebase";
 import type { SavedMapAsset } from "../types";
 import type { AssetChangeAction, AssetChangeAttachment, AssetChangeLog } from "./types";
+import { spatialApiConfig } from "../../../services/spatialApi/spatialApiConfig";
+import { listSpatialRecords, saveSpatialRecord } from "../../../services/spatialApi/spatialRecordService";
 
 const BUSINESS_REF_PATH = ["businesses", "fibre-gis-v2"] as const;
 const COLLECTION_NAME = "assetChangeLogs";
+const RECORD_TYPE = "asset-change-log";
 const LOCAL_FALLBACK_KEY = "fibre-gis-assetChangeLogs-v1";
 
 function assetChangeLogsCollection() {
@@ -33,6 +36,20 @@ export type CreateAssetChangeLogInput = {
 export async function createAssetChangeLog(input: CreateAssetChangeLogInput): Promise<AssetChangeLog> {
   const log = buildAssetChangeLog(input);
 
+  if (spatialApiConfig.postgisOnly) {
+    try {
+      await saveSpatialRecord(RECORD_TYPE, log.id, log as unknown as Record<string, unknown>, {
+        parentType: "asset",
+        parentId: log.assetId,
+      });
+      return log;
+    } catch (err) {
+      console.warn("PostGIS audit log write failed; saved maintenance log in local fallback.", err);
+      saveLocalFallbackLog(log);
+      return log;
+    }
+  }
+
   try {
     const docRef = await addDoc(assetChangeLogsCollection(), {
       ...log,
@@ -49,6 +66,30 @@ export async function createAssetChangeLog(input: CreateAssetChangeLogInput): Pr
 }
 
 export async function loadAssetChangeLogs(assetId: string, maxResults = 50): Promise<AssetChangeLog[]> {
+  if (spatialApiConfig.postgisOnly) {
+    let postgisLogs: AssetChangeLog[] = [];
+
+    try {
+      const records = await listSpatialRecords<AssetChangeLog>(RECORD_TYPE, {
+        parentType: "asset",
+        parentId: assetId,
+        limit: maxResults,
+      });
+      postgisLogs = records.map((record) => ({ ...record.data, id: record.recordId }));
+    } catch (err) {
+      console.warn("PostGIS audit log read failed; using local fallback only.", err);
+    }
+
+    const localLogs = loadLocalFallbackLogs().filter((log) => log.assetId === assetId);
+    const byId = new Map<string, AssetChangeLog>();
+
+    [...postgisLogs, ...localLogs].forEach((log) => byId.set(log.id, log));
+
+    return Array.from(byId.values())
+      .sort((a, b) => String(b.changedAt || "").localeCompare(String(a.changedAt || "")))
+      .slice(0, maxResults);
+  }
+
   let firestoreLogs: AssetChangeLog[] = [];
 
   try {
