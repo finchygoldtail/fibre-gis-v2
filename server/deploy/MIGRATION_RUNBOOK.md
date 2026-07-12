@@ -79,6 +79,30 @@ curl "http://65.108.158.104/api/assets/stats?businessId=fibre-gis-v2"
 curl "http://65.108.158.104/api/assets/import-runs?businessId=fibre-gis-v2&limit=20"
 ```
 
+For a batch of exports, copy several `.geojson` files into `/opt/alistra-gis/server/imports/`.
+The folder importer uses each filename as the area id, so `bd-bas.geojson` becomes `BD-BAS`.
+
+Dry run folder:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.production exec -T api \
+  npm run db:import:geojson-folder -- \
+  --dir /app/imports \
+  --business-id fibre-gis-v2 \
+  --source area-export \
+  --dry-run
+```
+
+Import folder:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.production exec -T api \
+  npm run db:import:geojson-folder -- \
+  --dir /app/imports \
+  --business-id fibre-gis-v2 \
+  --source area-export
+```
+
 ### 4. HTTPS And Domain
 
 Goal: stop using the raw server IP in frontend config.

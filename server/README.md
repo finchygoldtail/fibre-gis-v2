@@ -255,6 +255,14 @@ GET http://localhost:3001/api/assets/import-runs?businessId=fibre-gis-v2&limit=2
 
 Each real GeoJSON import records an import run with source file, area, counts, skipped count, and type breakdown. Dry runs do not write an import run.
 
+Folder import:
+
+```bash
+npm run db:import:geojson-folder -- --dir ./imports --business-id fibre-gis-v2 --source qgis-export --dry-run
+```
+
+The folder importer reads every `.geojson` file in the directory and derives `areaId` from the filename.
+
 ## Current Limitations
 
 - Firebase ID-token verification is stubbed in `authMiddleware.ts`.
