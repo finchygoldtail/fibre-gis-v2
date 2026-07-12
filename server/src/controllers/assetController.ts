@@ -6,6 +6,7 @@ import {
   queryAssetStats,
   queryImportRuns,
 } from "../services/assetQueryService.js";
+import { deleteMapAsset, upsertMapAsset } from "../services/assetWriteService.js";
 
 const REQUIRED_BOUNDS = ["minLng", "minLat", "maxLng", "maxLat"] as const;
 
@@ -82,6 +83,42 @@ export async function getImportRuns(req: Request, res: Response): Promise<void> 
   });
 
   res.json(runs);
+}
+
+export async function saveAsset(req: Request, res: Response): Promise<void> {
+  const asset = await upsertMapAsset(
+    {
+      ...req.body,
+      id: req.params.id || req.body?.id,
+    },
+    {
+      actor: getRequestActor(req),
+      reason: getStringParam(req.body?.reason),
+    },
+  );
+
+  res.status(200).json(asset);
+}
+
+export async function removeAsset(req: Request, res: Response): Promise<void> {
+  const businessId = getStringParam(req.query.businessId);
+  if (!businessId) {
+    throw new HttpError(400, "businessId is required");
+  }
+
+  const result = await deleteMapAsset(businessId, String(req.params.id || ""), {
+    actor: getRequestActor(req),
+    reason: getStringParam(req.query.reason),
+  });
+
+  res.json(result);
+}
+
+function getRequestActor(req: Request) {
+  return {
+    uid: getStringParam(req.headers["x-alistra-user-uid"]),
+    email: getStringParam(req.headers["x-alistra-user-email"]),
+  };
 }
 
 function getStringParam(value: unknown): string | undefined {

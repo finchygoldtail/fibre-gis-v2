@@ -1,5 +1,11 @@
 import { Router } from "express";
-import { getAssetsByBounds, getAssetStats, getImportRuns } from "../controllers/assetController.js";
+import {
+  getAssetsByBounds,
+  getAssetStats,
+  getImportRuns,
+  removeAsset,
+  saveAsset,
+} from "../controllers/assetController.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { authMiddleware } from "../middleware/authMiddleware.js";
 
@@ -8,3 +14,6 @@ export const assetRoutes = Router();
 assetRoutes.get("/stats", authMiddleware, asyncHandler(getAssetStats));
 assetRoutes.get("/import-runs", authMiddleware, asyncHandler(getImportRuns));
 assetRoutes.get("/", authMiddleware, asyncHandler(getAssetsByBounds));
+assetRoutes.post("/", authMiddleware, asyncHandler(saveAsset));
+assetRoutes.put("/:id", authMiddleware, asyncHandler(saveAsset));
+assetRoutes.delete("/:id", authMiddleware, asyncHandler(removeAsset));
