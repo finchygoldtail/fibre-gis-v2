@@ -143,6 +143,118 @@ export async function upsertMapAsset(
   }
 }
 
+export async function upsertMapAssets(
+  inputs: WritableMapAsset[],
+  options: AssetWriteOptions = {},
+): Promise<GeoJsonFeature[]> {
+  if (!Array.isArray(inputs)) {
+    throw new HttpError(400, "Asset batch payload must be an array");
+  }
+
+  if (inputs.length > 5000) {
+    throw new HttpError(400, "Asset batch payload is too large");
+  }
+
+  const assets = inputs.map(normaliseWritableAsset);
+  const client = await pool.connect();
+  const saved: GeoJsonFeature[] = [];
+
+  try {
+    await client.query("BEGIN");
+
+    for (const asset of assets) {
+      const before = await getAssetRow(client, asset.id, asset.businessId);
+      const result = await client.query<AssetRow>(
+        `
+          INSERT INTO map_assets (
+            id,
+            business_id,
+            project_id,
+            area_id,
+            asset_type,
+            asset_subtype,
+            name,
+            status,
+            geometry,
+            metadata,
+            source,
+            source_revision
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8,
+            ST_SetSRID(ST_GeomFromGeoJSON($9), 4326),
+            $10::jsonb,
+            $11,
+            $12
+          )
+          ON CONFLICT (id) DO UPDATE SET
+            business_id = EXCLUDED.business_id,
+            project_id = EXCLUDED.project_id,
+            area_id = EXCLUDED.area_id,
+            asset_type = EXCLUDED.asset_type,
+            asset_subtype = EXCLUDED.asset_subtype,
+            name = EXCLUDED.name,
+            status = EXCLUDED.status,
+            geometry = EXCLUDED.geometry,
+            metadata = EXCLUDED.metadata,
+            source = EXCLUDED.source,
+            source_revision = EXCLUDED.source_revision,
+            updated_at = NOW()
+          RETURNING
+            id::text,
+            business_id,
+            project_id,
+            area_id,
+            asset_type,
+            asset_subtype,
+            name,
+            status,
+            metadata,
+            source,
+            source_revision,
+            ST_AsGeoJSON(geometry)::json AS geometry,
+            created_at,
+            updated_at
+        `,
+        [
+          asset.id,
+          asset.businessId,
+          asset.projectId,
+          asset.areaId,
+          asset.assetType,
+          asset.assetSubtype,
+          asset.name,
+          asset.status,
+          JSON.stringify(asset.geometry),
+          JSON.stringify(asset.metadata),
+          asset.source,
+          asset.sourceRevision,
+        ],
+      );
+
+      const after = result.rows[0];
+      await insertAuditLog(client, {
+        assetId: asset.id,
+        businessId: asset.businessId,
+        action: before ? "update" : "create",
+        actor: options.actor,
+        before,
+        after,
+        reason: options.reason,
+      });
+
+      saved.push(rowToFeature(after));
+    }
+
+    await client.query("COMMIT");
+    return saved;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 export async function deleteMapAsset(
   businessId: string,
   assetId: string,

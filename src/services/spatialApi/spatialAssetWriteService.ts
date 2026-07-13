@@ -34,6 +34,20 @@ export async function saveSpatialMapAssets(
 
   const saved: SpatialApiFeature[] = [];
 
+  if (writableAssets.length > 1) {
+    const result = await spatialApiJson<{ saved: number; assets: SpatialApiFeature[] }>(
+      "/api/assets/bulk",
+      {
+        method: "POST",
+        body: {
+          reason: options.reason,
+          assets: writableAssets,
+        },
+      },
+    );
+    return result.assets;
+  }
+
   for (const asset of writableAssets) {
     saved.push(
       await spatialApiJson<SpatialApiFeature>("/api/assets", {

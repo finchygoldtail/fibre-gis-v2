@@ -7,7 +7,7 @@ import {
   queryAssetStats,
   queryImportRuns,
 } from "../services/assetQueryService.js";
-import { deleteMapAsset, upsertMapAsset, wipeMapData } from "../services/assetWriteService.js";
+import { deleteMapAsset, upsertMapAsset, upsertMapAssets, wipeMapData } from "../services/assetWriteService.js";
 
 const REQUIRED_BOUNDS = ["minLng", "minLat", "maxLng", "maxLat"] as const;
 
@@ -116,6 +116,27 @@ export async function saveAsset(req: Request, res: Response): Promise<void> {
   );
 
   res.status(200).json(asset);
+}
+
+export async function saveAssetsBulk(req: Request, res: Response): Promise<void> {
+  const body = req.body && typeof req.body === "object" ? req.body : {};
+  const assets = Array.isArray((body as Record<string, unknown>).assets)
+    ? ((body as Record<string, unknown>).assets as any[])
+    : null;
+
+  if (!assets) {
+    throw new HttpError(400, "assets array is required");
+  }
+
+  const savedAssets = await upsertMapAssets(assets as any[], {
+    actor: getRequestActor(req),
+    reason: getStringParam((body as Record<string, unknown>).reason),
+  });
+
+  res.status(200).json({
+    saved: savedAssets.length,
+    assets: savedAssets,
+  });
 }
 
 export async function removeAsset(req: Request, res: Response): Promise<void> {
