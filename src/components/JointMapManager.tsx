@@ -226,6 +226,11 @@ function mergeMapAssets(...groups: SavedMapAsset[][]): SavedMapAsset[] {
   return Array.from(byId.values());
 }
 
+function isLocalGeoJsonImportAsset(asset: SavedMapAsset): boolean {
+  const source = String((asset as any).source || "").toLowerCase();
+  return source === "geojson-import";
+}
+
 function SpatialApiStatusPanel({
   enabled,
   loading,
@@ -1637,7 +1642,15 @@ export default function JointMapManager({
     [snapCandidateAssets, exchangeNetworkAssets],
   );
 
-  const visibleFirebaseProjectAssets = showFirebaseAssets ? renderProjectAssets : [];
+  const localImportedProjectAssets = isPostgisOnlyMapMode
+    ? renderProjectAssets.filter(isLocalGeoJsonImportAsset)
+    : [];
+  const localImportedProjectAreas = isPostgisOnlyMapMode
+    ? visibleProjectAreas.filter(isLocalGeoJsonImportAsset)
+    : [];
+  const visibleFirebaseProjectAssets = showFirebaseAssets
+    ? renderProjectAssets
+    : localImportedProjectAssets;
   const visibleExchangeNetworkAssets = showFirebaseAssets ? exchangeNetworkAssets : [];
 
   const renderProjectAssetsWithExchanges = useMemo(
@@ -1663,12 +1676,12 @@ export default function JointMapManager({
   const renderAreaAssetsWithSpatial = useMemo(
     () =>
       mergeMapAssets(
-        showFirebaseAssets ? visibleProjectAreas : [],
+        showFirebaseAssets ? visibleProjectAreas : localImportedProjectAreas,
         showPostgisAssets
           ? visibleSpatialAssets.filter((asset) => asset.assetType === "area")
           : [],
       ),
-    [showFirebaseAssets, showPostgisAssets, visibleProjectAreas, visibleSpatialAssets],
+    [localImportedProjectAreas, showFirebaseAssets, showPostgisAssets, visibleProjectAreas, visibleSpatialAssets],
   );
 
   const allNetworkAssetsWithExchanges = useMemo(
