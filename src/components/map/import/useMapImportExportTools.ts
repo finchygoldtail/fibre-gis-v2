@@ -76,6 +76,11 @@ export function useMapImportExportTools({
   stampHomesForActiveArea,
   markAssetForLiveSync,
 }: UseMapImportExportToolsArgs) {
+  const stampHomesForArea =
+    typeof stampHomesForActiveArea === "function"
+      ? stampHomesForActiveArea
+      : (homes: SavedMapAsset[]) => homes;
+
   const handleExportJson = () => {
     downloadJsonFile("saved-assets.json", savedJoints, "application/json");
   };
@@ -257,7 +262,7 @@ export function useMapImportExportTools({
           ];
 
           if (mergedHomes.length) {
-            const stampedHomes = stampHomesForActiveArea(mergedHomes);
+            const stampedHomes = stampHomesForArea(mergedHomes);
             await saveProjectHomes(
               activeProjectId,
               stampedHomes,

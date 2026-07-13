@@ -86,10 +86,15 @@ export async function saveSpatialRecord<TData extends Record<string, unknown>>(
 export async function deleteSpatialRecord(recordType: string, recordId: string): Promise<void> {
   ensureRecordsEnabled();
   const params = new URLSearchParams({ businessId: BUSINESS_ID });
-  await spatialApiJson(`/api/records/${encodeURIComponent(recordType)}/${encodeURIComponent(recordId)}`, {
-    method: "DELETE",
-    params,
-  });
+  try {
+    await spatialApiJson(`/api/records/${encodeURIComponent(recordType)}/${encodeURIComponent(recordId)}`, {
+      method: "DELETE",
+      params,
+    });
+  } catch (error) {
+    if (String(error).includes("404")) return;
+    throw error;
+  }
 }
 
 function ensureRecordsEnabled() {

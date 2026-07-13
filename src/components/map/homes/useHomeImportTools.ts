@@ -51,6 +51,11 @@ export function useHomeImportTools({
   setIsLoadingOsmHomes,
   stampHomesForActiveArea,
 }: UseHomeImportToolsArgs) {
+  const stampHomesForArea =
+    typeof stampHomesForActiveArea === "function"
+      ? stampHomesForActiveArea
+      : (homes: SavedMapAsset[]) => homes;
+
   const loadExistingHomesOrContinueImport = async (
     projectId: string,
   ): Promise<boolean> => {
@@ -117,7 +122,7 @@ export function useHomeImportTools({
 
       await saveProjectHomes(
         activeProjectId,
-        stampHomesForActiveArea(mergedHomes),
+        stampHomesForArea(mergedHomes),
         activeProjectAreaName,
       );
       setProjectHomes(mergedHomes);
@@ -233,7 +238,7 @@ export function useHomeImportTools({
           return;
         }
 
-        const stampedHomes = stampHomesForActiveArea(mergedHomes);
+        const stampedHomes = stampHomesForArea(mergedHomes);
         await saveProjectHomes(
           projectIdForImport,
           stampedHomes,
@@ -300,7 +305,7 @@ export function useHomeImportTools({
           return;
         }
 
-        const stampedHomes = stampHomesForActiveArea(mergedHomes);
+        const stampedHomes = stampHomesForArea(mergedHomes);
         await saveProjectHomes(
           projectIdForImport,
           stampedHomes,
