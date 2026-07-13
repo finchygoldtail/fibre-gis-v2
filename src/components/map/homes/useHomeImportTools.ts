@@ -55,6 +55,18 @@ export function useHomeImportTools({
     typeof stampHomesForActiveArea === "function"
       ? stampHomesForActiveArea
       : (homes: SavedMapAsset[]) => homes;
+  const setProjectHomesSafe =
+    typeof setProjectHomes === "function"
+      ? setProjectHomes
+      : (() => undefined);
+  const setLoadedHomesProjectIdSafe =
+    typeof setLoadedHomesProjectId === "function"
+      ? setLoadedHomesProjectId
+      : (() => undefined);
+  const setIsLoadingOsmHomesSafe =
+    typeof setIsLoadingOsmHomes === "function"
+      ? setIsLoadingOsmHomes
+      : (() => undefined);
 
   const loadExistingHomesOrContinueImport = async (
     projectId: string,
@@ -65,8 +77,8 @@ export function useHomeImportTools({
       return false;
     }
 
-    setProjectHomes(existingHomes);
-    setLoadedHomesProjectId(projectId);
+    setProjectHomesSafe(existingHomes);
+    setLoadedHomesProjectIdSafe(projectId);
     alert(
       "Homes are already saved for this project, so I loaded the saved homes instead of importing duplicates.",
     );
@@ -100,7 +112,7 @@ export function useHomeImportTools({
       return;
     }
 
-    setIsLoadingOsmHomes(true);
+    setIsLoadingOsmHomesSafe(true);
 
     try {
       const homes = (
@@ -125,14 +137,14 @@ export function useHomeImportTools({
         stampHomesForArea(mergedHomes),
         activeProjectAreaName,
       );
-      setProjectHomes(mergedHomes);
-      setLoadedHomesProjectId(activeProjectId);
+      setProjectHomesSafe(mergedHomes);
+      setLoadedHomesProjectIdSafe(activeProjectId);
 
       alert(`Saved ${homes.length} OSM homes to this project.`);
     } catch (err: any) {
       alert(`Failed to load OSM homes: ${err.message || String(err)}`);
     } finally {
-      setIsLoadingOsmHomes(false);
+      setIsLoadingOsmHomesSafe(false);
     }
   };
 
@@ -244,8 +256,8 @@ export function useHomeImportTools({
           stampedHomes,
           activeProjectAreaName,
         );
-        setProjectHomes(stampedHomes);
-        setLoadedHomesProjectId(projectIdForImport);
+        setProjectHomesSafe(stampedHomes);
+        setLoadedHomesProjectIdSafe(projectIdForImport);
 
         alert(`Saved ${homes.length || mergedHomes.length} GeoJSON homes to this project.`);
       } catch (err: any) {
@@ -311,8 +323,8 @@ export function useHomeImportTools({
           stampedHomes,
           activeProjectAreaName,
         );
-        setProjectHomes(stampedHomes);
-        setLoadedHomesProjectId(projectIdForImport);
+        setProjectHomesSafe(stampedHomes);
+        setLoadedHomesProjectIdSafe(projectIdForImport);
 
         alert(`Saved ${homes.length || mergedHomes.length} GeoJSON homes in view to this project.`);
       } catch (err: any) {

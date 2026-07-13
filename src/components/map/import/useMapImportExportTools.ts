@@ -80,6 +80,22 @@ export function useMapImportExportTools({
     typeof stampHomesForActiveArea === "function"
       ? stampHomesForActiveArea
       : (homes: SavedMapAsset[]) => homes;
+  const setSavedJointsSafe =
+    typeof setSavedJoints === "function"
+      ? setSavedJoints
+      : (() => undefined);
+  const setProjectHomesSafe =
+    typeof setProjectHomes === "function"
+      ? setProjectHomes
+      : (() => undefined);
+  const setLoadedHomesProjectIdSafe =
+    typeof setLoadedHomesProjectId === "function"
+      ? setLoadedHomesProjectId
+      : (() => undefined);
+  const setOrAssetsSafe =
+    typeof setOrAssets === "function"
+      ? setOrAssets
+      : (() => undefined);
 
   const handleExportJson = () => {
     downloadJsonFile("saved-assets.json", savedJoints, "application/json");
@@ -268,8 +284,8 @@ export function useMapImportExportTools({
               stampedHomes,
               activeProjectAreaName,
             );
-            setProjectHomes(stampedHomes);
-            setLoadedHomesProjectId(activeProjectId);
+            setProjectHomesSafe(stampedHomes);
+            setLoadedHomesProjectIdSafe(activeProjectId);
             savedHomeCount = newHomes.length || mergedHomes.length;
           }
         }
@@ -292,7 +308,7 @@ export function useMapImportExportTools({
           const mergedOrAssets = await mergeAndSaveOrAssets(importedOrAssets, {
             reason: "GeoJSON OR reference import",
           });
-          setOrAssets(mergedOrAssets);
+          setOrAssetsSafe(mergedOrAssets);
           savedOrCount = importedOrAssets.length;
         }
 
@@ -330,7 +346,7 @@ export function useMapImportExportTools({
             ...savedJoints,
             ...dedupedNetworkAssets.assets,
           ];
-          setSavedJoints(nextSavedJoints);
+          setSavedJointsSafe(nextSavedJoints);
           await saveMapAssetsViaCoordinator(nextSavedJoints, {
             source: "joint-map-manager",
             reason: "GeoJSON designed network import",
@@ -389,7 +405,7 @@ export function useMapImportExportTools({
         const mergedOrAssets = await mergeAndSaveOrAssets(importedOrAssets, {
           reason: "JSON import OR reference assets",
         });
-        setOrAssets(mergedOrAssets);
+        setOrAssetsSafe(mergedOrAssets);
       }
 
       const dedupedDesignedAssets = filterUniqueAssetsForAreaImport({
@@ -400,7 +416,7 @@ export function useMapImportExportTools({
       });
       alertSkippedDuplicateImports(dedupedDesignedAssets.duplicates.length);
 
-      setSavedJoints(dedupedDesignedAssets.assets);
+      setSavedJointsSafe(dedupedDesignedAssets.assets);
       if (dedupedDesignedAssets.assets.length) {
         await saveMapAssetsViaCoordinator(dedupedDesignedAssets.assets, {
           source: "joint-map-manager",
