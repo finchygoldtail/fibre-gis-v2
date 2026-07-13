@@ -175,6 +175,9 @@ function prepareFeature(
   const props = feature.properties || {};
   const externalId = normaliseText(
     feature.id ||
+      props.UPRN ||
+      props.uprn ||
+      props.Uprn ||
       props.id ||
       props.assetId ||
       props.asset_id ||
@@ -184,9 +187,9 @@ function prepareFeature(
       props.Name,
   );
   const id = toStableUuid(`${args.businessId}:${args.source}:${externalId || JSON.stringify(feature.geometry)}`);
-  const assetType = normaliseAssetType(
-    props.assetType || props.asset_type || props.type || props.layer || props.Layer,
-  );
+  const assetType =
+    normaliseAssetType(props.assetType || props.asset_type || props.type || props.layer || props.Layer) ||
+    inferAssetType(feature);
 
   if (!assetType) return null;
 
@@ -197,13 +200,57 @@ function prepareFeature(
     areaId: normaliseText(props.areaId || props.area_id || props.ag || props.AG) || args.areaId || null,
     assetType,
     assetSubtype: normaliseText(props.assetSubtype || props.asset_subtype || props.subtype) || null,
-    name: normaliseText(props.name || props.Name || props.label || props.Label) || externalId || null,
+    name:
+      normaliseText(props.name || props.Name || props.label || props.Label) ||
+      inferAssetName(props, assetType, externalId),
     status: normaliseText(props.status || props.Status || props.buildStatus) || null,
     geometry: feature.geometry,
     metadata: props,
     source: args.source,
     sourceRevision: args.sourceRevision || null,
   };
+}
+
+function inferAssetType(feature: GeoJsonFeature): string {
+  const geometryType = feature.geometry?.type || "";
+  const props = feature.properties || {};
+
+  if (geometryType === "Polygon" || geometryType === "MultiPolygon") return "area";
+  if (geometryType === "LineString" || geometryType === "MultiLineString") return "cable";
+
+  if (geometryType === "Point" || geometryType === "MultiPoint") {
+    if (hasAnyProperty(props, ["UPRN", "uprn", "Uprn", "UDPRN", "udprn", "TOID", "toid"])) {
+      return "home";
+    }
+
+    if (hasAnyProperty(props, ["ports_count", "portsCount", "slots_count", "slotsCount"])) {
+      return "distribution-point";
+    }
+  }
+
+  return "";
+}
+
+function inferAssetName(
+  props: Record<string, unknown>,
+  assetType: string,
+  externalId: string,
+): string | null {
+  if (assetType === "home") {
+    const uprn = normaliseText(props.UPRN || props.uprn || props.Uprn);
+    if (uprn) return `UPRN ${uprn}`;
+  }
+
+  if (assetType === "distribution-point") {
+    const closureId = normaliseText(props.id || props.ID);
+    if (closureId) return `DP ${closureId}`;
+  }
+
+  return externalId || null;
+}
+
+function hasAnyProperty(props: Record<string, unknown>, keys: string[]): boolean {
+  return keys.some((key) => Object.prototype.hasOwnProperty.call(props, key));
 }
 
 function isSupportedGeometry(geometry: GeoJsonGeometry | null | undefined): geometry is GeoJsonGeometry {

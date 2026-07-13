@@ -261,6 +261,12 @@ const classifyGeoJsonFeature = (
   const text = buildGeoJsonAssetText(feature);
   const props = feature?.properties || {};
   const propKeys = Object.keys(props).join(" ").toLowerCase();
+  const hasClosurePortFields =
+    geometryType === "Point" &&
+    (Object.prototype.hasOwnProperty.call(props, "ports_count") ||
+      Object.prototype.hasOwnProperty.call(props, "slots_count") ||
+      Object.prototype.hasOwnProperty.call(props, "portsCount") ||
+      Object.prototype.hasOwnProperty.call(props, "slotsCount"));
 
   if (geometryType.includes("Polygon")) return "area";
 
@@ -288,11 +294,12 @@ const classifyGeoJsonFeature = (
     (propKeys.includes("uprn") ||
       propKeys.includes("udprn") ||
       propKeys.includes("toid") ||
-      text.includes("uprn") ||
-      text.includes("home") ||
-      text.includes("premise") ||
-      text.includes("building") ||
-      text.includes("residential"))
+      (!hasClosurePortFields &&
+        (text.includes("uprn") ||
+          text.includes("home") ||
+          text.includes("premise") ||
+          text.includes("building") ||
+          text.includes("residential"))))
   ) {
     return "home";
   }
@@ -350,9 +357,7 @@ const classifyGeoJsonFeature = (
     // before checking for AG, otherwise AG4 makes them import as AG joints.
     isTelecomDistributionPointName(text) ||
     // Some closure exports identify DPs only by telecom closure fields.
-    (geometryType === "Point" &&
-      (Object.prototype.hasOwnProperty.call(props, "ports_count") ||
-        Object.prototype.hasOwnProperty.call(props, "slots_count")))
+    hasClosurePortFields
   ) {
     return "distribution-point" as AssetType;
   }
