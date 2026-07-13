@@ -1511,7 +1511,7 @@ export const FibreTrayEditor: React.FC = () => {
       setPendingFibreMoves([]);
     }
 
-    alert("Joint saved to Firestore.");
+    alert("Joint saved to the server.");
   };
 
   /* -------------------------------------------------------------

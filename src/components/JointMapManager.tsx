@@ -343,7 +343,7 @@ function DataSourceTogglePanel({
           onChange={(event) => onShowFirebaseAssetsChange(event.target.checked)}
           style={checkboxStyle}
         />
-        {postgisOnly ? "Firebase / local assets disabled" : "Firebase / local assets"}
+        {postgisOnly ? "Legacy/local assets disabled" : "Legacy/local assets"}
       </label>
       <label style={rowStyle}>
         <input
@@ -1771,7 +1771,7 @@ export default function JointMapManager({
       } catch (error) {
         console.error("Immediate reference asset save failed", error);
         alert(
-          "This reference asset changed on screen, but its Firestore save failed. Do not refresh until the save issue is checked.",
+          "This reference asset changed on screen, but its server save failed. Do not refresh until the save issue is checked.",
         );
       }
 
@@ -1914,7 +1914,7 @@ export default function JointMapManager({
 
     const typed = window.prompt(
       [
-        "This will clear ALL map assets from PostGIS and legacy Firestore.",
+        "This will clear ALL map assets from PostGIS and the legacy map store.",
         "",
         "It also deletes exchange records and joint tray/mapping records.",
         "Street cabs, joints, homes, cables, chambers, poles, DPs and polygons stored as map assets will be removed.",
@@ -2958,7 +2958,7 @@ export default function JointMapManager({
     } catch (error) {
       console.error("Bulk DP status map save failed", error);
       alert(
-        "DP status was updated on screen, but Firestore save failed. Do not refresh until the save issue is checked.",
+        "DP status was updated on screen, but the server save failed. Do not refresh until the save issue is checked.",
       );
       return;
     }
@@ -3225,7 +3225,7 @@ export default function JointMapManager({
     } catch (error) {
       console.error("Clear DP fibre allocations map save failed", error);
       alert(
-        "DP fibre allocations were cleared on screen, but Firestore save failed. Do not refresh until the save issue is checked.",
+        "DP fibre allocations were cleared on screen, but the server save failed. Do not refresh until the save issue is checked.",
       );
       return;
     }
@@ -3480,7 +3480,7 @@ export default function JointMapManager({
     } catch (error) {
       console.error("FAS SB route map save failed", error);
       alert(
-        "FAS SB routes were applied on screen, but Firestore save failed. Do not refresh until the save issue is checked.",
+        "FAS SB routes were applied on screen, but the server save failed. Do not refresh until the save issue is checked.",
       );
       return;
     }
