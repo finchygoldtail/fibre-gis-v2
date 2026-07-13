@@ -92,6 +92,15 @@ function convertGeometry(geometry: SpatialApiGeometry): SavedMapAsset["geometry"
     };
   }
 
+  if (geometry.type === "MultiPolygon" && Array.isArray(geometry.coordinates)) {
+    return {
+      type: "MultiPolygon",
+      coordinates: geometry.coordinates.map((polygon) =>
+        polygon.map((ring) => ring.map(lngLatToLatLng)),
+      ),
+    };
+  }
+
   return null;
 }
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Polygon, Popup, Tooltip, useMap, useMapEvents } from "react-leaflet";
 import type { LeafletMouseEvent } from "leaflet";
 import type { SavedMapAsset } from "../types";
@@ -43,6 +43,21 @@ function isPostgisAsset(asset: SavedMapAsset): boolean {
   return String((asset as any).source || "").toLowerCase() === "postgis";
 }
 
+function getOuterRings(asset: SavedMapAsset): [number, number][][] {
+  if (asset.geometry?.type === "Polygon") {
+    const ring = asset.geometry.coordinates[0];
+    return ring?.length ? [ring] : [];
+  }
+
+  if (asset.geometry?.type === "MultiPolygon") {
+    return asset.geometry.coordinates
+      .map((polygon) => polygon[0])
+      .filter((ring): ring is [number, number][] => Array.isArray(ring) && ring.length > 0);
+  }
+
+  return [];
+}
+
 const AREA_LABEL_MIN_ZOOM = 15;
 
 const labelButton: React.CSSProperties = {
@@ -81,11 +96,8 @@ export default function AreaPolygonsLayer({
   return (
     <>
       {areas.map((asset) => {
-        if (asset.geometry?.type !== "Polygon") return null;
-
-        const positions = asset.geometry.coordinates[0].map(
-          ([lat, lng]) => [lat, lng] as [number, number],
-        );
+        const rings = getOuterRings(asset);
+        if (!rings.length) return null;
 
         const baseColor = getColor(asset.id);
         const isPostgisHighlighted = highlightPostgisAssets && isPostgisAsset(asset);
@@ -109,9 +121,11 @@ export default function AreaPolygonsLayer({
         };
 
         return (
+          <Fragment key={asset.id}>
+            {rings.map((ring, ringIndex) => (
           <Polygon
-            key={asset.id}
-            positions={positions}
+            key={`${asset.id}:${ringIndex}`}
+            positions={ring.map(([lat, lng]) => [lat, lng] as [number, number])}
             interactive={isInteractive}
             pathOptions={{
               color: isPostgisHighlighted
@@ -153,7 +167,7 @@ export default function AreaPolygonsLayer({
               </Popup>
             )}
 
-            {shouldShowLabel && (
+            {shouldShowLabel && ringIndex === 0 && (
               <Tooltip
                 permanent
                 direction="center"
@@ -241,6 +255,8 @@ export default function AreaPolygonsLayer({
               </Tooltip>
             )}
           </Polygon>
+            ))}
+          </Fragment>
         );
       })}
     </>
