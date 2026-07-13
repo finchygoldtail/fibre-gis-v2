@@ -19,6 +19,7 @@ import {
   filterUniqueAssetsForAreaImport,
   normaliseDistributionPointAsset,
 } from "../../../services/assetNameValidation";
+import { saveMapAssetsViaCoordinator } from "../../../services/mapSaveCoordinator";
 
 type UseMapImportExportToolsArgs = {
   savedJoints: SavedMapAsset[];
@@ -318,10 +319,16 @@ export function useMapImportExportTools({
 
           alertSkippedDuplicateImports(dedupedNetworkAssets.duplicates.length);
           savedDesignedCount = dedupedNetworkAssets.assets.length;
-          setSavedJoints((prev) => [
-            ...prev,
+          const nextSavedJoints = [
+            ...savedJoints,
             ...dedupedNetworkAssets.assets,
-          ]);
+          ];
+          setSavedJoints(nextSavedJoints);
+          await saveMapAssetsViaCoordinator(nextSavedJoints, {
+            source: "joint-map-manager",
+            reason: "GeoJSON designed network import",
+            allowDestructiveSave: false,
+          });
         }
 
         alert(
@@ -387,6 +394,13 @@ export function useMapImportExportTools({
       alertSkippedDuplicateImports(dedupedDesignedAssets.duplicates.length);
 
       setSavedJoints(dedupedDesignedAssets.assets);
+      if (dedupedDesignedAssets.assets.length) {
+        await saveMapAssetsViaCoordinator(dedupedDesignedAssets.assets, {
+          source: "joint-map-manager",
+          reason: "JSON designed network import",
+          allowDestructiveSave: false,
+        });
+      }
       alert(
         `Imported ${dedupedDesignedAssets.assets.length} designed asset(s) and ${importedOrAssets.length} OR reference asset(s).`,
       );

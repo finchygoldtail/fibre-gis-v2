@@ -581,6 +581,7 @@ export const createMapAssetsFromAnyGeoJson = (
               : readGeoJsonProp(props, ["name", "Name"], "Home"),
             assetType: "home",
             jointType: "Home",
+            source: "geojson-import",
             uprn: rawUprn || undefined,
             projectId: activeProjectId || undefined,
             connectionMode: "auto",

@@ -10,6 +10,8 @@ import {
   findDuplicateAssetInArea,
   normaliseDistributionPointAsset,
 } from "../../../services/assetNameValidation";
+import { spatialApiConfig } from "../../../services/spatialApi/spatialApiConfig";
+import { saveSpatialMapAssets } from "../../../services/spatialApi/spatialAssetWriteService";
 
 // =====================================================
 // LIVE SYNC TRACKING
@@ -97,8 +99,16 @@ export function useAssetPersistence({
         (asset as any).areaName ||
         (asset as any).projectAreaName,
     ));
+    const postgisLocalAsset = spatialApiConfig.postgisOnly
+      ? {
+          ...areaIndexedAsset,
+          source: String((areaIndexedAsset as any).source || "").toLowerCase() === "geojson-import"
+            ? (areaIndexedAsset as any).source
+            : "local-pending-postgis",
+        }
+      : areaIndexedAsset;
     const syncedAsset = markAssetForLiveSync(
-      areaIndexedAsset,
+      postgisLocalAsset,
       options?.isNew ?? false,
     );
     const activeAreaName =
@@ -141,6 +151,22 @@ export function useAssetPersistence({
         item.id === syncedAsset.id ? syncedAsset : item,
       );
     });
+
+    if (spatialApiConfig.enabled && spatialApiConfig.writesEnabled) {
+      void saveSpatialMapAssets([syncedAsset], {
+        businessId: "fibre-gis-v2",
+        projectId: activeAreaId || undefined,
+        areaId: activeAreaId || undefined,
+        reason: options?.isNew ? "asset-create-autosave" : "asset-update-autosave",
+      }).catch((err) => {
+        console.error("PostGIS asset autosave failed", err);
+        if (spatialApiConfig.postgisOnly) {
+          alert(
+            "This asset changed on screen, but the PostGIS server save failed. Check the API connection before refreshing.",
+          );
+        }
+      });
+    }
 
     if (options?.message) {
       alert(options.message);

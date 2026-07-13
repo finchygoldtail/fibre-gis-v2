@@ -228,7 +228,7 @@ function mergeMapAssets(...groups: SavedMapAsset[][]): SavedMapAsset[] {
 
 function isLocalGeoJsonImportAsset(asset: SavedMapAsset): boolean {
   const source = String((asset as any).source || "").toLowerCase();
-  return source === "geojson-import";
+  return source === "geojson-import" || source === "local-pending-postgis" || asset.assetType === "home";
 }
 
 function SpatialApiStatusPanel({
