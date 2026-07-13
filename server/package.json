@@ -11,6 +11,7 @@
     "db:seed": "tsx src/database/runSeed.ts",
     "db:import:geojson": "tsx src/database/importGeoJson.ts",
     "db:import:geojson-folder": "tsx src/database/importGeoJsonFolder.ts",
+    "db:audit:spatial": "tsx src/database/auditSpatialAssets.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

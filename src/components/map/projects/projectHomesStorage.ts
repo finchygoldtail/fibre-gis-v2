@@ -4,7 +4,7 @@ import type { SavedMapAsset } from "../types";
 import { withAreaAssetIndex } from "../../../services/areaAssetIndex";
 import { spatialApiConfig } from "../../../services/spatialApi/spatialApiConfig";
 import { fetchSpatialAssetsByBounds } from "../../../services/spatialApi/spatialAssetService";
-import { spatialFeatureToMapAsset } from "../../../services/spatialApi/spatialAssetAdapter";
+import { spatialFeatureToMapAssets } from "../../../services/spatialApi/spatialAssetAdapter";
 import {
   deleteSpatialMapAsset,
   saveSpatialMapAssets,
@@ -46,9 +46,7 @@ export async function loadProjectHomes(projectId: string): Promise<SavedMapAsset
       limit: 10_000,
     });
 
-    return collection.features
-      .map(spatialFeatureToMapAsset)
-      .filter((asset): asset is SavedMapAsset => Boolean(asset));
+    return collection.features.flatMap(spatialFeatureToMapAssets);
   }
 
   const snap = await getDocs(chunksCollection(projectId));

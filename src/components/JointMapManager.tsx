@@ -926,11 +926,12 @@ function normalizeMapAsset(asset: SavedMapAsset): SavedMapAsset {
 
     if (
       geometryType === "polygon" ||
+      geometryType === "multipolygon" ||
       jointType.includes("polygon") ||
       jointType.includes("area")
     ) {
       copy.assetType = "area";
-    } else if (geometryType === "linestring" || jointType.includes("cable")) {
+    } else if (geometryType === "linestring" || geometryType === "multilinestring" || jointType.includes("cable")) {
       copy.assetType = "cable";
     } else {
       copy.assetType = inferAssetTypeFromName(

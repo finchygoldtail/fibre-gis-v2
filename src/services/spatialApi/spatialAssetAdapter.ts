@@ -9,8 +9,12 @@ export function isSpatialApiAsset(asset: SavedMapAsset | null | undefined): bool
 }
 
 export function spatialFeatureToMapAsset(feature: SpatialApiFeature): SavedMapAsset | null {
-  const geometry = convertGeometry(feature.geometry);
-  if (!geometry) return null;
+  return spatialFeatureToMapAssets(feature)[0] || null;
+}
+
+export function spatialFeatureToMapAssets(feature: SpatialApiFeature): SavedMapAsset[] {
+  const geometries = convertGeometryParts(feature.geometry);
+  if (!geometries.length) return [];
 
   const assetType = mapAssetType(feature.properties.assetType);
   const metadata = feature.properties.metadata || {};
@@ -19,11 +23,14 @@ export function spatialFeatureToMapAsset(feature: SpatialApiFeature): SavedMapAs
       ? (metadata.originalAsset as Partial<SavedMapAsset> & Record<string, unknown>)
       : {};
 
-  return {
+  return geometries.map((geometry, index) => ({
     ...originalAsset,
-    id: `postgis:${feature.id}`,
+    id: geometries.length > 1 ? `postgis:${feature.id}:${index + 1}` : `postgis:${feature.id}`,
     legacyAssetId: originalAsset.id,
-    name: feature.properties.name || originalAsset.name || feature.id,
+    name:
+      geometries.length > 1
+        ? `${feature.properties.name || originalAsset.name || feature.id} ${index + 1}`
+        : feature.properties.name || originalAsset.name || feature.id,
     assetType: originalAsset.assetType || assetType,
     jointType:
       originalAsset.jointType ||
@@ -47,7 +54,7 @@ export function spatialFeatureToMapAsset(feature: SpatialApiFeature): SavedMapAs
       assetSubtype: feature.properties.assetSubtype,
       sourceRevision: feature.properties.sourceRevision,
     },
-  } as SavedMapAsset;
+  }) as SavedMapAsset);
 }
 
 function mapAssetType(value: string): SavedMapAsset["assetType"] {
@@ -102,6 +109,44 @@ function convertGeometry(geometry: SpatialApiGeometry): SavedMapAsset["geometry"
   }
 
   return null;
+}
+
+function convertGeometryParts(geometry: SpatialApiGeometry): SavedMapAsset["geometry"][] {
+  const converted = convertGeometry(geometry);
+  if (converted) return [converted];
+
+  if (geometry.type === "MultiPoint" && Array.isArray(geometry.coordinates)) {
+    return geometry.coordinates
+      .filter(isLngLatPosition)
+      .map((coordinates) => ({
+        type: "Point" as const,
+        coordinates: lngLatToLatLng(coordinates),
+      }));
+  }
+
+  if (geometry.type === "MultiLineString" && Array.isArray(geometry.coordinates)) {
+    return geometry.coordinates
+      .filter(isLngLatLine)
+      .map((line) => ({
+        type: "LineString" as const,
+        coordinates: line.map(lngLatToLatLng),
+      }));
+  }
+
+  return [];
+}
+
+function isLngLatPosition(value: unknown): value is [number, number] {
+  return (
+    Array.isArray(value) &&
+    value.length >= 2 &&
+    Number.isFinite(Number(value[0])) &&
+    Number.isFinite(Number(value[1]))
+  );
+}
+
+function isLngLatLine(value: unknown): value is [number, number][] {
+  return Array.isArray(value) && value.every(isLngLatPosition);
 }
 
 function lngLatToLatLng(position: [number, number]): [number, number] {

@@ -28,7 +28,7 @@ function isProjectAreaAsset(asset: SavedMapAsset) {
   ).toLowerCase();
 
   return (
-    geometryType === "polygon" &&
+    (geometryType === "polygon" || geometryType === "multipolygon") &&
     (assetType === "area" ||
       assetType === "polygon" ||
       assetType === "project-area" ||

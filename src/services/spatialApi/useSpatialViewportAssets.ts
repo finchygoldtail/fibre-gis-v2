@@ -3,7 +3,7 @@ import type { LayerVisibility } from "../../components/map/hooks/useLayerVisibil
 import type { SavedMapAsset } from "../../components/map/types";
 import type { OsmBounds } from "../../components/map/utils/loadOsmBuildings";
 import { fetchSpatialAssetsByBounds } from "./spatialAssetService";
-import { spatialFeatureToMapAsset } from "./spatialAssetAdapter";
+import { spatialFeatureToMapAssets } from "./spatialAssetAdapter";
 import { spatialApiConfig } from "./spatialApiConfig";
 import { getSpatialAssetTypesForLayers } from "./spatialAssetLayerRules";
 
@@ -127,9 +127,7 @@ export function useSpatialViewportAssets({
       )
         .then((collection) => {
           const nextState: SpatialViewportState = {
-            assets: collection.features
-              .map(spatialFeatureToMapAsset)
-              .filter((asset): asset is SavedMapAsset => Boolean(asset)),
+            assets: collection.features.flatMap(spatialFeatureToMapAssets),
             enabled: true,
             loading: false,
             error: null,

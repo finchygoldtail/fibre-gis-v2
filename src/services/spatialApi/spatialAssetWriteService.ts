@@ -139,6 +139,13 @@ function toSpatialGeometry(geometry: SavedMapAsset["geometry"] | undefined): Spa
     };
   }
 
+  if (geometry.type === "MultiPoint") {
+    return {
+      type: "MultiPoint",
+      coordinates: geometry.coordinates.map(latLngToLngLat),
+    };
+  }
+
   if (geometry.type === "LineString") {
     return {
       type: "LineString",
@@ -146,10 +153,26 @@ function toSpatialGeometry(geometry: SavedMapAsset["geometry"] | undefined): Spa
     };
   }
 
+  if (geometry.type === "MultiLineString") {
+    return {
+      type: "MultiLineString",
+      coordinates: geometry.coordinates.map((line) => line.map(latLngToLngLat)),
+    };
+  }
+
   if (geometry.type === "Polygon") {
     return {
       type: "Polygon",
       coordinates: geometry.coordinates.map((ring) => ring.map(latLngToLngLat)),
+    };
+  }
+
+  if (geometry.type === "MultiPolygon") {
+    return {
+      type: "MultiPolygon",
+      coordinates: geometry.coordinates.map((polygon) =>
+        polygon.map((ring) => ring.map(latLngToLngLat)),
+      ),
     };
   }
 
