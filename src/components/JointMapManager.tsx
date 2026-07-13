@@ -2130,28 +2130,34 @@ export default function JointMapManager({
         ),
     );
 
-    setSavedJoints((prev) => {
-      let changed = false;
+    let changed = false;
+    const nextAssets = (savedJoints ?? []).map((asset) => {
+      const update = updatesById.get(String(asset.id || ""));
+      if (!update) return asset;
 
-      const nextAssets = (prev ?? []).map((asset) => {
-        const update = updatesById.get(String(asset.id || ""));
-        if (!update) return asset;
-
-        const nextAsset = {
-          ...(asset as any),
+      const nextAsset = {
+        ...(asset as any),
+        dpDetails: update.dpDetails,
+        properties: {
+          ...((asset as any).properties || {}),
           dpDetails: update.dpDetails,
-          properties: {
-            ...((asset as any).properties || {}),
-            dpDetails: update.dpDetails,
-          },
-        } as SavedMapAsset;
+        },
+      } as SavedMapAsset;
 
-        if (sameOperationalData(asset, nextAsset)) return asset;
-        changed = true;
-        return markAssetForLiveSync(nextAsset);
-      });
+      if (sameOperationalData(asset, nextAsset)) return asset;
+      changed = true;
+      return markAssetForLiveSync(nextAsset);
+    });
 
-      return changed ? nextAssets : prev;
+    if (!changed) return;
+    setSavedJoints(nextAssets);
+    void saveMapAssetsViaCoordinator(nextAssets, {
+      source: "joint-map-manager",
+      reason: "through-cable reservation rebuild",
+      allowDestructiveSave: false,
+    }).catch((err) => {
+      console.error("Failed to save through-cable reservation rebuild", err);
+      alert("Reservation updates changed on screen, but saving to PostGIS failed.");
     });
   };
 
@@ -2516,6 +2522,7 @@ export default function JointMapManager({
         }
       });
 
+      let nextCableSavedJoints: SavedMapAsset[] | null = null;
       setSavedJoints((prev) => {
         // Keep newly drawn cables inside the active Project Workspace view.
         // Without the area index stamp the cable is saved to state, but the
@@ -2563,12 +2570,21 @@ export default function JointMapManager({
           );
         });
 
-        return [
+        nextCableSavedJoints = [
           ...updatedExistingAssets,
           markedCableRecord,
           ...markedAutoDrops,
         ];
+        return nextCableSavedJoints;
       });
+
+      if (nextCableSavedJoints) {
+        await saveMapAssetsViaCoordinator(nextCableSavedJoints, {
+          source: "joint-map-manager",
+          reason: "finish cable route",
+          allowDestructiveSave: false,
+        });
+      }
 
       // Project GeoJSON homes are stored separately from savedJoints. Stamp and
       // persist them here so the home popup can show connected DP immediately and
@@ -3874,6 +3890,7 @@ export default function JointMapManager({
       return;
     }
 
+    let nextAddressSheetAssets: SavedMapAsset[] | null = null;
     setSavedJoints((prev) => {
       const base = (prev ?? []).filter((asset: any) => {
         if (!request.overwriteExistingDrops || !isDropCable(asset)) return true;
@@ -3889,8 +3906,17 @@ export default function JointMapManager({
       });
       newDropsById.forEach((asset, id) => byId.set(id, asset));
 
-      return Array.from(byId.values());
+      nextAddressSheetAssets = Array.from(byId.values());
+      return nextAddressSheetAssets;
     });
+
+    if (nextAddressSheetAssets) {
+      await saveMapAssetsViaCoordinator(nextAddressSheetAssets, {
+        source: "joint-map-manager",
+        reason: "address sheet splitter assignment",
+        allowDestructiveSave: false,
+      });
+    }
 
     if (activeProjectId) {
       const updatedProjectHomes = projectHomes.map((home) => {
@@ -4076,12 +4102,11 @@ export default function JointMapManager({
 
     const reason = `Auto-spread ${movedById.size} stacked home${movedById.size === 1 ? "" : "s"} across ${stackCount} group${stackCount === 1 ? "" : "s"}.`;
 
-    setSavedJoints((prev) =>
-      (prev ?? []).map((asset) => {
+    const nextSpreadSavedJoints = (savedJoints ?? []).map((asset) => {
         const moved = movedById.get(asset.id);
         return moved ? markAssetForLiveSync(moved, false) : asset;
-      }),
-    );
+      });
+    setSavedJoints(nextSpreadSavedJoints);
 
     if (projectHomes.length > 0) {
       const updatedProjectHomes = projectHomes.map(
@@ -4104,7 +4129,19 @@ export default function JointMapManager({
       }
     } else if (projectHomeIds.size === 0) {
       // No projectHomes state to save; this means homes are stored in the main map assets.
-      // setSavedJoints above will persist via the existing main chunk save path.
+      try {
+        await saveMapAssetsViaCoordinator(nextSpreadSavedJoints, {
+          source: "joint-map-manager",
+          reason,
+          allowDestructiveSave: false,
+        });
+      } catch (err) {
+        console.error("Failed to save auto-spread map assets", err);
+        alert(
+          "Homes moved on screen, but saving the map assets failed. Check the console before refreshing.",
+        );
+        return;
+      }
     }
 
     writeAssetAuditLog({
@@ -5160,6 +5197,11 @@ export default function JointMapManager({
             onToggleSurveyDeleteHome={handleToggleSurveyDeleteHomeSelection}
             onMoveAsset={(id, lat, lng) => {
               const beforeAsset = allMapAssets.find((asset) => asset.id === id);
+              const beforeLegacyId = String((beforeAsset as any)?.legacyAssetId || "").trim();
+              const matchesMovedAssetId = (asset: SavedMapAsset) =>
+                asset.id === id ||
+                (beforeLegacyId && asset.id === beforeLegacyId) ||
+                String((asset as any).legacyAssetId || "") === id;
               const reason = getChangeReasonForCurrentMode(
                 "moved",
                 beforeAsset?.name || id,
@@ -5226,7 +5268,7 @@ export default function JointMapManager({
                     (asset) => !shouldRemoveExistingDropForMovedHome(asset),
                   )
                   .map((asset) => {
-                    if (asset.id !== id) return asset;
+                    if (!matchesMovedAssetId(asset)) return asset;
                     if (asset.geometry?.type !== "Point") return asset;
 
                     foundInSavedJoints = true;
@@ -5248,9 +5290,13 @@ export default function JointMapManager({
                 return withRegeneratedDrop;
               });
 
+              if (movedAsset && beforeAsset?.assetType !== "home") {
+                saveMapAssetToState(movedAsset, { isNew: false });
+              }
+
               if (beforeAsset?.assetType === "home") {
                 const updatedProjectHomes = (projectHomes ?? []).map((home) => {
-                  if (home.id !== id) return home;
+                  if (!matchesMovedAssetId(home)) return home;
                   return buildMovedPointAsset(home);
                 });
 
