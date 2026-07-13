@@ -165,6 +165,27 @@ function normaliseCableText(value: unknown): string {
     .replace(/[\s_/-]+/g, " ");
 }
 
+function getCableLayerText(asset: SavedMapAsset): string {
+  const item = asset as any;
+  return [
+    item.cableType,
+    item.type,
+    item.assetType,
+    item.jointType,
+    item.name,
+    item.label,
+    item.fibreCount,
+    item.fiberCount,
+    item.size,
+    item.cableSize,
+    item.importedProperties?.assetSubtype,
+    item.importedProperties?.sourceRevision,
+  ]
+    .map(normaliseCableText)
+    .filter(Boolean)
+    .join(" ");
+}
+
 function isUndergroundInstall(asset: SavedMapAsset): boolean {
   const install = normaliseCableText((asset as any).installMethod);
   const cableType = normaliseCableText((asset as any).cableType);
@@ -1175,19 +1196,18 @@ export default function CableLinesLayer({
 
         if (cableDrawingMode) return isEngineeringDrawingTrunkCable(asset);
 
-        const cableType = String(asset.cableType || "").toLowerCase();
-        const fibreCount = String(asset.fibreCount || "").toLowerCase();
+        const cableText = getCableLayerText(asset);
         const isDropCable = isDropCableAsset(asset);
 
         if (isDropCable) return isLayerOn("dropCables");
 
-        const matchesFeeder = cableType.includes("feeder");
-        const matchesLink = cableType.includes("link");
-        const matches96 = fibreCount.includes("96");
-        const matches48 = fibreCount.includes("48");
-        const matches36 = fibreCount.includes("36");
-        const matches24 = fibreCount.includes("24");
-        const matches12 = fibreCount.includes("12");
+        const matchesFeeder = cableText.includes("feeder");
+        const matchesLink = cableText.includes("link");
+        const matches96 = cableText.includes("96");
+        const matches48 = cableText.includes("48");
+        const matches36 = cableText.includes("36");
+        const matches24 = cableText.includes("24");
+        const matches12 = cableText.includes("12");
 
         if (
           (matchesFeeder && !isLayerOn("feeders")) ||
