@@ -35,17 +35,23 @@ export async function saveSpatialMapAssets(
   const saved: SpatialApiFeature[] = [];
 
   if (writableAssets.length > 1) {
-    const result = await spatialApiJson<{ saved: number; assets: SpatialApiFeature[] }>(
-      "/api/assets/bulk",
-      {
-        method: "POST",
-        body: {
-          reason: options.reason,
-          assets: writableAssets,
+    try {
+      const result = await spatialApiJson<{ saved: number; assets: SpatialApiFeature[] }>(
+        "/api/assets/bulk",
+        {
+          method: "POST",
+          body: {
+            reason: options.reason,
+            assets: writableAssets,
+          },
         },
-      },
-    );
-    return result.assets;
+      );
+      return result.assets;
+    } catch (error) {
+      // Older Hetzner API deployments do not have /api/assets/bulk yet. Fall
+      // back to confirmed single-asset writes so imports still persist.
+      if (!String(error).includes("404")) throw error;
+    }
   }
 
   for (const asset of writableAssets) {
