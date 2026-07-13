@@ -248,22 +248,24 @@ export function useMapImportExportTools({
             return true;
           });
 
-          if (newHomes.length) {
-            const mergedHomes = [
-              ...existingHomes,
-              ...newHomes.map((home) => ({
-                ...home,
-                projectId: activeProjectId,
-              })),
-            ];
+          const mergedHomes = [
+            ...existingHomes,
+            ...newHomes.map((home) => ({
+              ...home,
+              projectId: activeProjectId,
+            })),
+          ];
+
+          if (mergedHomes.length) {
+            const stampedHomes = stampHomesForActiveArea(mergedHomes);
             await saveProjectHomes(
               activeProjectId,
-              stampHomesForActiveArea(mergedHomes),
+              stampedHomes,
               activeProjectAreaName,
             );
-            setProjectHomes(mergedHomes);
+            setProjectHomes(stampedHomes);
             setLoadedHomesProjectId(activeProjectId);
-            savedHomeCount = newHomes.length;
+            savedHomeCount = newHomes.length || mergedHomes.length;
           }
         }
 

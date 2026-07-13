@@ -24,6 +24,13 @@ function safeProjectDocId(projectId: string): string {
   return String(projectId || "unknown-project").replace(/\//g, "_");
 }
 
+function getStoredPostgisHomeId(home: SavedMapAsset): string {
+  const metadataId = String((home as any).importedProperties?.postgisId || "").trim();
+  if (metadataId) return metadataId;
+
+  return toStablePostgisId(home.id);
+}
+
 function chunksCollection(projectId: string) {
   return collection(
     db,
@@ -106,13 +113,13 @@ export async function saveProjectHomes(
     });
 
     const staleHomes = existingHomes.filter((home) => {
-      const postgisId = toStablePostgisId(home.id);
+      const postgisId = getStoredPostgisHomeId(home);
       return !nextIds.has(postgisId);
     });
 
     await Promise.all(
       staleHomes.map((home) =>
-        deleteSpatialMapAsset(home.id, {
+        deleteSpatialMapAsset(getStoredPostgisHomeId(home), {
           businessId: BUSINESS_ID,
           reason: "project-homes-replace-delete-stale",
         }),

@@ -20,6 +20,24 @@ type UseHomeImportToolsArgs = {
   stampHomesForActiveArea: (homes: SavedMapAsset[]) => SavedMapAsset[];
 };
 
+function getHomeImportKey(home: SavedMapAsset): string {
+  return String((home as any).uprn || home.id || home.name || "").trim();
+}
+
+function mergeUniqueHomes(homes: SavedMapAsset[]): SavedMapAsset[] {
+  const seen = new Set<string>();
+  const merged: SavedMapAsset[] = [];
+
+  homes.forEach((home) => {
+    const key = getHomeImportKey(home);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    merged.push(home);
+  });
+
+  return merged;
+}
+
 export function useHomeImportTools({
   activeProjectId,
   activeProjectArea,
@@ -122,7 +140,7 @@ export function useHomeImportTools({
     }
 
     const existingHomeKeys = new Set(
-      allMapAssets
+      [...allMapAssets, ...projectHomes]
         .filter((asset) => asset.assetType === "home")
         .map((asset) => {
           const uprn = String(
@@ -193,17 +211,10 @@ export function useHomeImportTools({
 
     reader.onload = async (e) => {
       try {
-        const loadedExistingHomes =
-          await loadExistingHomesOrContinueImport(projectIdForImport);
-        if (loadedExistingHomes) return;
+        const existingHomes = await loadProjectHomes(projectIdForImport);
 
         const geojson = JSON.parse(String(e.target?.result || ""));
         const homes = createHomeAssetsFromGeoJson(geojson);
-
-        if (homes.length === 0) {
-          alert("No new GeoJSON homes found in that file.");
-          return;
-        }
 
         const savedHomes = homes.map((asset) =>
           markAssetForLiveSync(
@@ -211,17 +222,27 @@ export function useHomeImportTools({
             true,
           ),
         );
-        const mergedHomes = [...projectHomes, ...savedHomes];
+        const mergedHomes = mergeUniqueHomes([
+          ...existingHomes,
+          ...projectHomes,
+          ...savedHomes,
+        ]);
 
+        if (mergedHomes.length === 0) {
+          alert("No GeoJSON homes found in that file.");
+          return;
+        }
+
+        const stampedHomes = stampHomesForActiveArea(mergedHomes);
         await saveProjectHomes(
           projectIdForImport,
-          stampHomesForActiveArea(mergedHomes),
+          stampedHomes,
           activeProjectAreaName,
         );
-        setProjectHomes(mergedHomes);
+        setProjectHomes(stampedHomes);
         setLoadedHomesProjectId(projectIdForImport);
 
-        alert(`Saved ${homes.length} GeoJSON homes to this project.`);
+        alert(`Saved ${homes.length || mergedHomes.length} GeoJSON homes to this project.`);
       } catch (err: any) {
         console.error(err);
         alert(`Failed to load GeoJSON homes: ${err.message || String(err)}`);
@@ -251,9 +272,7 @@ export function useHomeImportTools({
 
     reader.onload = async (e) => {
       try {
-        const loadedExistingHomes =
-          await loadExistingHomesOrContinueImport(projectIdForImport);
-        if (loadedExistingHomes) return;
+        const existingHomes = await loadProjectHomes(projectIdForImport);
 
         const geojson = JSON.parse(String(e.target?.result || ""));
         const importedHomes = createHomeAssetsFromGeoJson(
@@ -264,28 +283,33 @@ export function useHomeImportTools({
           ? filterAssetsForProjectArea(importedHomes, activeProjectArea)
           : importedHomes;
 
-        if (homes.length === 0) {
-          alert("No new GeoJSON homes found in the current map view.");
-          return;
-        }
-
         const savedHomes = homes.map((asset) =>
           markAssetForLiveSync(
             { ...asset, projectId: projectIdForImport },
             true,
           ),
         );
-        const mergedHomes = [...projectHomes, ...savedHomes];
+        const mergedHomes = mergeUniqueHomes([
+          ...existingHomes,
+          ...projectHomes,
+          ...savedHomes,
+        ]);
 
+        if (mergedHomes.length === 0) {
+          alert("No GeoJSON homes found in the current map view.");
+          return;
+        }
+
+        const stampedHomes = stampHomesForActiveArea(mergedHomes);
         await saveProjectHomes(
           projectIdForImport,
-          stampHomesForActiveArea(mergedHomes),
+          stampedHomes,
           activeProjectAreaName,
         );
-        setProjectHomes(mergedHomes);
+        setProjectHomes(stampedHomes);
         setLoadedHomesProjectId(projectIdForImport);
 
-        alert(`Saved ${homes.length} GeoJSON homes in view to this project.`);
+        alert(`Saved ${homes.length || mergedHomes.length} GeoJSON homes in view to this project.`);
       } catch (err: any) {
         console.error(err);
         alert(`Failed to load GeoJSON homes: ${err.message || String(err)}`);
