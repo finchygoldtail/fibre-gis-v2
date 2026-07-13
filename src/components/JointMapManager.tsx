@@ -128,6 +128,7 @@ import { isSpatialApiAsset } from "../services/spatialApi/spatialAssetAdapter";
 import { spatialApiConfig } from "../services/spatialApi/spatialApiConfig";
 import {
   deleteSpatialMapAsset,
+  saveSpatialMapAssets,
   wipeSpatialMapData,
 } from "../services/spatialApi/spatialAssetWriteService";
 import { useSpatialViewportAssets } from "../services/spatialApi/useSpatialViewportAssets";
@@ -2522,23 +2523,20 @@ export default function JointMapManager({
         }
       });
 
-      let nextCableSavedJoints: SavedMapAsset[] | null = null;
-      setSavedJoints((prev) => {
-        // Keep newly drawn cables inside the active Project Workspace view.
-        // Without the area index stamp the cable is saved to state, but the
-        // project-area filter can hide it immediately after Finish Cable/reset,
-        // which makes it look like the cable has been removed from the map.
-        const markedCableRecord = markAssetForLiveSync(
-          withAreaAssetIndex(cableRecord, activeProjectId, activeProjectAreaName),
+      const markedCableRecord = markAssetForLiveSync(
+        withAreaAssetIndex(cableRecord, activeProjectId, activeProjectAreaName),
+        true,
+      );
+      const markedAutoDrops = autoDrops.map((asset) =>
+        markAssetForLiveSync(
+          withAreaAssetIndex(asset, activeProjectId, activeProjectAreaName),
           true,
-        );
-        const markedAutoDrops = autoDrops.map((asset) =>
-          markAssetForLiveSync(
-            withAreaAssetIndex(asset, activeProjectId, activeProjectAreaName),
-            true,
-          ),
-        );
+        ),
+      );
+      const newCableAssets = [markedCableRecord, ...markedAutoDrops];
+      let nextCableSavedJoints: SavedMapAsset[] | null = null;
 
+      setSavedJoints((prev) => {
         const updatedExistingAssets = prev.map((asset) => {
           if (asset.assetType !== "home") return asset;
 
@@ -2578,7 +2576,14 @@ export default function JointMapManager({
         return nextCableSavedJoints;
       });
 
-      if (nextCableSavedJoints) {
+      if (spatialApiConfig.enabled && spatialApiConfig.writesEnabled) {
+        await saveSpatialMapAssets(newCableAssets, {
+          businessId: "fibre-gis-v2",
+          projectId: activeProjectId || undefined,
+          areaId: activeProjectId || undefined,
+          reason: "finish cable route",
+        });
+      } else if (nextCableSavedJoints) {
         await saveMapAssetsViaCoordinator(nextCableSavedJoints, {
           source: "joint-map-manager",
           reason: "finish cable route",
