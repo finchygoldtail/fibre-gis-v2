@@ -610,6 +610,7 @@ export function useAssetSaveHandlers({
       await saveMapAssetsViaCoordinator(nextSavedAssets, {
         reason: `asset-delete:${reason}`,
         source: "joint-map-manager",
+        explicitDeletedAssetIds: [deletedId],
       });
     } catch (error) {
       console.error("Asset delete Firestore save failed", error);

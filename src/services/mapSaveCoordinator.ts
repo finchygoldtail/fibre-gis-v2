@@ -12,6 +12,7 @@ export type CoordinatedMapSaveOptions = {
   reason?: string;
   source?: MapSaveSource;
   allowDestructiveSave?: boolean;
+  explicitDeletedAssetIds?: string[];
 };
 
 export type CoordinatedMapSaveResult = {
@@ -43,6 +44,7 @@ export async function saveMapAssetsViaCoordinator(
   const savedAssets = (await saveMapAssetsToFirestore(assets, {
     reason,
     allowDestructiveSave: options.allowDestructiveSave,
+    explicitDeletedAssetIds: options.explicitDeletedAssetIds,
   })) as SavedMapAsset[];
 
   return {

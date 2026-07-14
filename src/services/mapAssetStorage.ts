@@ -49,6 +49,7 @@ export type SaveMapAssetsOptions = {
    * cannot wipe good Firestore chunk data.
    */
   allowDestructiveSave?: boolean;
+  explicitDeletedAssetIds?: string[];
   reason?: string;
 };
 
@@ -150,9 +151,46 @@ function formatInventory(counts: AssetInventory): string {
   return `total=${counts.total}, cables=${counts.cables}, polygons=${counts.polygons}, joints=${counts.joints}, DPs=${counts.distributionPoints}, homes=${counts.homes}, other=${counts.other}`;
 }
 
+function getAssetStableId(asset: any): string {
+  return String(asset?.id ?? asset?.assetId ?? asset?.properties?.id ?? "").trim();
+}
+
+function isCableWipeCoveredByExplicitDeletes(
+  previousAssets: any[],
+  nextAssets: any[],
+  explicitDeletedAssetIds: string[] | undefined,
+): boolean {
+  const deletedIds = new Set(
+    (explicitDeletedAssetIds ?? []).map((id) => String(id).trim()).filter(Boolean),
+  );
+  if (deletedIds.size === 0) return false;
+
+  const nextCableIds = new Set(
+    nextAssets
+      .filter((asset) => getAssetBucket(asset) === "cables")
+      .map(getAssetStableId)
+      .filter(Boolean),
+  );
+
+  const missingCableIds = previousAssets
+    .filter((asset) => getAssetBucket(asset) === "cables")
+    .map(getAssetStableId)
+    .filter((id) => id && !nextCableIds.has(id));
+
+  return (
+    missingCableIds.length > 0 &&
+    missingCableIds.every((id) => deletedIds.has(id))
+  );
+}
+
 function buildDestructiveSaveError(
   previous: AssetInventory,
   next: AssetInventory,
+  options: {
+    previousAssets: any[];
+    nextAssets: any[];
+    explicitDeletedAssetIds?: string[];
+  },
 ): string | null {
   if (next.total === 0 && previous.total > 0) {
     return `Refusing to save zero map assets over existing Firestore data (${formatInventory(previous)}).`;
@@ -165,7 +203,15 @@ function buildDestructiveSaveError(
     return `Refusing suspicious map asset save. Existing ${formatInventory(previous)} would become ${formatInventory(next)}.`;
   }
 
-  if (previous.cables > 0 && next.cables === 0) {
+  if (
+    previous.cables > 0 &&
+    next.cables === 0 &&
+    !isCableWipeCoveredByExplicitDeletes(
+      options.previousAssets,
+      options.nextAssets,
+      options.explicitDeletedAssetIds,
+    )
+  ) {
     return `Refusing to wipe cable assets. Existing cables=${previous.cables}, next cables=0.`;
   }
 
@@ -416,6 +462,11 @@ export async function saveMapAssetsToFirestore(
     const destructiveSaveError = buildDestructiveSaveError(
       existingInventory,
       nextInventory,
+      {
+        previousAssets: existingAssets,
+        nextAssets: cleaned,
+        explicitDeletedAssetIds: options.explicitDeletedAssetIds,
+      },
     );
 
     if (destructiveSaveError) {
