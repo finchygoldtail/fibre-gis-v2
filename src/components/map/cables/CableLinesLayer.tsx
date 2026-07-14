@@ -1400,6 +1400,11 @@ export default function CableLinesLayer({
                   L.DomEvent.stopPropagation(e);
                   if (cableDrawingMode) return;
                   setSelectedCableId(asset.id);
+                },
+                dblclick: (e) => {
+                  L.DomEvent.stopPropagation(e);
+                  if (cableDrawingMode) return;
+                  setSelectedCableId(asset.id);
                   zoomToCable(points);
                 },
                 mouseover: () => setHoveredCableId(asset.id),
@@ -1522,7 +1527,19 @@ export default function CableLinesLayer({
                     </button>
 
                     <button
-                      onClick={() => {
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        zoomToCable(points);
+                      }}
+                    >
+                      Frame route
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
                         setSelectedCableId(asset.id);
                         setEditingCableId(asset.id);
                       }}
@@ -1534,8 +1551,14 @@ export default function CableLinesLayer({
                       Done
                     </button>
 
-                    <button onClick={() => onDeleteAsset(asset.id)}>
-                      Delete
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onDeleteAsset(asset.id);
+                      }}
+                    >
+                      Delete cable
                     </button>
                   </div>
                 </div>
