@@ -346,26 +346,47 @@ export default function MapToolbar({
 
       {searchCard}
 
-      <div style={topRightActionsStyle}>
-        {onQaModeChange ? (
-          <div style={qaModeSwitchStyle} aria-label="QA map mode">
-            <button
-              type="button"
-              onClick={() => onQaModeChange("qa")}
-              style={qaModeButtonStyle(qaMode === "qa")}
-            >
-              QA Map
-            </button>
-            <button
-              type="button"
-              onClick={() => onQaModeChange("piaQa")}
-              style={qaModeButtonStyle(qaMode === "piaQa")}
-            >
-              PIA QA
-            </button>
-          </div>
-        ) : null}
+      <div style={workspaceDockStyle}>
+        <button
+          type="button"
+          onClick={onOpenAssetPanel}
+          style={workspacePrimaryButtonStyle}
+        >
+          Workspace
+        </button>
+        <button
+          type="button"
+          onClick={onOpenAssetPanel}
+          style={workspaceButtonStyle}
+        >
+          Assets
+        </button>
+        <button
+          type="button"
+          onClick={onToggleLayers}
+          style={workspaceButtonStyle}
+        >
+          {isLayersOpen ? "Hide Layers" : "Layers"}
+        </button>
+        <button
+          type="button"
+          onClick={onOpenAssetPanel}
+          style={workspaceButtonStyle}
+        >
+          Build
+        </button>
+        <span
+          style={{
+            ...workspaceSyncStyle,
+            color: autosaveTone,
+          }}
+          title={autosaveError || autosaveLabel}
+        >
+          {autosaveStatus === "error" ? "Sync issue" : isSavingMap ? "Saving" : "Synced"}
+        </span>
+      </div>
 
+      <div style={topRightActionsStyle}>
         <div style={messageButtonWrapStyle}>
           <button
             type="button"
@@ -374,74 +395,15 @@ export default function MapToolbar({
             title="Area messages"
           >
             💬
-            <span>Messages</span>
+            <span style={messageLabelStyle}>Messages</span>
             {areaMessages.length ? <strong style={messageBadgeStyle}>{areaMessages.length}</strong> : null}
           </button>
 
           {messagesPanel}
         </div>
-        {canSaveMap && (
-          <button
-            onClick={onSaveMap}
-            disabled={isSavingMap}
-            style={{
-              ...actionButtonStyle,
-              background: isSavingMap ? "#64748b" : "#16a34a",
-              cursor: isSavingMap ? "not-allowed" : "pointer",
-            }}
-            title="Flush pending map changes now"
-          >
-            {isSavingMap ? "Saving..." : "Save Now"}
-          </button>
-        )}
-
-        <div
-          style={{
-            padding: "8px 10px",
-            borderRadius: 999,
-            background: "#111827",
-            border: `1px solid ${autosaveTone}`,
-            color: "#e5e7eb",
-            fontSize: 12,
-            fontWeight: 800,
-            whiteSpace: "nowrap",
-          }}
-          title={autosaveError || autosaveLabel}
-        >
-          {autosaveLabel}
-        </div>
 
         <button onClick={onGpsLocate} style={actionButtonStyle}>
           GPS
-        </button>
-
-        {onToggleLocationSharing ? (
-          <button
-            onClick={onToggleLocationSharing}
-            style={{
-              ...actionButtonStyle,
-              background: isSharingLocation ? "#16a34a" : "#334155",
-            }}
-            title={
-              locationShareError ||
-              (isSharingLocation
-                ? "Stop sharing your live field location"
-                : "Share your live field location")
-            }
-          >
-            {isSharingLocation ? "Sharing" : "Share Location"}
-            {liveUserCount > 0 ? ` (${liveUserCount})` : ""}
-          </button>
-        ) : null}
-
-        <button
-          onClick={onToggleLayers}
-          style={{
-            ...actionButtonStyle,
-            background: "#2563eb",
-          }}
-        >
-          {isLayersOpen ? "Hide Layers" : "Layers"}
         </button>
 
         <UserMenu variant="topbar" />
@@ -488,25 +450,26 @@ const mapTopBarStyle = (isLayersOpen: boolean, isTablet: boolean): React.CSSProp
   left: 0,
   right: isLayersOpen ? 286 : 0,
   zIndex: 1300,
-  height: isTablet ? 64 : 72,
+  height: isTablet ? 64 : 68,
   display: "grid",
   gridTemplateColumns: isTablet
-    ? "118px minmax(170px, 230px) minmax(0, 1fr) minmax(270px, auto)"
-    : "minmax(130px, 210px) minmax(210px, 310px) minmax(118px, 160px) minmax(300px, 590px) minmax(360px, auto)",
+    ? "150px minmax(170px, 230px) minmax(240px, 1fr) minmax(210px, auto)"
+    : "150px minmax(260px, 322px) minmax(330px, 560px) minmax(390px, auto) minmax(270px, auto)",
   alignItems: "center",
-  gap: isTablet ? 8 : 10,
-  padding: isTablet ? "7px 9px" : "8px 12px",
-  border: "1px solid rgba(148,163,184,0.42)",
+  gap: isTablet ? 8 : 12,
+  padding: isTablet ? "7px 14px" : "7px 28px",
+  border: "1px solid rgba(38,50,68,0.9)",
   borderTop: "0",
   borderLeft: "0",
-  borderRadius: "0 0 16px 0",
-  background: "rgba(15, 23, 42, 0.94)",
-  boxShadow: "0 14px 34px rgba(15,23,42,0.34)",
-  backdropFilter: "blur(10px)",
+  borderRadius: 0,
+  background: "linear-gradient(90deg, rgba(8,12,19,0.98), rgba(13,20,32,0.98) 48%, rgba(18,27,43,0.98))",
+  boxShadow: "0 12px 30px rgba(2,6,23,0.24)",
+  backdropFilter: "blur(12px)",
   overflow: "visible",
 });
 
 const topBarGhostButtonStyle: React.CSSProperties = {
+  display: "none",
   background: "rgba(30, 41, 59, 0.95)",
   color: "white",
   border: "1px solid rgba(148,163,184,0.34)",
@@ -521,6 +484,7 @@ const topBarGhostButtonStyle: React.CSSProperties = {
 const areaSelectorShellStyle: React.CSSProperties = {
   minWidth: 0,
   width: "100%",
+  order: 2,
 };
 
 const areaFallbackStyle: React.CSSProperties = {
@@ -541,6 +505,7 @@ const mapTopBarBrandStyle: React.CSSProperties = {
   minWidth: 118,
   color: "#f8fafc",
   whiteSpace: "nowrap",
+  order: 1,
 };
 
 const searchShellStyle = (isMobile = false, isOpen = false): React.CSSProperties => ({
@@ -553,14 +518,15 @@ const searchShellStyle = (isMobile = false, isOpen = false): React.CSSProperties
   minWidth: isMobile ? 0 : 280,
   alignSelf: isMobile ? undefined : "center",
   display: isMobile && !isOpen ? "none" : undefined,
+  order: isMobile ? undefined : 3,
 });
 
 const searchCardStyle: React.CSSProperties = {
   position: "relative",
   background: "#ffffff",
   border: "1px solid rgba(148,163,184,0.55)",
-  borderRadius: 12,
-  boxShadow: "0 10px 24px rgba(15,23,42,0.22)",
+  borderRadius: 24,
+  boxShadow: "0 18px 32px rgba(2,6,23,0.18)",
   overflow: "visible",
 };
 
@@ -568,14 +534,14 @@ const searchInputRowStyle: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "40px minmax(0, 1fr) 40px",
   alignItems: "center",
-  height: 42,
+  height: 48,
 };
 
 const searchIconStyle: React.CSSProperties = {
   color: "#0f172a",
   fontSize: 22,
   textAlign: "center",
-  lineHeight: "42px",
+  lineHeight: "48px",
 };
 
 const searchInputStyle: React.CSSProperties = {
@@ -597,7 +563,7 @@ const searchOptionsButtonStyle: React.CSSProperties = {
   cursor: "pointer",
   fontSize: 19,
   fontWeight: 900,
-  height: 42,
+  height: 48,
 };
 
 const searchScopeStyle: React.CSSProperties = {
@@ -674,10 +640,55 @@ const emptyResultsStyle: React.CSSProperties = {
 
 const topRightActionsStyle: React.CSSProperties = {
   display: "flex",
-  gap: 8,
+  gap: 22,
   alignItems: "center",
   justifyContent: "flex-end",
   minWidth: 0,
+  order: 5,
+};
+
+const workspaceDockStyle: React.CSSProperties = {
+  order: 4,
+  display: "flex",
+  alignItems: "center",
+  gap: 20,
+  minWidth: 0,
+  height: 58,
+  padding: "0 20px 0 26px",
+  borderRadius: 999,
+  background: "#0b111b",
+  border: "1px solid rgba(42,58,82,0.86)",
+  boxShadow: "0 18px 38px rgba(2,6,23,0.26)",
+  whiteSpace: "nowrap",
+};
+
+const workspacePrimaryButtonStyle: React.CSSProperties = {
+  border: "none",
+  background: "transparent",
+  color: "#f8fafc",
+  cursor: "pointer",
+  fontSize: 13,
+  fontWeight: 900,
+  padding: 0,
+};
+
+const workspaceButtonStyle: React.CSSProperties = {
+  border: "none",
+  background: "transparent",
+  color: "#9aa7ba",
+  cursor: "pointer",
+  fontSize: 13,
+  fontWeight: 800,
+  padding: 0,
+};
+
+const workspaceSyncStyle: React.CSSProperties = {
+  marginLeft: "auto",
+  paddingLeft: 4,
+  fontSize: 11,
+  fontWeight: 900,
+  textTransform: "uppercase",
+  letterSpacing: 0.5,
 };
 
 const qaModeSwitchStyle: React.CSSProperties = {
@@ -707,19 +718,25 @@ const messageButtonWrapStyle: React.CSSProperties = {
 };
 
 const messageButtonStyle: React.CSSProperties = {
-  background: "#0f766e",
-  color: "white",
+  background: "transparent",
+  color: "#e6edf7",
   border: "none",
-  padding: "10px 13px",
-  borderRadius: 10,
+  padding: 0,
+  borderRadius: 0,
   cursor: "pointer",
-  boxShadow: "0 2px 8px rgba(0,0,0,0.26)",
-  fontWeight: 900,
+  boxShadow: "none",
+  fontSize: 0,
+  fontWeight: 850,
   whiteSpace: "nowrap",
   display: "inline-flex",
   alignItems: "center",
-  gap: 6,
+  gap: 7,
   position: "relative",
+};
+
+const messageLabelStyle: React.CSSProperties = {
+  fontSize: 13,
+  fontWeight: 850,
 };
 
 const messageBadgeStyle: React.CSSProperties = {
@@ -901,13 +918,14 @@ const mobileUserMenuWrapStyle: React.CSSProperties = {
 };
 
 const actionButtonStyle: React.CSSProperties = {
-  background: "#2563eb",
-  color: "white",
+  background: "transparent",
+  color: "#e6edf7",
   border: "none",
-  padding: "10px 13px",
-  borderRadius: 10,
+  padding: 0,
+  borderRadius: 0,
   cursor: "pointer",
-  boxShadow: "0 2px 8px rgba(0,0,0,0.26)",
-  fontWeight: 900,
+  boxShadow: "none",
+  fontSize: 13,
+  fontWeight: 850,
   whiteSpace: "nowrap",
 };
