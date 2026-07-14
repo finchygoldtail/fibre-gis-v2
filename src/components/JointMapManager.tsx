@@ -123,8 +123,6 @@ import {
 import { useRoleMobileMode } from "./map/responsive/useRoleMobileMode";
 import { useDeviceLayout } from "./map/responsive/useDeviceLayout";
 import { useLiveUserLocationSharing } from "./map/hooks/useLiveUserLocationSharing";
-import { isSpatialApiAsset } from "../services/spatialApi/spatialAssetAdapter";
-import { useSpatialViewportAssets } from "../services/spatialApi/useSpatialViewportAssets";
 import SurveyMobileControls from "./map/responsive/mobile/SurveyMobileControls";
 import MaintenanceMobileControls from "./map/responsive/mobile/MaintenanceMobileControls";
 import FieldModeStatusPill from "./map/responsive/shared/FieldModeStatusPill";
@@ -201,67 +199,6 @@ function getMapAssetsSaveSignature(assets: SavedMapAsset[]): string {
     )
     .sort()
     .join("|");
-}
-
-function mergeMapAssets(...groups: SavedMapAsset[][]): SavedMapAsset[] {
-  const byId = new Map<string, SavedMapAsset>();
-  groups.flat().forEach((asset) => {
-    if (asset?.id) byId.set(asset.id, asset);
-  });
-  return Array.from(byId.values());
-}
-
-function SpatialApiStatusPanel({
-  enabled,
-  loading,
-  count,
-  truncated,
-  error,
-}: {
-  enabled: boolean;
-  loading: boolean;
-  count: number;
-  truncated: boolean;
-  error: string | null;
-}) {
-  if (!enabled) return null;
-
-  return (
-    <div
-      style={{
-        position: "absolute",
-        right: 16,
-        top: 84,
-        zIndex: 650,
-        maxWidth: 360,
-        padding: "9px 12px",
-        borderRadius: 8,
-        border: "1px solid rgba(148, 163, 184, 0.28)",
-        background: "rgba(15, 23, 42, 0.94)",
-        color: "#e5e7eb",
-        boxShadow: "0 12px 32px rgba(0, 0, 0, 0.28)",
-        fontSize: 12,
-        lineHeight: 1.35,
-        pointerEvents: "none",
-      }}
-    >
-      <strong style={{ color: error ? "#fca5a5" : "#86efac" }}>
-        Hetzner / PostGIS
-      </strong>
-      <span style={{ marginLeft: 8 }}>
-        {error
-          ? error
-          : loading
-            ? "Loading viewport..."
-            : `${count} asset${count === 1 ? "" : "s"} in viewport`}
-      </span>
-      {truncated ? (
-        <div style={{ color: "#facc15", marginTop: 4 }}>
-          Result limit reached. Zoom in or reduce visible layers.
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 function isEngineeringDrawingJointAsset(asset: SavedMapAsset): boolean {
@@ -1501,14 +1438,6 @@ export default function JointMapManager({
     visibleLayers,
   });
 
-  const spatialViewport = useSpatialViewportAssets({
-    businessId: "fibre-gis-v2",
-    areaId: null,
-    bounds: mapBounds,
-    zoom: mapZoom,
-    visibleLayers,
-  });
-
   const {
     sharingEnabled: isSharingLocation,
     setSharingEnabled: setIsSharingLocation,
@@ -1531,21 +1460,6 @@ export default function JointMapManager({
     [renderProjectAssets, exchangeNetworkAssets],
   );
 
-  const renderProjectAssetsWithSpatial = useMemo(
-    () => mergeMapAssets(renderProjectAssets, spatialViewport.assets),
-    [renderProjectAssets, spatialViewport.assets],
-  );
-
-  const renderProjectAssetsWithExchangesAndSpatial = useMemo(
-    () =>
-      mergeMapAssets(
-        renderProjectAssets,
-        exchangeNetworkAssets,
-        spatialViewport.assets,
-      ),
-    [exchangeNetworkAssets, renderProjectAssets, spatialViewport.assets],
-  );
-
   const allNetworkAssetsWithExchanges = useMemo(
     () => [...allMapAssets, ...exchangeNetworkAssets],
     [allMapAssets, exchangeNetworkAssets],
@@ -1560,12 +1474,8 @@ export default function JointMapManager({
     () =>
       mapMode === "draw-cable"
         ? engineeringDrawingSourceAssets.filter(isEngineeringDrawingVisibleAsset)
-        : renderProjectAssetsWithExchangesAndSpatial,
-    [
-      engineeringDrawingSourceAssets,
-      mapMode,
-      renderProjectAssetsWithExchangesAndSpatial,
-    ],
+        : renderProjectAssetsWithExchanges,
+    [engineeringDrawingSourceAssets, mapMode, renderProjectAssetsWithExchanges],
   );
 
   const engineeringDrawingSnapCandidateAssets = useMemo(
@@ -4855,17 +4765,12 @@ export default function JointMapManager({
               EXISTING JOINT / CAB / POLE / DP / CHAMBER MARKERS
               ===================================================== */}
           <AssetMarkersLayer
-            assets={mapMode === "draw-cable" ? engineeringDrawingAssets : renderProjectAssetsWithSpatial}
+            assets={mapMode === "draw-cable" ? engineeringDrawingAssets : renderProjectAssets}
             visibleLayers={visibleLayers}
             highlightedAssetId={highlightedSearchAssetId}
             cableDrawingMode={mapMode === "draw-cable"}
             onCablePointAsset={handleCableAssetPoint}
             onOpenAsset={(asset) => {
-              if (isSpatialApiAsset(asset)) {
-                alert("This asset is loaded read-only from the spatial API.");
-                return;
-              }
-
               const routedType = String(
                 (asset as any).assetType || (asset as any).type || "",
               ).toLowerCase();
@@ -4910,16 +4815,8 @@ export default function JointMapManager({
               setIsPanelOpen(true);
             }}
             onOpenAudit={(asset) => setAuditFormAsset(asset)}
-            onDeleteAsset={(id) => {
-              if (id.startsWith("postgis:")) return;
-              handleAdminDeleteAsset(id);
-            }}
+            onDeleteAsset={handleAdminDeleteAsset}
             onEditAsset={(asset) => {
-              if (isSpatialApiAsset(asset)) {
-                alert("This asset is loaded read-only from the spatial API.");
-                return;
-              }
-
               // Keep Edit Details as metadata editing.
               // The dedicated DP Operations editor is opened via the map Open/Operations path
               // and the side-panel "Open DP Operations Editor" button.
@@ -5137,25 +5034,15 @@ export default function JointMapManager({
               Openreach poles/chambers appear as blue editable map pins. */}
 
           <CableLinesLayer
-            assets={mapMode === "draw-cable" ? engineeringDrawingAssets : renderProjectAssetsWithExchangesAndSpatial}
+            assets={mapMode === "draw-cable" ? engineeringDrawingAssets : renderProjectAssetsWithExchanges}
             endpointAssetOptions={engineeringDrawingSourceAssets}
             cablesVisible={visibleLayers.cables}
             visibleLayers={visibleLayers}
             showCableDistances={visibleLayers.cableDistances}
             cableDrawingMode={mapMode === "draw-cable"}
-            onDeleteAsset={(id) => {
-              if (id.startsWith("postgis:")) return;
-              handleAdminDeleteAsset(id);
-            }}
-            onEditAsset={(asset) => {
-              if (isSpatialApiAsset(asset)) {
-                alert("This cable is loaded read-only from the spatial API.");
-                return;
-              }
-              handleEditAsset(asset);
-            }}
+            onDeleteAsset={handleAdminDeleteAsset}
+            onEditAsset={handleEditAsset}
             onUpdateAsset={(asset) => {
-              if (isSpatialApiAsset(asset)) return;
               saveMapAssetToState(asset, {
                 isNew: false,
                 message: "Cable endpoints updated.",
@@ -5380,14 +5267,6 @@ export default function JointMapManager({
               );
             })}
         </MapContainer>
-
-        <SpatialApiStatusPanel
-          enabled={spatialViewport.enabled}
-          loading={spatialViewport.loading}
-          count={spatialViewport.count}
-          truncated={spatialViewport.truncated}
-          error={spatialViewport.error}
-        />
 
         <MapContextMenu
           visible={contextMenu.visible}

@@ -30,13 +30,6 @@ import {
   type ParentSbPopupSummary,
 } from "./dpPopupSummary";
 import {
-  clusterDensePointAssets,
-  createDensePointClusterIcon,
-  getDensePointClusterBounds,
-  isDensePointClusterAsset,
-  type DensePointCluster,
-} from "./densePointClusters";
-import {
   infoRow,
   renderDocuments,
   renderImagePreview,
@@ -815,34 +808,6 @@ React.useEffect(() => {
     [pointAssets]
   );
 
-  const denseClusterSourceAssets = useMemo(
-    () =>
-      !cableDrawingMode && !assetMovementEnabled
-        ? nonHomePointAssets.filter(isDensePointClusterAsset)
-        : [],
-    [assetMovementEnabled, cableDrawingMode, nonHomePointAssets],
-  );
-
-  const densePointClusters = useMemo(
-    () => clusterDensePointAssets(denseClusterSourceAssets, map),
-    [denseClusterSourceAssets, map, mapView.zoom, mapView.bounds],
-  );
-
-  const denseClusteredAssetIds = useMemo(
-    () =>
-      new Set(
-        densePointClusters
-          .filter((cluster) => cluster.assets.length > 1)
-          .flatMap((cluster) => cluster.assets.map((asset) => asset.id)),
-      ),
-    [densePointClusters],
-  );
-
-  const nonClusteredNonHomePointAssets = useMemo(
-    () => nonHomePointAssets.filter((asset) => !denseClusteredAssetIds.has(asset.id)),
-    [denseClusteredAssetIds, nonHomePointAssets],
-  );
-
   const visibleDpAssets = useMemo(
     () => nonHomePointAssets.filter((asset) => asset.assetType === "distribution-point"),
     [nonHomePointAssets],
@@ -1318,80 +1283,6 @@ const icon = asset.id === highlightedAssetId
     );
   };
 
-  const renderDensePointClusterMarker = (cluster: DensePointCluster) => {
-    if (cluster.assets.length === 1) {
-      return renderAssetMarker(cluster.assets[0]);
-    }
-
-    const counts = cluster.assets.reduce(
-      (summary, asset) => {
-        if (asset.assetType === "distribution-point") summary.dps += 1;
-        if (asset.assetType === "pole") summary.poles += 1;
-        if (asset.assetType === "chamber") summary.chambers += 1;
-        return summary;
-      },
-      { dps: 0, poles: 0, chambers: 0 },
-    );
-
-    return (
-      <Marker
-        key={cluster.id}
-        position={cluster.position}
-        icon={createDensePointClusterIcon(cluster)}
-        eventHandlers={{
-          click: () => {
-            const bounds = getDensePointClusterBounds(cluster);
-
-            if (bounds && bounds.isValid()) {
-              map.fitBounds(bounds, {
-                padding: [48, 48],
-                maxZoom: 18,
-                animate: true,
-              });
-              return;
-            }
-
-            map.setView(cluster.position, Math.min(map.getZoom() + 2, 18), {
-              animate: true,
-            });
-          },
-        }}
-      >
-        <Popup minWidth={240}>
-          <div style={popupCardStyle}>
-            <div style={titleStyle}>
-              {cluster.assets.length} network points
-            </div>
-            <div style={subTitleStyle}>
-              Presentation cluster. Zoom in for exact asset positions.
-            </div>
-            <div style={sectionStyle}>
-              {counts.dps ? infoRow("DPs", counts.dps) : null}
-              {counts.poles ? infoRow("Poles", counts.poles) : null}
-              {counts.chambers ? infoRow("Chambers", counts.chambers) : null}
-            </div>
-            <button
-              type="button"
-              style={secondaryButtonStyle}
-              onClick={() => {
-                const bounds = getDensePointClusterBounds(cluster);
-                if (bounds && bounds.isValid()) {
-                  map.fitBounds(bounds, {
-                    padding: [48, 48],
-                    maxZoom: 18,
-                    animate: true,
-                  });
-                }
-              }}
-            >
-              Zoom to assets
-            </button>
-          </div>
-        </Popup>
-      </Marker>
-    );
-  };
-
   return (
     <>
       {positionMoveHomeId ? (
@@ -1417,11 +1308,7 @@ const icon = asset.id === highlightedAssetId
         </div>
       ) : null}
 
-      {nonClusteredNonHomePointAssets.map(renderAssetMarker)}
-
-      {densePointClusters
-        .filter((cluster) => cluster.assets.length > 1)
-        .map(renderDensePointClusterMarker)}
+      {nonHomePointAssets.map(renderAssetMarker)}
 
       {homeStacks.map(renderHomeStackMarker)}
 

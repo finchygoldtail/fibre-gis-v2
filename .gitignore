@@ -4,7 +4,3 @@ stats.html
 cleanup-backup-*/
 .env
 .env.local
-.env.production
-server/deploy/backups/
-server/imports/*
-!server/imports/.gitkeep
