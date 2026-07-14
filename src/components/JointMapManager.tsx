@@ -1121,8 +1121,8 @@ export default function JointMapManager({
   const mapAutosaveInFlightRef = useRef(false);
 
   const currentMapSaveSignature = useMemo(
-    () => getMapAssetsSaveSignature(operationalSavedJoints),
-    [operationalSavedJoints],
+    () => getMapAssetsSaveSignature(normalizedSavedJoints),
+    [normalizedSavedJoints],
   );
 
   const saveCurrentMapSnapshot = async (
@@ -1131,7 +1131,7 @@ export default function JointMapManager({
   ): Promise<boolean> => {
     if (mapAutosaveInFlightRef.current) return false;
 
-    if (!operationalSavedJoints.length) {
+    if (!normalizedSavedJoints.length) {
       if (options.showAlert) alert("No map assets to save yet.");
       return false;
     }
@@ -1143,13 +1143,13 @@ export default function JointMapManager({
     setMapAutosaveError("");
 
     try {
-      const result = await saveMapAssetsViaCoordinator(operationalSavedJoints, {
+      const result = await saveMapAssetsViaCoordinator(normalizedSavedJoints, {
         reason,
         source: "joint-map-manager",
       });
 
       lastSavedMapSignatureRef.current = getMapAssetsSaveSignature(
-        operationalSavedJoints,
+        normalizedSavedJoints,
       );
       const savedAt = new Date().toLocaleTimeString([], {
         hour: "2-digit",
@@ -1168,7 +1168,8 @@ export default function JointMapManager({
       setMapAutosaveStatus("error");
       setMapAutosaveError(err instanceof Error ? err.message : String(err));
       if (options.showAlert) {
-        alert("Map save failed. Check the console for details.");
+        const message = err instanceof Error ? err.message : String(err);
+        alert(`Map save failed: ${message}`);
       }
       return false;
     } finally {
