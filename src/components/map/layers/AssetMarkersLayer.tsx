@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import { getPaddedRenderBounds, isLatLngInsideRenderBounds } from "../utils/renderBounds";
@@ -29,6 +29,10 @@ import {
   getPrimaryManualSbRouteForDp,
   type ParentSbPopupSummary,
 } from "./dpPopupSummary";
+import {
+  loadJointMappingRowsFromFirestore,
+  type MappingRowsByAssetId,
+} from "../cables/cableMappingRows";
 import {
   clusterDensePointAssets,
   createDensePointClusterIcon,
@@ -222,6 +226,28 @@ function getDistributionPointStatus(asset: SavedMapAsset): string {
       asset.dpDetails?.buildStatus ||
       (asset.dpDetails as any)?.status
   );
+}
+
+function formatFibreRanges(fibres: number[] = []): string {
+  if (!fibres.length) return "-";
+
+  const ranges: string[] = [];
+  let start = fibres[0];
+  let previous = fibres[0];
+
+  for (let index = 1; index <= fibres.length; index += 1) {
+    const current = fibres[index];
+    if (current === previous + 1) {
+      previous = current;
+      continue;
+    }
+
+    ranges.push(start === previous ? String(start) : `${start}-${previous}`);
+    start = current;
+    previous = current;
+  }
+
+  return ranges.join(", ");
 }
 
 function getDistributionPointColor(asset: SavedMapAsset): string {
@@ -884,13 +910,60 @@ React.useEffect(() => {
     [nonHomePointAssets],
   );
 
+  const [mappingRowsByAssetId, setMappingRowsByAssetId] = useState<MappingRowsByAssetId>({});
+
+  const mappingSourceAssets = useMemo(
+    () =>
+      assets.filter((asset) =>
+        Boolean((asset as any).mappingRowsRef || (asset as any).mappingRowsCount),
+      ),
+    [assets],
+  );
+
+  const mappingAssetKey = useMemo(
+    () =>
+      mappingSourceAssets
+        .map((asset) => `${asset.id}:${(asset as any).mappingRowsCount || 0}:${(asset as any).updatedAt || ""}`)
+        .sort()
+        .join("|"),
+    [mappingSourceAssets],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!mappingSourceAssets.length) {
+      setMappingRowsByAssetId({});
+      return;
+    }
+
+    Promise.all(
+      mappingSourceAssets.map(async (asset) => {
+        try {
+          const rows = await loadJointMappingRowsFromFirestore(asset.id);
+          return [asset.id, rows] as const;
+        } catch (error) {
+          console.warn("Failed to load joint mapping rows for DP popup", asset.id, error);
+          return [asset.id, []] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      setMappingRowsByAssetId(Object.fromEntries(entries));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mappingAssetKey, mappingSourceAssets]);
+
   const dpUsageById = useMemo(() => {
     const next = new Map<string, ReturnType<typeof getDpUsage>>();
     visibleDpAssets.forEach((dp) => {
-      next.set(dp.id, getDpUsage(dp, assets));
+      next.set(dp.id, getDpUsage(dp, assets, undefined, mappingRowsByAssetId));
     });
     return next;
-  }, [visibleDpAssets, assets]);
+  }, [visibleDpAssets, assets, mappingRowsByAssetId]);
 
   const parentSbSummaryById = useMemo(() => {
     const next = new Map<string, ParentSbPopupSummary | null>();
@@ -1057,6 +1130,7 @@ const icon = asset.id === highlightedAssetId
                         {infoRow("Capacity", dpUsage.capacity)}
                         {infoRow("Used Ports", dpUsage.used)}
                         {infoRow("Free Ports", dpUsage.free)}
+                        {infoRow("Fibre Numbers", formatFibreRanges(dpUsage.inputFibres))}
                         {infoRow("Status", dpUsage.overCapacity ? "Over capacity" : "OK")}
                       </>
                     )
