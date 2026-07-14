@@ -16,7 +16,9 @@ const iconCache = new Map<string, L.DivIcon>();
 export function isDensePointClusterAsset(asset: SavedMapAsset): boolean {
   return (
     asset.geometry?.type === "Point" &&
-    (asset.assetType === "pole" || asset.assetType === "chamber")
+    (asset.assetType === "distribution-point" ||
+      asset.assetType === "pole" ||
+      asset.assetType === "chamber")
   );
 }
 

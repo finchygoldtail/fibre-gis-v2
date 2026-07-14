@@ -261,12 +261,6 @@ const classifyGeoJsonFeature = (
   const text = buildGeoJsonAssetText(feature);
   const props = feature?.properties || {};
   const propKeys = Object.keys(props).join(" ").toLowerCase();
-  const hasClosurePortFields =
-    geometryType === "Point" &&
-    (Object.prototype.hasOwnProperty.call(props, "ports_count") ||
-      Object.prototype.hasOwnProperty.call(props, "slots_count") ||
-      Object.prototype.hasOwnProperty.call(props, "portsCount") ||
-      Object.prototype.hasOwnProperty.call(props, "slotsCount"));
 
   if (geometryType.includes("Polygon")) return "area";
 
@@ -294,12 +288,11 @@ const classifyGeoJsonFeature = (
     (propKeys.includes("uprn") ||
       propKeys.includes("udprn") ||
       propKeys.includes("toid") ||
-      (!hasClosurePortFields &&
-        (text.includes("uprn") ||
-          text.includes("home") ||
-          text.includes("premise") ||
-          text.includes("building") ||
-          text.includes("residential"))))
+      text.includes("uprn") ||
+      text.includes("home") ||
+      text.includes("premise") ||
+      text.includes("building") ||
+      text.includes("residential"))
   ) {
     return "home";
   }
@@ -357,7 +350,9 @@ const classifyGeoJsonFeature = (
     // before checking for AG, otherwise AG4 makes them import as AG joints.
     isTelecomDistributionPointName(text) ||
     // Some closure exports identify DPs only by telecom closure fields.
-    hasClosurePortFields
+    (geometryType === "Point" &&
+      (Object.prototype.hasOwnProperty.call(props, "ports_count") ||
+        Object.prototype.hasOwnProperty.call(props, "slots_count")))
   ) {
     return "distribution-point" as AssetType;
   }
@@ -482,10 +477,6 @@ const buildImportedAssetBase = (
 ) => {
   const props = feature?.properties || {};
   const existingId = readGeoJsonProp(props, [
-    "polygon_id",
-    "POLYGON_ID",
-    "prim_key",
-    "PRIM_KEY",
     "id",
     "ID",
     "assetId",
@@ -585,7 +576,6 @@ export const createMapAssetsFromAnyGeoJson = (
               : readGeoJsonProp(props, ["name", "Name"], "Home"),
             assetType: "home",
             jointType: "Home",
-            source: "geojson-import",
             uprn: rawUprn || undefined,
             projectId: activeProjectId || undefined,
             connectionMode: "auto",
@@ -838,12 +828,10 @@ export const createMapAssetsFromAnyGeoJson = (
     if (geometryType === "Polygon") {
       const rings = convertGeoJsonPolygon(feature.geometry.coordinates);
       if (!rings.length) return;
-      const base = buildImportedAssetBase(feature, index, "area", activeProjectId);
       networkAssets.push(
         markAssetForLiveSync(
           {
-            ...base,
-            id: `${base.id}-${index + 1}`,
+            ...buildImportedAssetBase(feature, index, "area", activeProjectId),
             assetType: "area" as AssetType,
             jointType: "Polygon Area",
             areaLevel: readGeoJsonProp(

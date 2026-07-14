@@ -4,8 +4,8 @@ import { isAssetAssignedToProjectArea } from "../../../services/areaAssetIndex";
 
 type PolygonAsset = SavedMapAsset & {
   geometry: {
-    type: "Polygon" | "MultiPolygon";
-    coordinates: [number, number][][] | [number, number][][][];
+    type: "Polygon";
+    coordinates: [number, number][][];
   };
 };
 
@@ -177,17 +177,6 @@ function lineTouchesPolygon(line: [number, number][], polygon: [number, number][
   return false;
 }
 
-function getAreaOuterRings(area: PolygonAsset): [number, number][][] {
-  if (area.geometry.type === "Polygon") {
-    const ring = area.geometry.coordinates[0] as [number, number][] | undefined;
-    return ring?.length ? [ring] : [];
-  }
-
-  return (area.geometry.coordinates as [number, number][][][])
-    .map((polygon) => polygon[0])
-    .filter((ring): ring is [number, number][] => Array.isArray(ring) && ring.length > 0);
-}
-
 export function filterAssetsForProjectArea(
   assets: SavedMapAsset[],
   activeProjectArea: SavedMapAsset | null | undefined
@@ -200,17 +189,16 @@ export function filterAssetsForProjectArea(
     isAssetAssignedToProjectArea(asset, activeProjectArea),
   );
 
-  if (
-    activeProjectArea.geometry?.type !== "Polygon" &&
-    activeProjectArea.geometry?.type !== "MultiPolygon"
-  ) {
+  if (activeProjectArea.geometry?.type !== "Polygon") {
     return candidateAssets;
   }
 
   const polygonAsset = activeProjectArea as PolygonAsset;
-  const polygons = getAreaOuterRings(polygonAsset);
+  const polygon = polygonAsset.geometry.coordinates[0];
 
-  if (!polygons.length) return candidateAssets;
+  if (!polygon?.length) return candidateAssets;
+
+  const bounds = getPolygonBounds(polygon);
 
   return assets.filter((asset) => {
     if (asset.assetType === "area") return false;
@@ -220,19 +208,13 @@ export function filterAssetsForProjectArea(
     if (asset.geometry?.type === "Point") {
       if (!isAssignedToThisArea) return false;
       const point = toPoint(asset.geometry.coordinates as [number, number]);
-      return polygons.some((polygon) => {
-        const bounds = getPolygonBounds(polygon);
-        return pointInBounds(point, bounds) && pointInPolygon(point, polygon);
-      });
+      return pointInBounds(point, bounds) && pointInPolygon(point, polygon);
     }
 
     if (asset.geometry?.type === "LineString") {
       const line = asset.geometry.coordinates as [number, number][];
-      const touchesThisArea = polygons.some((polygon) => {
-        const bounds = getPolygonBounds(polygon);
-        const inBounds = line.some((coord) => pointInBounds(toPoint(coord), bounds));
-        return inBounds && lineTouchesPolygon(line, polygon);
-      });
+      const inBounds = line.some((coord) => pointInBounds(toPoint(coord), bounds));
+      const touchesThisArea = inBounds && lineTouchesPolygon(line, polygon);
 
       // Network feeder/link cables are allowed to cross AG boundaries.
       // They should be visible in every workspace they pass through so the

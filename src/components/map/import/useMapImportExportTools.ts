@@ -1,6 +1,5 @@
 import React from "react";
 import type { SavedMapAsset } from "../types";
-import type { LayerVisibility } from "../hooks/useLayerVisibility";
 import {
   createMapAssetsFromAnyGeoJson,
   createPiaOverlayAssetsFromGeoJson,
@@ -20,7 +19,6 @@ import {
   filterUniqueAssetsForAreaImport,
   normaliseDistributionPointAsset,
 } from "../../../services/assetNameValidation";
-import { saveMapAssetsViaCoordinator } from "../../../services/mapSaveCoordinator";
 
 type UseMapImportExportToolsArgs = {
   savedJoints: SavedMapAsset[];
@@ -33,7 +31,6 @@ type UseMapImportExportToolsArgs = {
   loadedHomesProjectId: string | null;
   setLoadedHomesProjectId: React.Dispatch<React.SetStateAction<string | null>>;
   setOrAssets: React.Dispatch<React.SetStateAction<SavedMapAsset[]>>;
-  setVisibleLayers?: React.Dispatch<React.SetStateAction<LayerVisibility>>;
   stampHomesForActiveArea: (homes: SavedMapAsset[]) => SavedMapAsset[];
   markAssetForLiveSync: (asset: SavedMapAsset, isNew?: boolean) => SavedMapAsset;
 };
@@ -64,21 +61,6 @@ function alertSkippedDuplicateImports(count: number): void {
   );
 }
 
-function isPolygonAreaAsset(asset: SavedMapAsset): boolean {
-  const geometryType = String((asset as any)?.geometry?.type || "").toLowerCase();
-  const assetType = String((asset as any)?.assetType || "").toLowerCase();
-  const jointType = String((asset as any)?.jointType || "").toLowerCase();
-
-  return (
-    geometryType === "polygon" ||
-    geometryType === "multipolygon" ||
-    assetType === "area" ||
-    assetType === "polygon" ||
-    assetType === "project-area" ||
-    jointType.includes("polygon")
-  );
-}
-
 export function useMapImportExportTools({
   savedJoints,
   setSavedJoints,
@@ -90,35 +72,9 @@ export function useMapImportExportTools({
   loadedHomesProjectId,
   setLoadedHomesProjectId,
   setOrAssets,
-  setVisibleLayers,
   stampHomesForActiveArea,
   markAssetForLiveSync,
 }: UseMapImportExportToolsArgs) {
-  const stampHomesForArea =
-    typeof stampHomesForActiveArea === "function"
-      ? stampHomesForActiveArea
-      : (homes: SavedMapAsset[]) => homes;
-  const setSavedJointsSafe =
-    typeof setSavedJoints === "function"
-      ? setSavedJoints
-      : (() => undefined);
-  const setProjectHomesSafe =
-    typeof setProjectHomes === "function"
-      ? setProjectHomes
-      : (() => undefined);
-  const setLoadedHomesProjectIdSafe =
-    typeof setLoadedHomesProjectId === "function"
-      ? setLoadedHomesProjectId
-      : (() => undefined);
-  const setOrAssetsSafe =
-    typeof setOrAssets === "function"
-      ? setOrAssets
-      : (() => undefined);
-  const setVisibleLayersSafe =
-    typeof setVisibleLayers === "function"
-      ? setVisibleLayers
-      : (() => undefined);
-
   const handleExportJson = () => {
     downloadJsonFile("saved-assets.json", savedJoints, "application/json");
   };
@@ -253,10 +209,7 @@ export function useMapImportExportTools({
           });
 
         const networkAssets = activeProjectArea
-          ? rawNetworkAssets.filter((asset) =>
-              isPolygonAreaAsset(asset) ||
-              filterAssetsForProjectArea([asset], activeProjectArea).length > 0,
-            )
+          ? filterAssetsForProjectArea(rawNetworkAssets, activeProjectArea)
           : rawNetworkAssets;
         const homeAssets = rawHomeAssets;
 
@@ -294,24 +247,22 @@ export function useMapImportExportTools({
             return true;
           });
 
-          const mergedHomes = [
-            ...existingHomes,
-            ...newHomes.map((home) => ({
-              ...home,
-              projectId: activeProjectId,
-            })),
-          ];
-
-          if (mergedHomes.length) {
-            const stampedHomes = stampHomesForArea(mergedHomes);
+          if (newHomes.length) {
+            const mergedHomes = [
+              ...existingHomes,
+              ...newHomes.map((home) => ({
+                ...home,
+                projectId: activeProjectId,
+              })),
+            ];
             await saveProjectHomes(
               activeProjectId,
-              stampedHomes,
+              stampHomesForActiveArea(mergedHomes),
               activeProjectAreaName,
             );
-            setProjectHomesSafe(stampedHomes);
-            setLoadedHomesProjectIdSafe(activeProjectId);
-            savedHomeCount = newHomes.length || mergedHomes.length;
+            setProjectHomes(mergedHomes);
+            setLoadedHomesProjectId(activeProjectId);
+            savedHomeCount = newHomes.length;
           }
         }
 
@@ -333,7 +284,7 @@ export function useMapImportExportTools({
           const mergedOrAssets = await mergeAndSaveOrAssets(importedOrAssets, {
             reason: "GeoJSON OR reference import",
           });
-          setOrAssetsSafe(mergedOrAssets);
+          setOrAssets(mergedOrAssets);
           savedOrCount = importedOrAssets.length;
         }
 
@@ -351,13 +302,11 @@ export function useMapImportExportTools({
             })
             .map((asset) =>
               normaliseDistributionPointAsset(
-                isPolygonAreaAsset(asset)
-                  ? withAreaAssetIndex(asset)
-                  : withAreaAssetIndex(
-                      asset,
-                      activeProjectId,
-                      getAreaDisplayName(activeProjectArea),
-                    ),
+                withAreaAssetIndex(
+                  asset,
+                  activeProjectId,
+                  getAreaDisplayName(activeProjectArea),
+                ),
               ),
             );
           const dedupedNetworkAssets = filterUniqueAssetsForAreaImport({
@@ -369,27 +318,10 @@ export function useMapImportExportTools({
 
           alertSkippedDuplicateImports(dedupedNetworkAssets.duplicates.length);
           savedDesignedCount = dedupedNetworkAssets.assets.length;
-          const savedPolygonCount = dedupedNetworkAssets.assets.filter(isPolygonAreaAsset).length;
-          const nextSavedJoints = [
-            ...savedJoints,
+          setSavedJoints((prev) => [
+            ...prev,
             ...dedupedNetworkAssets.assets,
-          ];
-          setSavedJointsSafe(nextSavedJoints);
-          if (savedPolygonCount > 0) {
-            setVisibleLayersSafe((prev) => ({
-              ...prev,
-              areas: true,
-              l0: true,
-              l1: true,
-              l2: true,
-              l3: true,
-            }));
-          }
-          await saveMapAssetsViaCoordinator(nextSavedJoints, {
-            source: "joint-map-manager",
-            reason: "GeoJSON designed network import",
-            allowDestructiveSave: false,
-          });
+          ]);
         }
 
         alert(
@@ -443,7 +375,7 @@ export function useMapImportExportTools({
         const mergedOrAssets = await mergeAndSaveOrAssets(importedOrAssets, {
           reason: "JSON import OR reference assets",
         });
-        setOrAssetsSafe(mergedOrAssets);
+        setOrAssets(mergedOrAssets);
       }
 
       const dedupedDesignedAssets = filterUniqueAssetsForAreaImport({
@@ -454,14 +386,7 @@ export function useMapImportExportTools({
       });
       alertSkippedDuplicateImports(dedupedDesignedAssets.duplicates.length);
 
-      setSavedJointsSafe(dedupedDesignedAssets.assets);
-      if (dedupedDesignedAssets.assets.length) {
-        await saveMapAssetsViaCoordinator(dedupedDesignedAssets.assets, {
-          source: "joint-map-manager",
-          reason: "JSON designed network import",
-          allowDestructiveSave: false,
-        });
-      }
+      setSavedJoints(dedupedDesignedAssets.assets);
       alert(
         `Imported ${dedupedDesignedAssets.assets.length} designed asset(s) and ${importedOrAssets.length} OR reference asset(s).`,
       );

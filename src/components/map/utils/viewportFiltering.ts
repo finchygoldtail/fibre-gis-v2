@@ -57,22 +57,8 @@ function assetRenderPoints(asset: SavedMapAsset): LatLngLiteral[] {
       .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
   }
 
-  if (geometry.type === "MultiLineString") {
-    return ((geometry.coordinates || []) as any[])
-      .flatMap((line) => (Array.isArray(line) ? line : []))
-      .map(([lat, lng]) => ({ lat: Number(lat), lng: Number(lng) }))
-      .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
-  }
-
   if (geometry.type === "Polygon") {
     return (((geometry.coordinates || [])[0] || []) as any[])
-      .map(([lat, lng]) => ({ lat: Number(lat), lng: Number(lng) }))
-      .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
-  }
-
-  if (geometry.type === "MultiPolygon") {
-    return ((geometry.coordinates || []) as any[])
-      .flatMap((polygon) => (Array.isArray(polygon?.[0]) ? polygon[0] : []))
       .map(([lat, lng]) => ({ lat: Number(lat), lng: Number(lng) }))
       .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
   }

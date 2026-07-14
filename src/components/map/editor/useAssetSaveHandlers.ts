@@ -28,7 +28,6 @@ import {
   getDpOperationalStatus,
   getPointJointType,
 } from "./assetEditCoordinator";
-import { saveMapAssetsViaCoordinator } from "../../../services/mapSaveCoordinator";
 
 export {
   getDpOperationalStatus,
@@ -497,8 +496,8 @@ export function useAssetSaveHandlers({
       }
     });
 
-    const nextSavedJoints = (savedJoints ?? [])
-      .filter((asset: any) => {
+    setSavedJoints((prev) => {
+      const filteredAssets = prev.filter((asset: any) => {
         if (asset?.id === deletedId) return false;
 
         if (isDropCable(asset)) {
@@ -513,8 +512,9 @@ export function useAssetSaveHandlers({
         }
 
         return true;
-      })
-      .map((asset: any) => {
+      });
+
+      return filteredAssets.map((asset: any) => {
         const connectedDpId = String(
           asset?.connectedDpId ?? asset?.properties?.connectedDpId ?? "",
         ).trim();
@@ -543,11 +543,6 @@ export function useAssetSaveHandlers({
           true,
         );
       });
-    setSavedJoints(nextSavedJoints);
-    await saveMapAssetsViaCoordinator(nextSavedJoints, {
-      source: "joint-map-manager",
-      reason: `asset-delete:${reason}`,
-      allowDestructiveSave: false,
     });
 
     if (deletedAsset) {

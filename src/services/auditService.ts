@@ -8,8 +8,6 @@ import {
   where,
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
-import { spatialApiConfig } from "./spatialApi/spatialApiConfig";
-import { listSpatialRecords, saveSpatialRecord } from "./spatialApi/spatialRecordService";
 
 export type AuditAction =
   | "viewed"
@@ -80,8 +78,6 @@ export type CreateAssetAccessLogInput = {
 const BUSINESS_REF_PATH = ["businesses", "fibre-gis-v2"] as const;
 const CHANGE_COLLECTION_NAME = "assetChangeLogs";
 const ACCESS_COLLECTION_NAME = "assetAccessLogs";
-const CHANGE_RECORD_TYPE = "asset-change-log";
-const ACCESS_RECORD_TYPE = "asset-access-log";
 const LOCAL_CHANGE_KEY = "fibre-gis-assetChangeLogs-v2";
 const LOCAL_ACCESS_KEY = "fibre-gis-assetAccessLogs-v1";
 
@@ -97,20 +93,6 @@ export async function createAssetChangeLog(
   input: CreateAssetChangeLogInput,
 ): Promise<AuditLog> {
   const log = buildAuditLog(input);
-
-  if (spatialApiConfig.postgisOnly) {
-    try {
-      await saveSpatialRecord(CHANGE_RECORD_TYPE, log.id, log as unknown as Record<string, unknown>, {
-        parentType: "asset",
-        parentId: log.assetId,
-      });
-      return log;
-    } catch (err) {
-      console.warn("PostGIS change log write failed; saved locally.", err);
-      saveLocalLog(LOCAL_CHANGE_KEY, log);
-      return log;
-    }
-  }
 
   try {
     const docRef = await addDoc(changeLogsCollection(), {
@@ -134,20 +116,6 @@ export async function createAssetAccessLog(
     reason: "Asset viewed",
     comment: "",
   });
-
-  if (spatialApiConfig.postgisOnly) {
-    try {
-      await saveSpatialRecord(ACCESS_RECORD_TYPE, log.id, log as unknown as Record<string, unknown>, {
-        parentType: "asset",
-        parentId: log.assetId,
-      });
-      return log;
-    } catch (err) {
-      console.warn("PostGIS access log write failed; saved locally.", err);
-      saveLocalLog(LOCAL_ACCESS_KEY, log);
-      return log;
-    }
-  }
 
   try {
     const docRef = await addDoc(accessLogsCollection(), {
@@ -189,25 +157,6 @@ async function loadLogsForAsset(
   assetId: string,
   maxResults: number,
 ): Promise<AuditLog[]> {
-  if (spatialApiConfig.postgisOnly) {
-    const recordType =
-      localKey === LOCAL_CHANGE_KEY ? CHANGE_RECORD_TYPE : ACCESS_RECORD_TYPE;
-    let postgisLogs: AuditLog[] = [];
-    try {
-      const records = await listSpatialRecords<AuditLog>(recordType, {
-        parentType: "asset",
-        parentId: assetId,
-        limit: maxResults,
-      });
-      postgisLogs = records.map((record) => ({ ...record.data, id: record.recordId }));
-    } catch (err) {
-      console.warn("PostGIS audit read failed; using local fallback.", err);
-    }
-
-    const localLogs = loadLocalLogs(localKey).filter((log) => log.assetId === assetId);
-    return mergeAndSortLogs([...postgisLogs, ...localLogs]).slice(0, maxResults);
-  }
-
   let firestoreLogs: AuditLog[] = [];
 
   try {
@@ -230,20 +179,6 @@ async function loadAllLogs(
   localKey: string,
   maxResults: number,
 ): Promise<AuditLog[]> {
-  if (spatialApiConfig.postgisOnly) {
-    const recordType =
-      localKey === LOCAL_CHANGE_KEY ? CHANGE_RECORD_TYPE : ACCESS_RECORD_TYPE;
-    let postgisLogs: AuditLog[] = [];
-    try {
-      const records = await listSpatialRecords<AuditLog>(recordType, { limit: maxResults });
-      postgisLogs = records.map((record) => ({ ...record.data, id: record.recordId }));
-    } catch (err) {
-      console.warn("PostGIS audit read failed; using local fallback.", err);
-    }
-
-    return mergeAndSortLogs([...postgisLogs, ...loadLocalLogs(localKey)]).slice(0, maxResults);
-  }
-
   let firestoreLogs: AuditLog[] = [];
 
   try {

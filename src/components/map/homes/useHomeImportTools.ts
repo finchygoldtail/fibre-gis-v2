@@ -20,24 +20,6 @@ type UseHomeImportToolsArgs = {
   stampHomesForActiveArea: (homes: SavedMapAsset[]) => SavedMapAsset[];
 };
 
-function getHomeImportKey(home: SavedMapAsset): string {
-  return String((home as any).uprn || home.id || home.name || "").trim();
-}
-
-function mergeUniqueHomes(homes: SavedMapAsset[]): SavedMapAsset[] {
-  const seen = new Set<string>();
-  const merged: SavedMapAsset[] = [];
-
-  homes.forEach((home) => {
-    const key = getHomeImportKey(home);
-    if (!key || seen.has(key)) return;
-    seen.add(key);
-    merged.push(home);
-  });
-
-  return merged;
-}
-
 export function useHomeImportTools({
   activeProjectId,
   activeProjectArea,
@@ -51,23 +33,6 @@ export function useHomeImportTools({
   setIsLoadingOsmHomes,
   stampHomesForActiveArea,
 }: UseHomeImportToolsArgs) {
-  const stampHomesForArea =
-    typeof stampHomesForActiveArea === "function"
-      ? stampHomesForActiveArea
-      : (homes: SavedMapAsset[]) => homes;
-  const setProjectHomesSafe =
-    typeof setProjectHomes === "function"
-      ? setProjectHomes
-      : (() => undefined);
-  const setLoadedHomesProjectIdSafe =
-    typeof setLoadedHomesProjectId === "function"
-      ? setLoadedHomesProjectId
-      : (() => undefined);
-  const setIsLoadingOsmHomesSafe =
-    typeof setIsLoadingOsmHomes === "function"
-      ? setIsLoadingOsmHomes
-      : (() => undefined);
-
   const loadExistingHomesOrContinueImport = async (
     projectId: string,
   ): Promise<boolean> => {
@@ -77,8 +42,8 @@ export function useHomeImportTools({
       return false;
     }
 
-    setProjectHomesSafe(existingHomes);
-    setLoadedHomesProjectIdSafe(projectId);
+    setProjectHomes(existingHomes);
+    setLoadedHomesProjectId(projectId);
     alert(
       "Homes are already saved for this project, so I loaded the saved homes instead of importing duplicates.",
     );
@@ -112,7 +77,7 @@ export function useHomeImportTools({
       return;
     }
 
-    setIsLoadingOsmHomesSafe(true);
+    setIsLoadingOsmHomes(true);
 
     try {
       const homes = (
@@ -134,17 +99,17 @@ export function useHomeImportTools({
 
       await saveProjectHomes(
         activeProjectId,
-        stampHomesForArea(mergedHomes),
+        stampHomesForActiveArea(mergedHomes),
         activeProjectAreaName,
       );
-      setProjectHomesSafe(mergedHomes);
-      setLoadedHomesProjectIdSafe(activeProjectId);
+      setProjectHomes(mergedHomes);
+      setLoadedHomesProjectId(activeProjectId);
 
       alert(`Saved ${homes.length} OSM homes to this project.`);
     } catch (err: any) {
       alert(`Failed to load OSM homes: ${err.message || String(err)}`);
     } finally {
-      setIsLoadingOsmHomesSafe(false);
+      setIsLoadingOsmHomes(false);
     }
   };
 
@@ -157,7 +122,7 @@ export function useHomeImportTools({
     }
 
     const existingHomeKeys = new Set(
-      [...allMapAssets, ...projectHomes]
+      allMapAssets
         .filter((asset) => asset.assetType === "home")
         .map((asset) => {
           const uprn = String(
@@ -228,10 +193,17 @@ export function useHomeImportTools({
 
     reader.onload = async (e) => {
       try {
-        const existingHomes = await loadProjectHomes(projectIdForImport);
+        const loadedExistingHomes =
+          await loadExistingHomesOrContinueImport(projectIdForImport);
+        if (loadedExistingHomes) return;
 
         const geojson = JSON.parse(String(e.target?.result || ""));
         const homes = createHomeAssetsFromGeoJson(geojson);
+
+        if (homes.length === 0) {
+          alert("No new GeoJSON homes found in that file.");
+          return;
+        }
 
         const savedHomes = homes.map((asset) =>
           markAssetForLiveSync(
@@ -239,27 +211,17 @@ export function useHomeImportTools({
             true,
           ),
         );
-        const mergedHomes = mergeUniqueHomes([
-          ...existingHomes,
-          ...projectHomes,
-          ...savedHomes,
-        ]);
+        const mergedHomes = [...projectHomes, ...savedHomes];
 
-        if (mergedHomes.length === 0) {
-          alert("No GeoJSON homes found in that file.");
-          return;
-        }
-
-        const stampedHomes = stampHomesForArea(mergedHomes);
         await saveProjectHomes(
           projectIdForImport,
-          stampedHomes,
+          stampHomesForActiveArea(mergedHomes),
           activeProjectAreaName,
         );
-        setProjectHomesSafe(stampedHomes);
-        setLoadedHomesProjectIdSafe(projectIdForImport);
+        setProjectHomes(mergedHomes);
+        setLoadedHomesProjectId(projectIdForImport);
 
-        alert(`Saved ${homes.length || mergedHomes.length} GeoJSON homes to this project.`);
+        alert(`Saved ${homes.length} GeoJSON homes to this project.`);
       } catch (err: any) {
         console.error(err);
         alert(`Failed to load GeoJSON homes: ${err.message || String(err)}`);
@@ -289,7 +251,9 @@ export function useHomeImportTools({
 
     reader.onload = async (e) => {
       try {
-        const existingHomes = await loadProjectHomes(projectIdForImport);
+        const loadedExistingHomes =
+          await loadExistingHomesOrContinueImport(projectIdForImport);
+        if (loadedExistingHomes) return;
 
         const geojson = JSON.parse(String(e.target?.result || ""));
         const importedHomes = createHomeAssetsFromGeoJson(
@@ -300,33 +264,28 @@ export function useHomeImportTools({
           ? filterAssetsForProjectArea(importedHomes, activeProjectArea)
           : importedHomes;
 
+        if (homes.length === 0) {
+          alert("No new GeoJSON homes found in the current map view.");
+          return;
+        }
+
         const savedHomes = homes.map((asset) =>
           markAssetForLiveSync(
             { ...asset, projectId: projectIdForImport },
             true,
           ),
         );
-        const mergedHomes = mergeUniqueHomes([
-          ...existingHomes,
-          ...projectHomes,
-          ...savedHomes,
-        ]);
+        const mergedHomes = [...projectHomes, ...savedHomes];
 
-        if (mergedHomes.length === 0) {
-          alert("No GeoJSON homes found in the current map view.");
-          return;
-        }
-
-        const stampedHomes = stampHomesForArea(mergedHomes);
         await saveProjectHomes(
           projectIdForImport,
-          stampedHomes,
+          stampHomesForActiveArea(mergedHomes),
           activeProjectAreaName,
         );
-        setProjectHomesSafe(stampedHomes);
-        setLoadedHomesProjectIdSafe(projectIdForImport);
+        setProjectHomes(mergedHomes);
+        setLoadedHomesProjectId(projectIdForImport);
 
-        alert(`Saved ${homes.length || mergedHomes.length} GeoJSON homes in view to this project.`);
+        alert(`Saved ${homes.length} GeoJSON homes in view to this project.`);
       } catch (err: any) {
         console.error(err);
         alert(`Failed to load GeoJSON homes: ${err.message || String(err)}`);

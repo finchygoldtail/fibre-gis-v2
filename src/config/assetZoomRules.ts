@@ -64,7 +64,7 @@ export function getAssetZoomKind(asset: SavedMapAsset): ZoomAssetKind {
   if (typeText.includes("fibrehood")) return "fibrehood";
 
   if (
-    (geometryType === "polygon" || geometryType === "multipolygon") &&
+    geometryType === "polygon" &&
     (typeText.includes("area") ||
       typeText.includes("polygon") ||
       jointText.includes("polygon-area"))
@@ -75,7 +75,7 @@ export function getAssetZoomKind(asset: SavedMapAsset): ZoomAssetKind {
   if (isDropCableAsset(asset)) return "dropCable";
   if (isHomeAsset(asset)) return "home";
 
-  if (geometryType === "linestring" || geometryType === "multilinestring" || typeText.includes("cable")) {
+  if (geometryType === "linestring" || typeText.includes("cable")) {
     if (cableText.includes("feeder")) return "feederCable";
     if (cableText.includes("link")) return "linkCable";
     return "distributionCable";
@@ -87,7 +87,7 @@ export function getAssetZoomKind(asset: SavedMapAsset): ZoomAssetKind {
   if (typeText.includes("street") || typeText.includes("cab")) return "streetCab";
   if (typeText.includes("joint") || jointText.includes("joint")) return "joint";
 
-  return geometryType === "polygon" || geometryType === "multipolygon" ? "agPolygon" : "joint";
+  return geometryType === "polygon" ? "agPolygon" : "joint";
 }
 
 export function shouldRenderOperationalAssetAtZoomLevel(
@@ -102,7 +102,7 @@ export function shouldRenderOpenreachAssetAtZoomLevel(
   zoom: number,
 ): boolean {
   return shouldShowZoomKind(
-    asset.geometry?.type === "LineString" || asset.geometry?.type === "MultiLineString" ? "openreachRoute" : "openreachPoint",
+    asset.geometry?.type === "LineString" ? "openreachRoute" : "openreachPoint",
     zoom,
   );
 }

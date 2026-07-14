@@ -1,7 +1,5 @@
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "../firebase";
-import { spatialApiConfig } from "./spatialApi/spatialApiConfig";
-import { saveSpatialRecord } from "./spatialApi/spatialRecordService";
 
 export type AssetActivityAction =
   | "created"
@@ -40,7 +38,6 @@ export type AssetActivityLog = {
 };
 
 const LOCAL_ACTIVITY_KEY = "fibre-gis-asset-activity-local-v1";
-const ACTIVITY_RECORD_TYPE = "asset-activity-log";
 
 export function getCurrentActivityUser(): AssetActivityUser {
   const user = auth.currentUser;
@@ -218,21 +215,6 @@ export async function createAssetActivityLog(args: {
   after: sanitizeActivityValue(args.after),
   details: sanitizeActivityDetails(args.details),
 };
-
-  if (spatialApiConfig.postgisOnly) {
-    try {
-      const id = crypto.randomUUID();
-      await saveSpatialRecord(ACTIVITY_RECORD_TYPE, id, { ...log, id } as Record<string, unknown>, {
-        parentType: "asset",
-        parentId: log.assetId,
-      });
-      return { ...log, id };
-    } catch (err) {
-      console.warn("PostGIS activity log failed; saving local fallback", err);
-      writeLocalActivityLog(log);
-      return log;
-    }
-  }
 
   try {
     const ref = await addDoc(

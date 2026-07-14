@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import { getPaddedRenderBounds, isLatLngInsideRenderBounds } from "../utils/renderBounds";
@@ -30,10 +30,6 @@ import {
   type ParentSbPopupSummary,
 } from "./dpPopupSummary";
 import {
-  loadJointMappingRowsFromFirestore,
-  type MappingRowsByAssetId,
-} from "../cables/cableMappingRows";
-import {
   clusterDensePointAssets,
   createDensePointClusterIcon,
   getDensePointClusterBounds,
@@ -46,18 +42,6 @@ import {
   renderImagePreview,
   renderPhotoStrip,
 } from "./assetPopupRenderHelpers";
-import {
-  getAssetKind,
-  isAreaAsset,
-  isCableAsset,
-  isChamberAsset,
-  isDistributionPointAsset,
-  isHomeAsset,
-  isJointAsset,
-  isPoleAsset,
-  isPointNetworkAsset,
-  isStreetCabAsset,
-} from "../utils/mapAssetClassifiers";
 
 type LayerVisibility = {
   agJoints: boolean;
@@ -120,7 +104,6 @@ type Props = {
   selectedMoveHomeIds?: string[];
   onToggleMoveHome?: (asset: SavedMapAsset) => void;
   onMoveHomesTargetDp?: (asset: SavedMapAsset) => void;
-  highlightPostgisAssets?: boolean;
 };
 
 function createSquareIcon(background: string, border: string) {
@@ -228,28 +211,6 @@ function getDistributionPointStatus(asset: SavedMapAsset): string {
   );
 }
 
-function formatFibreRanges(fibres: number[] = []): string {
-  if (!fibres.length) return "-";
-
-  const ranges: string[] = [];
-  let start = fibres[0];
-  let previous = fibres[0];
-
-  for (let index = 1; index <= fibres.length; index += 1) {
-    const current = fibres[index];
-    if (current === previous + 1) {
-      previous = current;
-      continue;
-    }
-
-    ranges.push(start === previous ? String(start) : `${start}-${previous}`);
-    start = current;
-    previous = current;
-  }
-
-  return ranges.join(", ");
-}
-
 function getDistributionPointColor(asset: SavedMapAsset): string {
   const status = getDistributionPointStatus(asset);
 
@@ -327,10 +288,27 @@ function getPointLatLng(asset: SavedMapAsset): [number, number] | null {
 }
 
 function isEngineeringCableDrawTargetAsset(asset: SavedMapAsset): boolean {
+  const assetType = String((asset as any).assetType || "").toLowerCase();
+  const jointType = String((asset as any).jointType || "").toLowerCase();
+  const name = String((asset as any).name || "").toLowerCase();
+
   // Cable drawing must keep every valid network endpoint visible/selectable.
   // Previously this only returned joints, which made DPs/SBs and poles vanish
   // as soon as cable drawing started.
-  return isPointNetworkAsset(asset);
+  if (assetType === "distribution-point" || assetType === "dp") return true;
+  if (assetType === "pole") return true;
+  if (assetType === "chamber") return true;
+  if (assetType === "street-cab") return true;
+  if (assetType === "ag-joint" || assetType === "joint" || assetType.includes("joint")) return true;
+  if (jointType.includes("joint")) return true;
+
+  return (
+    name.includes("sb") ||
+    name.includes("cmj") ||
+    name.includes("mmj") ||
+    name.includes("lmj") ||
+    name.includes("midj")
+  );
 }
 
 
@@ -341,9 +319,8 @@ const poleIcon = createCircleIcon("#8b5a2b", "#ffffff");
 
 function isVisible(asset: SavedMapAsset, visibleLayers: LayerVisibility): boolean {
   const layers = visibleLayers as any;
-  const kind = getAssetKind(asset);
 
-  switch (kind) {
+  switch (asset.assetType) {
     case "street-cab":
       return visibleLayers.streetCabs;
 
@@ -415,7 +392,7 @@ function isVisible(asset: SavedMapAsset, visibleLayers: LayerVisibility): boolea
     case "cable":
       return false;
 
-    case "joint":
+    case "ag-joint":
     default:
       return visibleLayers.agJoints;
   }
@@ -423,7 +400,7 @@ function isVisible(asset: SavedMapAsset, visibleLayers: LayerVisibility): boolea
 
 function isDropCable(asset: SavedMapAsset): boolean {
   return (
-    isCableAsset(asset) &&
+    asset.assetType === "cable" &&
     String((asset as any).cableType || "").trim().toLowerCase() === "drop"
   );
 }
@@ -604,16 +581,16 @@ function getIconForAsset(
   visibleLayers?: LayerVisibility,
   cachedHomeStatus?: "unconnected" | "connected" | "live",
 ) {
-  if (isDistributionPointAsset(asset)) {
+  if (asset.assetType === "distribution-point") {
     return createSquareIcon(getDistributionPointColor(asset), "#ffffff");
   }
-  if (isStreetCabAsset(asset)) return streetCabIcon;
-  if ((isChamberAsset(asset) || isPoleAsset(asset)) && isPiaQaModeEnabled(visibleLayers || {})) {
+  if (asset.assetType === "street-cab") return streetCabIcon;
+  if ((asset.assetType === "chamber" || asset.assetType === "pole") && isPiaQaModeEnabled(visibleLayers || {})) {
     return getPiaQaIconForAsset(asset);
   }
-  if (isChamberAsset(asset)) return chamberIcon;
-  if (isPoleAsset(asset)) return poleIcon;
-  if (isHomeAsset(asset)) return getHomeIconForStatus(cachedHomeStatus || getHomeConnectionStatus(asset, allAssets));
+  if (asset.assetType === "chamber") return chamberIcon;
+  if (asset.assetType === "pole") return poleIcon;
+  if (asset.assetType === "home") return getHomeIconForStatus(cachedHomeStatus || getHomeConnectionStatus(asset, allAssets));
   return agJointIcon;
 }
 
@@ -650,44 +627,6 @@ function createHighlightedIcon(baseIcon: L.DivIcon) {
     iconAnchor: [19, 19],
     popupAnchor: [0, -19],
   });
-}
-
-function createPostgisHighlightedIcon(baseIcon: L.DivIcon) {
-  const html = baseIcon.options.html || "";
-
-  return L.divIcon({
-    className: "",
-    html: `
-      <div style="
-        position: relative;
-        width: 30px;
-        height: 30px;
-        display: grid;
-        place-items: center;
-      ">
-        <div style="
-          position: absolute;
-          inset: 0;
-          border-radius: 999px;
-          border: 3px solid #06b6d4;
-          box-shadow: 0 0 0 4px rgba(6,182,212,0.28), 0 0 18px rgba(6,182,212,0.8);
-        "></div>
-        <div style="
-          position: relative;
-          z-index: 2;
-        ">
-          ${html}
-        </div>
-      </div>
-    `,
-    iconSize: [30, 30],
-    iconAnchor: [15, 15],
-    popupAnchor: [0, -15],
-  });
-}
-
-function isPostgisAsset(asset: SavedMapAsset): boolean {
-  return String((asset as any).source || "").toLowerCase() === "postgis";
 }
 
 function createCableDrawIcon(baseIcon: L.DivIcon) {
@@ -748,7 +687,6 @@ export default function AssetMarkersLayer({
   onToggleMoveHome,
   onToggleSurveyDeleteHome,
   onMoveHomesTargetDp,
-  highlightPostgisAssets = false,
 }: Props) {
   const map = useMap();
   const [mapView, setMapView] = useState(() => ({
@@ -910,60 +848,13 @@ React.useEffect(() => {
     [nonHomePointAssets],
   );
 
-  const [mappingRowsByAssetId, setMappingRowsByAssetId] = useState<MappingRowsByAssetId>({});
-
-  const mappingSourceAssets = useMemo(
-    () =>
-      assets.filter((asset) =>
-        Boolean((asset as any).mappingRowsRef || (asset as any).mappingRowsCount),
-      ),
-    [assets],
-  );
-
-  const mappingAssetKey = useMemo(
-    () =>
-      mappingSourceAssets
-        .map((asset) => `${asset.id}:${(asset as any).mappingRowsCount || 0}:${(asset as any).updatedAt || ""}`)
-        .sort()
-        .join("|"),
-    [mappingSourceAssets],
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (!mappingSourceAssets.length) {
-      setMappingRowsByAssetId({});
-      return;
-    }
-
-    Promise.all(
-      mappingSourceAssets.map(async (asset) => {
-        try {
-          const rows = await loadJointMappingRowsFromFirestore(asset.id);
-          return [asset.id, rows] as const;
-        } catch (error) {
-          console.warn("Failed to load joint mapping rows for DP popup", asset.id, error);
-          return [asset.id, []] as const;
-        }
-      }),
-    ).then((entries) => {
-      if (cancelled) return;
-      setMappingRowsByAssetId(Object.fromEntries(entries));
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [mappingAssetKey, mappingSourceAssets]);
-
   const dpUsageById = useMemo(() => {
     const next = new Map<string, ReturnType<typeof getDpUsage>>();
     visibleDpAssets.forEach((dp) => {
-      next.set(dp.id, getDpUsage(dp, assets, undefined, mappingRowsByAssetId));
+      next.set(dp.id, getDpUsage(dp, assets));
     });
     return next;
-  }, [visibleDpAssets, assets, mappingRowsByAssetId]);
+  }, [visibleDpAssets, assets]);
 
   const parentSbSummaryById = useMemo(() => {
     const next = new Map<string, ParentSbPopupSummary | null>();
@@ -1002,20 +893,23 @@ React.useEffect(() => {
     const latLng = getPointLatLng(asset);
     if (!latLng) return null;
     const [lat, lng] = latLng;
-    const assetKind = getAssetKind(asset);
-    const homeAsset = assetKind === "home";
-    const dpAsset = assetKind === "distribution-point";
-    const poleAsset = assetKind === "pole";
-    const chamberAsset = assetKind === "chamber";
-    const streetCabAsset = assetKind === "street-cab";
-    const cableAsset = assetKind === "cable";
-    const jointAsset = assetKind === "joint";
-    const isSelectedMoveHome = moveHomesMode && homeAsset && selectedMoveHomeIds.includes(asset.id);
-    const isPositionMoveHome = homeAsset && positionMoveHomeId === asset.id;
-    const isSelectedSurveyDeleteHome = surveyDeleteHomesMode && homeAsset && selectedSurveyDeleteHomeIds.includes(asset.id);
-    const cachedHomeStatus = homeAsset ? homeStatusById.get(asset.id) : undefined;
+    const isSelectedMoveHome = moveHomesMode && asset.assetType === "home" && selectedMoveHomeIds.includes(asset.id);
+    const isPositionMoveHome = asset.assetType === "home" && positionMoveHomeId === asset.id;
+    const isSelectedSurveyDeleteHome = surveyDeleteHomesMode && asset.assetType === "home" && selectedSurveyDeleteHomeIds.includes(asset.id);
+    const cachedHomeStatus = asset.assetType === "home" ? homeStatusById.get(asset.id) : undefined;
+    const assetTypeText = String(
+      (asset as any).assetType ||
+        (asset as any).type ||
+        (asset as any).jointType ||
+        "",
+    ).toLowerCase();
+    const isJointAsset =
+      asset.assetType === "ag-joint" ||
+      assetTypeText.includes("joint") ||
+      assetTypeText.includes("cmj") ||
+      assetTypeText.includes("lmj");
     const canShowAuditAction =
-      hasAuditFormTemplate(asset) && (canAuditJoints || !jointAsset);
+      hasAuditFormTemplate(asset) && (canAuditJoints || !isJointAsset);
     const baseIcon = isSelectedSurveyDeleteHome
   ? homeUnconnectedIcon
   : isPositionMoveHome
@@ -1026,19 +920,17 @@ React.useEffect(() => {
 
 const shouldCableHighlight =
   cableDrawingMode &&
-  !homeAsset &&
-  !isAreaAsset(asset);
+  asset.assetType !== "home" &&
+  asset.assetType !== "area";
 
 const icon = asset.id === highlightedAssetId
   ? createHighlightedIcon(baseIcon as L.DivIcon)
   : shouldCableHighlight
     ? createCableDrawIcon(baseIcon as L.DivIcon)
-    : highlightPostgisAssets && isPostgisAsset(asset)
-      ? createPostgisHighlightedIcon(baseIcon as L.DivIcon)
     : baseIcon;
-    const connectedDp = homeAsset ? homeConnectedDpById.get(asset.id) || null : null;
-    const dpUsage = dpAsset ? dpUsageById.get(asset.id) || null : null;
-    const parentSbSummary = dpAsset ? parentSbSummaryById.get(asset.id) || null : null;
+    const connectedDp = asset.assetType === "home" ? homeConnectedDpById.get(asset.id) || null : null;
+    const dpUsage = asset.assetType === "distribution-point" ? dpUsageById.get(asset.id) || null : null;
+    const parentSbSummary = asset.assetType === "distribution-point" ? parentSbSummaryById.get(asset.id) || null : null;
     const connectionMode = String((asset as any).connectionMode || "auto").toLowerCase() === "manual" ? "manual" : "auto";
 
     return (
@@ -1046,7 +938,7 @@ const icon = asset.id === highlightedAssetId
         key={asset.id}
         position={[lat, lng]}
         icon={icon}
-        draggable={assetMovementEnabled && activeMoveAssetId === asset.id && !homeAsset}
+        draggable={assetMovementEnabled && activeMoveAssetId === asset.id && asset.assetType !== "home"}
         eventHandlers={{
           dragend: (e) => {
             if (!assetMovementEnabled || activeMoveAssetId !== asset.id) return;
@@ -1058,26 +950,26 @@ const icon = asset.id === highlightedAssetId
           click: (event) => {
   if (cableDrawingMode) {
     event.originalEvent?.stopPropagation();
-    if (!homeAsset && !isAreaAsset(asset)) {
+    if (asset.assetType !== "home" && asset.assetType !== "area") {
       onCablePointAsset?.(asset);
     }
     return;
   }
 
   if (surveyDeleteHomesMode) {
-    if (homeAsset) {
+    if (asset.assetType === "home") {
       onToggleSurveyDeleteHome?.(asset);
     }
     return;
   }
 
   if (moveHomesMode) {
-    if (homeAsset) {
+    if (asset.assetType === "home") {
       onToggleMoveHome?.(asset);
       return;
     }
 
-    if (dpAsset) {
+    if (asset.assetType === "distribution-point") {
       onMoveHomesTargetDp?.(asset);
     }
 
@@ -1093,7 +985,7 @@ const icon = asset.id === highlightedAssetId
           <div style={popupCardStyle}>
             <div style={titleStyle}>{asset.name}</div>
             <div style={subTitleStyle}>{getAssetTypeLabel(asset)}</div>
-            {(poleAsset || chamberAsset) && isPiaQaModeEnabled(visibleLayers as any) ? (
+            {(asset.assetType === "pole" || asset.assetType === "chamber") && isPiaQaModeEnabled(visibleLayers as any) ? (
               <div style={{ fontSize: "0.78rem", fontWeight: 900, color: "#9a3412" }}>
                 PIA QA: {getPiaQaStatusLabel(asset)}
               </div>
@@ -1102,7 +994,7 @@ const icon = asset.id === highlightedAssetId
             <div style={sectionStyle}>
               {infoRow("Coordinates", `${lat.toFixed(5)}, ${lng.toFixed(5)}`)}
 
-              {poleAsset ? (
+              {asset.assetType === "pole" ? (
                 <>
                   {infoRow("Size", asset.poleDetails?.size)}
                   {infoRow("Year", asset.poleDetails?.year)}
@@ -1112,7 +1004,7 @@ const icon = asset.id === highlightedAssetId
                 </>
               ) : null}
 
-              {dpAsset ? (
+              {asset.assetType === "distribution-point" ? (
                 <>
                   {infoRow("Build Status", asset.dpDetails?.buildStatus)}
                   {infoRow("DP Type", asset.dpDetails?.closureType)}
@@ -1130,7 +1022,6 @@ const icon = asset.id === highlightedAssetId
                         {infoRow("Capacity", dpUsage.capacity)}
                         {infoRow("Used Ports", dpUsage.used)}
                         {infoRow("Free Ports", dpUsage.free)}
-                        {infoRow("Fibre Numbers", formatFibreRanges(dpUsage.inputFibres))}
                         {infoRow("Status", dpUsage.overCapacity ? "Over capacity" : "OK")}
                       </>
                     )
@@ -1170,7 +1061,7 @@ const icon = asset.id === highlightedAssetId
                 </>
               ) : null}
 
-              {chamberAsset ? (
+              {asset.assetType === "chamber" ? (
                 <>
                   {infoRow("Type", asset.chamberDetails?.chamberType)}
                   {infoRow("Size", asset.chamberDetails?.size)}
@@ -1181,7 +1072,7 @@ const icon = asset.id === highlightedAssetId
                 </>
               ) : null}
 
-              {homeAsset ? (
+              {asset.assetType === "home" ? (
                 <>
                   {infoRow("Source", asset.source || "OpenStreetMap")}
                   {infoRow("Connection", getHomeConnectionStatus(asset, assets))}
@@ -1243,28 +1134,28 @@ const icon = asset.id === highlightedAssetId
                 </>
               ) : null}
 
-              {jointAsset || streetCabAsset ? (
+              {asset.assetType === "ag-joint" || asset.assetType === "street-cab" ? (
                 infoRow("Rows", (asset as any).mappingRowsCount ?? (asset as any).mappingRowsSummary?.rowCount ?? asset.mappingRows?.length ?? 0)
               ) : null}
             </div>
 
-            {dpAsset
+            {asset.assetType === "distribution-point"
               ? renderImagePreview(asset.dpDetails?.image, "Distribution point")
               : null}
 
-            {poleAsset
+            {asset.assetType === "pole"
               ? renderPhotoStrip(asset.poleDetails?.photos)
               : null}
 
-            {poleAsset
+            {asset.assetType === "pole"
               ? renderDocuments(asset.poleDetails?.documents)
               : null}
 
-            {chamberAsset
+            {asset.assetType === "chamber"
               ? renderPhotoStrip(asset.chamberDetails?.photos)
               : null}
 
-            {chamberAsset
+            {asset.assetType === "chamber"
               ? renderDocuments(asset.chamberDetails?.documents)
               : null}
 
@@ -1276,9 +1167,9 @@ const icon = asset.id === highlightedAssetId
             ) : null}
 
             <div style={actionsStyle}>
-              {jointAsset || streetCabAsset ? (
+              {asset.assetType === "ag-joint" || asset.assetType === "street-cab" ? (
                 <button style={actionButtonStyle} onClick={() => onOpenAsset(asset)}>
-                  {jointAsset ? "Open Joint" : "Open Operations"}
+                  {asset.assetType === "ag-joint" ? "Open Fibre Tray" : "Open Operations"}
                 </button>
               ) : null}
 
@@ -1288,7 +1179,7 @@ const icon = asset.id === highlightedAssetId
                 </button>
               ) : null}
 
-              {homeAsset ? (
+              {asset.assetType === "home" ? (
                 <button
                   style={positionMoveHomeId === asset.id ? secondaryButtonStyle : actionButtonStyle}
                   onClick={() => {
@@ -1300,29 +1191,29 @@ const icon = asset.id === highlightedAssetId
                 </button>
               ) : null}
 
-              {moveHomesMode && homeAsset ? (
+              {moveHomesMode && asset.assetType === "home" ? (
                 <button style={actionButtonStyle} onClick={() => onToggleMoveHome?.(asset)}>
                   {isSelectedMoveHome ? "Unselect DP Move" : "Select for DP Move"}
                 </button>
               ) : null}
 
-              {surveyDeleteHomesMode && homeAsset ? (
+              {surveyDeleteHomesMode && asset.assetType === "home" ? (
                 <button style={deleteButtonStyle} onClick={() => onToggleSurveyDeleteHome?.(asset)}>
                   {isSelectedSurveyDeleteHome ? "Unselect Delete" : "Select for Delete"}
                 </button>
               ) : null}
 
-              {moveHomesMode && dpAsset ? (
+              {moveHomesMode && asset.assetType === "distribution-point" ? (
                 <button style={actionButtonStyle} onClick={() => onMoveHomesTargetDp?.(asset)}>
                   Move Selected Here
                 </button>
               ) : null}
 
-              {jointAsset && !canMoveJoints ? null : (
+              {isJointAsset && !canMoveJoints ? null : (
                 <button style={actionButtonStyle} onClick={() => onEditAsset(asset)}>
-                  {jointAsset
+                  {isJointAsset
                     ? "Move Joint"
-                    : cableAsset
+                    : asset.assetType === "cable"
                     ? "Edit Details"
                     : "Edit Details"}
                 </button>

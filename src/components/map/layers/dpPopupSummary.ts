@@ -1,6 +1,5 @@
 import { getDpCapacitySummary } from "../../../services/dpIntelligence";
 import type { SavedMapAsset } from "../types";
-import type { MappingRowsByAssetId } from "../cables/cableMappingRows";
 
 export type ParentSbPopupSummary = {
   parentName: string;
@@ -39,67 +38,6 @@ function uniquePositiveNumbers(values: unknown[]): number[] {
 function getManualSbRoutesFromDetails(details: any): any[] {
   const routes = details?.afnDetails?.sbToSbRoutes;
   return Array.isArray(routes) ? routes : [];
-}
-
-function getRowText(row: any[]): string {
-  return row.map((cell) => String(cell ?? "")).join(" ");
-}
-
-function rowMentionsAsset(row: any[], asset?: SavedMapAsset | null): boolean {
-  const aliases = getAssetIdentityValues(asset as any).map(normaliseAssetRef).filter(Boolean);
-  if (!aliases.length) return false;
-
-  const rowText = normaliseAssetRef(getRowText(row));
-  return aliases.some((alias) => rowText.includes(alias));
-}
-
-function getValidFibreNumber(value: unknown): number | null {
-  const direct = Number(value);
-  if (Number.isFinite(direct) && direct > 0 && direct <= 432) return direct;
-
-  const match = String(value ?? "").match(/\b(\d{1,3})\b/);
-  if (!match) return null;
-
-  const parsed = Number(match[1]);
-  return Number.isFinite(parsed) && parsed > 0 && parsed <= 432 ? parsed : null;
-}
-
-function getFibreNumberFromMappingRow(row: any[]): number | null {
-  for (const index of [8, 6, 4, 2, 1]) {
-    const candidate = getValidFibreNumber(row?.[index]);
-    if (candidate !== null) return candidate;
-  }
-
-  for (const cell of row || []) {
-    const candidate = getValidFibreNumber(cell);
-    if (candidate !== null) return candidate;
-  }
-
-  return null;
-}
-
-function getJointMappedFibresForDp(
-  dp: SavedMapAsset,
-  allAssets: SavedMapAsset[],
-  mappingRowsByAssetId: MappingRowsByAssetId = {},
-): number[] {
-  const fibres = new Set<number>();
-
-  allAssets.forEach((asset) => {
-    const localRows = Array.isArray((asset as any).mappingRows) ? (asset as any).mappingRows : [];
-    const sharedRows = mappingRowsByAssetId[asset.id] || [];
-    const rows = sharedRows.length ? sharedRows : localRows;
-
-    rows.forEach((row: any[]) => {
-      if (!Array.isArray(row)) return;
-      if (!rowMentionsAsset(row, dp)) return;
-
-      const fibre = getFibreNumberFromMappingRow(row);
-      if (fibre !== null) fibres.add(fibre);
-    });
-  });
-
-  return Array.from(fibres).sort((a, b) => a - b);
 }
 
 export function getPrimaryManualSbRouteForDp(dp: any): any | null {
@@ -303,7 +241,6 @@ export function getDpUsage(
   dp: SavedMapAsset,
   allAssets: SavedMapAsset[],
   networkState?: any,
-  mappingRowsByAssetId: MappingRowsByAssetId = {},
 ) {
   const dpIdentityValues = getAssetIdentityValues(dp as any);
   const dpDetails = ((dp as any).dpDetails || (dp as any).properties?.dpDetails || {}) as any;
@@ -362,23 +299,10 @@ export function getDpUsage(
     ...((Array.isArray(afnDetails.inputFibres) ? afnDetails.inputFibres : []) as any[]),
     ...((Array.isArray(afnDetails.splitterFibres) ? afnDetails.splitterFibres : []) as any[]),
   ]);
-  const networkInputFibres = uniquePositiveNumbers([
-    ...((Array.isArray(matchingDpState?.splitterFibres) ? matchingDpState.splitterFibres : []) as any[]),
-    ...((Array.isArray(matchingDpState?.directFibres) ? matchingDpState.directFibres : []) as any[]),
-    ...((Array.isArray(matchingDpState?.jointMatchedFibres) ? matchingDpState.jointMatchedFibres : []) as any[]),
-    ...((Array.isArray(matchingDpState?.jointMatch?.fibres) ? matchingDpState.jointMatch.fibres : []) as any[]),
-  ]);
-  const jointMappedFibres = getJointMappedFibresForDp(dp, allAssets, mappingRowsByAssetId);
 
-  // Manual SB routing remains authoritative. Without it, uploaded joint/FAS
-  // rows should drive the popup capacity rather than the placeholder default.
-  const inputFibres = manualLocalFibres.length
-    ? manualLocalFibres
-    : storedInputFibres.length
-      ? storedInputFibres
-      : networkInputFibres.length
-        ? networkInputFibres
-        : jointMappedFibres;
+  // SB routing is manual-authority. Joint/network matched fibres are not allowed
+  // to overwrite the SB local splitter fibres shown on the map popup.
+  const inputFibres = manualLocalFibres.length ? manualLocalFibres : storedInputFibres;
   const splitterFibres = inputFibres;
 
   const closureType = String(

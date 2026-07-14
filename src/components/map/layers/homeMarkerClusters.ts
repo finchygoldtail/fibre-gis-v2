@@ -200,7 +200,7 @@ export function getHomeClusterBounds(cluster: HomeCluster): L.LatLngBounds | nul
 export function clusterHomeAssets(homes: SavedMapAsset[], map: L.Map): HomeCluster[] {
   const zoom = map.getZoom();
 
-  if (zoom >= 17 || homes.length < 2) {
+  if (zoom >= 19 || homes.length < 2) {
     return homes
       .map((home) => {
         const position = getPointLatLng(home);
@@ -210,7 +210,7 @@ export function clusterHomeAssets(homes: SavedMapAsset[], map: L.Map): HomeClust
       .filter(Boolean) as HomeCluster[];
   }
 
-  const gridSize = zoom >= 15 ? 48 : 64;
+  const gridSize = zoom >= 17 ? 44 : zoom >= 15 ? 56 : 68;
   const buckets = new Map<string, SavedMapAsset[]>();
 
   homes.forEach((home) => {

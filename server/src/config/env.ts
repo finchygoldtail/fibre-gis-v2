@@ -6,15 +6,13 @@ type EnvConfig = {
   nodeEnv: string;
   apiHost: string;
   apiPort: number;
-  corsOrigins: string[];
+  corsOrigin: string;
   databaseUrl?: string;
   postgresHost?: string;
   postgresPort: number;
   postgresDb?: string;
   postgresUser?: string;
   postgresPassword?: string;
-  requireFirebaseAuth: boolean;
-  firebaseProjectId: string;
 };
 
 function parsePort(value: string | undefined): number {
@@ -25,30 +23,17 @@ function parsePort(value: string | undefined): number {
   return port;
 }
 
-function parseBoolean(value: string | undefined): boolean {
-  return ["1", "true", "yes", "on"].includes(String(value || "").trim().toLowerCase());
-}
-
-function parseCorsOrigins(value: string | undefined): string[] {
-  return String(value || "http://localhost:5173")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-}
-
 export const env: EnvConfig = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   apiHost: process.env.API_HOST ?? "0.0.0.0",
   apiPort: parsePort(process.env.API_PORT),
-  corsOrigins: parseCorsOrigins(process.env.CORS_ORIGIN),
+  corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:5173",
   databaseUrl: process.env.DATABASE_URL,
   postgresHost: process.env.POSTGRES_HOST,
   postgresPort: parsePort(process.env.POSTGRES_PORT ?? "5432"),
   postgresDb: process.env.POSTGRES_DB,
   postgresUser: process.env.POSTGRES_USER,
   postgresPassword: process.env.POSTGRES_PASSWORD,
-  requireFirebaseAuth: parseBoolean(process.env.REQUIRE_FIREBASE_AUTH),
-  firebaseProjectId: process.env.FIREBASE_PROJECT_ID || "fibre-gis-v2",
 };
 
 if (!env.databaseUrl && (!env.postgresHost || !env.postgresDb || !env.postgresUser || !env.postgresPassword)) {

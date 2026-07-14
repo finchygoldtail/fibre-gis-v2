@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import type { SavedMapAsset } from "../types";
-import { saveMapAssetsViaCoordinator } from "../../../services/mapSaveCoordinator";
 
 export function isPolygonAreaAsset(asset: any): boolean {
   const geometryType = String(
@@ -67,15 +66,7 @@ export function usePolygonAdminTools({
   const [polygonBulkSelectEnabled, setPolygonBulkSelectEnabled] = useState(false);
   const [selectedPolygonIds, setSelectedPolygonIds] = useState<string[]>([]);
 
-  const saveAdminAssetList = async (assets: SavedMapAsset[], reason: string) => {
-    await saveMapAssetsViaCoordinator(assets, {
-      source: "admin-tool",
-      reason,
-      allowDestructiveSave: false,
-    });
-  };
-
-  const removePolygonAssetsFromMapState = async (
+  const removePolygonAssetsFromMapState = (
     polygonsToRemove: SavedMapAsset[],
     successLabel: string,
   ) => {
@@ -83,10 +74,11 @@ export function usePolygonAdminTools({
       polygonsToRemove.map((asset) => String(asset.id || "")),
     );
 
-    const nextAssets = (operationalSavedJoints ?? []).filter(
-      (asset: any) => !polygonIds.has(String(asset?.id || "")),
+    setSavedJoints((prev) =>
+      (prev ?? []).filter(
+        (asset: any) => !polygonIds.has(String(asset?.id || "")),
+      ),
     );
-    setSavedJoints(nextAssets);
 
     if (editingAssetId && polygonIds.has(String(editingAssetId))) {
       resetEditor();
@@ -96,15 +88,9 @@ export function usePolygonAdminTools({
       prev.filter((id) => !polygonIds.has(String(id))),
     );
 
-    try {
-      await saveAdminAssetList(nextAssets, `polygon-admin-remove:${successLabel}`);
-    } catch (err) {
-      console.error("Failed to save polygon removal", err);
-      alert(`${polygonsToRemove.length} ${successLabel} removed on screen, but the server save failed.`);
-      return;
-    }
-
-    alert(`${polygonsToRemove.length} ${successLabel} removed from the server map.`);
+    alert(
+      `${polygonsToRemove.length} ${successLabel} removed from the map.\n\nPress Save Map to make this permanent in Firestore.`,
+    );
   };
 
   const handleAdminRemoveImportedAreas = () => {
@@ -121,13 +107,13 @@ export function usePolygonAdminTools({
     }
 
     const typed = window.prompt(
-      `Found ${importedAreas.length} imported area polygon(s).\n\nType DELETE IMPORTED AREAS to remove them from the server map.`,
+      `Found ${importedAreas.length} imported area polygon(s).\n\nType DELETE IMPORTED AREAS to remove them from the map.\n\nYou must still press Save Map afterwards to persist the cleanup.`,
       "",
     );
 
     if (typed !== "DELETE IMPORTED AREAS") return;
 
-    void removePolygonAssetsFromMapState(importedAreas, "imported area polygon(s)");
+    removePolygonAssetsFromMapState(importedAreas, "imported area polygon(s)");
   };
 
   const togglePolygonBulkSelection = (id: string) => {
@@ -188,13 +174,13 @@ export function usePolygonAdminTools({
     }
 
     const typed = window.prompt(
-      `Selected ${selectedPolygons.length} polygon(s).\n\nType DELETE SELECTED POLYGONS to remove the selected polygons from the server map.`,
+      `Selected ${selectedPolygons.length} polygon(s).\n\nType DELETE SELECTED POLYGONS to remove the selected polygons from the map.\n\nYou must still press Save Map afterwards to persist the cleanup.`,
       "",
     );
 
     if (typed !== "DELETE SELECTED POLYGONS") return;
 
-    void removePolygonAssetsFromMapState(selectedPolygons, "selected polygon(s)");
+    removePolygonAssetsFromMapState(selectedPolygons, "selected polygon(s)");
   };
 
   const handleAdminRemoveSelectedPolygon = () => {
@@ -221,13 +207,13 @@ export function usePolygonAdminTools({
         "selected polygon",
     );
     const typed = window.prompt(
-      `Selected polygon:\n${polygonName}\n\nType DELETE SELECTED POLYGON to remove only this polygon from the server map.`,
+      `Selected polygon:\n${polygonName}\n\nType DELETE SELECTED POLYGON to remove only this polygon from the map.\n\nYou must still press Save Map afterwards to persist the cleanup.`,
       "",
     );
 
     if (typed !== "DELETE SELECTED POLYGON") return;
 
-    void removePolygonAssetsFromMapState([selectedPolygon], "selected polygon");
+    removePolygonAssetsFromMapState([selectedPolygon], "selected polygon");
   };
 
   const handleAdminRemoveAllPolygons = () => {
@@ -244,13 +230,13 @@ export function usePolygonAdminTools({
     }
 
     const typed = window.prompt(
-      `WARNING: This will remove ALL ${allPolygons.length} polygon area(s) from the server map.\n\nThis includes imported polygons and manually drawn project/area polygons.\n\nType DELETE ALL POLYGONS to continue.`,
+      `WARNING: This will remove ALL ${allPolygons.length} polygon area(s) from the map.\n\nThis includes imported polygons and manually drawn project/area polygons.\n\nType DELETE ALL POLYGONS to continue.\n\nYou must still press Save Map afterwards to persist the cleanup.`,
       "",
     );
 
     if (typed !== "DELETE ALL POLYGONS") return;
 
-    void removePolygonAssetsFromMapState(allPolygons, "polygon area(s)");
+    removePolygonAssetsFromMapState(allPolygons, "polygon area(s)");
   };
 
   const handleAdminRemoveImportedDistributionPoints = () => {
@@ -267,7 +253,7 @@ export function usePolygonAdminTools({
     }
 
     const typed = window.prompt(
-      `Found ${importedDps.length} imported Distribution Point / SB asset(s).\n\nThis is intended for removing QGIS-imported SB/AFN DPs before re-importing them. Manually created DPs are protected where possible.\n\nType DELETE IMPORTED DPS to remove them from the server map.`,
+      `Found ${importedDps.length} imported Distribution Point / SB asset(s).\n\nThis is intended for removing QGIS-imported SB/AFN DPs before re-importing them. Manually created DPs are protected where possible.\n\nType DELETE IMPORTED DPS to remove them from the map.\n\nYou must still press Save Map afterwards to persist the cleanup.`,
       "",
     );
 
@@ -277,23 +263,19 @@ export function usePolygonAdminTools({
       importedDps.map((asset) => String(asset.id || "")),
     );
 
-    const nextAssets = (operationalSavedJoints ?? []).filter(
-      (asset: any) => !importedDpIds.has(String(asset?.id || "")),
+    setSavedJoints((prev) =>
+      (prev ?? []).filter(
+        (asset: any) => !importedDpIds.has(String(asset?.id || "")),
+      ),
     );
-    setSavedJoints(nextAssets);
 
     if (editingAssetId && importedDpIds.has(String(editingAssetId))) {
       resetEditor();
     }
 
-    void saveAdminAssetList(nextAssets, "polygon-admin-remove-imported-dps")
-      .then(() => {
-        alert(`${importedDps.length} imported Distribution Point / SB asset(s) removed from the server map.`);
-      })
-      .catch((err) => {
-        console.error("Failed to save imported DP removal", err);
-        alert(`${importedDps.length} imported Distribution Point / SB asset(s) removed on screen, but the server save failed.`);
-      });
+    alert(
+      `${importedDps.length} imported Distribution Point / SB asset(s) removed from the map.\n\nPress Save Map to make this permanent in Firestore.`,
+    );
   };
 
   const handleAdminSetAllPolygonsToL3 = () => {
@@ -319,7 +301,7 @@ export function usePolygonAdminTools({
     }
 
     const typed = window.prompt(
-      `Change ${needsUpdate.length} loaded polygon area(s) to L3?\n\nThis does not delete anything. Type SET POLYGONS L3 to save the level change to the server map.`,
+      `Change ${needsUpdate.length} loaded polygon area(s) to L3?\n\nThis does not delete anything. You must still press Save Map afterwards to persist the level change.\n\nType SET POLYGONS L3 to continue.`,
       "",
     );
 
@@ -327,7 +309,8 @@ export function usePolygonAdminTools({
 
     const updatedIds = new Set(needsUpdate.map((asset) => String(asset.id || "")));
 
-    const nextAssets = (operationalSavedJoints ?? []).map((asset: any) =>
+    setSavedJoints((prev) =>
+      (prev ?? []).map((asset: any) =>
         updatedIds.has(String(asset?.id || ""))
           ? {
               ...asset,
@@ -338,17 +321,12 @@ export function usePolygonAdminTools({
               },
             }
           : asset,
+      ),
     );
-    setSavedJoints(nextAssets);
 
-    void saveAdminAssetList(nextAssets, "polygon-admin-set-l3")
-      .then(() => {
-        alert(`${needsUpdate.length} polygon area(s) changed to L3 on the server map.`);
-      })
-      .catch((err) => {
-        console.error("Failed to save polygon L3 update", err);
-        alert(`${needsUpdate.length} polygon area(s) changed on screen, but the server save failed.`);
-      });
+    alert(
+      `${needsUpdate.length} polygon area(s) changed to L3 in the loaded map.\n\nPress Save Map to make this permanent in Firestore.`,
+    );
   };
 
   return {

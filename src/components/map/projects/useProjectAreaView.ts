@@ -29,7 +29,7 @@ export function isProjectAreaAsset(asset: SavedMapAsset): boolean {
   ).toLowerCase();
 
   return (
-    (geometryType === "polygon" || geometryType === "multipolygon") &&
+    geometryType === "polygon" &&
     (assetType === "area" ||
       assetType === "polygon" ||
       assetType === "project-area" ||
@@ -104,18 +104,17 @@ export function useProjectAreaView({
   );
 
   const visibleProjectAssets = useMemo(() => {
-    const nonAreaAssets = allMapAssets.filter(
-      (asset) => !isProjectAreaAsset(asset),
-    );
+  // Global view = polygons only
+  if (!activeProjectArea) {
+    return [];
+  }
 
-    // Whole-map mode should remain a real network overview. Selecting an area
-    // then narrows the same asset set into the deep-dive workspace.
-    if (!activeProjectArea) {
-      return nonAreaAssets;
-    }
+  const nonAreaAssets = allMapAssets.filter(
+    (asset) => !isProjectAreaAsset(asset),
+  );
 
-    return filterAssetsForProjectArea(nonAreaAssets, activeProjectArea);
-  }, [activeProjectArea, allMapAssets]);
+  return filterAssetsForProjectArea(nonAreaAssets, activeProjectArea);
+}, [activeProjectArea, allMapAssets]);
 
   const visibleProjectAreas = useMemo(
     () => (activeProjectArea ? [activeProjectArea] : projectAreas),
@@ -123,10 +122,7 @@ export function useProjectAreaView({
   );
 
   const visibleOpenreachAssets = useMemo(
-    () =>
-      activeProjectArea
-        ? filterAssetsForProjectArea(openreachReferenceAssets, activeProjectArea)
-        : openreachReferenceAssets,
+    () => filterAssetsForProjectArea(openreachReferenceAssets, activeProjectArea),
     [activeProjectArea, openreachReferenceAssets],
   );
 

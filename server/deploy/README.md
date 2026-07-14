@@ -46,7 +46,6 @@ Set:
 - `LETSENCRYPT_EMAIL`
 - `CORS_ORIGIN`
 - a long random `POSTGRES_PASSWORD`
-- `REQUIRE_FIREBASE_AUTH=true` once HTTPS is ready and the frontend is confirmed to send Firebase ID tokens
 
 ## 4. First Boot Over HTTP
 
@@ -103,15 +102,6 @@ Restore test:
 
 Use cron or a systemd timer for daily backups once staging is stable. A backup that has not been restored is not proven.
 
-Install the included daily systemd timer:
-
-```bash
-sudo ./install-backup-timer.sh
-systemctl list-timers alistra-postgres-backup.timer
-```
-
-By default, local dump files older than 14 days are deleted. Set `BACKUP_RETENTION_DAYS` in `.env.production` to change that.
-
 ## 7. Frontend Staging Flags
 
 Use these for a staging frontend build:
@@ -127,11 +117,6 @@ Firestore remains the source of truth. The spatial API is still read-only from t
 
 - Public ports: `80`, `443`, restricted SSH only.
 - PostgreSQL is only on the internal Docker network.
-- Keep `REQUIRE_FIREBASE_AUTH=false` only while staging trusted local tests.
-- Turn on `REQUIRE_FIREBASE_AUTH=true` before exposing real customer data.
+- Firebase ID token verification is still required before exposing real customer data.
 - Keep Hetzner backups enabled while also taking PostgreSQL dumps.
 - Do not add PostGIS write endpoints until a sync/conflict strategy is approved.
-
-## Migration Runbook
-
-Use `MIGRATION_RUNBOOK.md` for the end-to-end move from Firebase-heavy map loading to Hetzner/PostGIS, including visual separation, backups, area imports, HTTPS, authentication, and source-of-truth decisions.

@@ -2,33 +2,11 @@ import { collection, doc, getDocs, setDoc } from "firebase/firestore";
 import { db } from "../../../firebase";
 import type { SavedMapAsset } from "../types";
 import { withAreaAssetIndex } from "../../../services/areaAssetIndex";
-import { spatialApiConfig } from "../../../services/spatialApi/spatialApiConfig";
-import { fetchSpatialAssetsByBounds } from "../../../services/spatialApi/spatialAssetService";
-import { spatialFeatureToMapAssets } from "../../../services/spatialApi/spatialAssetAdapter";
-import {
-  deleteSpatialMapAsset,
-  saveSpatialMapAssets,
-  toStablePostgisId,
-} from "../../../services/spatialApi/spatialAssetWriteService";
 
 const CHUNK_SIZE = 250;
-const BUSINESS_ID = "fibre-gis-v2";
-const WORLD_BOUNDS = {
-  minLng: -180,
-  minLat: -90,
-  maxLng: 180,
-  maxLat: 90,
-};
 
 function safeProjectDocId(projectId: string): string {
   return String(projectId || "unknown-project").replace(/\//g, "_");
-}
-
-function getStoredPostgisHomeId(home: SavedMapAsset): string {
-  const metadataId = String((home as any).importedProperties?.postgisId || "").trim();
-  if (metadataId) return metadataId;
-
-  return toStablePostgisId(home.id);
 }
 
 function chunksCollection(projectId: string) {
@@ -43,19 +21,6 @@ function chunksCollection(projectId: string) {
 }
 
 export async function loadProjectHomes(projectId: string): Promise<SavedMapAsset[]> {
-  if (spatialApiConfig.postgisOnly) {
-    const collection = await fetchSpatialAssetsByBounds({
-      businessId: BUSINESS_ID,
-      areaId: safeProjectDocId(projectId),
-      assetTypes: ["home"],
-      ...WORLD_BOUNDS,
-      zoom: 18,
-      limit: 10_000,
-    });
-
-    return collection.features.flatMap(spatialFeatureToMapAssets);
-  }
-
   const snap = await getDocs(chunksCollection(projectId));
 
   const chunks = snap.docs
@@ -97,37 +62,6 @@ export async function saveProjectHomes(
       areaName || (home as any).areaName || (home as any).projectAreaName,
     ),
   );
-
-  if (spatialApiConfig.postgisOnly) {
-    const areaId = safeProjectDocId(projectId);
-    const existingHomes = await loadProjectHomes(projectId);
-    const nextIds = new Set(
-      cleanedHomes.map((home) => toStablePostgisId(home.id)),
-    );
-
-    await saveSpatialMapAssets(cleanedHomes, {
-      businessId: BUSINESS_ID,
-      projectId: areaId,
-      areaId,
-      reason: "project-homes-save",
-    });
-
-    const staleHomes = existingHomes.filter((home) => {
-      const postgisId = getStoredPostgisHomeId(home);
-      return !nextIds.has(postgisId);
-    });
-
-    await Promise.all(
-      staleHomes.map((home) =>
-        deleteSpatialMapAsset(getStoredPostgisHomeId(home), {
-          businessId: BUSINESS_ID,
-          reason: "project-homes-replace-delete-stale",
-        }),
-      ),
-    );
-
-    return cleanedHomes.length;
-  }
 
   const chunks: SavedMapAsset[][] = [];
   for (let i = 0; i < cleanedHomes.length; i += CHUNK_SIZE) {

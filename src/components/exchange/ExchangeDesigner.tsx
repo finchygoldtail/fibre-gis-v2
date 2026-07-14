@@ -2016,7 +2016,7 @@ const layout: React.CSSProperties = {
 const leftPanel: React.CSSProperties = {
   borderRight: "1px solid #374151",
   padding: "1rem",
-  paddingBottom: "1rem",
+  paddingBottom: 80,
   display: "flex",
   flexDirection: "column",
   gap: "1rem",
@@ -2036,7 +2036,7 @@ const brandBlock: React.CSSProperties = {
 
 const mainPanel: React.CSSProperties = {
   padding: "1rem",
-  paddingBottom: "1rem",
+  paddingBottom: 80,
   overflow: "auto",
   minWidth: 0,
   minHeight: 0,
@@ -2045,7 +2045,7 @@ const mainPanel: React.CSSProperties = {
 const rightPanel: React.CSSProperties = {
   borderLeft: "1px solid #374151",
   padding: "1rem",
-  paddingBottom: "1rem",
+  paddingBottom: 80,
   overflow: "auto",
   minHeight: 0,
 };

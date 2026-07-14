@@ -180,20 +180,6 @@ export function filterUniqueAssetsForAreaImport(args: {
   const duplicates: SavedMapAsset[] = [];
 
   for (const asset of args.importedAssets) {
-    const geometryType = String((asset as any)?.geometry?.type || "").toLowerCase();
-    const assetType = String((asset as any)?.assetType || "").toLowerCase();
-    const isImportedPolygon =
-      assetType === "area" ||
-      assetType === "polygon" ||
-      assetType === "project-area" ||
-      geometryType === "polygon" ||
-      geometryType === "multipolygon";
-
-    if (isImportedPolygon) {
-      accepted.push(asset);
-      continue;
-    }
-
     const duplicate = findDuplicateAssetInArea({
       assets: [...args.existingAssets, ...accepted],
       asset,

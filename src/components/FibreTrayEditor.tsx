@@ -54,11 +54,6 @@ import {
   restoreSavedJointsFromFirebase,
 } from "../services/mapAssetStorage";
 import { saveMapAssetsViaCoordinator } from "../services/mapSaveCoordinator";
-import { spatialApiConfig } from "../services/spatialApi/spatialApiConfig";
-import {
-  loadJointMappingRowsFromPostgisRecords,
-  saveJointMappingRowsToPostgisRecords,
-} from "../services/spatialApi/jointMappingRecordStorage";
 
 /* -------------------------------------------------------------
   Persistence
@@ -103,11 +98,6 @@ function dedupeMappingRows(rows: any[][]): any[][] {
 }
 
 async function saveJointMappingRowsToFirestore(jointId: string, rows: any[][]) {
-  if (spatialApiConfig.postgisOnly) {
-    await saveJointMappingRowsToPostgisRecords(jointId, rows);
-    return;
-  }
-
   const chunksRef = collection(
     db,
     "businesses",
@@ -151,11 +141,6 @@ async function saveJointMappingRowsToFirestore(jointId: string, rows: any[][]) {
 async function loadJointMappingRowsFromFirestore(
   jointId: string,
 ): Promise<any[][]> {
-  if (spatialApiConfig.postgisOnly) {
-    const postgisRows = await loadJointMappingRowsFromPostgisRecords(jointId);
-    if (postgisRows.length > 0) return postgisRows;
-  }
-
   const chunksRef = collection(
     db,
     "businesses",
@@ -914,12 +899,6 @@ export const FibreTrayEditor: React.FC = () => {
     Load shared project from Firestore
   ------------------------------------------------------------- */
   useEffect(() => {
-    if (spatialApiConfig.postgisOnly) {
-      setFirebaseLoaded(true);
-      setSavedJoints([]);
-      return;
-    }
-
     const ref = doc(db, ...FIRESTORE_REF_PATH, "mapAssets", "main");
 
     const unsub = onSnapshot(
@@ -1104,30 +1083,12 @@ export const FibreTrayEditor: React.FC = () => {
       const hasSharedRows = Boolean(
         (joint as any).mappingRowsRef || (joint as any).mappingRowsCount,
       );
-      const rowLookupIds = Array.from(
-        new Set(
-          [
-            joint.id,
-            (joint as any).legacyAssetId,
-            (joint as any).importedProperties?.legacyAssetId,
-            (joint as any).importedProperties?.originalAsset?.id,
-          ].filter(Boolean),
-        ),
-      );
-      let rows: any[][] = [];
-      if (hasSharedRows) {
-        for (const rowLookupId of rowLookupIds) {
-          rows = await loadJointMappingRowsFromFirestore(String(rowLookupId));
-          if (rows.length > 0) break;
-        }
-      } else if (Array.isArray((joint as any).mappingRows)) {
-        rows = (joint as any).mappingRows as any[][];
-      }
+      const rows = hasSharedRows
+        ? await loadJointMappingRowsFromFirestore(joint.id)
+        : Array.isArray((joint as any).mappingRows)
+          ? ((joint as any).mappingRows as any[][])
+          : [];
       const displayRows = jt === "Meet Me Chamber" ? normalizeMeetMeRows(rows) : rows;
-
-      if (spatialApiConfig.postgisOnly && rows.length > 0) {
-        await saveJointMappingRowsToPostgisRecords(joint.id, rows);
-      }
 
       setLoadedFileName(displayRows.length ? joint.name || "" : "");
       setMappingRows(displayRows);
@@ -1153,7 +1114,7 @@ export const FibreTrayEditor: React.FC = () => {
       }
     } catch (err) {
       console.error("Failed to load joint mapping rows:", err);
-      alert("Failed to load this joint's mapping rows.");
+      alert("Failed to load this joint's mapping rows from Firestore.");
     }
   };
 
@@ -1173,41 +1134,10 @@ export const FibreTrayEditor: React.FC = () => {
       const removedCableReferenceCount = countRemovedCableReferenceCells(rawRows, rows);
       const detectedAssetType = detectAssetTypeFromRows(rows);
       const detectedJointType = detectJointTypeFromRows(rows);
-      const editorRows = detectedJointType === "Meet Me Chamber" ? normalizeMeetMeRows(rows) : rows;
-
-      setAssetType(
-        selectedMapJoint?.assetType === "street-cab"
-          ? "street-cab"
-          : detectedAssetType,
-      );
-      setMappingRows(editorRows);
-      setTrayFilter("all");
-      setSelectedFibre(null);
-      setMoveSrc(null);
-      setMoveSrcMeetMeTarget(null);
-      setSearchTerm("");
-
-      if (detectedJointType === "Meet Me Chamber") {
-        const base = buildJointForRows("LMJ (40 trays)", editorRows);
-        setJointType("Meet Me Chamber");
-        setModel(base);
-      } else if (detectedJointType === "LMJ (40 trays)") {
-        const base = buildJoint(detectedJointType);
-        applyLmjRowsToModel(rows, base, (row) => extractChain(row).join(" -> "));
-        setJointType(detectedJointType);
-        setModel(base);
-      } else if (detectedAssetType === "ag-joint") {
-        const base = buildJointForRows(detectedJointType, rows);
-
-        setJointType(detectedJointType);
-        setModel(
-          applyStandardRowsToTrayModel(base, rows, {
-            overwriteExistingLabels: true,
-          }),
-        );
-      }
 
       if (selectedJointId) {
+        await saveJointMappingRowsToFirestore(selectedJointId, rows);
+
         const updatedSavedJoints = savedJoints.map((asset) => {
           if (asset.id !== selectedJointId) return asset;
 
@@ -1256,18 +1186,41 @@ export const FibreTrayEditor: React.FC = () => {
         // duplicate Firestore writes. Save the selected joint metadata once
         // here so the upload still persists correctly.
         setSavedJoints(updatedSavedJoints);
-        try {
-          await saveJointMappingRowsToFirestore(selectedJointId, rows);
-          await saveSavedJointsToFirestoreNow(updatedSavedJoints);
-        } catch (saveErr) {
-          console.error("Mapping file loaded but failed to save:", saveErr);
-          alert(
-            `Mapping file loaded on screen, but saving it failed: ${
-              saveErr instanceof Error ? saveErr.message : String(saveErr)
-            }`,
-          );
-        }
+        await saveSavedJointsToFirestoreNow(updatedSavedJoints);
       }
+      setAssetType(
+        selectedMapJoint?.assetType === "street-cab"
+          ? "street-cab"
+          : detectedAssetType,
+      );
+      const editorRows = detectedJointType === "Meet Me Chamber" ? normalizeMeetMeRows(rows) : rows;
+      setMappingRows(editorRows);
+      setTrayFilter("all");
+      setSelectedFibre(null);
+      setMoveSrc(null);
+      setMoveSrcMeetMeTarget(null);
+      setSearchTerm("");
+
+      if (detectedJointType === "Meet Me Chamber") {
+        const base = buildJointForRows("LMJ (40 trays)", editorRows);
+        setJointType("Meet Me Chamber");
+        setModel(base);
+      } else if (detectedJointType === "LMJ (40 trays)") {
+        const base = buildJoint(detectedJointType);
+        applyLmjRowsToModel(rows, base, (row) => extractChain(row).join(" → "));
+        setJointType(detectedJointType);
+        setModel(base);
+      } else if (detectedAssetType === "ag-joint") {
+        const base = buildJointForRows(detectedJointType, rows);
+
+        setJointType(detectedJointType);
+        setModel(
+          applyStandardRowsToTrayModel(base, rows, {
+            overwriteExistingLabels: true,
+          }),
+        );
+      }
+
       e.target.value = "";
     } catch (err: any) {
       console.error(err);
@@ -1519,7 +1472,7 @@ export const FibreTrayEditor: React.FC = () => {
       setPendingFibreMoves([]);
     }
 
-    alert("Joint saved to the server.");
+    alert("Joint saved to Firestore.");
   };
 
   /* -------------------------------------------------------------

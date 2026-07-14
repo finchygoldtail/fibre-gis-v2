@@ -15,7 +15,6 @@ export async function fetchSpatialAssetsByBounds(
 
   if (request.projectId) params.set("projectId", request.projectId);
   if (request.areaId) params.set("areaId", request.areaId);
-  if (request.source) params.set("source", request.source);
   if (request.assetTypes?.length) params.set("assetTypes", request.assetTypes.join(","));
   if (typeof request.zoom === "number") params.set("zoom", String(request.zoom));
   if (typeof request.limit === "number") params.set("limit", String(request.limit));

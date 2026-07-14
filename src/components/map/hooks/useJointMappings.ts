@@ -2,16 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../../firebase";
 import type { SavedMapAsset } from "../types";
-import { spatialApiConfig } from "../../../services/spatialApi/spatialApiConfig";
-import { loadJointMappingRowsFromPostgisRecords } from "../../../services/spatialApi/jointMappingRecordStorage";
 
 const BUSINESS_ID = "fibre-gis-v2";
 
 async function loadJointMappingRowsForMapAsset(jointId: string): Promise<any[][]> {
-  if (spatialApiConfig.postgisOnly) {
-    return loadJointMappingRowsFromPostgisRecords(jointId);
-  }
-
   const chunksRef = collection(
     db,
     "businesses",

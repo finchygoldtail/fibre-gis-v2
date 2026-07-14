@@ -101,7 +101,6 @@ function downloadCsv(report: AddressSheetMatchReport) {
 export default function AddressSheetImportPanel({ projectAssets, onSelectAsset, onOpenAsset, onApplyAssignments }: Props) {
   const [report, setReport] = useState<AddressSheetMatchReport | null>(null);
   const [loading, setLoading] = useState(false);
-  const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showRows, setShowRows] = useState(false);
 
@@ -125,7 +124,7 @@ export default function AddressSheetImportPanel({ projectAssets, onSelectAsset, 
 
 
   const handleApplyAssignments = async () => {
-    if (!report || applying) return;
+    if (!report) return;
 
     const assignableRows = report.rows.filter((row) => row.homeAsset && row.splitterBox);
     if (!assignableRows.length) {
@@ -157,19 +156,11 @@ export default function AddressSheetImportPanel({ projectAssets, onSelectAsset, 
       return;
     }
 
-    setApplying(true);
-    try {
-      await onApplyAssignments?.({
-        rows: assignableRows,
-        overwriteExistingDrops,
-        note: trimmed,
-      });
-    } catch (err) {
-      console.error("Address sheet assignment failed", err);
-      alert(err instanceof Error ? err.message : "Address sheet assignment failed.");
-    } finally {
-      setApplying(false);
-    }
+    await onApplyAssignments?.({
+      rows: assignableRows,
+      overwriteExistingDrops,
+      note: trimmed,
+    });
   };
 
   const handleFile = async (file?: File | null) => {
@@ -222,9 +213,8 @@ export default function AddressSheetImportPanel({ projectAssets, onSelectAsset, 
               borderColor: report.stats.unmatchedHomes === 0 ? "rgba(74,222,128,0.42)" : "rgba(251,191,36,0.42)",
             }}
             onClick={handleApplyAssignments}
-            disabled={applying}
           >
-            {applying ? "Applying..." : "Assign SB / Home / Drops"}
+            Assign SB / Home / Drops
           </button>
         ) : null}
       </div>

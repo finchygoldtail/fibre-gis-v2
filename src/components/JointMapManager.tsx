@@ -49,7 +49,6 @@ import ExchangeDesigner from "./exchange/ExchangeDesigner";
 import { formatDistance, getPathDistanceMeters } from "../utils/mapMeasure";
 import { getNextAssetName } from "../utils/mapAssetNames";
 import { saveMapAssetsViaCoordinator } from "../services/mapSaveCoordinator";
-import { wipeLegacyFirestoreMapData } from "../services/mapAssetStorage";
 import MapContextMenu, { type MapContextAction } from "./map/MapContextMenu";
 import LayerControls from "./map/panels/LayerControls";
 import MapToolbar from "./map/panels/MapToolbar";
@@ -125,12 +124,6 @@ import { useRoleMobileMode } from "./map/responsive/useRoleMobileMode";
 import { useDeviceLayout } from "./map/responsive/useDeviceLayout";
 import { useLiveUserLocationSharing } from "./map/hooks/useLiveUserLocationSharing";
 import { isSpatialApiAsset } from "../services/spatialApi/spatialAssetAdapter";
-import { spatialApiConfig } from "../services/spatialApi/spatialApiConfig";
-import {
-  deleteSpatialMapAsset,
-  saveSpatialMapAssets,
-  wipeSpatialMapData,
-} from "../services/spatialApi/spatialAssetWriteService";
 import { useSpatialViewportAssets } from "../services/spatialApi/useSpatialViewportAssets";
 import SurveyMobileControls from "./map/responsive/mobile/SurveyMobileControls";
 import MaintenanceMobileControls from "./map/responsive/mobile/MaintenanceMobileControls";
@@ -166,15 +159,6 @@ import {
 import { useEditorReset } from "./map/editor/useEditorReset";
 import { useMapNavigation } from "./map/navigation/useMapNavigation";
 import AssetDetailsSidebarSections from "./map/AssetDetailsSidebarSections";
-import {
-  getAssetKind,
-  isChamberAsset,
-  isDistributionPointAsset,
-  isExchangeAsset,
-  isJointAsset,
-  isPoleAsset,
-  isStreetCabAsset,
-} from "./map/utils/mapAssetClassifiers";
 import type {
   AssetType,
   CableType,
@@ -196,37 +180,35 @@ import { DEFAULT_DISTRIBUTION_CLOSURE_TYPE } from "../services/assetNameValidati
 export type SavedJoint = SavedMapAsset;
 export type { SavedMapAsset };
 
+const MAP_AUTOSAVE_IDLE_DELAY_MS = 15_000;
+const MAP_AUTOSAVE_MIN_INTERVAL_MS = 90_000;
+
+type MapAutosaveStatus = "idle" | "pending" | "saving" | "saved" | "error";
+
+function getMapAssetsSaveSignature(assets: SavedMapAsset[]): string {
+  return (assets || [])
+    .map((asset: any) =>
+      [
+        asset?.id,
+        asset?.syncRevision,
+        asset?.updatedAt,
+        asset?.lastEditedAt,
+        asset?.name,
+        asset?.assetType,
+      ]
+        .map((value) => String(value ?? ""))
+        .join(":"),
+    )
+    .sort()
+    .join("|");
+}
+
 function mergeMapAssets(...groups: SavedMapAsset[][]): SavedMapAsset[] {
   const byId = new Map<string, SavedMapAsset>();
   groups.flat().forEach((asset) => {
-    if (!asset?.id) return;
-    const existing = byId.get(asset.id) as any;
-    if (!existing) {
-      byId.set(asset.id, asset);
-      return;
-    }
-
-    byId.set(asset.id, {
-      ...existing,
-      ...(asset as any),
-      mappingRows:
-        Array.isArray((asset as any).mappingRows) && (asset as any).mappingRows.length
-          ? (asset as any).mappingRows
-          : existing.mappingRows,
-      mappingRowsRef: (asset as any).mappingRowsRef || existing.mappingRowsRef,
-      mappingRowsCount: (asset as any).mappingRowsCount || existing.mappingRowsCount,
-      mappingRowsSummary: {
-        ...(existing.mappingRowsSummary || {}),
-        ...((asset as any).mappingRowsSummary || {}),
-      },
-    } as SavedMapAsset);
+    if (asset?.id) byId.set(asset.id, asset);
   });
   return Array.from(byId.values());
-}
-
-function isLocalGeoJsonImportAsset(asset: SavedMapAsset): boolean {
-  const source = String((asset as any).source || "").toLowerCase();
-  return source === "geojson-import" || source === "local-pending-postgis" || asset.assetType === "home";
 }
 
 function SpatialApiStatusPanel({
@@ -282,108 +264,50 @@ function SpatialApiStatusPanel({
   );
 }
 
-function DataSourceTogglePanel({
-  showFirebaseAssets,
-  showPostgisAssets,
-  highlightPostgisAssets,
-  postgisOnly,
-  onShowFirebaseAssetsChange,
-  onShowPostgisAssetsChange,
-  onHighlightPostgisAssetsChange,
-}: {
-  showFirebaseAssets: boolean;
-  showPostgisAssets: boolean;
-  highlightPostgisAssets: boolean;
-  postgisOnly: boolean;
-  onShowFirebaseAssetsChange: (value: boolean) => void;
-  onShowPostgisAssetsChange: (value: boolean) => void;
-  onHighlightPostgisAssetsChange: (value: boolean) => void;
-}) {
-  const rowStyle: React.CSSProperties = {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    fontSize: 12,
-    fontWeight: 700,
-    color: "#e5e7eb",
-    cursor: "pointer",
-    userSelect: "none",
-  };
-
-  const checkboxStyle: React.CSSProperties = {
-    width: 14,
-    height: 14,
-    accentColor: "#22c55e",
-  };
+function isEngineeringDrawingJointAsset(asset: SavedMapAsset): boolean {
+  const assetType = String((asset as any).assetType || "").toLowerCase();
+  const jointType = String((asset as any).jointType || "").toLowerCase();
+  const name = String((asset as any).name || "").toLowerCase();
 
   return (
-    <div
-      style={{
-        position: "absolute",
-        right: 16,
-        top: 128,
-        zIndex: 650,
-        display: "flex",
-        flexDirection: "column",
-        gap: 7,
-        padding: "10px 12px",
-        borderRadius: 8,
-        border: "1px solid rgba(148, 163, 184, 0.28)",
-        background: "rgba(15, 23, 42, 0.94)",
-        boxShadow: "0 12px 32px rgba(0, 0, 0, 0.28)",
-      }}
-    >
-      <label style={rowStyle}>
-        <input
-          type="checkbox"
-          checked={showFirebaseAssets}
-          disabled={postgisOnly}
-          onChange={(event) => onShowFirebaseAssetsChange(event.target.checked)}
-          style={checkboxStyle}
-        />
-        {postgisOnly ? "Legacy/local assets disabled" : "Legacy/local assets"}
-      </label>
-      <label style={rowStyle}>
-        <input
-          type="checkbox"
-          checked={showPostgisAssets}
-          disabled={postgisOnly}
-          onChange={(event) => onShowPostgisAssetsChange(event.target.checked)}
-          style={checkboxStyle}
-        />
-        {postgisOnly ? "PostGIS authoritative assets" : "Hetzner / PostGIS assets"}
-      </label>
-      <label style={{ ...rowStyle, color: "#67e8f9" }}>
-        <input
-          type="checkbox"
-          checked={highlightPostgisAssets}
-          onChange={(event) => onHighlightPostgisAssetsChange(event.target.checked)}
-          style={{ ...checkboxStyle, accentColor: "#06b6d4" }}
-        />
-        Highlight PostGIS
-      </label>
-    </div>
+    assetType === "ag-joint" ||
+    assetType === "joint" ||
+    assetType.includes("joint") ||
+    jointType.includes("joint") ||
+    name.includes("cmj") ||
+    name.includes("mmj") ||
+    name.includes("lmj") ||
+    name.includes("midj")
   );
 }
 
-function isEngineeringDrawingJointAsset(asset: SavedMapAsset): boolean {
-  return isJointAsset(asset);
-}
-
 function isEngineeringDrawingDistributionPointAsset(asset: SavedMapAsset): boolean {
-  return isDistributionPointAsset(asset);
+  const assetType = String((asset as any).assetType || "").toLowerCase();
+  const name = String((asset as any).name || "").toLowerCase();
+
+  return (
+    assetType === "distribution-point" ||
+    assetType === "dp" ||
+    assetType.includes("distribution") ||
+    /(^|[-_\s])sb\d+$/i.test(name)
+  );
 }
 
 function isEngineeringDrawingPoleAsset(asset: SavedMapAsset): boolean {
-  return isPoleAsset(asset);
+  const assetType = String((asset as any).assetType || "").toLowerCase();
+  const jointType = String((asset as any).jointType || "").toLowerCase();
+  return assetType === "pole" || jointType === "pole" || jointType.includes("pole");
 }
 
 function isEngineeringDrawingChamberAsset(asset: SavedMapAsset): boolean {
-  return isChamberAsset(asset);
+  const assetType = String((asset as any).assetType || "").toLowerCase();
+  const jointType = String((asset as any).jointType || "").toLowerCase();
+  return assetType === "chamber" || jointType === "chamber" || jointType.includes("chamber");
 }
 
 function isEngineeringDrawingStreetCabAsset(asset: SavedMapAsset): boolean {
-  return isStreetCabAsset(asset);
+  const assetType = String((asset as any).assetType || "").toLowerCase();
+  return assetType === "street-cab" || assetType === "street cab" || assetType === "cabinet";
 }
 
 function getEngineeringDrawingCableFibreCount(asset: SavedMapAsset): number | null {
@@ -432,7 +356,9 @@ function isEngineeringDrawingTrunkCableAsset(asset: SavedMapAsset): boolean {
 }
 
 function isEngineeringDrawingVisibleAsset(asset: SavedMapAsset): boolean {
-  if (isExchangeAsset(asset)) return true;
+  const assetType = String((asset as any).assetType || "").toLowerCase();
+
+  if (assetType === "exchange") return true;
   if (isEngineeringDrawingJointAsset(asset)) return true;
   if (isEngineeringDrawingDistributionPointAsset(asset)) return true;
   if (isEngineeringDrawingPoleAsset(asset)) return true;
@@ -929,12 +855,11 @@ function normalizeMapAsset(asset: SavedMapAsset): SavedMapAsset {
 
     if (
       geometryType === "polygon" ||
-      geometryType === "multipolygon" ||
       jointType.includes("polygon") ||
       jointType.includes("area")
     ) {
       copy.assetType = "area";
-    } else if (geometryType === "linestring" || geometryType === "multilinestring" || jointType.includes("cable")) {
+    } else if (geometryType === "linestring" || jointType.includes("cable")) {
       copy.assetType = "cable";
     } else {
       copy.assetType = inferAssetTypeFromName(
@@ -1242,6 +1167,135 @@ export default function JointMapManager({
     normalizeHomeAsset: normalizeMapAsset,
   });
 
+  // =====================================================
+  // THROTTLED MAP AUTOSAVE
+  // Edits update local state immediately, then a single full chunked snapshot
+  // is saved after a quiet period. This avoids "remember to press Save Map"
+  // without writing 1300+ assets after every click.
+  // =====================================================
+  const [isSavingMapNow, setIsSavingMapNow] = useState(false);
+  const [mapAutosaveStatus, setMapAutosaveStatus] =
+    useState<MapAutosaveStatus>("idle");
+  const [lastMapAutosaveAt, setLastMapAutosaveAt] = useState<string>("");
+  const [mapAutosaveError, setMapAutosaveError] = useState<string>("");
+  const mapAutosaveTimerRef = useRef<number | null>(null);
+  const lastSavedMapSignatureRef = useRef<string | null>(null);
+  const lastMapAutosaveStartedAtRef = useRef(0);
+  const mapAutosaveInFlightRef = useRef(false);
+
+  const currentMapSaveSignature = useMemo(
+    () => getMapAssetsSaveSignature(operationalSavedJoints),
+    [operationalSavedJoints],
+  );
+
+  const saveCurrentMapSnapshot = async (
+    reason: string,
+    options: { showAlert?: boolean; manual?: boolean } = {},
+  ): Promise<boolean> => {
+    if (mapAutosaveInFlightRef.current) return false;
+
+    if (!operationalSavedJoints.length) {
+      if (options.showAlert) alert("No map assets to save yet.");
+      return false;
+    }
+
+    mapAutosaveInFlightRef.current = true;
+    lastMapAutosaveStartedAtRef.current = Date.now();
+    setIsSavingMapNow(Boolean(options.manual));
+    setMapAutosaveStatus("saving");
+    setMapAutosaveError("");
+
+    try {
+      const result = await saveMapAssetsViaCoordinator(operationalSavedJoints, {
+        reason,
+        source: "joint-map-manager",
+      });
+
+      lastSavedMapSignatureRef.current = getMapAssetsSaveSignature(
+        operationalSavedJoints,
+      );
+      const savedAt = new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      setLastMapAutosaveAt(savedAt);
+      setMapAutosaveStatus("saved");
+
+      if (options.showAlert) {
+        alert(`Map saved. ${result.assetCount} asset(s) written to Firestore.`);
+      }
+
+      return true;
+    } catch (err) {
+      console.error("MANUAL MAP SAVE FAILED", err);
+      setMapAutosaveStatus("error");
+      setMapAutosaveError(err instanceof Error ? err.message : String(err));
+      if (options.showAlert) {
+        alert("Map save failed. Check the console for details.");
+      }
+      return false;
+    } finally {
+      mapAutosaveInFlightRef.current = false;
+      setIsSavingMapNow(false);
+    }
+  };
+
+  const handleSaveMapNow = async () => {
+    if (mapAutosaveTimerRef.current !== null) {
+      window.clearTimeout(mapAutosaveTimerRef.current);
+      mapAutosaveTimerRef.current = null;
+    }
+
+    if (currentMapSaveSignature === lastSavedMapSignatureRef.current) {
+      setMapAutosaveStatus("saved");
+      alert("No unsaved map changes.");
+      return;
+    }
+
+    await saveCurrentMapSnapshot("manual-save-map-now", {
+      showAlert: true,
+      manual: true,
+    });
+  };
+
+  useEffect(() => {
+    if (lastSavedMapSignatureRef.current === null) {
+      lastSavedMapSignatureRef.current = currentMapSaveSignature;
+      return;
+    }
+
+    if (currentMapSaveSignature === lastSavedMapSignatureRef.current) {
+      if (mapAutosaveStatus === "pending") setMapAutosaveStatus("idle");
+      return;
+    }
+
+    setMapAutosaveStatus("pending");
+    setMapAutosaveError("");
+
+    if (mapAutosaveTimerRef.current !== null) {
+      window.clearTimeout(mapAutosaveTimerRef.current);
+    }
+
+    const elapsedSinceLastSave = Date.now() - lastMapAutosaveStartedAtRef.current;
+    const throttleDelay = Math.max(
+      0,
+      MAP_AUTOSAVE_MIN_INTERVAL_MS - elapsedSinceLastSave,
+    );
+    const delay = Math.max(MAP_AUTOSAVE_IDLE_DELAY_MS, throttleDelay);
+
+    mapAutosaveTimerRef.current = window.setTimeout(() => {
+      mapAutosaveTimerRef.current = null;
+      void saveCurrentMapSnapshot("autosave-map-idle");
+    }, delay);
+
+    return () => {
+      if (mapAutosaveTimerRef.current !== null) {
+        window.clearTimeout(mapAutosaveTimerRef.current);
+        mapAutosaveTimerRef.current = null;
+      }
+    };
+  }, [currentMapSaveSignature, mapAutosaveStatus]);
+
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean;
     x: number;
@@ -1421,53 +1475,10 @@ export default function JointMapManager({
     setSelectedReferenceDuctName,
   ]);
 
-  const isPostgisOnlyMapMode = spatialApiConfig.postgisOnly;
-  const showSpatialDebugControls = false;
-  const spatialViewport = useSpatialViewportAssets({
-    businessId: "fibre-gis-v2",
-    areaId: null,
-    bounds: mapBounds,
-    zoom: mapZoom,
-    visibleLayers,
-  });
-
-  const [showFirebaseAssets, setShowFirebaseAssets] = useState(
-    !isPostgisOnlyMapMode,
-  );
-  const [showPostgisAssets, setShowPostgisAssets] = useState(true);
-  const [highlightPostgisAssets, setHighlightPostgisAssets] = useState(true);
-  const [deletedPostgisAssetIds, setDeletedPostgisAssetIds] = useState<Set<string>>(
-    () => new Set(),
-  );
-
-  useEffect(() => {
-    if (!isPostgisOnlyMapMode) return;
-    setShowFirebaseAssets(false);
-    setShowPostgisAssets(true);
-  }, [isPostgisOnlyMapMode]);
-
-  const visibleSpatialAssets = useMemo(
-    () =>
-      showPostgisAssets
-        ? spatialViewport.assets.filter((asset) => !deletedPostgisAssetIds.has(asset.id))
-        : [],
-    [deletedPostgisAssetIds, showPostgisAssets, spatialViewport.assets],
-  );
-
-  const projectViewMapAssets = useMemo(
-    () =>
-      isPostgisOnlyMapMode
-        ? mergeMapAssets(allMapAssets, visibleSpatialAssets)
-        : allMapAssets,
-    [allMapAssets, isPostgisOnlyMapMode, visibleSpatialAssets],
-  );
-
   // =====================================================
   // PROJECT AREA / VIEWPORT ASSET VIEW
   // Project scoping, viewport filtering and OR layer visibility are now kept
   // outside the main map component so this file stays easier to maintain.
-  // In PostGIS-only mode, selectable/searchable project areas come from
-  // the spatial API viewport rather than the old Firestore-local map state.
   // =====================================================
   const {
     projectAreas,
@@ -1482,11 +1493,19 @@ export default function JointMapManager({
     snapCandidateAssets,
     openreachLayerVisibility,
   } = useProjectAreaView({
-    allMapAssets: projectViewMapAssets,
+    allMapAssets,
     openreachReferenceAssets,
     activeProjectId,
     mapBounds,
     mapZoom,
+    visibleLayers,
+  });
+
+  const spatialViewport = useSpatialViewportAssets({
+    businessId: "fibre-gis-v2",
+    areaId: null,
+    bounds: mapBounds,
+    zoom: mapZoom,
     visibleLayers,
   });
 
@@ -1507,46 +1526,24 @@ export default function JointMapManager({
     [snapCandidateAssets, exchangeNetworkAssets],
   );
 
-  const localImportedProjectAssets = isPostgisOnlyMapMode
-    ? renderProjectAssets.filter(isLocalGeoJsonImportAsset)
-    : [];
-  const localImportedProjectAreas = isPostgisOnlyMapMode
-    ? projectAreas.filter(isLocalGeoJsonImportAsset)
-    : [];
-  const visibleFirebaseProjectAssets = showFirebaseAssets
-    ? renderProjectAssets
-    : localImportedProjectAssets;
-  const visibleExchangeNetworkAssets = showFirebaseAssets ? exchangeNetworkAssets : [];
-
   const renderProjectAssetsWithExchanges = useMemo(
-    () => [...visibleFirebaseProjectAssets, ...visibleExchangeNetworkAssets],
-    [visibleExchangeNetworkAssets, visibleFirebaseProjectAssets],
+    () => [...renderProjectAssets, ...exchangeNetworkAssets],
+    [renderProjectAssets, exchangeNetworkAssets],
   );
 
   const renderProjectAssetsWithSpatial = useMemo(
-    () => mergeMapAssets(visibleFirebaseProjectAssets, visibleSpatialAssets),
-    [visibleFirebaseProjectAssets, visibleSpatialAssets],
+    () => mergeMapAssets(renderProjectAssets, spatialViewport.assets),
+    [renderProjectAssets, spatialViewport.assets],
   );
 
   const renderProjectAssetsWithExchangesAndSpatial = useMemo(
     () =>
       mergeMapAssets(
-        visibleFirebaseProjectAssets,
-        visibleExchangeNetworkAssets,
-        visibleSpatialAssets,
+        renderProjectAssets,
+        exchangeNetworkAssets,
+        spatialViewport.assets,
       ),
-    [visibleExchangeNetworkAssets, visibleFirebaseProjectAssets, visibleSpatialAssets],
-  );
-
-  const renderAreaAssetsWithSpatial = useMemo(
-    () =>
-      mergeMapAssets(
-        showFirebaseAssets ? projectAreas : localImportedProjectAreas,
-        showPostgisAssets
-          ? visibleSpatialAssets.filter((asset) => asset.assetType === "area")
-          : [],
-      ),
-    [localImportedProjectAreas, projectAreas, showFirebaseAssets, showPostgisAssets, visibleSpatialAssets],
+    [exchangeNetworkAssets, renderProjectAssets, spatialViewport.assets],
   );
 
   const allNetworkAssetsWithExchanges = useMemo(
@@ -1636,7 +1633,7 @@ export default function JointMapManager({
       } catch (error) {
         console.error("Immediate reference asset save failed", error);
         alert(
-          "This reference asset changed on screen, but its server save failed. Do not refresh until the save issue is checked.",
+          "This reference asset changed on screen, but its Firestore save failed. Do not refresh until the save issue is checked.",
         );
       }
 
@@ -1648,7 +1645,7 @@ export default function JointMapManager({
     });
 
     if (options.successMessage) {
-      alert(options.successMessage);
+      alert(`${options.successMessage} Autosave queued.`);
     }
 
     return savedAsset;
@@ -1768,79 +1765,6 @@ export default function JointMapManager({
     setOrAssets,
     setSavedJoints,
   });
-
-  const handleAdminWipePostgisMapData = async () => {
-    if (!isAdmin) return;
-
-    if (!spatialApiConfig.enabled || !spatialApiConfig.writesEnabled) {
-      alert("PostGIS writes are disabled, so the map reset cannot run.");
-      return;
-    }
-
-    const typed = window.prompt(
-      [
-        "This will clear ALL map assets from PostGIS and the legacy map store.",
-        "",
-        "It also deletes exchange records and joint tray/mapping records.",
-        "Street cabs, joints, homes, cables, chambers, poles, DPs and polygons stored as map assets will be removed.",
-        "",
-        "Type WIPE MAP DATA to continue.",
-      ].join("\n"),
-    );
-
-    if (typed !== "WIPE MAP DATA") {
-      if (typed !== null) alert("Map reset cancelled. The confirmation text did not match.");
-      return;
-    }
-
-    try {
-      const [postgisResult, firestoreResult] = await Promise.all([
-        wipeSpatialMapData({
-          businessId: "fibre-gis-v2",
-          confirm: "WIPE MAP DATA",
-          reason: "administrator-full-postgis-map-reset",
-          includeExchangeRecords: true,
-          includeJointMappingRecords: true,
-        }),
-        wipeLegacyFirestoreMapData(),
-      ]);
-
-      setSavedJoints([]);
-      setProjectHomes([]);
-      setLoadedHomesProjectId(null);
-      setOrAssets([]);
-      setDeletedPostgisAssetIds(new Set(visibleSpatialAssets.map((asset) => asset.id)));
-      setShowFirebaseAssets(false);
-      setOpenExchangeAsset(null);
-      setEditingAssetId(null);
-      setEditingAreaId(null);
-      setPickedLocation(null);
-      setOpenStreetCabAsset(null);
-      setOpenDistributionPointAsset(null);
-
-      alert(
-        [
-          "Map data wiped.",
-          "",
-          `PostGIS map assets deleted: ${postgisResult.mapAssetsDeleted}`,
-          `PostGIS exchange/joint records deleted: ${postgisResult.appRecordsDeleted}`,
-          `Firestore map docs deleted: ${firestoreResult.mapAssetDocsDeleted}`,
-          `Firestore map chunks deleted: ${firestoreResult.mapAssetChunksDeleted}`,
-          `Firestore joint mappings deleted: ${firestoreResult.jointMappingDocsDeleted}`,
-          `Firestore joint mapping chunks deleted: ${firestoreResult.jointMappingChunksDeleted}`,
-          `Firestore project home docs deleted: ${firestoreResult.projectHomeDocsDeleted}`,
-          `Firestore project home chunks deleted: ${firestoreResult.projectHomeChunksDeleted}`,
-          `Firestore delete blocks bypassed with empty writes: ${firestoreResult.deleteFailures}`,
-          "",
-          "The page will reload now.",
-        ].join("\n"),
-      );
-      window.location.reload();
-    } catch (error) {
-      console.error("Failed to wipe map data", error);
-      alert("Map reset failed. Check the console/API logs before trying again.");
-    }
-  };
 
   // =====================================================
   // CABLE WORKFLOW
@@ -1995,34 +1919,28 @@ export default function JointMapManager({
         ),
     );
 
-    let changed = false;
-    const nextAssets = (savedJoints ?? []).map((asset) => {
-      const update = updatesById.get(String(asset.id || ""));
-      if (!update) return asset;
+    setSavedJoints((prev) => {
+      let changed = false;
 
-      const nextAsset = {
-        ...(asset as any),
-        dpDetails: update.dpDetails,
-        properties: {
-          ...((asset as any).properties || {}),
+      const nextAssets = (prev ?? []).map((asset) => {
+        const update = updatesById.get(String(asset.id || ""));
+        if (!update) return asset;
+
+        const nextAsset = {
+          ...(asset as any),
           dpDetails: update.dpDetails,
-        },
-      } as SavedMapAsset;
+          properties: {
+            ...((asset as any).properties || {}),
+            dpDetails: update.dpDetails,
+          },
+        } as SavedMapAsset;
 
-      if (sameOperationalData(asset, nextAsset)) return asset;
-      changed = true;
-      return markAssetForLiveSync(nextAsset);
-    });
+        if (sameOperationalData(asset, nextAsset)) return asset;
+        changed = true;
+        return markAssetForLiveSync(nextAsset);
+      });
 
-    if (!changed) return;
-    setSavedJoints(nextAssets);
-    void saveMapAssetsViaCoordinator(nextAssets, {
-      source: "joint-map-manager",
-      reason: "through-cable reservation rebuild",
-      allowDestructiveSave: false,
-    }).catch((err) => {
-      console.error("Failed to save through-cable reservation rebuild", err);
-      alert("Reservation updates changed on screen, but saving to PostGIS failed.");
+      return changed ? nextAssets : prev;
     });
   };
 
@@ -2125,29 +2043,6 @@ export default function JointMapManager({
       alert("Administrator access required to delete map assets.");
       return;
     }
-
-    if (id.startsWith("postgis:") && isPostgisOnlyMapMode) {
-      if (!window.confirm("Delete this asset from PostGIS?")) return;
-
-      void deleteSpatialMapAsset(id, {
-        businessId: "fibre-gis-v2",
-        reason: "map-delete",
-      })
-        .then(() => {
-          setDeletedPostgisAssetIds((current) => {
-            const next = new Set(current);
-            next.add(id);
-            return next;
-          });
-          setSavedJoints((prev) => (prev ?? []).filter((asset) => asset.id !== id));
-        })
-        .catch((error) => {
-          console.error("PostGIS asset delete failed", error);
-          alert("Delete failed. The asset was not removed from PostGIS.");
-        });
-      return;
-    }
-
     void handleDeleteAsset(id);
   };
   const handleSaveReferenceAssetEvidence = async () => {
@@ -2387,20 +2282,22 @@ export default function JointMapManager({
         }
       });
 
-      const markedCableRecord = markAssetForLiveSync(
-        withAreaAssetIndex(cableRecord, activeProjectId, activeProjectAreaName),
-        true,
-      );
-      const markedAutoDrops = autoDrops.map((asset) =>
-        markAssetForLiveSync(
-          withAreaAssetIndex(asset, activeProjectId, activeProjectAreaName),
-          true,
-        ),
-      );
-      const newCableAssets = [markedCableRecord, ...markedAutoDrops];
-      let nextCableSavedJoints: SavedMapAsset[] | null = null;
-
       setSavedJoints((prev) => {
+        // Keep newly drawn cables inside the active Project Workspace view.
+        // Without the area index stamp the cable is saved to state, but the
+        // project-area filter can hide it immediately after Finish Cable/reset,
+        // which makes it look like the cable has been removed from the map.
+        const markedCableRecord = markAssetForLiveSync(
+          withAreaAssetIndex(cableRecord, activeProjectId, activeProjectAreaName),
+          true,
+        );
+        const markedAutoDrops = autoDrops.map((asset) =>
+          markAssetForLiveSync(
+            withAreaAssetIndex(asset, activeProjectId, activeProjectAreaName),
+            true,
+          ),
+        );
+
         const updatedExistingAssets = prev.map((asset) => {
           if (asset.assetType !== "home") return asset;
 
@@ -2432,28 +2329,12 @@ export default function JointMapManager({
           );
         });
 
-        nextCableSavedJoints = [
+        return [
           ...updatedExistingAssets,
           markedCableRecord,
           ...markedAutoDrops,
         ];
-        return nextCableSavedJoints;
       });
-
-      if (spatialApiConfig.enabled && spatialApiConfig.writesEnabled) {
-        await saveSpatialMapAssets(newCableAssets, {
-          businessId: "fibre-gis-v2",
-          projectId: activeProjectId || undefined,
-          areaId: activeProjectId || undefined,
-          reason: "finish cable route",
-        });
-      } else if (nextCableSavedJoints) {
-        await saveMapAssetsViaCoordinator(nextCableSavedJoints, {
-          source: "joint-map-manager",
-          reason: "finish cable route",
-          allowDestructiveSave: false,
-        });
-      }
 
       // Project GeoJSON homes are stored separately from savedJoints. Stamp and
       // persist them here so the home popup can show connected DP immediately and
@@ -2709,7 +2590,6 @@ export default function JointMapManager({
     loadedHomesProjectId,
     setLoadedHomesProjectId,
     setOrAssets,
-    setVisibleLayers,
     stampHomesForActiveArea,
     markAssetForLiveSync,
   });
@@ -2766,29 +2646,6 @@ export default function JointMapManager({
   // existing savedJoints state and split chunk mirroring path, so
   // it does not introduce a second storage system.
   // =====================================================
-  const getWorkspaceSaveAssetScope = () =>
-    mergeMapAssets(savedJoints ?? [], visibleProjectAssets ?? []);
-
-  const getWorkspaceAssetsByIds = (ids: Set<string>) =>
-    getWorkspaceSaveAssetScope().filter((asset) =>
-      ids.has(String(asset.id || "")),
-    );
-
-  const buildWorkspaceSaveAssets = (updatedById: Map<string, SavedMapAsset>) => {
-    const seen = new Set<string>();
-    const nextAssets = getWorkspaceSaveAssetScope().map((asset) => {
-      const id = String(asset.id || "");
-      seen.add(id);
-      return updatedById.get(id) || asset;
-    });
-
-    updatedById.forEach((asset, id) => {
-      if (!seen.has(id)) nextAssets.push(asset);
-    });
-
-    return nextAssets;
-  };
-
   const handleWorkspaceBulkDpStatusUpdate = async (args: {
     assetIds: string[];
     status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
@@ -2806,7 +2663,9 @@ export default function JointMapManager({
       return;
     }
 
-    const beforeAssets = getWorkspaceAssetsByIds(ids);
+    const beforeAssets = (savedJoints ?? []).filter((asset) =>
+      ids.has(String(asset.id || "")),
+    );
 
     const updatedById = new Map<string, SavedMapAsset>();
 
@@ -2834,7 +2693,10 @@ export default function JointMapManager({
       return;
     }
 
-    const nextSavedJoints = buildWorkspaceSaveAssets(updatedById);
+    const nextSavedJoints = (savedJoints ?? []).map((asset) => {
+      const updatedAsset = updatedById.get(String(asset.id || ""));
+      return updatedAsset || asset;
+    });
 
     setSavedJoints(nextSavedJoints);
 
@@ -2846,7 +2708,7 @@ export default function JointMapManager({
     } catch (error) {
       console.error("Bulk DP status map save failed", error);
       alert(
-        "DP status was updated on screen, but the server save failed. Do not refresh until the save issue is checked.",
+        "DP status was updated on screen, but Firestore save failed. Do not refresh until the save issue is checked.",
       );
       return;
     }
@@ -2909,7 +2771,9 @@ export default function JointMapManager({
       return;
     }
 
-    const beforeAssets = getWorkspaceAssetsByIds(ids);
+    const beforeAssets = (savedJoints ?? []).filter((asset) =>
+      ids.has(String(asset.id || "")),
+    );
 
     if (!beforeAssets.length) {
       alert("No matching saved cables were found for the PIA NOI update.");
@@ -2959,7 +2823,9 @@ export default function JointMapManager({
       return;
     }
 
-    const nextSavedJoints = buildWorkspaceSaveAssets(updatedById);
+    const nextSavedJoints = (savedJoints ?? []).map(
+      (asset) => updatedById.get(String(asset.id || "")) || asset,
+    );
 
     setSavedJoints(nextSavedJoints);
 
@@ -3017,10 +2883,12 @@ export default function JointMapManager({
       return;
     }
 
-    const beforeAssets = getWorkspaceAssetsByIds(ids);
+    const beforeAssets = (savedJoints ?? []).filter((asset) =>
+      ids.has(String(asset.id || "")),
+    );
 
     if (!beforeAssets.length) {
-      alert("No matching DPs were found in the workspace assets.");
+      alert("No matching DPs were found in the saved map assets.");
       return;
     }
 
@@ -3069,7 +2937,10 @@ export default function JointMapManager({
       return;
     }
 
-    const nextSavedJoints = buildWorkspaceSaveAssets(updatedById);
+    const nextSavedJoints = (savedJoints ?? []).map((asset) => {
+      const updatedAsset = updatedById.get(String(asset.id || ""));
+      return updatedAsset || asset;
+    });
 
     setSavedJoints(nextSavedJoints);
 
@@ -3104,7 +2975,7 @@ export default function JointMapManager({
     } catch (error) {
       console.error("Clear DP fibre allocations map save failed", error);
       alert(
-        "DP fibre allocations were cleared on screen, but the server save failed. Do not refresh until the save issue is checked.",
+        "DP fibre allocations were cleared on screen, but Firestore save failed. Do not refresh until the save issue is checked.",
       );
       return;
     }
@@ -3186,7 +3057,7 @@ export default function JointMapManager({
       if (!wanted) return null;
 
       return (
-        getWorkspaceSaveAssetScope().find((asset) => {
+        (savedJoints ?? []).find((asset) => {
           if (!isDpAsset(asset)) return false;
           const item = asset as any;
           const candidates = [
@@ -3227,7 +3098,9 @@ export default function JointMapManager({
     }
 
     const updatedById = new Map<string, SavedMapAsset>();
-    const beforeAssets = getWorkspaceAssetsByIds(new Set(routeGroups.keys()));
+    const beforeAssets = (savedJoints ?? []).filter((asset) =>
+      routeGroups.has(String(asset.id || "")),
+    );
 
     beforeAssets.forEach((beforeAsset) => {
       const item = beforeAsset as any;
@@ -3326,7 +3199,9 @@ export default function JointMapManager({
       return;
     }
 
-    const nextSavedJoints = buildWorkspaceSaveAssets(updatedById);
+    const nextSavedJoints = (savedJoints ?? []).map(
+      (asset) => updatedById.get(String(asset.id || "")) || asset,
+    );
 
     setSavedJoints(nextSavedJoints);
 
@@ -3355,7 +3230,7 @@ export default function JointMapManager({
     } catch (error) {
       console.error("FAS SB route map save failed", error);
       alert(
-        "FAS SB routes were applied on screen, but the server save failed. Do not refresh until the save issue is checked.",
+        "FAS SB routes were applied on screen, but Firestore save failed. Do not refresh until the save issue is checked.",
       );
       return;
     }
@@ -3561,9 +3436,8 @@ export default function JointMapManager({
       );
 
       const splitterAsset = markAssetForLiveSync(
-        withAreaAssetIndex(
-          withAssetEditedMetadata(
-            {
+        withAssetEditedMetadata(
+          {
             ...(existingSplitter || {}),
             id: splitterId,
             name: splitterBox,
@@ -3617,12 +3491,9 @@ export default function JointMapManager({
                 updatedAt: now,
               },
             },
-            } as SavedMapAsset,
-            existingSplitter ? "updated" : "created",
-            reason,
-          ),
-          activeProjectId,
-          activeProjectAreaName,
+          } as SavedMapAsset,
+          existingSplitter ? "updated" : "created",
+          reason,
         ),
         !existingSplitter,
       );
@@ -3648,9 +3519,8 @@ export default function JointMapManager({
         );
 
         const stampedHome = markAssetForLiveSync(
-          withAreaAssetIndex(
-            withAssetEditedMetadata(
-              {
+          withAssetEditedMetadata(
+            {
               ...(home as any),
               connectedDpId: splitterId,
               connectedDP: splitterId,
@@ -3683,12 +3553,9 @@ export default function JointMapManager({
                   updatedAt: now,
                 },
               },
-              } as SavedMapAsset,
-              "updated",
-              reason,
-            ),
-            activeProjectId,
-            activeProjectAreaName,
+            } as SavedMapAsset,
+            "updated",
+            reason,
           ),
           false,
         );
@@ -3697,10 +3564,9 @@ export default function JointMapManager({
 
         const dropId = `drop_${splitterId}_${safeId(homeConnectionKey)}`;
         const dropAsset = markAssetForLiveSync(
-          withAreaAssetIndex(
-            {
+          {
             id: dropId,
-            name: `${splitterBox} Drop -> ${(home as any).address || (home as any).name || homeConnectionKey}`,
+            name: `${splitterBox} Drop → ${(home as any).address || (home as any).name || homeConnectionKey}`,
             label: `${splitterBox} Drop`,
             assetType: "cable",
             type: "cable",
@@ -3759,10 +3625,7 @@ export default function JointMapManager({
               rowNumber: matchingRow?.rowNumber,
               updatedAt: now,
             },
-            } as SavedMapAsset,
-            activeProjectId,
-            activeProjectAreaName,
-          ),
+          } as SavedMapAsset,
           true,
         );
 
@@ -3777,8 +3640,8 @@ export default function JointMapManager({
       return;
     }
 
-    const nextAddressSheetAssets = (() => {
-      const base = (savedJoints ?? []).filter((asset: any) => {
+    setSavedJoints((prev) => {
+      const base = (prev ?? []).filter((asset: any) => {
         if (!request.overwriteExistingDrops || !isDropCable(asset)) return true;
         const dropKeys = getDropHomeKeys(asset);
         return !dropKeys.some((key) => affectedHomeDropKeys.has(key));
@@ -3793,13 +3656,6 @@ export default function JointMapManager({
       newDropsById.forEach((asset, id) => byId.set(id, asset));
 
       return Array.from(byId.values());
-    });
-
-    setSavedJoints(nextAddressSheetAssets);
-    await saveMapAssetsViaCoordinator(nextAddressSheetAssets, {
-      source: "joint-map-manager",
-      reason: "address sheet splitter assignment",
-      allowDestructiveSave: false,
     });
 
     if (activeProjectId) {
@@ -3986,11 +3842,12 @@ export default function JointMapManager({
 
     const reason = `Auto-spread ${movedById.size} stacked home${movedById.size === 1 ? "" : "s"} across ${stackCount} group${stackCount === 1 ? "" : "s"}.`;
 
-    const nextSpreadSavedJoints = (savedJoints ?? []).map((asset) => {
+    setSavedJoints((prev) =>
+      (prev ?? []).map((asset) => {
         const moved = movedById.get(asset.id);
         return moved ? markAssetForLiveSync(moved, false) : asset;
-      });
-    setSavedJoints(nextSpreadSavedJoints);
+      }),
+    );
 
     if (projectHomes.length > 0) {
       const updatedProjectHomes = projectHomes.map(
@@ -4013,19 +3870,7 @@ export default function JointMapManager({
       }
     } else if (projectHomeIds.size === 0) {
       // No projectHomes state to save; this means homes are stored in the main map assets.
-      try {
-        await saveMapAssetsViaCoordinator(nextSpreadSavedJoints, {
-          source: "joint-map-manager",
-          reason,
-          allowDestructiveSave: false,
-        });
-      } catch (err) {
-        console.error("Failed to save auto-spread map assets", err);
-        alert(
-          "Homes moved on screen, but saving the map assets failed. Check the console before refreshing.",
-        );
-        return;
-      }
+      // setSavedJoints above will persist via the existing main chunk save path.
     }
 
     writeAssetAuditLog({
@@ -4219,7 +4064,6 @@ export default function JointMapManager({
             handleDeletePiaOverlayForActiveProject
           }
           onDeleteAllOrReferenceAssets={handleAdminDeleteAllOrReferenceAssets}
-          onWipePostgisMapData={handleAdminWipePostgisMapData}
         />
 
         {activeProjectArea && canOpenFullProjectWorkspace && (
@@ -4623,7 +4467,7 @@ export default function JointMapManager({
 
               {editingAssetId ? (
                 <>
-                  {isJointAsset(currentEditingAsset) ? (
+                  {currentEditingAsset?.assetType === "ag-joint" ? (
                     <button
                       onClick={() =>
                         currentEditingAsset && onOpenJoint(currentEditingAsset)
@@ -4634,7 +4478,7 @@ export default function JointMapManager({
                     </button>
                   ) : null}
 
-                  {isStreetCabAsset(currentEditingAsset) ? (
+                  {currentEditingAsset?.assetType === "street-cab" ? (
                     <button
                       onClick={() =>
                         currentEditingAsset &&
@@ -4646,7 +4490,7 @@ export default function JointMapManager({
                     </button>
                   ) : null}
 
-                  {isDistributionPointAsset(currentEditingAsset) ? (
+                  {currentEditingAsset?.assetType === "distribution-point" ? (
                     <button
                       onClick={() =>
                         currentEditingAsset &&
@@ -5014,32 +4858,48 @@ export default function JointMapManager({
             assets={mapMode === "draw-cable" ? engineeringDrawingAssets : renderProjectAssetsWithSpatial}
             visibleLayers={visibleLayers}
             highlightedAssetId={highlightedSearchAssetId}
-            highlightPostgisAssets={highlightPostgisAssets}
             cableDrawingMode={mapMode === "draw-cable"}
             onCablePointAsset={handleCableAssetPoint}
             onOpenAsset={(asset) => {
-              if (isSpatialApiAsset(asset) && !isPostgisOnlyMapMode) {
+              if (isSpatialApiAsset(asset)) {
                 alert("This asset is loaded read-only from the spatial API.");
                 return;
               }
 
-              const routedKind = getAssetKind(asset);
+              const routedType = String(
+                (asset as any).assetType || (asset as any).type || "",
+              ).toLowerCase();
 
               // WORKSPACE WIRING:
               // Open operational editors directly where possible.
               // This deliberately does not touch storage, cable drawing, drops, AFN/MDU logic,
               // or Firestore chunk persistence.
-              if (routedKind === "joint") {
+              if (
+                routedType === "ag-joint" ||
+                routedType === "joint" ||
+                routedType.includes("joint")
+              ) {
                 onOpenJoint(asset);
                 return;
               }
 
-              if (routedKind === "street-cab") {
+              if (
+                routedType === "street-cab" ||
+                routedType.includes("street") ||
+                routedType.includes("cab")
+              ) {
                 setOpenStreetCabAsset(asset);
                 return;
               }
 
-              if (routedKind === "distribution-point") {
+              if (
+                routedType === "distribution-point" ||
+                routedType.includes("distribution") ||
+                routedType === "dp" ||
+                routedType.includes("afn") ||
+                routedType.includes("cbt") ||
+                routedType.includes("mdu")
+              ) {
                 setOpenDistributionPointAsset(asset);
                 setShowDpModal(false);
                 setIsPanelOpen(false);
@@ -5051,11 +4911,11 @@ export default function JointMapManager({
             }}
             onOpenAudit={(asset) => setAuditFormAsset(asset)}
             onDeleteAsset={(id) => {
-              if (id.startsWith("postgis:") && !isPostgisOnlyMapMode) return;
+              if (id.startsWith("postgis:")) return;
               handleAdminDeleteAsset(id);
             }}
             onEditAsset={(asset) => {
-              if (isSpatialApiAsset(asset) && !isPostgisOnlyMapMode) {
+              if (isSpatialApiAsset(asset)) {
                 alert("This asset is loaded read-only from the spatial API.");
                 return;
               }
@@ -5081,11 +4941,6 @@ export default function JointMapManager({
             onToggleSurveyDeleteHome={handleToggleSurveyDeleteHomeSelection}
             onMoveAsset={(id, lat, lng) => {
               const beforeAsset = allMapAssets.find((asset) => asset.id === id);
-              const beforeLegacyId = String((beforeAsset as any)?.legacyAssetId || "").trim();
-              const matchesMovedAssetId = (asset: SavedMapAsset) =>
-                asset.id === id ||
-                (beforeLegacyId && asset.id === beforeLegacyId) ||
-                String((asset as any).legacyAssetId || "") === id;
               const reason = getChangeReasonForCurrentMode(
                 "moved",
                 beforeAsset?.name || id,
@@ -5152,7 +5007,7 @@ export default function JointMapManager({
                     (asset) => !shouldRemoveExistingDropForMovedHome(asset),
                   )
                   .map((asset) => {
-                    if (!matchesMovedAssetId(asset)) return asset;
+                    if (asset.id !== id) return asset;
                     if (asset.geometry?.type !== "Point") return asset;
 
                     foundInSavedJoints = true;
@@ -5174,13 +5029,9 @@ export default function JointMapManager({
                 return withRegeneratedDrop;
               });
 
-              if (movedAsset && beforeAsset?.assetType !== "home") {
-                saveMapAssetToState(movedAsset, { isNew: false });
-              }
-
               if (beforeAsset?.assetType === "home") {
                 const updatedProjectHomes = (projectHomes ?? []).map((home) => {
-                  if (!matchesMovedAssetId(home)) return home;
+                  if (home.id !== id) return home;
                   return buildMovedPointAsset(home);
                 });
 
@@ -5225,11 +5076,10 @@ export default function JointMapManager({
 
           {visibleLayers.areas && (
             <AreaPolygonsLayer
-              areas={renderAreaAssetsWithSpatial.filter((asset) =>
+              areas={visibleProjectAreas.filter((asset) =>
                 isAreaVisibleForLevel(asset, visibleLayers),
               )}
               activeProjectId={activeProjectId}
-              highlightPostgisAssets={highlightPostgisAssets}
               editingAreaId={isAdmin ? editingAreaId : null}
               polygonEditingEnabled={isAdmin && polygonBulkSelectEnabled}
               polygonBulkSelectEnabled={isAdmin && polygonBulkSelectEnabled}
@@ -5293,23 +5143,22 @@ export default function JointMapManager({
             visibleLayers={visibleLayers}
             showCableDistances={visibleLayers.cableDistances}
             cableDrawingMode={mapMode === "draw-cable"}
-            highlightPostgisAssets={highlightPostgisAssets}
             onDeleteAsset={(id) => {
-              if (id.startsWith("postgis:") && !isPostgisOnlyMapMode) return;
+              if (id.startsWith("postgis:")) return;
               handleAdminDeleteAsset(id);
             }}
             onEditAsset={(asset) => {
-              if (isSpatialApiAsset(asset) && !isPostgisOnlyMapMode) {
+              if (isSpatialApiAsset(asset)) {
                 alert("This cable is loaded read-only from the spatial API.");
                 return;
               }
               handleEditAsset(asset);
             }}
             onUpdateAsset={(asset) => {
-              if (isSpatialApiAsset(asset) && !isPostgisOnlyMapMode) return;
+              if (isSpatialApiAsset(asset)) return;
               saveMapAssetToState(asset, {
                 isNew: false,
-                message: "Cable route updated.",
+                message: "Cable endpoints updated.",
               });
             }}
           />
@@ -5532,27 +5381,13 @@ export default function JointMapManager({
             })}
         </MapContainer>
 
-        {showSpatialDebugControls ? (
-          <SpatialApiStatusPanel
-            enabled={spatialViewport.enabled}
-            loading={spatialViewport.loading}
-            count={spatialViewport.count}
-            truncated={spatialViewport.truncated}
-            error={spatialViewport.error}
-          />
-        ) : null}
-
-        {showSpatialDebugControls && spatialViewport.enabled ? (
-          <DataSourceTogglePanel
-            showFirebaseAssets={showFirebaseAssets}
-            showPostgisAssets={showPostgisAssets}
-            highlightPostgisAssets={highlightPostgisAssets}
-            postgisOnly={isPostgisOnlyMapMode}
-            onShowFirebaseAssetsChange={setShowFirebaseAssets}
-            onShowPostgisAssetsChange={setShowPostgisAssets}
-            onHighlightPostgisAssetsChange={setHighlightPostgisAssets}
-          />
-        ) : null}
+        <SpatialApiStatusPanel
+          enabled={spatialViewport.enabled}
+          loading={spatialViewport.loading}
+          count={spatialViewport.count}
+          truncated={spatialViewport.truncated}
+          error={spatialViewport.error}
+        />
 
         <MapContextMenu
           visible={contextMenu.visible}
@@ -5708,6 +5543,12 @@ export default function JointMapManager({
           onSelectSearchResult={selectAssetSearchResult}
           isSearchFocused={isAssetSearchFocused}
           setIsSearchFocused={setIsAssetSearchFocused}
+          canSaveMap={isAdmin}
+          isSavingMap={isSavingMapNow || mapAutosaveStatus === "saving"}
+          autosaveStatus={mapAutosaveStatus}
+          autosaveSavedAt={lastMapAutosaveAt}
+          autosaveError={mapAutosaveError}
+          onSaveMap={handleSaveMapNow}
           onGpsLocate={handleGpsLocate}
           isSharingLocation={isSharingLocation}
           liveUserCount={liveUsers.length}
@@ -6002,11 +5843,7 @@ export default function JointMapManager({
       )}
       {openExchangeAsset && (
         <div
-          style={{
-            ...mobileEditorOverlayStyle(isMobile),
-            overflow: "hidden",
-            paddingBottom: 0,
-          }}
+          style={mobileEditorOverlayStyle(isMobile)}
         >
           <ExchangeDesigner
             exchange={openExchangeAsset}
