@@ -61,8 +61,8 @@ function getOuterRings(asset: SavedMapAsset): [number, number][][] {
 
 const AREA_LABEL_MIN_ZOOM = 15;
 const HEAVY_POLYGON_COUNT = 1000;
-const HEAVY_POLYGON_MIN_ZOOM = 15;
 const HEAVY_POLYGON_MAX_RENDERED = 1400;
+const HEAVY_POLYGON_OVERVIEW_MAX_RENDERED = 650;
 const HEAVY_POLYGON_LABEL_MIN_ZOOM = 17;
 const HEAVY_POLYGON_MAX_LABELS = 80;
 
@@ -161,10 +161,7 @@ export default function AreaPolygonsLayer({
         const intersectsViewport =
           !renderBounds || !bounds || renderBounds.intersects(bounds);
 
-        if (heavyPolygonMode) {
-          if (!forcedVisible && mapView.zoom < HEAVY_POLYGON_MIN_ZOOM) return null;
-          if (!forcedVisible && !intersectsViewport) return null;
-        } else if (!forcedVisible && !intersectsViewport) {
+        if (!forcedVisible && !intersectsViewport) {
           return null;
         }
 
@@ -179,13 +176,18 @@ export default function AreaPolygonsLayer({
       })
       .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
 
-    if (!heavyPolygonMode || prepared.length <= HEAVY_POLYGON_MAX_RENDERED) {
+    const maxRendered =
+      heavyPolygonMode && mapView.zoom < 13
+        ? HEAVY_POLYGON_OVERVIEW_MAX_RENDERED
+        : HEAVY_POLYGON_MAX_RENDERED;
+
+    if (!heavyPolygonMode || prepared.length <= maxRendered) {
       return prepared;
     }
 
     return prepared
       .sort((a, b) => Number(b.forcedVisible) - Number(a.forcedVisible))
-      .slice(0, HEAVY_POLYGON_MAX_RENDERED);
+      .slice(0, maxRendered);
   }, [
     activeProjectId,
     areaRenderIndex,
