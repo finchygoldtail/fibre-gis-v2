@@ -12,6 +12,7 @@ import type {
 import type { ChamberDetails } from "../modals/ChamberDetailsModal";
 import type { AssetChangeAction } from "../audit/types";
 import { withAssetEditedMetadata } from "../../../services/assetActivityService";
+import { saveMapAssetsViaCoordinator } from "../../../services/mapSaveCoordinator";
 import { saveProjectHomes } from "../projects/projectHomesStorage";
 import { markAssetForLiveSync } from "../persistence/useAssetPersistence";
 import {
@@ -496,8 +497,8 @@ export function useAssetSaveHandlers({
       }
     });
 
-    setSavedJoints((prev) => {
-      const filteredAssets = prev.filter((asset: any) => {
+    const buildNextAssetsAfterDelete = (assets: SavedMapAsset[]) => {
+      const filteredAssets = assets.filter((asset: any) => {
         if (asset?.id === deletedId) return false;
 
         if (isDropCable(asset)) {
@@ -543,7 +544,10 @@ export function useAssetSaveHandlers({
           true,
         );
       });
-    });
+    };
+
+    const nextSavedAssets = buildNextAssetsAfterDelete(savedJoints);
+    setSavedJoints(nextSavedAssets);
 
     if (deletedAsset) {
       writeAssetAuditLog({
@@ -599,6 +603,18 @@ export function useAssetSaveHandlers({
         activeProjectId,
         stampHomesForActiveArea(updatedProjectHomes),
         activeProjectAreaName,
+      );
+    }
+
+    try {
+      await saveMapAssetsViaCoordinator(nextSavedAssets, {
+        reason: `asset-delete:${reason}`,
+        source: "joint-map-manager",
+      });
+    } catch (error) {
+      console.error("Asset delete Firestore save failed", error);
+      alert(
+        "The asset was removed on screen, but Firestore did not save the delete. Refresh may bring it back.",
       );
     }
 
