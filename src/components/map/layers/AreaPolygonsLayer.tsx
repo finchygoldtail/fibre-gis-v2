@@ -1,7 +1,8 @@
-import { Fragment, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Polygon, Popup, Tooltip, useMap, useMapEvents } from "react-leaflet";
-import type { LeafletMouseEvent } from "leaflet";
+import L, { type LeafletMouseEvent } from "leaflet";
 import type { SavedMapAsset } from "../types";
+import { getPaddedRenderBounds } from "../utils/renderBounds";
 
 type Props = {
   areas: SavedMapAsset[];
@@ -59,6 +60,31 @@ function getOuterRings(asset: SavedMapAsset): [number, number][][] {
 }
 
 const AREA_LABEL_MIN_ZOOM = 15;
+const HEAVY_POLYGON_COUNT = 1000;
+const HEAVY_POLYGON_MIN_ZOOM = 15;
+const HEAVY_POLYGON_MAX_RENDERED = 1400;
+const HEAVY_POLYGON_LABEL_MIN_ZOOM = 17;
+const HEAVY_POLYGON_MAX_LABELS = 80;
+
+function getRingBounds(rings: [number, number][][]): L.LatLngBounds | null {
+  let bounds: L.LatLngBounds | null = null;
+
+  for (const ring of rings) {
+    for (const point of ring) {
+      const lat = Number(point?.[0]);
+      const lng = Number(point?.[1]);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+
+      if (!bounds) {
+        bounds = L.latLngBounds([lat, lng], [lat, lng]);
+      } else {
+        bounds.extend([lat, lng]);
+      }
+    }
+  }
+
+  return bounds;
+}
 
 const labelButton: React.CSSProperties = {
   marginLeft: 6,
@@ -85,28 +111,106 @@ export default function AreaPolygonsLayer({
   highlightPostgisAssets = false,
 }: Props) {
   const map = useMap();
-  const [mapZoom, setMapZoom] = useState(() => map.getZoom());
+  const [mapView, setMapView] = useState(() => ({
+    bounds: map.getBounds(),
+    zoom: map.getZoom(),
+  }));
+  const canvasRenderer = useMemo(() => L.canvas({ padding: 0.35 }), []);
+  const heavyPolygonMode = areas.length >= HEAVY_POLYGON_COUNT;
+  const renderBounds = useMemo(
+    () =>
+      getPaddedRenderBounds(
+        mapView.bounds,
+        heavyPolygonMode ? 0.12 : 0.35,
+      ),
+    [heavyPolygonMode, mapView.bounds],
+  );
+  const selectedAreaIdSet = useMemo(
+    () => new Set(selectedAreaIds.map(String)),
+    [selectedAreaIds],
+  );
+  const areaRenderIndex = useMemo(
+    () =>
+      areas
+        .map((asset) => {
+          const rings = getOuterRings(asset);
+          if (!rings.length) return null;
+
+          return {
+            asset,
+            rings,
+            bounds: getRingBounds(rings),
+          };
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry)),
+    [areas],
+  );
 
   useMapEvents({
-    zoomend(event) {
-      setMapZoom(event.target.getZoom());
-    },
+    moveend: () => setMapView({ bounds: map.getBounds(), zoom: map.getZoom() }),
+    zoomend: () => setMapView({ bounds: map.getBounds(), zoom: map.getZoom() }),
   });
+
+  const renderAreas = useMemo(() => {
+    const prepared = areaRenderIndex
+      .map(({ asset, rings, bounds }) => {
+        const isActive = asset.id === activeProjectId;
+        const isSecretEditing = asset.id === editingAreaId;
+        const isBulkSelected = selectedAreaIdSet.has(String(asset.id));
+        const forcedVisible = isActive || isSecretEditing || isBulkSelected;
+        const intersectsViewport =
+          !renderBounds || !bounds || renderBounds.intersects(bounds);
+
+        if (heavyPolygonMode) {
+          if (!forcedVisible && mapView.zoom < HEAVY_POLYGON_MIN_ZOOM) return null;
+          if (!forcedVisible && !intersectsViewport) return null;
+        } else if (!forcedVisible && !intersectsViewport) {
+          return null;
+        }
+
+        return {
+          asset,
+          rings,
+          isActive,
+          isSecretEditing,
+          isBulkSelected,
+          forcedVisible,
+        };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+
+    if (!heavyPolygonMode || prepared.length <= HEAVY_POLYGON_MAX_RENDERED) {
+      return prepared;
+    }
+
+    return prepared
+      .sort((a, b) => Number(b.forcedVisible) - Number(a.forcedVisible))
+      .slice(0, HEAVY_POLYGON_MAX_RENDERED);
+  }, [
+    activeProjectId,
+    areaRenderIndex,
+    editingAreaId,
+    heavyPolygonMode,
+    mapView.zoom,
+    renderBounds,
+    selectedAreaIdSet,
+  ]);
 
   return (
     <>
-      {areas.map((asset) => {
-        const rings = getOuterRings(asset);
-        if (!rings.length) return null;
-
+      {renderAreas.map(({ asset, rings, isActive, isSecretEditing, isBulkSelected }) => {
         const baseColor = getColor(asset.id);
         const isPostgisHighlighted = highlightPostgisAssets && isPostgisAsset(asset);
-        const isActive = asset.id === activeProjectId;
-        const isSecretEditing = asset.id === editingAreaId;
-        const isBulkSelected = selectedAreaIds.includes(asset.id);
         const isInteractive = polygonEditingEnabled || polygonBulkSelectEnabled || isSecretEditing;
+        const labelMinZoom = heavyPolygonMode
+          ? HEAVY_POLYGON_LABEL_MIN_ZOOM
+          : AREA_LABEL_MIN_ZOOM;
         const shouldShowLabel =
-          isSecretEditing || mapZoom >= AREA_LABEL_MIN_ZOOM;
+          isSecretEditing ||
+          (!heavyPolygonMode && mapView.zoom >= labelMinZoom) ||
+          (heavyPolygonMode &&
+            mapView.zoom >= labelMinZoom &&
+            renderAreas.length <= HEAVY_POLYGON_MAX_LABELS);
 
         const unlock = (event?: LeafletMouseEvent | React.MouseEvent) => {
           event?.originalEvent?.stopPropagation?.();
@@ -125,6 +229,7 @@ export default function AreaPolygonsLayer({
             {rings.map((ring, ringIndex) => (
           <Polygon
             key={`${asset.id}:${ringIndex}`}
+            renderer={canvasRenderer}
             positions={ring.map(([lat, lng]) => [lat, lng] as [number, number])}
             interactive={isInteractive}
             pathOptions={{
