@@ -20,6 +20,8 @@ type WipeSpatialMapDataOptions = {
   includeJointMappingRecords?: boolean;
 };
 
+const SPATIAL_BULK_SAVE_CHUNK_SIZE = 1000;
+
 export async function saveSpatialMapAssets(
   assets: SavedMapAsset[],
   options: SaveSpatialAssetsOptions,
@@ -36,17 +38,23 @@ export async function saveSpatialMapAssets(
 
   if (writableAssets.length > 1) {
     try {
-      const result = await spatialApiJson<{ saved: number; assets: SpatialApiFeature[] }>(
-        "/api/assets/bulk",
-        {
-          method: "POST",
-          body: {
-            reason: options.reason,
-            assets: writableAssets,
+      const chunks = chunkArray(writableAssets, SPATIAL_BULK_SAVE_CHUNK_SIZE);
+
+      for (const chunk of chunks) {
+        const result = await spatialApiJson<{ saved: number; assets: SpatialApiFeature[] }>(
+          "/api/assets/bulk",
+          {
+            method: "POST",
+            body: {
+              reason: options.reason,
+              assets: chunk,
+            },
           },
-        },
-      );
-      return result.assets;
+        );
+        saved.push(...result.assets);
+      }
+
+      return saved;
     } catch (error) {
       // Older Hetzner API deployments do not have /api/assets/bulk yet. Fall
       // back to confirmed single-asset writes so imports still persist.
@@ -67,6 +75,14 @@ export async function saveSpatialMapAssets(
   }
 
   return saved;
+}
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
 }
 
 export async function deleteSpatialMapAsset(
