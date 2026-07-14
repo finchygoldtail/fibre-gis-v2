@@ -231,12 +231,9 @@ export function toStablePostgisId(value: string): string {
 
 function stableUuid(value: string): string {
   const seed = value || "unknown-asset";
-  let hash = 2166136261;
-  const hex = Array.from({ length: 32 }, (_, index) => {
-    hash ^= seed.charCodeAt(index % seed.length) + index;
-    hash = Math.imul(hash, 16777619);
-    return ((hash >>> ((index % 4) * 8)) & 0xff).toString(16).padStart(2, "0");
-  }).join("");
+  const hex = [0, 1, 2, 3]
+    .map((salt) => fnv1a32(`${salt}:${seed}`).toString(16).padStart(8, "0"))
+    .join("");
 
   return [
     hex.slice(0, 8),
@@ -245,6 +242,15 @@ function stableUuid(value: string): string {
     `8${hex.slice(17, 20)}`,
     hex.slice(20, 32),
   ].join("-");
+}
+
+function fnv1a32(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
 }
 
 function normaliseAssetType(value: unknown): string {
