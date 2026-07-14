@@ -11,6 +11,23 @@ type UseMapNavigationArgs = {
   projectAreas: SavedMapAsset[];
 };
 
+function getRouteLengthMeters(points: [number, number][]): number {
+  return points.reduce((total, point, index) => {
+    const previous = points[index - 1];
+    if (!previous) return total;
+    return total + Leaflet.latLng(previous[0], previous[1]).distanceTo(Leaflet.latLng(point[0], point[1]));
+  }, 0);
+}
+
+function getCableFrameMaxZoom(points: [number, number][]): number {
+  const routeLength = getRouteLengthMeters(points);
+
+  if (routeLength >= 1000) return 14;
+  if (routeLength >= 400) return 15;
+  if (routeLength >= 150) return 16;
+  return 18;
+}
+
 export function useMapNavigation({
   mapRef,
   activeProjectIdRef,
@@ -55,8 +72,8 @@ export function useMapNavigation({
         if (points.length === 0) return;
 
         mapRef.current?.fitBounds(Leaflet.latLngBounds(points), {
-          padding: [60, 60],
-          maxZoom: 19,
+          padding: [120, 120],
+          maxZoom: getCableFrameMaxZoom(points),
         });
         return;
       }

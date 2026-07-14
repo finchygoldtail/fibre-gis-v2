@@ -22,12 +22,6 @@ type Props = {
   onSearchSubmit: () => void;
   onSelectSearchResult: (asset: SavedMapAsset) => void;
 
-  canSaveMap: boolean;
-  isSavingMap: boolean;
-  autosaveStatus?: "idle" | "pending" | "saving" | "saved" | "error";
-  autosaveSavedAt?: string;
-  autosaveError?: string;
-  onSaveMap: () => void;
   onGpsLocate: () => void;
   isSharingLocation?: boolean;
   liveUserCount?: number;
@@ -60,12 +54,6 @@ export default function MapToolbar({
   searchScopeLabel,
   onSearchSubmit,
   onSelectSearchResult,
-  canSaveMap,
-  isSavingMap,
-  autosaveStatus = "idle",
-  autosaveSavedAt = "",
-  autosaveError = "",
-  onSaveMap,
   onGpsLocate,
   isSharingLocation = false,
   liveUserCount = 0,
@@ -84,31 +72,8 @@ export default function MapToolbar({
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [messageStateVersion, setMessageStateVersion] = useState(0);
-  const { isMobile, isTablet, isSmallPhone } = useDeviceLayout();
+  const { isMobile, isSmallPhone } = useDeviceLayout();
   const hasAreaContext = Boolean(activeProjectId || areaKey);
-  const autosaveLabel =
-    autosaveStatus === "pending"
-      ? "Autosave queued"
-      : autosaveStatus === "saving"
-        ? "Autosaving..."
-        : autosaveStatus === "saved"
-          ? autosaveSavedAt
-            ? `Saved ${autosaveSavedAt}`
-            : "Saved"
-          : autosaveStatus === "error"
-            ? "Autosave failed"
-            : "Autosave ready";
-  const autosaveTone =
-    autosaveStatus === "error"
-      ? "#dc2626"
-      : autosaveStatus === "pending"
-        ? "#f59e0b"
-        : autosaveStatus === "saving"
-          ? "#2563eb"
-          : autosaveStatus === "saved"
-            ? "#16a34a"
-            : "#475569";
-
   useEffect(() => {
     const refresh = () => setMessageStateVersion((value) => value + 1);
     window.addEventListener("storage", refresh);
@@ -302,8 +267,6 @@ export default function MapToolbar({
               ) : null}
               <button style={mobileMenuRowStyle} onClick={() => { setMoreMenuOpen(false); onToggleLayers(); }}>{isLayersOpen ? "Hide Layers" : "Layers"}</button>
               <button style={mobileMenuRowStyle} onClick={() => { setMoreMenuOpen(false); setMessagesOpen((value) => !value); }}>Messages {areaMessages.length ? `(${areaMessages.length})` : ""}</button>
-              <div style={{ ...mobileMenuRowStyle, cursor: "default", background: "#111827", color: "#cbd5e1" }} title={autosaveError || autosaveLabel}>{autosaveLabel}</div>
-              {canSaveMap && <button style={mobileMenuRowStyle} onClick={() => { setMoreMenuOpen(false); onSaveMap(); }} disabled={isSavingMap}>{isSavingMap ? "Saving..." : "Save Now"}</button>}
               <div style={mobileUserMenuWrapStyle}><UserMenu variant="topbar" /></div>
             </div>
           ) : null}
@@ -327,9 +290,6 @@ export default function MapToolbar({
           <button type="button" onClick={onOpenAssetPanel} style={advancedNavButtonStyle(showAssetPanelButton)}>
             Assets
           </button>
-          <button type="button" style={advancedNavButtonStyle(false)}>
-            Overview
-          </button>
           {onQaModeChange ? (
             <>
               <button
@@ -348,29 +308,29 @@ export default function MapToolbar({
               </button>
             </>
           ) : null}
-          <button type="button" style={advancedNavButtonStyle(false)}>
-            Capacity
-          </button>
-          <button type="button" style={advancedNavButtonStyle(false)}>
-            Exchanges
-          </button>
         </div>
 
-        <div style={advancedViewStyle}>
-          <span>Current View</span>
-          <strong>{hasAreaContext ? areaName || searchScopeLabel : "Whole Map"}</strong>
+        <div style={advancedScopeStyle}>
+          <div style={advancedScopeSelectorStyle}>
+            {onSelectProject && onClearProject ? (
+              <ProjectAreaSelector
+                projectAreas={projectAreas}
+                activeProjectId={activeProjectId}
+                onSelectProject={onSelectProject}
+                onClearProject={onClearProject}
+                variant="compact"
+              />
+            ) : (
+              <div style={advancedViewStyle}>
+                <span>Current View</span>
+                <strong>{hasAreaContext ? areaName || searchScopeLabel : "Whole Map"}</strong>
+              </div>
+            )}
+          </div>
+          <div style={advancedSearchHostStyle}>{searchCard}</div>
         </div>
 
         <div style={advancedActionsStyle}>
-          <button
-            type="button"
-            onClick={() => hasAreaContext && setIsSearchFocused(true)}
-            style={advancedCommandButtonStyle(!hasAreaContext)}
-            title={hasAreaContext ? "Search selected area" : "Select an area to search assets"}
-          >
-            Search
-          </button>
-
           <div style={messageButtonWrapStyle}>
             <button
               type="button"
@@ -382,26 +342,6 @@ export default function MapToolbar({
               {areaMessages.length ? <strong style={messageBadgeStyle}>{areaMessages.length}</strong> : null}
             </button>
             {messagesPanel}
-          </div>
-
-          {canSaveMap ? (
-            <button
-              type="button"
-              onClick={onSaveMap}
-              disabled={isSavingMap}
-              style={{
-                ...advancedCommandButtonStyle(false),
-                borderColor: isSavingMap ? "#475569" : "#166534",
-                color: isSavingMap ? "#94a3b8" : "#dcfce7",
-                cursor: isSavingMap ? "not-allowed" : "pointer",
-              }}
-            >
-              {isSavingMap ? "Saving" : "Save"}
-            </button>
-          ) : null}
-
-          <div style={advancedAutosaveStyle(autosaveTone)} title={autosaveError || autosaveLabel}>
-            {autosaveLabel}
           </div>
 
           <button type="button" onClick={onGpsLocate} style={advancedCommandButtonStyle(false)}>
@@ -438,175 +378,9 @@ export default function MapToolbar({
           <UserMenu variant="topbar" />
         </div>
       </div>
-
-      {hasAreaContext ? (
-        <div style={advancedAreaDrawerStyle}>
-          <div style={advancedAreaHeaderStyle}>
-            <div>
-              <span>Area Context</span>
-              <strong>{areaName || searchScopeLabel}</strong>
-            </div>
-            {onSelectProject && onClearProject ? (
-              <div style={advancedAreaSelectorStyle}>
-                <ProjectAreaSelector
-                  projectAreas={projectAreas}
-                  activeProjectId={activeProjectId}
-                  onSelectProject={onSelectProject}
-                  onClearProject={onClearProject}
-                  variant="compact"
-                />
-              </div>
-            ) : null}
-          </div>
-
-          <div style={advancedAreaTabsStyle}>
-            {["Summary", "Assets", "QA", "PIA", "Build", "Export"].map((tab, index) => (
-              <button key={tab} type="button" style={advancedAreaTabStyle(index === 0)}>
-                {tab}
-              </button>
-            ))}
-          </div>
-
-          <div style={advancedSearchHostStyle}>{searchCard}</div>
-        </div>
-      ) : null}
     </>
   );
 
-  return (
-    <div style={mapTopBarStyle(isLayersOpen, isTablet)}>
-      {showAssetPanelButton ? (
-        <button onClick={onOpenAssetPanel} style={topBarGhostButtonStyle}>
-          ☰ Assets
-        </button>
-      ) : (
-        <button onClick={onOpenAssetPanel} style={topBarGhostButtonStyle}>
-          ☰ Assets
-        </button>
-      )}
-
-      <div style={areaSelectorShellStyle}>
-        {onSelectProject && onClearProject ? (
-          <ProjectAreaSelector
-            projectAreas={projectAreas}
-            activeProjectId={activeProjectId}
-            onSelectProject={onSelectProject}
-            onClearProject={onClearProject}
-          />
-        ) : (
-          <div style={areaFallbackStyle}>{searchScopeLabel || "Whole network"}</div>
-        )}
-      </div>
-
-      <div style={mapTopBarBrandStyle}>
-        <strong>Alistra GIS</strong>
-        <span>{searchScopeLabel}</span>
-      </div>
-
-      {searchCard}
-
-      <div style={topRightActionsStyle}>
-        {onQaModeChange ? (
-          <div style={qaModeSwitchStyle} aria-label="QA map mode">
-            <button
-              type="button"
-              onClick={() => onQaModeChange("qa")}
-              style={qaModeButtonStyle(qaMode === "qa")}
-            >
-              QA Map
-            </button>
-            <button
-              type="button"
-              onClick={() => onQaModeChange("piaQa")}
-              style={qaModeButtonStyle(qaMode === "piaQa")}
-            >
-              PIA QA
-            </button>
-          </div>
-        ) : null}
-
-        <div style={messageButtonWrapStyle}>
-          <button
-            type="button"
-            onClick={() => setMessagesOpen((value) => !value)}
-            style={messageButtonStyle}
-            title="Area messages"
-          >
-            💬
-            <span>Messages</span>
-            {areaMessages.length ? <strong style={messageBadgeStyle}>{areaMessages.length}</strong> : null}
-          </button>
-
-          {messagesPanel}
-        </div>
-        {canSaveMap && (
-          <button
-            onClick={onSaveMap}
-            disabled={isSavingMap}
-            style={{
-              ...actionButtonStyle,
-              background: isSavingMap ? "#64748b" : "#16a34a",
-              cursor: isSavingMap ? "not-allowed" : "pointer",
-            }}
-            title="Flush pending map changes now"
-          >
-            {isSavingMap ? "Saving..." : "Save Now"}
-          </button>
-        )}
-
-        <div
-          style={{
-            padding: "8px 10px",
-            borderRadius: 999,
-            background: "#111827",
-            border: `1px solid ${autosaveTone}`,
-            color: "#e5e7eb",
-            fontSize: 12,
-            fontWeight: 800,
-            whiteSpace: "nowrap",
-          }}
-          title={autosaveError || autosaveLabel}
-        >
-          {autosaveLabel}
-        </div>
-
-        <button onClick={onGpsLocate} style={actionButtonStyle}>
-          GPS
-        </button>
-
-        {onToggleLocationSharing ? (
-          <button
-            onClick={onToggleLocationSharing}
-            style={{
-              ...actionButtonStyle,
-              background: isSharingLocation ? "#16a34a" : "#334155",
-            }}
-            title={
-              locationShareError ||
-              (isSharingLocation
-                ? "Stop sharing your live field location"
-                : "Share your live field location")
-            }
-          >
-            {isSharingLocation ? "Sharing" : "Share Location"}
-            {liveUserCount > 0 ? ` (${liveUserCount})` : ""}
-          </button>
-        ) : null}
-
-        <button
-          onClick={onToggleLayers}
-          style={{
-            ...actionButtonStyle,
-            background: "#2563eb",
-          }}
-        >
-          {isLayersOpen ? "Hide Layers" : "Layers"}
-        </button>
-
-        <UserMenu variant="topbar" />
-      </div>
-    </div>
-  );
 }
 
 type ToolbarOperationMessage = {
@@ -649,7 +423,7 @@ const advancedTopRailStyle = (isLayersOpen: boolean): React.CSSProperties => ({
   zIndex: 1500,
   minHeight: 58,
   display: "grid",
-  gridTemplateColumns: "184px minmax(420px, 1fr) minmax(150px, 210px) auto",
+  gridTemplateColumns: "176px minmax(180px, 260px) minmax(420px, 620px) minmax(320px, 1fr)",
   alignItems: "center",
   gap: 10,
   padding: "8px 14px",
@@ -707,6 +481,22 @@ const advancedViewStyle: React.CSSProperties = {
   textTransform: "uppercase",
 };
 
+const advancedScopeStyle: React.CSSProperties = {
+  minWidth: 0,
+  display: "grid",
+  gridTemplateColumns: "minmax(150px, 210px) minmax(260px, 1fr)",
+  alignItems: "center",
+  gap: 8,
+  padding: 4,
+  border: "1px solid rgba(148,163,184,0.18)",
+  borderRadius: 8,
+  background: "rgba(2,6,23,0.28)",
+};
+
+const advancedScopeSelectorStyle: React.CSSProperties = {
+  minWidth: 0,
+};
+
 const advancedActionsStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
@@ -732,128 +522,8 @@ const advancedCommandButtonStyle = (disabled: boolean): React.CSSProperties => (
   whiteSpace: "nowrap",
 });
 
-const advancedAutosaveStyle = (tone: string): React.CSSProperties => ({
-  minHeight: 34,
-  display: "inline-flex",
-  alignItems: "center",
-  border: `1px solid ${tone}`,
-  borderRadius: 999,
-  background: "rgba(2,6,23,0.52)",
-  color: "#cbd5e1",
-  padding: "0 10px",
-  fontSize: 11,
-  fontWeight: 900,
-  whiteSpace: "nowrap",
-});
-
-const advancedAreaDrawerStyle: React.CSSProperties = {
-  position: "absolute",
-  top: 74,
-  left: 14,
-  zIndex: 1420,
-  width: 426,
-  maxWidth: "calc(100vw - 332px)",
-  display: "grid",
-  gap: 10,
-  padding: 12,
-  border: "1px solid rgba(56,189,248,0.2)",
-  borderRadius: 8,
-  background: "rgba(8,13,24,0.94)",
-  boxShadow: "0 18px 46px rgba(2,6,23,0.42)",
-  backdropFilter: "blur(16px)",
-};
-
-const advancedAreaHeaderStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "minmax(0, 1fr)",
-  gap: 8,
-  color: "#e5e7eb",
-};
-
-const advancedAreaSelectorStyle: React.CSSProperties = {
-  minWidth: 0,
-};
-
-const advancedAreaTabsStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
-  gap: 5,
-};
-
-const advancedAreaTabStyle = (active: boolean): React.CSSProperties => ({
-  minHeight: 30,
-  border: `1px solid ${active ? "rgba(34,197,94,0.65)" : "rgba(148,163,184,0.18)"}`,
-  borderRadius: 6,
-  background: active ? "rgba(20,83,45,0.72)" : "rgba(15,23,42,0.7)",
-  color: active ? "#dcfce7" : "#bfdbfe",
-  fontSize: 11,
-  fontWeight: 900,
-  cursor: "pointer",
-});
-
 const advancedSearchHostStyle: React.CSSProperties = {
   minWidth: 0,
-};
-
-const mapTopBarStyle = (isLayersOpen: boolean, isTablet: boolean): React.CSSProperties => ({
-  position: "absolute",
-  top: 0,
-  left: 0,
-  right: isLayersOpen ? 286 : 0,
-  zIndex: 1300,
-  height: isTablet ? 64 : 72,
-  display: "grid",
-  gridTemplateColumns: isTablet
-    ? "118px minmax(170px, 230px) minmax(0, 1fr) minmax(270px, auto)"
-    : "minmax(130px, 210px) minmax(210px, 310px) minmax(118px, 160px) minmax(300px, 590px) minmax(360px, auto)",
-  alignItems: "center",
-  gap: isTablet ? 8 : 10,
-  padding: isTablet ? "7px 9px" : "8px 12px",
-  border: "1px solid rgba(148,163,184,0.42)",
-  borderTop: "0",
-  borderLeft: "0",
-  borderRadius: "0 0 16px 0",
-  background: "rgba(15, 23, 42, 0.94)",
-  boxShadow: "0 14px 34px rgba(15,23,42,0.34)",
-  backdropFilter: "blur(10px)",
-  overflow: "visible",
-});
-
-const topBarGhostButtonStyle: React.CSSProperties = {
-  background: "rgba(30, 41, 59, 0.95)",
-  color: "white",
-  border: "1px solid rgba(148,163,184,0.34)",
-  padding: "10px 12px",
-  borderRadius: 12,
-  cursor: "pointer",
-  fontWeight: 900,
-  whiteSpace: "nowrap",
-};
-
-
-const areaSelectorShellStyle: React.CSSProperties = {
-  minWidth: 0,
-  width: "100%",
-};
-
-const areaFallbackStyle: React.CSSProperties = {
-  border: "1px solid rgba(148,163,184,0.34)",
-  background: "rgba(15,23,42,0.72)",
-  color: "#f8fafc",
-  borderRadius: 10,
-  padding: "10px 12px",
-  fontWeight: 900,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-};
-
-const mapTopBarBrandStyle: React.CSSProperties = {
-  display: "grid",
-  gap: 2,
-  minWidth: 118,
-  color: "#f8fafc",
-  whiteSpace: "nowrap",
 };
 
 const searchShellStyle = (isMobile = false, isOpen = false): React.CSSProperties => ({
@@ -911,10 +581,6 @@ const searchOptionsButtonStyle: React.CSSProperties = {
   fontSize: 19,
   fontWeight: 900,
   height: 42,
-};
-
-const searchScopeStyle: React.CSSProperties = {
-  display: "none",
 };
 
 const searchResultsStyle: React.CSSProperties = {
@@ -985,53 +651,7 @@ const emptyResultsStyle: React.CSSProperties = {
   fontSize: 13,
 };
 
-const topRightActionsStyle: React.CSSProperties = {
-  display: "flex",
-  gap: 8,
-  alignItems: "center",
-  justifyContent: "flex-end",
-  minWidth: 0,
-};
-
-const qaModeSwitchStyle: React.CSSProperties = {
-  display: "inline-grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: 3,
-  padding: 3,
-  borderRadius: 12,
-  border: "1px solid rgba(96,165,250,0.34)",
-  background: "rgba(15,23,42,0.78)",
-  boxShadow: "0 2px 8px rgba(0,0,0,0.22)",
-};
-
-const qaModeButtonStyle = (active: boolean): React.CSSProperties => ({
-  border: "none",
-  borderRadius: 9,
-  padding: "8px 10px",
-  background: active ? "#2563eb" : "transparent",
-  color: active ? "#ffffff" : "#bfdbfe",
-  cursor: "pointer",
-  fontWeight: 900,
-  whiteSpace: "nowrap",
-});
-
 const messageButtonWrapStyle: React.CSSProperties = {
-  position: "relative",
-};
-
-const messageButtonStyle: React.CSSProperties = {
-  background: "#0f766e",
-  color: "white",
-  border: "none",
-  padding: "10px 13px",
-  borderRadius: 10,
-  cursor: "pointer",
-  boxShadow: "0 2px 8px rgba(0,0,0,0.26)",
-  fontWeight: 900,
-  whiteSpace: "nowrap",
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
   position: "relative",
 };
 
@@ -1213,14 +833,3 @@ const mobileUserMenuWrapStyle: React.CSSProperties = {
   paddingTop: 6,
 };
 
-const actionButtonStyle: React.CSSProperties = {
-  background: "#2563eb",
-  color: "white",
-  border: "none",
-  padding: "10px 13px",
-  borderRadius: 10,
-  cursor: "pointer",
-  boxShadow: "0 2px 8px rgba(0,0,0,0.26)",
-  fontWeight: 900,
-  whiteSpace: "nowrap",
-};

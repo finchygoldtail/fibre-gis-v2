@@ -196,29 +196,6 @@ import { DEFAULT_DISTRIBUTION_CLOSURE_TYPE } from "../services/assetNameValidati
 export type SavedJoint = SavedMapAsset;
 export type { SavedMapAsset };
 
-const MAP_AUTOSAVE_IDLE_DELAY_MS = 15_000;
-const MAP_AUTOSAVE_MIN_INTERVAL_MS = 90_000;
-
-type MapAutosaveStatus = "idle" | "pending" | "saving" | "saved" | "error";
-
-function getMapAssetsSaveSignature(assets: SavedMapAsset[]): string {
-  return (assets || [])
-    .map((asset: any) =>
-      [
-        asset?.id,
-        asset?.syncRevision,
-        asset?.updatedAt,
-        asset?.lastEditedAt,
-        asset?.name,
-        asset?.assetType,
-      ]
-        .map((value) => String(value ?? ""))
-        .join(":"),
-    )
-    .sort()
-    .join("|");
-}
-
 function mergeMapAssets(...groups: SavedMapAsset[][]): SavedMapAsset[] {
   const byId = new Map<string, SavedMapAsset>();
   groups.flat().forEach((asset) => {
@@ -1245,139 +1222,6 @@ export default function JointMapManager({
     normalizeHomeAsset: normalizeMapAsset,
   });
 
-  // =====================================================
-  // THROTTLED MAP AUTOSAVE
-  // Edits update local state immediately, then a single full chunked snapshot
-  // is saved after a quiet period. This avoids "remember to press Save Map"
-  // without writing 1300+ assets after every click.
-  // =====================================================
-  const [isSavingMapNow, setIsSavingMapNow] = useState(false);
-  const [mapAutosaveStatus, setMapAutosaveStatus] =
-    useState<MapAutosaveStatus>("idle");
-  const [lastMapAutosaveAt, setLastMapAutosaveAt] = useState<string>("");
-  const [mapAutosaveError, setMapAutosaveError] = useState<string>("");
-  const mapAutosaveTimerRef = useRef<number | null>(null);
-  const lastSavedMapSignatureRef = useRef<string | null>(null);
-  const lastMapAutosaveStartedAtRef = useRef(0);
-  const mapAutosaveInFlightRef = useRef(false);
-
-  const currentMapSaveSignature = useMemo(
-    () => getMapAssetsSaveSignature(operationalSavedJoints),
-    [operationalSavedJoints],
-  );
-
-  const saveCurrentMapSnapshot = async (
-    reason: string,
-    options: { showAlert?: boolean; manual?: boolean } = {},
-  ): Promise<boolean> => {
-    if (mapAutosaveInFlightRef.current) return false;
-
-    if (!operationalSavedJoints.length) {
-      if (options.showAlert) alert("No map assets to save yet.");
-      return false;
-    }
-
-    mapAutosaveInFlightRef.current = true;
-    lastMapAutosaveStartedAtRef.current = Date.now();
-    setIsSavingMapNow(Boolean(options.manual));
-    setMapAutosaveStatus("saving");
-    setMapAutosaveError("");
-
-    try {
-      const result = await saveMapAssetsViaCoordinator(operationalSavedJoints, {
-        reason,
-        source: "joint-map-manager",
-      });
-
-      lastSavedMapSignatureRef.current = getMapAssetsSaveSignature(
-        operationalSavedJoints,
-      );
-      const savedAt = new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-      setLastMapAutosaveAt(savedAt);
-      setMapAutosaveStatus("saved");
-
-      if (options.showAlert) {
-        alert(
-          `Map saved. ${result.assetCount} asset(s) written to ${
-            isPostgisOnlyMapMode ? "PostGIS" : "the map store"
-          }.`,
-        );
-      }
-
-      return true;
-    } catch (err) {
-      console.error("MANUAL MAP SAVE FAILED", err);
-      setMapAutosaveStatus("error");
-      setMapAutosaveError(err instanceof Error ? err.message : String(err));
-      if (options.showAlert) {
-        alert("Map save failed. Check the console for details.");
-      }
-      return false;
-    } finally {
-      mapAutosaveInFlightRef.current = false;
-      setIsSavingMapNow(false);
-    }
-  };
-
-  const handleSaveMapNow = async () => {
-    if (mapAutosaveTimerRef.current !== null) {
-      window.clearTimeout(mapAutosaveTimerRef.current);
-      mapAutosaveTimerRef.current = null;
-    }
-
-    if (currentMapSaveSignature === lastSavedMapSignatureRef.current) {
-      setMapAutosaveStatus("saved");
-      alert("No unsaved map changes.");
-      return;
-    }
-
-    await saveCurrentMapSnapshot("manual-save-map-now", {
-      showAlert: true,
-      manual: true,
-    });
-  };
-
-  useEffect(() => {
-    if (lastSavedMapSignatureRef.current === null) {
-      lastSavedMapSignatureRef.current = currentMapSaveSignature;
-      return;
-    }
-
-    if (currentMapSaveSignature === lastSavedMapSignatureRef.current) {
-      if (mapAutosaveStatus === "pending") setMapAutosaveStatus("idle");
-      return;
-    }
-
-    setMapAutosaveStatus("pending");
-    setMapAutosaveError("");
-
-    if (mapAutosaveTimerRef.current !== null) {
-      window.clearTimeout(mapAutosaveTimerRef.current);
-    }
-
-    const elapsedSinceLastSave = Date.now() - lastMapAutosaveStartedAtRef.current;
-    const throttleDelay = Math.max(
-      0,
-      MAP_AUTOSAVE_MIN_INTERVAL_MS - elapsedSinceLastSave,
-    );
-    const delay = Math.max(MAP_AUTOSAVE_IDLE_DELAY_MS, throttleDelay);
-
-    mapAutosaveTimerRef.current = window.setTimeout(() => {
-      mapAutosaveTimerRef.current = null;
-      void saveCurrentMapSnapshot("autosave-map-idle");
-    }, delay);
-
-    return () => {
-      if (mapAutosaveTimerRef.current !== null) {
-        window.clearTimeout(mapAutosaveTimerRef.current);
-        mapAutosaveTimerRef.current = null;
-      }
-    };
-  }, [currentMapSaveSignature, mapAutosaveStatus]);
-
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean;
     x: number;
@@ -1784,7 +1628,7 @@ export default function JointMapManager({
     });
 
     if (options.successMessage) {
-      alert(`${options.successMessage} Autosave queued.`);
+      alert(options.successMessage);
     }
 
     return savedAsset;
@@ -5829,12 +5673,6 @@ export default function JointMapManager({
           onSelectSearchResult={selectAssetSearchResult}
           isSearchFocused={isAssetSearchFocused}
           setIsSearchFocused={setIsAssetSearchFocused}
-          canSaveMap={isAdmin}
-          isSavingMap={isSavingMapNow || mapAutosaveStatus === "saving"}
-          autosaveStatus={mapAutosaveStatus}
-          autosaveSavedAt={lastMapAutosaveAt}
-          autosaveError={mapAutosaveError}
-          onSaveMap={handleSaveMapNow}
           onGpsLocate={handleGpsLocate}
           isSharingLocation={isSharingLocation}
           liveUserCount={liveUsers.length}

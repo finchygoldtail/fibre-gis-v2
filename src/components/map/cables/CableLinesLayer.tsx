@@ -1195,10 +1195,20 @@ export default function CableLinesLayer({
   const zoomToCable = (points: [number, number][]) => {
     if (points.length < 2) return;
 
+    const routeLength = getTuplePathDistanceMeters(points);
+    const maxZoom =
+      routeLength >= 1000
+        ? 14
+        : routeLength >= 400
+          ? 15
+          : routeLength >= 150
+            ? 16
+            : 18;
+
     const bounds = L.latLngBounds(points);
     map.fitBounds(bounds, {
-      padding: [80, 80],
-      maxZoom: 19,
+      padding: [120, 120],
+      maxZoom,
     });
   };
 
