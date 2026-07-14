@@ -597,6 +597,7 @@ export async function saveMapAssetsToFirestore(
       reason: options.reason
         ? `${options.reason}:split-mirror-after-main`
         : "split-mirror-after-main",
+      explicitDeletedAssetIds: options.explicitDeletedAssetIds,
     });
   } catch (err) {
     console.warn(

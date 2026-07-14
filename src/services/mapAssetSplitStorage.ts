@@ -49,6 +49,7 @@ export type SaveSplitMapAssetsOptions = {
    * leave this false so tablet/slow-load partial state cannot wipe buckets.
    */
   allowDestructiveSave?: boolean;
+  explicitDeletedAssetIds?: string[];
   reason?: string;
 };
 
@@ -325,6 +326,41 @@ async function getExistingBucketAssetCount(bucket: SplitBucket): Promise<number>
   }, 0);
 }
 
+async function getExistingBucketAssets(bucket: SplitBucket): Promise<SavedMapAsset[]> {
+  const snapshot = await getDocs(bucketChunksCollection(bucket));
+  const assets: SavedMapAsset[] = [];
+
+  snapshot.docs.forEach((chunkDoc) => {
+    const data = chunkDoc.data() as any;
+    if (!Array.isArray(data.assets)) return;
+    data.assets.forEach((asset: any) => assets.push(fromFirestoreSafeAsset(asset)));
+  });
+
+  return assets;
+}
+
+function getAssetStableId(asset: any): string {
+  return String(asset?.id ?? asset?.assetId ?? asset?.properties?.id ?? "").trim();
+}
+
+function isBucketWipeCoveredByExplicitDeletes(
+  existingAssets: SavedMapAsset[],
+  nextAssets: SavedMapAsset[],
+  explicitDeletedAssetIds: string[] | undefined,
+): boolean {
+  const deletedIds = new Set(
+    (explicitDeletedAssetIds ?? []).map((id) => String(id).trim()).filter(Boolean),
+  );
+  if (deletedIds.size === 0) return false;
+
+  const nextIds = new Set(nextAssets.map(getAssetStableId).filter(Boolean));
+  const missingIds = existingAssets
+    .map(getAssetStableId)
+    .filter((id) => id && !nextIds.has(id));
+
+  return missingIds.length > 0 && missingIds.every((id) => deletedIds.has(id));
+}
+
 async function deleteExtraChunks(bucket: SplitBucket, keepCount: number) {
   const snapshot = await getDocs(bucketChunksCollection(bucket));
 
@@ -375,9 +411,22 @@ export async function saveSplitMapAssets(
 
   for (const bucket of SPLIT_BUCKETS) {
       const bucketAssets = byBucket.get(bucket) ?? [];
-      const existingCount = await getExistingBucketAssetCount(bucket);
+      const existingAssets =
+        options.explicitDeletedAssetIds?.length && bucketAssets.length === 0
+          ? await getExistingBucketAssets(bucket)
+          : [];
+      const existingCount = existingAssets.length
+        ? existingAssets.length
+        : await getExistingBucketAssetCount(bucket);
+      const explicitDeleteCoversBucketWipe =
+        bucketAssets.length === 0 &&
+        isBucketWipeCoveredByExplicitDeletes(
+          existingAssets,
+          bucketAssets,
+          options.explicitDeletedAssetIds,
+        );
 
-      if (!options.allowDestructiveSave) {
+      if (!options.allowDestructiveSave && !explicitDeleteCoversBucketWipe) {
         const blockReason = shouldBlockBucketSave(
           bucket,
           existingCount,
@@ -398,7 +447,12 @@ export async function saveSplitMapAssets(
       const safeAssets = bucketAssets.map(toFirestoreSafeAsset);
       const chunks = splitIntoChunks(safeAssets);
 
-      if (chunks.length === 0 && existingCount > 0 && !options.allowDestructiveSave) {
+      if (
+        chunks.length === 0 &&
+        existingCount > 0 &&
+        !options.allowDestructiveSave &&
+        !explicitDeleteCoversBucketWipe
+      ) {
         console.warn(
           `Skipped empty split bucket save for '${bucket}' to protect existing data.`,
         );
