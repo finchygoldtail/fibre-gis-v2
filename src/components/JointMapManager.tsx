@@ -3535,8 +3535,9 @@ export default function JointMapManager({
       );
 
       const splitterAsset = markAssetForLiveSync(
-        withAssetEditedMetadata(
-          {
+        withAreaAssetIndex(
+          withAssetEditedMetadata(
+            {
             ...(existingSplitter || {}),
             id: splitterId,
             name: splitterBox,
@@ -3590,9 +3591,12 @@ export default function JointMapManager({
                 updatedAt: now,
               },
             },
-          } as SavedMapAsset,
-          existingSplitter ? "updated" : "created",
-          reason,
+            } as SavedMapAsset,
+            existingSplitter ? "updated" : "created",
+            reason,
+          ),
+          activeProjectId,
+          activeProjectAreaName,
         ),
         !existingSplitter,
       );
@@ -3618,8 +3622,9 @@ export default function JointMapManager({
         );
 
         const stampedHome = markAssetForLiveSync(
-          withAssetEditedMetadata(
-            {
+          withAreaAssetIndex(
+            withAssetEditedMetadata(
+              {
               ...(home as any),
               connectedDpId: splitterId,
               connectedDP: splitterId,
@@ -3652,9 +3657,12 @@ export default function JointMapManager({
                   updatedAt: now,
                 },
               },
-            } as SavedMapAsset,
-            "updated",
-            reason,
+              } as SavedMapAsset,
+              "updated",
+              reason,
+            ),
+            activeProjectId,
+            activeProjectAreaName,
           ),
           false,
         );
@@ -3663,9 +3671,10 @@ export default function JointMapManager({
 
         const dropId = `drop_${splitterId}_${safeId(homeConnectionKey)}`;
         const dropAsset = markAssetForLiveSync(
-          {
+          withAreaAssetIndex(
+            {
             id: dropId,
-            name: `${splitterBox} Drop → ${(home as any).address || (home as any).name || homeConnectionKey}`,
+            name: `${splitterBox} Drop -> ${(home as any).address || (home as any).name || homeConnectionKey}`,
             label: `${splitterBox} Drop`,
             assetType: "cable",
             type: "cable",
@@ -3724,7 +3733,10 @@ export default function JointMapManager({
               rowNumber: matchingRow?.rowNumber,
               updatedAt: now,
             },
-          } as SavedMapAsset,
+            } as SavedMapAsset,
+            activeProjectId,
+            activeProjectAreaName,
+          ),
           true,
         );
 
@@ -3739,9 +3751,8 @@ export default function JointMapManager({
       return;
     }
 
-    let nextAddressSheetAssets: SavedMapAsset[] | null = null;
-    setSavedJoints((prev) => {
-      const base = (prev ?? []).filter((asset: any) => {
+    const nextAddressSheetAssets = (() => {
+      const base = (savedJoints ?? []).filter((asset: any) => {
         if (!request.overwriteExistingDrops || !isDropCable(asset)) return true;
         const dropKeys = getDropHomeKeys(asset);
         return !dropKeys.some((key) => affectedHomeDropKeys.has(key));
@@ -3755,17 +3766,15 @@ export default function JointMapManager({
       });
       newDropsById.forEach((asset, id) => byId.set(id, asset));
 
-      nextAddressSheetAssets = Array.from(byId.values());
-      return nextAddressSheetAssets;
+      return Array.from(byId.values());
     });
 
-    if (nextAddressSheetAssets) {
-      await saveMapAssetsViaCoordinator(nextAddressSheetAssets, {
-        source: "joint-map-manager",
-        reason: "address sheet splitter assignment",
-        allowDestructiveSave: false,
-      });
-    }
+    setSavedJoints(nextAddressSheetAssets);
+    await saveMapAssetsViaCoordinator(nextAddressSheetAssets, {
+      source: "joint-map-manager",
+      reason: "address sheet splitter assignment",
+      allowDestructiveSave: false,
+    });
 
     if (activeProjectId) {
       const updatedProjectHomes = projectHomes.map((home) => {
