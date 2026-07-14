@@ -1491,7 +1491,7 @@ export default function JointMapManager({
     ? renderProjectAssets.filter(isLocalGeoJsonImportAsset)
     : [];
   const localImportedProjectAreas = isPostgisOnlyMapMode
-    ? visibleProjectAreas.filter(isLocalGeoJsonImportAsset)
+    ? projectAreas.filter(isLocalGeoJsonImportAsset)
     : [];
   const visibleFirebaseProjectAssets = showFirebaseAssets
     ? renderProjectAssets
@@ -1521,12 +1521,12 @@ export default function JointMapManager({
   const renderAreaAssetsWithSpatial = useMemo(
     () =>
       mergeMapAssets(
-        showFirebaseAssets ? visibleProjectAreas : localImportedProjectAreas,
+        showFirebaseAssets ? projectAreas : localImportedProjectAreas,
         showPostgisAssets
           ? visibleSpatialAssets.filter((asset) => asset.assetType === "area")
           : [],
       ),
-    [localImportedProjectAreas, showFirebaseAssets, showPostgisAssets, visibleProjectAreas, visibleSpatialAssets],
+    [localImportedProjectAreas, projectAreas, showFirebaseAssets, showPostgisAssets, visibleSpatialAssets],
   );
 
   const allNetworkAssetsWithExchanges = useMemo(
@@ -2689,6 +2689,7 @@ export default function JointMapManager({
     loadedHomesProjectId,
     setLoadedHomesProjectId,
     setOrAssets,
+    setVisibleLayers,
     stampHomesForActiveArea,
     markAssetForLiveSync,
   });

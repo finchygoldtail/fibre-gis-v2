@@ -482,6 +482,10 @@ const buildImportedAssetBase = (
 ) => {
   const props = feature?.properties || {};
   const existingId = readGeoJsonProp(props, [
+    "polygon_id",
+    "POLYGON_ID",
+    "prim_key",
+    "PRIM_KEY",
     "id",
     "ID",
     "assetId",

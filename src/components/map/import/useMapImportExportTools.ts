@@ -1,5 +1,6 @@
 import React from "react";
 import type { SavedMapAsset } from "../types";
+import type { LayerVisibility } from "../hooks/useLayerVisibility";
 import {
   createMapAssetsFromAnyGeoJson,
   createPiaOverlayAssetsFromGeoJson,
@@ -32,6 +33,7 @@ type UseMapImportExportToolsArgs = {
   loadedHomesProjectId: string | null;
   setLoadedHomesProjectId: React.Dispatch<React.SetStateAction<string | null>>;
   setOrAssets: React.Dispatch<React.SetStateAction<SavedMapAsset[]>>;
+  setVisibleLayers?: React.Dispatch<React.SetStateAction<LayerVisibility>>;
   stampHomesForActiveArea: (homes: SavedMapAsset[]) => SavedMapAsset[];
   markAssetForLiveSync: (asset: SavedMapAsset, isNew?: boolean) => SavedMapAsset;
 };
@@ -62,6 +64,21 @@ function alertSkippedDuplicateImports(count: number): void {
   );
 }
 
+function isPolygonAreaAsset(asset: SavedMapAsset): boolean {
+  const geometryType = String((asset as any)?.geometry?.type || "").toLowerCase();
+  const assetType = String((asset as any)?.assetType || "").toLowerCase();
+  const jointType = String((asset as any)?.jointType || "").toLowerCase();
+
+  return (
+    geometryType === "polygon" ||
+    geometryType === "multipolygon" ||
+    assetType === "area" ||
+    assetType === "polygon" ||
+    assetType === "project-area" ||
+    jointType.includes("polygon")
+  );
+}
+
 export function useMapImportExportTools({
   savedJoints,
   setSavedJoints,
@@ -73,6 +90,7 @@ export function useMapImportExportTools({
   loadedHomesProjectId,
   setLoadedHomesProjectId,
   setOrAssets,
+  setVisibleLayers,
   stampHomesForActiveArea,
   markAssetForLiveSync,
 }: UseMapImportExportToolsArgs) {
@@ -95,6 +113,10 @@ export function useMapImportExportTools({
   const setOrAssetsSafe =
     typeof setOrAssets === "function"
       ? setOrAssets
+      : (() => undefined);
+  const setVisibleLayersSafe =
+    typeof setVisibleLayers === "function"
+      ? setVisibleLayers
       : (() => undefined);
 
   const handleExportJson = () => {
@@ -231,7 +253,10 @@ export function useMapImportExportTools({
           });
 
         const networkAssets = activeProjectArea
-          ? filterAssetsForProjectArea(rawNetworkAssets, activeProjectArea)
+          ? rawNetworkAssets.filter((asset) =>
+              isPolygonAreaAsset(asset) ||
+              filterAssetsForProjectArea([asset], activeProjectArea).length > 0,
+            )
           : rawNetworkAssets;
         const homeAssets = rawHomeAssets;
 
@@ -326,11 +351,13 @@ export function useMapImportExportTools({
             })
             .map((asset) =>
               normaliseDistributionPointAsset(
-                withAreaAssetIndex(
-                  asset,
-                  activeProjectId,
-                  getAreaDisplayName(activeProjectArea),
-                ),
+                isPolygonAreaAsset(asset)
+                  ? withAreaAssetIndex(asset)
+                  : withAreaAssetIndex(
+                      asset,
+                      activeProjectId,
+                      getAreaDisplayName(activeProjectArea),
+                    ),
               ),
             );
           const dedupedNetworkAssets = filterUniqueAssetsForAreaImport({
@@ -342,11 +369,22 @@ export function useMapImportExportTools({
 
           alertSkippedDuplicateImports(dedupedNetworkAssets.duplicates.length);
           savedDesignedCount = dedupedNetworkAssets.assets.length;
+          const savedPolygonCount = dedupedNetworkAssets.assets.filter(isPolygonAreaAsset).length;
           const nextSavedJoints = [
             ...savedJoints,
             ...dedupedNetworkAssets.assets,
           ];
           setSavedJointsSafe(nextSavedJoints);
+          if (savedPolygonCount > 0) {
+            setVisibleLayersSafe((prev) => ({
+              ...prev,
+              areas: true,
+              l0: true,
+              l1: true,
+              l2: true,
+              l3: true,
+            }));
+          }
           await saveMapAssetsViaCoordinator(nextSavedJoints, {
             source: "joint-map-manager",
             reason: "GeoJSON designed network import",
