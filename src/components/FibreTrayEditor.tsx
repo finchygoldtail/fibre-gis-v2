@@ -797,8 +797,28 @@ export const FibreTrayEditor: React.FC = () => {
       ? Math.min(0.8, Math.max(0.48, window.innerWidth / 1500))
       : 1;
   const saveSavedJointsToFirestoreNow = useCallback(
-    async (nextSavedJoints: SavedJoint[]) => {
-      const result = await saveMapAssetsViaCoordinator(nextSavedJoints, {
+    async (
+      nextSavedJoints: SavedJoint[],
+      options: { mergeWithLatestMapAssets?: boolean } = {},
+    ) => {
+      let assetsToSave = nextSavedJoints;
+
+      if (options.mergeWithLatestMapAssets) {
+        const latestAssets = await loadMapAssetsFromFirestore();
+        const byId = new Map<string, SavedJoint>();
+
+        latestAssets.forEach((asset) => {
+          if (asset?.id) byId.set(asset.id, asset as SavedJoint);
+        });
+
+        nextSavedJoints.forEach((asset) => {
+          if (asset?.id) byId.set(asset.id, asset);
+        });
+
+        assetsToSave = Array.from(byId.values());
+      }
+
+      const result = await saveMapAssetsViaCoordinator(assetsToSave, {
         reason: "fibre-tray-editor-immediate-save",
         source: "fibre-tray-editor",
       });
@@ -1186,7 +1206,9 @@ export const FibreTrayEditor: React.FC = () => {
         // duplicate Firestore writes. Save the selected joint metadata once
         // here so the upload still persists correctly.
         setSavedJoints(updatedSavedJoints);
-        await saveSavedJointsToFirestoreNow(updatedSavedJoints);
+        await saveSavedJointsToFirestoreNow(updatedSavedJoints, {
+          mergeWithLatestMapAssets: true,
+        });
       }
       setAssetType(
         selectedMapJoint?.assetType === "street-cab"
