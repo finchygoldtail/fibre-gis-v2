@@ -1358,9 +1358,16 @@ export default function DistributionPointEditor({
     ] as number[],
   );
 
-  // SB routing is manual-authority. Joint uploads / CMJ continuity remain useful
-  // for tray records, but must not overwrite DP/SB route logic.
-  const hasJointMappedFibres = false;
+  // Manual SB routing remains authoritative when present, but otherwise the
+  // uploaded joint/FAS rows should populate the DP operation view.
+  const hasJointMappedFibres =
+    !hasManualSbRoute &&
+    (
+      jointMatchedFibres.length > 0 ||
+      networkSplitterFibres.length > 0 ||
+      networkDirectFibres.length > 0 ||
+      networkPassthroughFibres.length > 0
+    );
 
   const manualLocalRouteFibres = manualSbLocalFibres.length
     ? manualSbLocalFibres

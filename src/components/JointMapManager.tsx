@@ -199,7 +199,27 @@ export type { SavedMapAsset };
 function mergeMapAssets(...groups: SavedMapAsset[][]): SavedMapAsset[] {
   const byId = new Map<string, SavedMapAsset>();
   groups.flat().forEach((asset) => {
-    if (asset?.id) byId.set(asset.id, asset);
+    if (!asset?.id) return;
+    const existing = byId.get(asset.id) as any;
+    if (!existing) {
+      byId.set(asset.id, asset);
+      return;
+    }
+
+    byId.set(asset.id, {
+      ...existing,
+      ...(asset as any),
+      mappingRows:
+        Array.isArray((asset as any).mappingRows) && (asset as any).mappingRows.length
+          ? (asset as any).mappingRows
+          : existing.mappingRows,
+      mappingRowsRef: (asset as any).mappingRowsRef || existing.mappingRowsRef,
+      mappingRowsCount: (asset as any).mappingRowsCount || existing.mappingRowsCount,
+      mappingRowsSummary: {
+        ...(existing.mappingRowsSummary || {}),
+        ...((asset as any).mappingRowsSummary || {}),
+      },
+    } as SavedMapAsset);
   });
   return Array.from(byId.values());
 }

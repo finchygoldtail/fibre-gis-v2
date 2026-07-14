@@ -299,10 +299,20 @@ export function getDpUsage(
     ...((Array.isArray(afnDetails.inputFibres) ? afnDetails.inputFibres : []) as any[]),
     ...((Array.isArray(afnDetails.splitterFibres) ? afnDetails.splitterFibres : []) as any[]),
   ]);
+  const networkInputFibres = uniquePositiveNumbers([
+    ...((Array.isArray(matchingDpState?.splitterFibres) ? matchingDpState.splitterFibres : []) as any[]),
+    ...((Array.isArray(matchingDpState?.directFibres) ? matchingDpState.directFibres : []) as any[]),
+    ...((Array.isArray(matchingDpState?.jointMatchedFibres) ? matchingDpState.jointMatchedFibres : []) as any[]),
+    ...((Array.isArray(matchingDpState?.jointMatch?.fibres) ? matchingDpState.jointMatch.fibres : []) as any[]),
+  ]);
 
-  // SB routing is manual-authority. Joint/network matched fibres are not allowed
-  // to overwrite the SB local splitter fibres shown on the map popup.
-  const inputFibres = manualLocalFibres.length ? manualLocalFibres : storedInputFibres;
+  // Manual SB routing remains authoritative. Without it, uploaded joint/FAS
+  // rows should drive the popup capacity rather than the placeholder default.
+  const inputFibres = manualLocalFibres.length
+    ? manualLocalFibres
+    : storedInputFibres.length
+      ? storedInputFibres
+      : networkInputFibres;
   const splitterFibres = inputFibres;
 
   const closureType = String(
