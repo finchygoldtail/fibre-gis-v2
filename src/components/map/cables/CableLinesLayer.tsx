@@ -1217,15 +1217,21 @@ export default function CableLinesLayer({
     coordinates: [number, number][]
   ) => {
     const cleanedCoordinates = sanitizeCableCoordinates(coordinates);
-
-    onEditAsset({
+    const updatedCable = {
       ...asset,
       geometry: {
         ...asset.geometry,
         type: "LineString",
         coordinates: cleanedCoordinates,
       },
-    });
+    };
+
+    if (onUpdateAsset) {
+      onUpdateAsset(updatedCable);
+      return;
+    }
+
+    onEditAsset(updatedCable);
   };
 
   const handleMovePoint = (
@@ -1540,8 +1546,9 @@ export default function CableLinesLayer({
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation();
-                        setSelectedCableId(asset.id);
                         setEditingCableId(asset.id);
+                        setSelectedCableId(null);
+                        map.closePopup();
                       }}
                     >
                       Edit route

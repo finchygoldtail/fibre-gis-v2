@@ -5274,7 +5274,7 @@ export default function JointMapManager({
               if (isSpatialApiAsset(asset) && !isPostgisOnlyMapMode) return;
               saveMapAssetToState(asset, {
                 isNew: false,
-                message: "Cable endpoints updated.",
+                message: "Cable route updated.",
               });
             }}
           />
