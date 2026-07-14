@@ -2766,6 +2766,29 @@ export default function JointMapManager({
   // existing savedJoints state and split chunk mirroring path, so
   // it does not introduce a second storage system.
   // =====================================================
+  const getWorkspaceSaveAssetScope = () =>
+    mergeMapAssets(savedJoints ?? [], visibleProjectAssets ?? []);
+
+  const getWorkspaceAssetsByIds = (ids: Set<string>) =>
+    getWorkspaceSaveAssetScope().filter((asset) =>
+      ids.has(String(asset.id || "")),
+    );
+
+  const buildWorkspaceSaveAssets = (updatedById: Map<string, SavedMapAsset>) => {
+    const seen = new Set<string>();
+    const nextAssets = getWorkspaceSaveAssetScope().map((asset) => {
+      const id = String(asset.id || "");
+      seen.add(id);
+      return updatedById.get(id) || asset;
+    });
+
+    updatedById.forEach((asset, id) => {
+      if (!seen.has(id)) nextAssets.push(asset);
+    });
+
+    return nextAssets;
+  };
+
   const handleWorkspaceBulkDpStatusUpdate = async (args: {
     assetIds: string[];
     status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
@@ -2783,9 +2806,7 @@ export default function JointMapManager({
       return;
     }
 
-    const beforeAssets = (savedJoints ?? []).filter((asset) =>
-      ids.has(String(asset.id || "")),
-    );
+    const beforeAssets = getWorkspaceAssetsByIds(ids);
 
     const updatedById = new Map<string, SavedMapAsset>();
 
@@ -2813,10 +2834,7 @@ export default function JointMapManager({
       return;
     }
 
-    const nextSavedJoints = (savedJoints ?? []).map((asset) => {
-      const updatedAsset = updatedById.get(String(asset.id || ""));
-      return updatedAsset || asset;
-    });
+    const nextSavedJoints = buildWorkspaceSaveAssets(updatedById);
 
     setSavedJoints(nextSavedJoints);
 
@@ -2891,9 +2909,7 @@ export default function JointMapManager({
       return;
     }
 
-    const beforeAssets = (savedJoints ?? []).filter((asset) =>
-      ids.has(String(asset.id || "")),
-    );
+    const beforeAssets = getWorkspaceAssetsByIds(ids);
 
     if (!beforeAssets.length) {
       alert("No matching saved cables were found for the PIA NOI update.");
@@ -2943,9 +2959,7 @@ export default function JointMapManager({
       return;
     }
 
-    const nextSavedJoints = (savedJoints ?? []).map(
-      (asset) => updatedById.get(String(asset.id || "")) || asset,
-    );
+    const nextSavedJoints = buildWorkspaceSaveAssets(updatedById);
 
     setSavedJoints(nextSavedJoints);
 
@@ -3003,12 +3017,10 @@ export default function JointMapManager({
       return;
     }
 
-    const beforeAssets = (savedJoints ?? []).filter((asset) =>
-      ids.has(String(asset.id || "")),
-    );
+    const beforeAssets = getWorkspaceAssetsByIds(ids);
 
     if (!beforeAssets.length) {
-      alert("No matching DPs were found in the saved map assets.");
+      alert("No matching DPs were found in the workspace assets.");
       return;
     }
 
@@ -3057,10 +3069,7 @@ export default function JointMapManager({
       return;
     }
 
-    const nextSavedJoints = (savedJoints ?? []).map((asset) => {
-      const updatedAsset = updatedById.get(String(asset.id || ""));
-      return updatedAsset || asset;
-    });
+    const nextSavedJoints = buildWorkspaceSaveAssets(updatedById);
 
     setSavedJoints(nextSavedJoints);
 
@@ -3177,7 +3186,7 @@ export default function JointMapManager({
       if (!wanted) return null;
 
       return (
-        (savedJoints ?? []).find((asset) => {
+        getWorkspaceSaveAssetScope().find((asset) => {
           if (!isDpAsset(asset)) return false;
           const item = asset as any;
           const candidates = [
@@ -3218,9 +3227,7 @@ export default function JointMapManager({
     }
 
     const updatedById = new Map<string, SavedMapAsset>();
-    const beforeAssets = (savedJoints ?? []).filter((asset) =>
-      routeGroups.has(String(asset.id || "")),
-    );
+    const beforeAssets = getWorkspaceAssetsByIds(new Set(routeGroups.keys()));
 
     beforeAssets.forEach((beforeAsset) => {
       const item = beforeAsset as any;
@@ -3319,9 +3326,7 @@ export default function JointMapManager({
       return;
     }
 
-    const nextSavedJoints = (savedJoints ?? []).map(
-      (asset) => updatedById.get(String(asset.id || "")) || asset,
-    );
+    const nextSavedJoints = buildWorkspaceSaveAssets(updatedById);
 
     setSavedJoints(nextSavedJoints);
 
