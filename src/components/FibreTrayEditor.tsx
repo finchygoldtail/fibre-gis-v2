@@ -1173,10 +1173,41 @@ export const FibreTrayEditor: React.FC = () => {
       const removedCableReferenceCount = countRemovedCableReferenceCells(rawRows, rows);
       const detectedAssetType = detectAssetTypeFromRows(rows);
       const detectedJointType = detectJointTypeFromRows(rows);
+      const editorRows = detectedJointType === "Meet Me Chamber" ? normalizeMeetMeRows(rows) : rows;
+
+      setAssetType(
+        selectedMapJoint?.assetType === "street-cab"
+          ? "street-cab"
+          : detectedAssetType,
+      );
+      setMappingRows(editorRows);
+      setTrayFilter("all");
+      setSelectedFibre(null);
+      setMoveSrc(null);
+      setMoveSrcMeetMeTarget(null);
+      setSearchTerm("");
+
+      if (detectedJointType === "Meet Me Chamber") {
+        const base = buildJointForRows("LMJ (40 trays)", editorRows);
+        setJointType("Meet Me Chamber");
+        setModel(base);
+      } else if (detectedJointType === "LMJ (40 trays)") {
+        const base = buildJoint(detectedJointType);
+        applyLmjRowsToModel(rows, base, (row) => extractChain(row).join(" -> "));
+        setJointType(detectedJointType);
+        setModel(base);
+      } else if (detectedAssetType === "ag-joint") {
+        const base = buildJointForRows(detectedJointType, rows);
+
+        setJointType(detectedJointType);
+        setModel(
+          applyStandardRowsToTrayModel(base, rows, {
+            overwriteExistingLabels: true,
+          }),
+        );
+      }
 
       if (selectedJointId) {
-        await saveJointMappingRowsToFirestore(selectedJointId, rows);
-
         const updatedSavedJoints = savedJoints.map((asset) => {
           if (asset.id !== selectedJointId) return asset;
 
@@ -1225,41 +1256,18 @@ export const FibreTrayEditor: React.FC = () => {
         // duplicate Firestore writes. Save the selected joint metadata once
         // here so the upload still persists correctly.
         setSavedJoints(updatedSavedJoints);
-        await saveSavedJointsToFirestoreNow(updatedSavedJoints);
+        try {
+          await saveJointMappingRowsToFirestore(selectedJointId, rows);
+          await saveSavedJointsToFirestoreNow(updatedSavedJoints);
+        } catch (saveErr) {
+          console.error("Mapping file loaded but failed to save:", saveErr);
+          alert(
+            `Mapping file loaded on screen, but saving it failed: ${
+              saveErr instanceof Error ? saveErr.message : String(saveErr)
+            }`,
+          );
+        }
       }
-      setAssetType(
-        selectedMapJoint?.assetType === "street-cab"
-          ? "street-cab"
-          : detectedAssetType,
-      );
-      const editorRows = detectedJointType === "Meet Me Chamber" ? normalizeMeetMeRows(rows) : rows;
-      setMappingRows(editorRows);
-      setTrayFilter("all");
-      setSelectedFibre(null);
-      setMoveSrc(null);
-      setMoveSrcMeetMeTarget(null);
-      setSearchTerm("");
-
-      if (detectedJointType === "Meet Me Chamber") {
-        const base = buildJointForRows("LMJ (40 trays)", editorRows);
-        setJointType("Meet Me Chamber");
-        setModel(base);
-      } else if (detectedJointType === "LMJ (40 trays)") {
-        const base = buildJoint(detectedJointType);
-        applyLmjRowsToModel(rows, base, (row) => extractChain(row).join(" → "));
-        setJointType(detectedJointType);
-        setModel(base);
-      } else if (detectedAssetType === "ag-joint") {
-        const base = buildJointForRows(detectedJointType, rows);
-
-        setJointType(detectedJointType);
-        setModel(
-          applyStandardRowsToTrayModel(base, rows, {
-            overwriteExistingLabels: true,
-          }),
-        );
-      }
-
       e.target.value = "";
     } catch (err: any) {
       console.error(err);
