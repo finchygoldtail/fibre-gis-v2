@@ -834,10 +834,12 @@ export const createMapAssetsFromAnyGeoJson = (
     if (geometryType === "Polygon") {
       const rings = convertGeoJsonPolygon(feature.geometry.coordinates);
       if (!rings.length) return;
+      const base = buildImportedAssetBase(feature, index, "area", activeProjectId);
       networkAssets.push(
         markAssetForLiveSync(
           {
-            ...buildImportedAssetBase(feature, index, "area", activeProjectId),
+            ...base,
+            id: `${base.id}-${index + 1}`,
             assetType: "area" as AssetType,
             jointType: "Polygon Area",
             areaLevel: readGeoJsonProp(
