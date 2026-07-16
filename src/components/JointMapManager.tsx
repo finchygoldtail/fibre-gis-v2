@@ -1642,6 +1642,7 @@ export default function JointMapManager({
     handleAdminRemoveSelectedPolygon,
     handleAdminRemoveAllPolygons,
     handleAdminRemoveImportedDistributionPoints,
+    handleAdminRemoveImportedCables,
     handleAdminSetAllPolygonsToL3,
   } = usePolygonAdminTools({
     isAdmin,
@@ -4177,6 +4178,7 @@ export default function JointMapManager({
           onRemoveSelectedPolygon={handleAdminRemoveSelectedPolygon}
           onRemoveAllPolygons={handleAdminRemoveAllPolygons}
           onRemoveImportedDistributionPoints={handleAdminRemoveImportedDistributionPoints}
+          onRemoveImportedCables={handleAdminRemoveImportedCables}
           onSetAllPolygonsToL3={handleAdminSetAllPolygonsToL3}
           onRepairAreaStamps={handleAdminRepairAreaStamps}
           onDeletePiaOverlayForActiveProject={

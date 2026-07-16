@@ -46,6 +46,22 @@ function isImportedDistributionPointAsset(asset: any): boolean {
   return /(^|[-_\s])SB\d+$/i.test(name) || /(^|[-_\s])SB\d+$/i.test(importedDescription);
 }
 
+function isImportedCableAsset(asset: any): boolean {
+  const assetType = String(asset?.assetType || "").trim().toLowerCase();
+  const geometryType = String(asset?.geometry?.type || asset?.geometryType || "")
+    .trim()
+    .toLowerCase();
+  const source = String(asset?.source || "").trim().toLowerCase();
+  const importedProps = asset?.importedProperties || {};
+  const cableType = String(asset?.cableType || "").trim().toLowerCase();
+
+  if (assetType !== "cable" && geometryType !== "linestring") return false;
+  if (assetType === "pia-route" || cableType.includes("pia overlay")) return false;
+  if (source === "openreach" || asset?.isReferenceAsset || asset?.readOnly) return false;
+
+  return source === "geojson-import" || Object.keys(importedProps || {}).length > 0;
+}
+
 type UsePolygonAdminToolsArgs = {
   isAdmin: boolean;
   operationalSavedJoints: SavedMapAsset[];
@@ -278,6 +294,45 @@ export function usePolygonAdminTools({
     );
   };
 
+  const handleAdminRemoveImportedCables = () => {
+    if (!isAdmin) {
+      alert("Administrator access required.");
+      return;
+    }
+
+    const importedCables = operationalSavedJoints.filter(isImportedCableAsset);
+
+    if (!importedCables.length) {
+      alert("No imported cable assets were found.");
+      return;
+    }
+
+    const typed = window.prompt(
+      `Found ${importedCables.length} imported cable asset(s).\n\nThis removes GeoJSON/QGIS imported cables only. Manually drawn cables and OR / PIA reference routes are protected where possible.\n\nType DELETE IMPORTED CABLES to remove them from the map.\n\nYou must still press Save Map afterwards to persist the cleanup.`,
+      "",
+    );
+
+    if (typed !== "DELETE IMPORTED CABLES") return;
+
+    const importedCableIds = new Set(
+      importedCables.map((asset) => String(asset.id || "")),
+    );
+
+    setSavedJoints((prev) =>
+      (prev ?? []).filter(
+        (asset: any) => !importedCableIds.has(String(asset?.id || "")),
+      ),
+    );
+
+    if (editingAssetId && importedCableIds.has(String(editingAssetId))) {
+      resetEditor();
+    }
+
+    alert(
+      `${importedCables.length} imported cable asset(s) removed from the map.\n\nPress Save Map to make this permanent in Firestore.`,
+    );
+  };
+
   const handleAdminSetAllPolygonsToL3 = () => {
     if (!isAdmin) {
       alert("Administrator access required.");
@@ -343,6 +398,7 @@ export function usePolygonAdminTools({
     handleAdminRemoveSelectedPolygon,
     handleAdminRemoveAllPolygons,
     handleAdminRemoveImportedDistributionPoints,
+    handleAdminRemoveImportedCables,
     handleAdminSetAllPolygonsToL3,
   };
 }
