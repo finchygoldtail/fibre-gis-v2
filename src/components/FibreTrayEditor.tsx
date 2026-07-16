@@ -55,6 +55,14 @@ import {
   restoreSavedJointsFromFirebase,
 } from "../services/mapAssetStorage";
 import { saveMapAssetsViaCoordinator } from "../services/mapSaveCoordinator";
+import {
+  distanceMeters,
+  getAssetPoint,
+  getCableFibreCount,
+  getCableLinePoints,
+  isSupportingCableAsset,
+} from "../services/dpCableRouting";
+import type { SavedMapAsset } from "./map/types";
 
 /* -------------------------------------------------------------
   Persistence
@@ -644,6 +652,70 @@ function extractMidjBreakoutFibre(label: string, parentFibre: number): number | 
     .filter((value): value is number => value !== null);
   const downstream = numericTokens.find((value, index) => index > 0 && value !== parentFibre);
   return downstream ?? null;
+}
+
+function cableCountFromText(value: unknown): number | null {
+  const match = cleanCell(value).toUpperCase().match(/(?:^|[^0-9])(288|144|96|48|36|24|12)\s*F(?:[^0-9]|$)/);
+  return match ? Number(match[1]) : null;
+}
+
+function getMidjFallbackLoopFibreCount(model: FibreCell[]): number | null {
+  const counts = model
+    .flatMap((cell) => splitContinuityTokens(cell.label))
+    .map(cableCountFromText)
+    .filter((value): value is number => value !== null);
+
+  return counts.length ? Math.max(...counts) : null;
+}
+
+function distancePointToCableMeters(asset: SavedMapAsset, cable: SavedMapAsset): number {
+  const point = getAssetPoint(asset);
+  const line = getCableLinePoints(cable);
+  if (!point || line.length < 2) return Number.POSITIVE_INFINITY;
+
+  let best = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < line.length - 1; index += 1) {
+    const a = line[index];
+    const b = line[index + 1];
+    const ab = distanceMeters(a, b);
+    if (!Number.isFinite(ab) || ab <= 0) continue;
+
+    const ap = distanceMeters(a, point);
+    const bp = distanceMeters(b, point);
+    const semi = (ap + bp + ab) / 2;
+    const areaSquared = Math.max(0, semi * (semi - ap) * (semi - bp) * (semi - ab));
+    const perpendicular = (2 * Math.sqrt(areaSquared)) / ab;
+    const nearest =
+      ap * ap > ab * ab + bp * bp
+        ? bp
+        : bp * bp > ab * ab + ap * ap
+          ? ap
+          : perpendicular;
+
+    best = Math.min(best, nearest);
+  }
+
+  return best;
+}
+
+function getMidjMapLoopFibreCount(
+  selectedMapJoint: SavedJoint | null,
+  savedJoints: SavedJoint[],
+): number | null {
+  if (!selectedMapJoint) return null;
+
+  const candidates = (savedJoints as SavedMapAsset[])
+    .filter((asset) => asset.id !== selectedMapJoint.id)
+    .filter(isSupportingCableAsset)
+    .map((cable) => ({
+      cable,
+      fibreCount: getCableFibreCount(cable),
+      distance: distancePointToCableMeters(selectedMapJoint as SavedMapAsset, cable),
+    }))
+    .filter((entry) => entry.fibreCount > 0 && entry.distance <= 18)
+    .sort((a, b) => b.fibreCount - a.fibreCount || a.distance - b.distance);
+
+  return candidates[0]?.fibreCount || null;
 }
 
 function getTextColour(bg: string): string {
@@ -1752,7 +1824,11 @@ export const FibreTrayEditor: React.FC = () => {
     jointType === "MidJ (4 trays)" && selectedFibre && !midjBreakoutFibres.some((item) => item.fibre === selectedFibre)
       ? [{ fibre: selectedFibre, label: `F${selectedFibre}`, role: "breakout" as const }]
       : [];
-  const midjLoopFibres = model.map((cell) => cell.globalNo);
+  const midjLoopFibreCount =
+    getMidjMapLoopFibreCount(selectedMapJoint, savedJoints) ||
+    getMidjFallbackLoopFibreCount(model) ||
+    model.length;
+  const midjLoopFibres = Array.from({ length: Math.max(1, midjLoopFibreCount) }, (_, index) => index + 1);
   const editorModeTitle =
     jointType === "MidJ (4 trays)"
       ? "MidJ Tray Editor"
