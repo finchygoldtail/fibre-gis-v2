@@ -244,6 +244,7 @@ export default function WorkspaceBuild({
   const [jointInstallMethod, setJointInstallMethod] = React.useState<"Underground" | "Overhead">("Underground");
   const [jointSubtypeFilter, setJointSubtypeFilter] = React.useState<JointInstallFilter>("ALL");
   const [jointInstallAuditNote, setJointInstallAuditNote] = React.useState("Bulk set existing joints / DPs to Underground");
+  const [selectedInstallAssetIds, setSelectedInstallAssetIds] = React.useState<Set<string>>(new Set());
   const readiness = stats?.operationalReadiness;
   const blockers = Array.isArray(readiness?.blockers) ? readiness.blockers : [];
   const nextActions = Array.isArray(readiness?.nextActions) ? readiness.nextActions : [];
@@ -290,6 +291,39 @@ export default function WorkspaceBuild({
         .sort((a: any, b: any) => String(a.name || a.id).localeCompare(String(b.name || b.id), undefined, { numeric: true })),
     [projectAssets, jointSubtypeFilter],
   );
+  const installMethodAssetIds = React.useMemo(
+    () => installMethodAssets.map((asset: any) => String(asset.id || "")),
+    [installMethodAssets],
+  );
+  const selectedInstallMethodAssets = React.useMemo(
+    () => installMethodAssets.filter((asset: any) => selectedInstallAssetIds.has(String(asset.id || ""))),
+    [installMethodAssets, selectedInstallAssetIds],
+  );
+
+  React.useEffect(() => {
+    setSelectedInstallAssetIds((previous) => {
+      const validIds = new Set(installMethodAssetIds);
+      const kept = Array.from(previous).filter((id) => validIds.has(id));
+      return new Set(kept.length ? kept : installMethodAssetIds);
+    });
+  }, [installMethodAssetIds.join("|")]);
+
+  const toggleInstallAssetSelection = (assetId: string) => {
+    setSelectedInstallAssetIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(assetId)) next.delete(assetId);
+      else next.add(assetId);
+      return next;
+    });
+  };
+
+  const selectAllInstallAssets = () => {
+    setSelectedInstallAssetIds(new Set(installMethodAssetIds));
+  };
+
+  const clearInstallAssetSelection = () => {
+    setSelectedInstallAssetIds(new Set());
+  };
 
   const applyBuildBulkPiaNoi = async () => {
     if (!onBulkUpdateCablePiaNoi) {
@@ -341,14 +375,18 @@ export default function WorkspaceBuild({
       alert("No joints or DPs match the current filter.");
       return;
     }
+    if (!selectedInstallMethodAssets.length) {
+      alert("Select at least one joint or DP before applying the install method.");
+      return;
+    }
 
     const confirmed = window.confirm(
-      `Set ${installMethodAssets.length} joint / DP asset${installMethodAssets.length === 1 ? "" : "s"} to ${jointInstallMethod}?\n\nFilter: ${jointSubtypeFilter}\n\nAudit note: ${trimmedNote}`,
+      `Set ${selectedInstallMethodAssets.length} selected joint / DP asset${selectedInstallMethodAssets.length === 1 ? "" : "s"} to ${jointInstallMethod}?\n\nFilter: ${jointSubtypeFilter}\n\nAudit note: ${trimmedNote}`,
     );
     if (!confirmed) return;
 
     await onBulkUpdateJointInstallMethod({
-      assetIds: installMethodAssets.map((asset) => asset.id),
+      assetIds: selectedInstallMethodAssets.map((asset) => asset.id),
       installMethod: jointInstallMethod,
       note: trimmedNote,
     });
@@ -604,6 +642,7 @@ export default function WorkspaceBuild({
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10, marginBottom: 12 }}>
           <Tile label="Matched assets" value={n(installMethodAssets.length)} />
+          <Tile label="Selected assets" value={n(selectedInstallMethodAssets.length)} />
           <Tile label="Install method" value={jointInstallMethod} />
         </div>
 
@@ -641,19 +680,58 @@ export default function WorkspaceBuild({
         </div>
 
         <div style={cablePreviewBox}>
-          <div style={{ color: "#e5e7eb", fontWeight: 900, marginBottom: 8 }}>
-            Preview Matched Joints / DPs
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 8 }}>
+            <div style={{ color: "#e5e7eb", fontWeight: 900 }}>
+              Select Matched Joints / DPs
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button type="button" onClick={selectAllInstallAssets} style={{ ...button, padding: "6px 9px", fontSize: 12 }}>
+                Select All
+              </button>
+              <button type="button" onClick={clearInstallAssetSelection} style={{ ...button, padding: "6px 9px", fontSize: 12 }}>
+                Clear
+              </button>
+            </div>
           </div>
           {installMethodAssets.length ? (
             <div style={{ display: "grid", gap: 6 }}>
-              {installMethodAssets.slice(0, 80).map((asset: any) => (
-                <div key={asset.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, borderBottom: "1px solid rgba(148,163,184,0.10)", paddingBottom: 6, color: "#cbd5e1", fontSize: 12 }}>
-                  <span>{asset.name || asset.label || asset.id}</span>
-                  <span style={{ color: "#94a3b8" }}>
-                    Current: {getInstallMethodLabel(asset)}
-                  </span>
+              {installMethodAssets.slice(0, 120).map((asset: any) => {
+                const assetId = String(asset.id || "");
+                const selected = selectedInstallAssetIds.has(assetId);
+                return (
+                  <label
+                    key={asset.id}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "22px minmax(160px, 1fr) auto",
+                      alignItems: "center",
+                      gap: 10,
+                      borderBottom: "1px solid rgba(148,163,184,0.10)",
+                      padding: "4px 0 7px",
+                      color: selected ? "#f8fafc" : "#cbd5e1",
+                      fontSize: 12,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={() => toggleInstallAssetSelection(assetId)}
+                    />
+                    <span style={{ fontWeight: selected ? 850 : 600 }}>
+                      {asset.name || asset.label || asset.id}
+                    </span>
+                    <span style={{ color: "#94a3b8" }}>
+                      Current: {getInstallMethodLabel(asset)}
+                    </span>
+                  </label>
+                );
+              })}
+              {installMethodAssets.length > 120 ? (
+                <div style={{ color: "#94a3b8", fontSize: 12 }}>
+                  Showing first 120 of {n(installMethodAssets.length)} matched assets. Use the filter to narrow the list before selecting.
                 </div>
-              ))}
+              ) : null}
             </div>
           ) : (
             <div style={{ color: "#fb7185", fontSize: 12 }}>No joints or DPs match this filter.</div>
@@ -662,11 +740,11 @@ export default function WorkspaceBuild({
 
         <button
           type="button"
-          style={{ ...button, background: "#14532d", borderColor: "rgba(74,222,128,0.42)", marginTop: 12, opacity: installMethodAssets.length && onBulkUpdateJointInstallMethod && jointInstallAuditNote.trim() ? 1 : 0.55 }}
+          style={{ ...button, background: "#14532d", borderColor: "rgba(74,222,128,0.42)", marginTop: 12, opacity: selectedInstallMethodAssets.length && onBulkUpdateJointInstallMethod && jointInstallAuditNote.trim() ? 1 : 0.55 }}
           onClick={applyBulkJointInstallMethod}
-          disabled={!installMethodAssets.length || !onBulkUpdateJointInstallMethod || !jointInstallAuditNote.trim()}
+          disabled={!selectedInstallMethodAssets.length || !onBulkUpdateJointInstallMethod || !jointInstallAuditNote.trim()}
         >
-          Set {n(installMethodAssets.length)} Asset{installMethodAssets.length === 1 ? "" : "s"} To {jointInstallMethod}
+          Set {n(selectedInstallMethodAssets.length)} Selected Asset{selectedInstallMethodAssets.length === 1 ? "" : "s"} To {jointInstallMethod}
         </button>
       </section>
     ) : null}
