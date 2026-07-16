@@ -162,6 +162,11 @@ type ProjectWorkspaceProps = {
     piaNoiNumber: string;
     note: string;
   }) => void | Promise<void>;
+  onBulkUpdateJointInstallMethod?: (args: {
+    assetIds: string[];
+    installMethod: "Underground" | "Overhead";
+    note: string;
+  }) => void | Promise<void>;
   onUpdateDpStatus?: (args: {
     assetId: string;
     status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
@@ -1223,6 +1228,7 @@ export default function ProjectWorkspace({
   onSelectProject,
   onBulkUpdateDpStatus,
   onBulkUpdateCablePiaNoi,
+  onBulkUpdateJointInstallMethod,
   onUpdateDpStatus,
   onClearDpFibreAllocations,
   onResolveDuplicateHomes,
@@ -4500,6 +4506,7 @@ export default function ProjectWorkspace({
                           ? handleBulkCablePiaNoiUpdate
                           : undefined
                       }
+                      onBulkUpdateJointInstallMethod={onBulkUpdateJointInstallMethod}
                       onClearDpFibreAllocations={
                         handleClearAreaDpFibreAllocations
                       }

@@ -26,6 +26,16 @@ type Props = {
     status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
     note: string;
   }) => void;
+  onBulkUpdateCablePiaNoi?: (args: {
+    assetIds: string[];
+    piaNoiNumber: string;
+    note: string;
+  }) => void | Promise<void>;
+  onBulkUpdateJointInstallMethod?: (args: {
+    assetIds: string[];
+    installMethod: "Underground" | "Overhead";
+    note: string;
+  }) => void | Promise<void>;
   onClearDpFibreAllocations?: () => void;
   onApplyAddressSheetAssignments?: (request: any) => void | Promise<void>;
   onApplySbRouteAssignments?: (request: any) => void | Promise<void>;

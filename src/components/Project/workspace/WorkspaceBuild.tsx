@@ -32,6 +32,11 @@ type Props = {
     piaNoiNumber: string;
     note: string;
   }) => void | Promise<void>;
+  onBulkUpdateJointInstallMethod?: (args: {
+    assetIds: string[];
+    installMethod: "Underground" | "Overhead";
+    note: string;
+  }) => void | Promise<void>;
   onSelectAsset?: (asset: SavedMapAsset) => void;
   onOpenJointEditor?: (asset: SavedMapAsset) => void;
   onOpenPanel?: (panel: string, tab?: string) => void;
@@ -101,6 +106,7 @@ type BuildToolKey =
   | "fas"
   | "address"
   | "homes"
+  | "joints"
   | "pia"
   | "reset"
   | "actions";
@@ -164,6 +170,7 @@ export default function WorkspaceBuild({
   projectAssets,
   areaDistributionPoints = [],
   onBulkUpdateCablePiaNoi,
+  onBulkUpdateJointInstallMethod,
   onClearDpFibreAllocations,
   onSelectAsset,
   onOpenJointEditor,
@@ -177,6 +184,9 @@ export default function WorkspaceBuild({
   const [piaNoiNumber, setPiaNoiNumber] = React.useState("");
   const [piaCableFilter, setPiaCableFilter] = React.useState("");
   const [piaAuditNote, setPiaAuditNote] = React.useState("Bulk apply PIA NOI to project design cables");
+  const [jointInstallMethod, setJointInstallMethod] = React.useState<"Underground" | "Overhead">("Underground");
+  const [jointSubtypeFilter, setJointSubtypeFilter] = React.useState<"ALL" | "LMJ" | "CMJ" | "MMJ" | "MIDJ">("ALL");
+  const [jointInstallAuditNote, setJointInstallAuditNote] = React.useState("Bulk set existing joints to Underground");
   const readiness = stats?.operationalReadiness;
   const blockers = Array.isArray(readiness?.blockers) ? readiness.blockers : [];
   const nextActions = Array.isArray(readiness?.nextActions) ? readiness.nextActions : [];
@@ -212,6 +222,24 @@ export default function WorkspaceBuild({
       return haystack.includes(filter);
     });
   }, [designCables, piaCableFilter]);
+
+  const existingJoints = React.useMemo(
+    () =>
+      (projectAssets || [])
+        .filter((asset: any) => {
+          const text = [asset?.assetType, asset?.jointType, asset?.name, asset?.label]
+            .map((value) => String(value ?? "").toUpperCase())
+            .join(" ");
+          return asset?.geometry?.type === "Point" && (asset?.assetType === "ag-joint" || /(?:LMJ|CMJ|MMJ|MIDJ|JOINT)/.test(text));
+        })
+        .filter((asset: any) => {
+          if (jointSubtypeFilter === "ALL") return true;
+          const text = [asset?.jointType, asset?.name, asset?.label].map((value) => String(value ?? "").toUpperCase()).join(" ");
+          return jointSubtypeFilter === "MIDJ" ? text.includes("MIDJ") : text.includes(jointSubtypeFilter);
+        })
+        .sort((a: any, b: any) => String(a.name || a.id).localeCompare(String(b.name || b.id), undefined, { numeric: true })),
+    [projectAssets, jointSubtypeFilter],
+  );
 
   const applyBuildBulkPiaNoi = async () => {
     if (!onBulkUpdateCablePiaNoi) {
@@ -252,6 +280,30 @@ export default function WorkspaceBuild({
     });
   };
 
+  const applyBulkJointInstallMethod = async () => {
+    if (!onBulkUpdateJointInstallMethod) return;
+    const trimmedNote = jointInstallAuditNote.trim();
+    if (!trimmedNote) {
+      alert("An audit note is required before applying a bulk joint install update.");
+      return;
+    }
+    if (!existingJoints.length) {
+      alert("No joints match the current filter.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Set ${existingJoints.length} joint${existingJoints.length === 1 ? "" : "s"} to ${jointInstallMethod}?\n\nFilter: ${jointSubtypeFilter}\n\nAudit note: ${trimmedNote}`,
+    );
+    if (!confirmed) return;
+
+    await onBulkUpdateJointInstallMethod({
+      assetIds: existingJoints.map((asset) => asset.id),
+      installMethod: jointInstallMethod,
+      note: trimmedNote,
+    });
+  };
+
   return <>
     <section style={wide}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", marginBottom: 12 }}>
@@ -287,6 +339,13 @@ export default function WorkspaceBuild({
           active={activeTool === "homes"}
           tone="good"
           onClick={() => setActiveTool((value) => value === "homes" ? null : "homes")}
+        />
+        <ToolButton
+          label="Bulk Joint Install"
+          description="Mark existing joints as UG or OH in one pass."
+          active={activeTool === "joints"}
+          tone="good"
+          onClick={() => setActiveTool((value) => value === "joints" ? null : "joints")}
         />
         <ToolButton
           label="Bulk PIA NOI"
@@ -483,6 +542,80 @@ export default function WorkspaceBuild({
         <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 8 }}>
           This updates piaNoiNumber on the cable and inside properties.piaNoiNumber so older panels can read it.
         </div>
+      </section>
+    ) : null}
+
+    {activeTool === "joints" ? (
+      <section style={wide}>
+        <h3 style={title}>Bulk Joint Install Method</h3>
+        <p style={{ color: "#cbd5e1", marginTop: 0 }}>
+          Mark existing AG joints as Underground or Overhead so the UG/OH joint filters and QA can tell them apart.
+        </p>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10, marginBottom: 12 }}>
+          <Tile label="Matched joints" value={n(existingJoints.length)} />
+          <Tile label="Install method" value={jointInstallMethod} />
+        </div>
+
+        <div style={formGrid}>
+          <label style={labelStyle}>
+            Joint filter
+            <select value={jointSubtypeFilter} onChange={(event) => setJointSubtypeFilter(event.target.value as any)} style={inputStyle}>
+              <option value="ALL">All joints</option>
+              <option value="LMJ">LMJ only</option>
+              <option value="CMJ">CMJ only</option>
+              <option value="MMJ">MMJ only</option>
+              <option value="MIDJ">MidJ only</option>
+            </select>
+          </label>
+
+          <label style={labelStyle}>
+            Set install method
+            <select value={jointInstallMethod} onChange={(event) => setJointInstallMethod(event.target.value as "Underground" | "Overhead")} style={inputStyle}>
+              <option>Underground</option>
+              <option>Overhead</option>
+            </select>
+          </label>
+
+          <label style={labelStyle}>
+            Audit Note
+            <input
+              value={jointInstallAuditNote}
+              onChange={(event) => setJointInstallAuditNote(event.target.value)}
+              placeholder="Reason for this bulk update"
+              style={inputStyle}
+            />
+          </label>
+        </div>
+
+        <div style={cablePreviewBox}>
+          <div style={{ color: "#e5e7eb", fontWeight: 900, marginBottom: 8 }}>
+            Preview Matched Joints
+          </div>
+          {existingJoints.length ? (
+            <div style={{ display: "grid", gap: 6 }}>
+              {existingJoints.slice(0, 80).map((asset: any) => (
+                <div key={asset.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, borderBottom: "1px solid rgba(148,163,184,0.10)", paddingBottom: 6, color: "#cbd5e1", fontSize: 12 }}>
+                  <span>{asset.name || asset.label || asset.id}</span>
+                  <span style={{ color: "#94a3b8" }}>
+                    Current: {asset.installMethod || asset.properties?.installMethod || "Not set"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ color: "#fb7185", fontSize: 12 }}>No joints match this filter.</div>
+          )}
+        </div>
+
+        <button
+          type="button"
+          style={{ ...button, background: "#14532d", borderColor: "rgba(74,222,128,0.42)", marginTop: 12, opacity: existingJoints.length && onBulkUpdateJointInstallMethod && jointInstallAuditNote.trim() ? 1 : 0.55 }}
+          onClick={applyBulkJointInstallMethod}
+          disabled={!existingJoints.length || !onBulkUpdateJointInstallMethod || !jointInstallAuditNote.trim()}
+        >
+          Set {n(existingJoints.length)} Joint{existingJoints.length === 1 ? "" : "s"} To {jointInstallMethod}
+        </button>
       </section>
     ) : null}
 

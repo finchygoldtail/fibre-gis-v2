@@ -2811,6 +2811,102 @@ export default function JointMapManager({
     }
   };
 
+  const handleWorkspaceBulkJointInstallMethodUpdate = async (args: {
+    assetIds: string[];
+    installMethod: "Underground" | "Overhead";
+    note: string;
+  }) => {
+    const ids = new Set((args.assetIds || []).map(String).filter(Boolean));
+    if (!ids.size) {
+      alert("No joints selected for install method update.");
+      return;
+    }
+
+    const reason = String(args.note || "").trim();
+    if (!reason) {
+      alert("An audit note is required before applying a bulk joint install update.");
+      return;
+    }
+
+    const beforeAssets = (savedJoints ?? []).filter((asset) =>
+      ids.has(String(asset.id || "")),
+    );
+    const updatedById = new Map<string, SavedMapAsset>();
+
+    beforeAssets.forEach((asset) => {
+      const item = asset as any;
+      const haystack = [item.assetType, item.jointType, item.name, item.label]
+        .map((value) => String(value || "").toLowerCase())
+        .join(" ");
+      const isJoint =
+        item.assetType === "ag-joint" ||
+        haystack.includes("joint") ||
+        haystack.includes("lmj") ||
+        haystack.includes("cmj") ||
+        haystack.includes("mmj") ||
+        haystack.includes("midj");
+
+      if (!isJoint) return;
+      if (item.installMethod === args.installMethod && item.properties?.installMethod === args.installMethod) return;
+
+      const rawNextAsset = {
+        ...item,
+        installMethod: args.installMethod,
+        properties: {
+          ...(item.properties || {}),
+          installMethod: args.installMethod,
+        },
+      } as SavedMapAsset;
+
+      const nextAsset = withAssetEditedMetadata(
+        markAssetForLiveSync(rawNextAsset),
+        "updated",
+        reason,
+      );
+
+      updatedById.set(String(asset.id || ""), nextAsset);
+    });
+
+    if (!updatedById.size) {
+      alert(`No joint install method changes were needed; selected joints already show ${args.installMethod}.`);
+      return;
+    }
+
+    const nextSavedJoints = (savedJoints ?? []).map(
+      (asset) => updatedById.get(String(asset.id || "")) || asset,
+    );
+
+    setSavedJoints(nextSavedJoints);
+
+    beforeAssets.forEach((beforeAsset) => {
+      const afterAsset = updatedById.get(String(beforeAsset.id || ""));
+      if (!afterAsset) return;
+
+      writeAssetAuditLog({
+        asset: afterAsset,
+        action: "updated",
+        reason,
+        comment: `Manager bulk joint install method update from Project Workspace: ${args.installMethod}`,
+        before: { installMethod: (beforeAsset as any).installMethod || "" },
+        after: { installMethod: (afterAsset as any).installMethod || "" },
+      });
+    });
+
+    try {
+      await saveMapAssetsViaCoordinator(nextSavedJoints, {
+        reason: `bulk-joint-install:${reason}`,
+        source: "joint-map-manager",
+      });
+    } catch (error) {
+      console.error("Bulk joint install method map save failed", error);
+      throw new Error(
+        "Joint install methods were applied locally, but the map save failed. Check the console before refreshing.",
+      );
+    }
+
+    alert(`Updated ${updatedById.size} joint${updatedById.size === 1 ? "" : "s"} to ${args.installMethod}.`);
+  };
+
   const handleWorkspaceClearDpFibreAllocations = async (args: {
     assetIds: string[];
     note: string;
@@ -3927,6 +4023,7 @@ export default function JointMapManager({
         onOpenAudit={(asset) => setAuditFormAsset(asset)}
         onBulkUpdateDpStatus={handleWorkspaceBulkDpStatusUpdate}
         onBulkUpdateCablePiaNoi={handleWorkspaceBulkCablePiaNoiUpdate}
+        onBulkUpdateJointInstallMethod={handleWorkspaceBulkJointInstallMethodUpdate}
         onUpdateDpStatus={handleWorkspaceSingleDpStatusUpdate}
         onClearDpFibreAllocations={handleWorkspaceClearDpFibreAllocations}
         onApplyAddressSheetAssignments={handleWorkspaceAddressSheetAssignments}
