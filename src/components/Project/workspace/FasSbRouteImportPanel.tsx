@@ -71,6 +71,11 @@ function looksLikeSb(value: unknown): boolean {
   return /\b[A-Z]{2,4}-[A-Z]{2,6}-AG\d+-SB\d+|\bSB\s*\d+|\bSB\d+/i.test(text(value));
 }
 
+function looksLikeRouteEndpoint(value: unknown): boolean {
+  const raw = text(value);
+  return looksLikeSb(raw) || /\b(?:MIDJ|MID J|CMJ|MMJ|LMJ|DP)\s*\d+/i.test(raw);
+}
+
 function routeKey(route: Omit<FasSbRouteImportRoute, "id">): string {
   return [route.fromSbName, route.toSbName, route.supportingCableName || "supporting-cable-not-set"]
     .map(normaliseRef)
@@ -113,41 +118,54 @@ function parseRoutesFromWorkbook(workbook: XLSX.WorkBook): FasSbRouteImportRoute
 
     rows.forEach((row) => {
       const groups: { cable: string; fibre: number; endpoint: string }[] = [];
+      let linkFibre: number | null = null;
+
+      if (/^link cable$/i.test(text(row[0])) || /^link fibre$/i.test(text(row[1]))) {
+        return;
+      }
+
+      if (/link/i.test(text(row[0]))) {
+        linkFibre = parseFibre(row[1]);
+      }
 
       for (let index = 0; index <= row.length - 3; index += 1) {
         const cable = text(row[index]);
         const fibre = parseFibre(row[index + 1]);
         const endpoint = stripSplitterPort(row[index + 2]);
 
-        if (!looksLikeCable(cable) || fibre === null || !looksLikeSb(endpoint)) continue;
+        if (!looksLikeCable(cable) || fibre === null || !looksLikeRouteEndpoint(endpoint)) continue;
         groups.push({ cable, fibre, endpoint });
       }
 
-      for (let index = 0; index < groups.length - 1; index += 1) {
-        const parent = groups[index];
-        const child = groups[index + 1];
-        if (!parent.endpoint || !child.endpoint) continue;
-        if (normaliseRef(parent.endpoint) === normaliseRef(child.endpoint)) continue;
+      groups.forEach((child, index) => {
+        if (!looksLikeSb(child.endpoint)) return;
+
+        const upstream = index > 0 ? groups[index - 1] : null;
+        const fromName = upstream?.endpoint || text(row[0]) || "FAS Link Cable";
+        const parentFibre = upstream?.fibre || linkFibre || child.fibre;
+
+        if (!fromName || !child.endpoint) return;
+        if (normaliseRef(fromName) === normaliseRef(child.endpoint)) return;
 
         const partial = {
-          fromSbName: parent.endpoint,
+          fromSbName: stripSplitterPort(fromName),
           toSbName: child.endpoint,
-          parentFibres: [parent.fibre],
+          parentFibres: [parentFibre],
           localFibres: [child.fibre],
           supportingCableName: child.cable,
           source: "fas-import" as const,
-          note: `${parent.endpoint} feeds ${child.endpoint} from FAS import`,
+          note: `${stripSplitterPort(fromName)} feeds ${child.endpoint} from FAS import`,
         };
 
         const key = routeKey(partial);
         const existing = grouped.get(key);
         if (existing) {
-          existing.parentFibres = Array.from(new Set([...existing.parentFibres, parent.fibre])).sort((a, b) => a - b);
+          existing.parentFibres = Array.from(new Set([...existing.parentFibres, parentFibre])).sort((a, b) => a - b);
           existing.localFibres = Array.from(new Set([...existing.localFibres, child.fibre])).sort((a, b) => a - b);
         } else {
           grouped.set(key, { ...partial, id: `fas_${key}` });
         }
-      }
+      });
     });
   });
 
@@ -181,7 +199,7 @@ export default function FasSbRouteImportPanel({ projectAssets, onApplySbRouteAss
       const parsedRoutes = parseRoutesFromWorkbook(workbook);
       setRoutes(parsedRoutes);
       if (!parsedRoutes.length) {
-        setError("No SB → SB routes were found. Check the FAS has Cable Name / Fibre / End Point columns.");
+        setError("No FAS routes into SBs were found. Check the FAS has Cable Name / Fibre / End Point columns.");
       }
     } catch (err) {
       console.error(err);
@@ -197,7 +215,7 @@ export default function FasSbRouteImportPanel({ projectAssets, onApplySbRouteAss
     }
 
     const note = window.prompt(
-      `Audit note required: apply ${routes.length} SB route${routes.length === 1 ? "" : "s"} from FAS?`,
+      `Audit note required: apply ${routes.length} FAS route${routes.length === 1 ? "" : "s"} into SBs?`,
       `Import SB fibre routes from ${fileName || "FAS"}`,
     );
 
@@ -215,7 +233,7 @@ export default function FasSbRouteImportPanel({ projectAssets, onApplySbRouteAss
     <section style={panel}>
       <h3 style={title}>FAS SB Route Import</h3>
       <p style={{ ...muted, marginTop: -4 }}>
-        Bulk imports SB → SB fibre routes from the FAS. Manual SB route editing remains available afterwards. Cable names are stored only as supporting route evidence.
+        Bulk imports FAS fibre routes into SBs, including MidJ/source-to-SB breakout rows. Manual SB route editing remains available afterwards. Cable names are stored only as supporting route evidence.
       </p>
 
       <input
@@ -265,7 +283,7 @@ export default function FasSbRouteImportPanel({ projectAssets, onApplySbRouteAss
         disabled={!routes.length || !onApplySbRouteAssignments}
         onClick={applyRoutes}
       >
-        Apply FAS Routes To All Matching SBs
+        Apply FAS Routes To Matching SBs
       </button>
     </section>
   );
