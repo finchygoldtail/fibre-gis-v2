@@ -211,6 +211,38 @@ function isUndergroundDpClosure(asset: SavedMapAsset | null): boolean {
   );
 }
 
+function isOverheadDpClosure(asset: SavedMapAsset | null): boolean {
+  const item = asset as any;
+  const haystack = [
+    item?.installMethod,
+    item?.routeType,
+    item?.dpType,
+    item?.closureType,
+    item?.jointType,
+    item?.name,
+    item?.label,
+    item?.dpDetails?.installMethod,
+    item?.dpDetails?.mounting,
+    item?.dpDetails?.locationType,
+    item?.dpDetails?.networkType,
+    item?.properties?.installMethod,
+    item?.properties?.routeType,
+    item?.properties?.dpDetails?.installMethod,
+  ]
+    .map((value) => normalise(value))
+    .join(" ");
+
+  return (
+    haystack.includes("overhead") ||
+    haystack.includes(" aerial") ||
+    haystack.includes(" pole") ||
+    haystack.includes(" oh ") ||
+    haystack.includes("-oh") ||
+    haystack.includes("oh-") ||
+    haystack.endsWith(" oh")
+  );
+}
+
 function buildParentFibreMappings(
   parentFibres: number[],
   localFibres: number[],
@@ -1633,6 +1665,8 @@ export default function DistributionPointEditor({
     ? getFibreColour(selectedFibre)
     : null;
   const showUndergroundClosureView = isUndergroundDpClosure(asset);
+  const showOverheadClosureView = !showUndergroundClosureView && isOverheadDpClosure(asset);
+  const showDpClosureView = showUndergroundClosureView || showOverheadClosureView;
   const undergroundBreakoutFibres = uniqueSorted([
     ...displayDirectFibresOnCable,
     ...displaySpliceFibresOnCable,
@@ -2547,11 +2581,11 @@ export default function DistributionPointEditor({
             </div>
           </div>
 
-          {showUndergroundClosureView ? (
+          {showDpClosureView ? (
             <CompactClosureView
-              title={`${getAssetTitle(asset)} UG closure`}
-              subtitle="Underground DP splitter / splice holder"
-              mode="ug-dp"
+              title={`${getAssetTitle(asset)} ${showOverheadClosureView ? "OH" : "UG"} closure`}
+              subtitle={showOverheadClosureView ? "Overhead DP splitter and drop output tray" : "Underground DP splitter / splice holder"}
+              mode={showOverheadClosureView ? "oh-dp" : "ug-dp"}
               loopFibres={allCableFibres}
               splitterFibres={undergroundSplitterFibres}
               breakoutFibres={undergroundBreakoutFibres}
