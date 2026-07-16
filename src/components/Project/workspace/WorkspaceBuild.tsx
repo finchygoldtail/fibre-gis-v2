@@ -115,6 +115,24 @@ const getInstallMethodLabel = (asset: any) =>
   asset?.properties?.dpDetails?.installMethod ||
   "Not set";
 
+const getNormalisedInstallMethod = (asset: any): "Underground" | "Overhead" | "" => {
+  const values = [
+    asset?.installMethod,
+    asset?.dpDetails?.installMethod,
+    asset?.properties?.installMethod,
+    asset?.properties?.dpDetails?.installMethod,
+  ];
+
+  for (const value of values) {
+    const normalised = String(value ?? "").trim().toLowerCase();
+    if (!normalised) continue;
+    if (normalised === "oh" || normalised.includes("overhead")) return "Overhead";
+    if (normalised === "ug" || normalised.includes("underground")) return "Underground";
+  }
+
+  return "";
+};
+
 const formGrid: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
@@ -288,8 +306,9 @@ export default function WorkspaceBuild({
           return asset?.geometry?.type === "Point" && (isAgJointInstallAsset(asset) || isDpInstallAsset(asset));
         })
         .filter((asset: any) => matchesJointInstallFilter(asset, jointSubtypeFilter))
+        .filter((asset: any) => getNormalisedInstallMethod(asset) !== jointInstallMethod)
         .sort((a: any, b: any) => String(a.name || a.id).localeCompare(String(b.name || b.id), undefined, { numeric: true })),
-    [projectAssets, jointSubtypeFilter],
+    [projectAssets, jointSubtypeFilter, jointInstallMethod],
   );
   const installMethodAssetIds = React.useMemo(
     () => installMethodAssets.map((asset: any) => String(asset.id || "")),
@@ -384,7 +403,7 @@ export default function WorkspaceBuild({
       return;
     }
     if (!installMethodAssets.length) {
-      alert("No joints or DPs match the current filter.");
+      alert(`No joints or DPs need changing to ${jointInstallMethod} with the current filter.`);
       return;
     }
     if (!selectedInstallMethodAssets.length) {
@@ -649,11 +668,11 @@ export default function WorkspaceBuild({
       <section style={wide}>
         <h3 style={title}>Bulk Joint / DP Install Method</h3>
         <p style={{ color: "#cbd5e1", marginTop: 0 }}>
-          Mark existing AG joints and SBs/DPs as Underground or Overhead so the UG/OH filters and QA can tell them apart.
+          Mark existing AG joints and SBs/DPs as Underground or Overhead. Assets already set to the selected method are hidden from this change list.
         </p>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10, marginBottom: 12 }}>
-          <Tile label="Matched assets" value={n(installMethodAssets.length)} />
+          <Tile label="Needs update" value={n(installMethodAssets.length)} />
           <Tile label="Selected assets" value={n(selectedInstallMethodAssets.length)} />
           <Tile label="Install method" value={jointInstallMethod} />
         </div>
@@ -674,7 +693,15 @@ export default function WorkspaceBuild({
 
           <label style={labelStyle}>
             Set install method
-            <select value={jointInstallMethod} onChange={(event) => setJointInstallMethod(event.target.value as "Underground" | "Overhead")} style={inputStyle}>
+            <select
+              value={jointInstallMethod}
+              onChange={(event) => {
+                const nextMethod = event.target.value as "Underground" | "Overhead";
+                setJointInstallMethod(nextMethod);
+                setJointInstallAuditNote(`Bulk set existing joints / DPs to ${nextMethod}`);
+              }}
+              style={inputStyle}
+            >
               <option>Underground</option>
               <option>Overhead</option>
             </select>
@@ -694,7 +721,7 @@ export default function WorkspaceBuild({
         <div style={cablePreviewBox}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 8 }}>
             <div style={{ color: "#e5e7eb", fontWeight: 900 }}>
-              Select Matched Joints / DPs
+              Select Joints / DPs To Change
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button type="button" onClick={selectAllInstallAssets} style={{ ...button, padding: "6px 9px", fontSize: 12 }}>
@@ -746,7 +773,9 @@ export default function WorkspaceBuild({
               ) : null}
             </div>
           ) : (
-            <div style={{ color: "#fb7185", fontSize: 12 }}>No joints or DPs match this filter.</div>
+            <div style={{ color: "#86efac", fontSize: 12 }}>
+              No joints or DPs need changing to {jointInstallMethod} with this filter.
+            </div>
           )}
         </div>
 
