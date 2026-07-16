@@ -48,6 +48,7 @@ import ChangesDashboard from "./audit/ChangesDashboard";
 import ChangeReasonModal from "./audit/ChangeReasonModal";
 import { createAssetAccessLog, createAssetChangeLog } from "../services/auditService";
 import StreetCabEditor from "./StreetCabEditor";
+import CompactClosureView from "./common/CompactClosureView";
 import {
   cleanSavedJointsForFirebase,
   loadMapAssetsFromFirestore,
@@ -1692,6 +1693,14 @@ export const FibreTrayEditor: React.FC = () => {
 
   const svgWidth = left + cfg.fibresPerTray * gap + 96;
   const svgHeight = top + visibleTrays.length * (trayH + trayGap) + 54;
+  const midjBreakoutFibres = model
+    .filter((cell) => cell.label.trim())
+    .map((cell) => ({ fibre: cell.globalNo, label: `F${cell.globalNo}`, role: "breakout" as const }));
+  const midjSelectedBreakout =
+    jointType === "MidJ (4 trays)" && selectedFibre && !midjBreakoutFibres.some((item) => item.fibre === selectedFibre)
+      ? [{ fibre: selectedFibre, label: `F${selectedFibre}`, role: "breakout" as const }]
+      : [];
+  const midjLoopFibres = model.map((cell) => cell.globalNo);
   const editorModeTitle =
     jointType === "MidJ (4 trays)"
       ? "MidJ Tray Editor"
@@ -2084,6 +2093,19 @@ export const FibreTrayEditor: React.FC = () => {
                     selectedFibre={selectedFibre}
                     onSelectFibre={setSelectedFibre}
                     onFibreClick={handleFibreClick}
+                  />
+                ) : jointType === "MidJ (4 trays)" ? (
+                  <CompactClosureView
+                    title={currentJointName}
+                    subtitle="Loop-through closure with selected breakout fibres"
+                    mode="midj"
+                    loopFibres={midjLoopFibres}
+                    breakoutFibres={[...midjBreakoutFibres, ...midjSelectedBreakout]}
+                    passthroughFibres={midjLoopFibres.filter(
+                      (fibre) => !midjBreakoutFibres.some((item) => item.fibre === fibre),
+                    )}
+                    selectedFibre={selectedFibre}
+                    onSelectFibre={setSelectedFibre}
                   />
                 ) : jointType === "LMJ (40 trays)" ? (
                   <LMJTrayView

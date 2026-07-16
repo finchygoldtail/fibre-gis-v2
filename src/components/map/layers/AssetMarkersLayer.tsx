@@ -38,9 +38,15 @@ import {
 
 type LayerVisibility = {
   agJoints: boolean;
+  cmjJoints?: boolean;
+  midjJoints?: boolean;
+  mmjJoints?: boolean;
+  lmjJoints?: boolean;
   streetCabs: boolean;
   poles: boolean;
   distributionPoints: boolean;
+  ohDpJoints?: boolean;
+  ugDpJoints?: boolean;
   chambers: boolean;
   cables: boolean;
   measurements: boolean;
@@ -215,6 +221,52 @@ function getDistributionPointColor(asset: SavedMapAsset): string {
   return "#111111";
 }
 
+function getAssetLayerText(asset: SavedMapAsset): string {
+  const item = asset as any;
+  return [
+    item.assetType,
+    item.type,
+    item.jointType,
+    item.name,
+    item.jointName,
+    item.label,
+    item.installMethod,
+    item.routeType,
+    item.dpType,
+    item.closureType,
+    item.dpDetails?.closureType,
+    item.dpDetails?.installMethod,
+    item.dpDetails?.mounting,
+    item.dpDetails?.locationType,
+    item.dpDetails?.networkType,
+    item.properties?.installMethod,
+    item.properties?.routeType,
+  ]
+    .map((value) => String(value || "").toLowerCase())
+    .join(" ");
+}
+
+function isUndergroundDpAsset(asset: SavedMapAsset): boolean {
+  const text = getAssetLayerText(asset);
+  return (
+    text.includes("underground") ||
+    text.includes(" duct") ||
+    text.includes(" ug ") ||
+    text.includes("-ug") ||
+    text.includes("ug-") ||
+    text.endsWith(" ug")
+  );
+}
+
+function jointSubtypeVisible(asset: SavedMapAsset, layers: any): boolean {
+  const text = getAssetLayerText(asset);
+  if (text.includes("midj")) return layers.midjJoints !== false;
+  if (text.includes("mmj")) return layers.mmjJoints !== false;
+  if (text.includes("lmj")) return layers.lmjJoints !== false;
+  if (text.includes("cmj")) return layers.cmjJoints !== false;
+  return true;
+}
+
 function getHomeLayerType(asset: SavedMapAsset): "sdu" | "mdu" | "flats" {
   const raw = String(
     (asset as any).homeType ||
@@ -340,6 +392,9 @@ function isVisible(asset: SavedMapAsset, visibleLayers: LayerVisibility): boolea
 
     case "distribution-point": {
       if (!visibleLayers.distributionPoints) return false;
+      const isUg = isUndergroundDpAsset(asset);
+      if (isUg && layers.ugDpJoints === false) return false;
+      if (!isUg && layers.ohDpJoints === false) return false;
 
       const status = getDistributionPointStatus(asset);
       if (status === "live" && layers.live === false) return false;
@@ -387,7 +442,7 @@ function isVisible(asset: SavedMapAsset, visibleLayers: LayerVisibility): boolea
 
     case "ag-joint":
     default:
-      return visibleLayers.agJoints;
+      return visibleLayers.agJoints && jointSubtypeVisible(asset, layers);
   }
 }
 

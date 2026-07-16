@@ -46,7 +46,11 @@ const layerGroups: LayerGroup[] = [
   id: "joints",
   title: "Joints",
   options: [
-    { label: "AG Joints", key: "agJoints" },
+    { label: "All Joints", key: "agJoints" },
+    { label: "CMJs", key: "cmjJoints" },
+    { label: "MidJs", key: "midjJoints" },
+    { label: "MMJs", key: "mmjJoints" },
+    { label: "LMJs", key: "lmjJoints" },
   ],
 },
   {
@@ -110,7 +114,11 @@ const layerGroups: LayerGroup[] = [
   {
     id: "distributionPoints",
     title: "DPs",
-    options: [{ label: "Distribution Points", key: "distributionPoints" }],
+    options: [
+      { label: "All DPs", key: "distributionPoints" },
+      { label: "OH Joints", key: "ohDpJoints" },
+      { label: "UG Joints", key: "ugDpJoints" },
+    ],
   },
   {
     id: "status",
@@ -381,6 +389,26 @@ export default function LayersPanel({
           ulw12: next,
           orDucts: next,
           suggestedDucts: next,
+        };
+      }
+
+      if (key === "agJoints") {
+        return {
+          ...prev,
+          agJoints: next,
+          cmjJoints: next,
+          midjJoints: next,
+          mmjJoints: next,
+          lmjJoints: next,
+        };
+      }
+
+      if (key === "distributionPoints") {
+        return {
+          ...prev,
+          distributionPoints: next,
+          ohDpJoints: next,
+          ugDpJoints: next,
         };
       }
 

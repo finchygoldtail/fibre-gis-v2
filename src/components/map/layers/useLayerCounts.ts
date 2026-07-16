@@ -143,6 +143,57 @@ export function useLayerCounts({
       );
     };
 
+    const isJointSubtype = (asset: SavedMapAsset, token: string) =>
+      isJoint(asset) && textForAsset(asset).includes(token);
+
+    const isUndergroundDp = (asset: SavedMapAsset) => {
+      const text = textForAsset(asset);
+      const item = asset as any;
+      const installText = [
+        item.installMethod,
+        item.routeType,
+        item.dpDetails?.installMethod,
+        item.dpDetails?.mounting,
+        item.dpDetails?.locationType,
+        item.dpDetails?.networkType,
+        item.properties?.installMethod,
+        item.properties?.routeType,
+      ]
+        .map(norm)
+        .join(" ");
+
+      return (
+        installText.includes("underground") ||
+        installText.includes("ug") ||
+        installText.includes("duct") ||
+        text.includes(" underground") ||
+        text.includes(" ug ") ||
+        text.includes("-ug") ||
+        text.includes("ug-")
+      );
+    };
+
+    const isOverheadDp = (asset: SavedMapAsset) => {
+      if (!isDp(asset)) return false;
+      const text = textForAsset(asset);
+      const item = asset as any;
+      const installText = [
+        item.installMethod,
+        item.routeType,
+        item.dpDetails?.installMethod,
+        item.dpDetails?.mounting,
+        item.dpDetails?.locationType,
+        item.properties?.installMethod,
+        item.properties?.routeType,
+      ]
+        .map(norm)
+        .join(" ");
+
+      if (isUndergroundDp(asset)) return false;
+      if (installText.includes("oh") || installText.includes("overhead") || text.includes(" overhead")) return true;
+      return true;
+    };
+
     const isPole = (asset: SavedMapAsset) =>
       hasPointGeometry(asset) && textForAsset(asset).includes("pole");
 
@@ -284,6 +335,10 @@ export function useLayerCounts({
       l2: projectAreaAssets.filter((asset) => normaliseAreaLevel((asset as any).areaLevel) === "L2").length,
       l3: projectAreaAssets.filter((asset) => normaliseAreaLevel((asset as any).areaLevel) === "L3").length,
       agJoints: visibleProjectAssets.filter(isJoint).length,
+      cmjJoints: visibleProjectAssets.filter((asset) => isJointSubtype(asset, "cmj")).length,
+      midjJoints: visibleProjectAssets.filter((asset) => isJointSubtype(asset, "midj")).length,
+      mmjJoints: visibleProjectAssets.filter((asset) => isJointSubtype(asset, "mmj")).length,
+      lmjJoints: visibleProjectAssets.filter((asset) => isJointSubtype(asset, "lmj")).length,
       streetCabs: visibleProjectAssets.filter(isStreetCab).length,
       poles: visibleProjectAssets.filter(isPole).length,
       newPoles: visibleProjectAssets.filter((asset) => {
@@ -311,6 +366,8 @@ export function useLayerCounts({
       orDucts: openreachDucts.length,
       suggestedDucts: suggestedDucts.length,
       distributionPoints: visibleProjectAssets.filter(isDp).length,
+      ohDpJoints: visibleProjectAssets.filter((asset) => isDp(asset) && isOverheadDp(asset)).length,
+      ugDpJoints: visibleProjectAssets.filter((asset) => isDp(asset) && isUndergroundDp(asset)).length,
     };
   }, [visibleProjectAreas, visibleProjectAssets, visibleOpenreachAssets]);
 }

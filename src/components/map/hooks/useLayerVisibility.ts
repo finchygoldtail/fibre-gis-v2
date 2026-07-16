@@ -2,9 +2,15 @@ import { useEffect, useState } from "react";
 
 export type LayerVisibility = {
   agJoints: boolean;
+  cmjJoints: boolean;
+  midjJoints: boolean;
+  mmjJoints: boolean;
+  lmjJoints: boolean;
   streetCabs: boolean;
   poles: boolean;
   distributionPoints: boolean;
+  ohDpJoints: boolean;
+  ugDpJoints: boolean;
   chambers: boolean;
   cables: boolean;
   dropCables: boolean;
@@ -60,9 +66,15 @@ const LAYER_PREFERENCE_STORAGE_KEY = "alistra-gis-layer-preferences-v3";
 
 export const DEFAULT_VISIBLE_LAYERS: LayerVisibility = {
   agJoints: true,
+  cmjJoints: true,
+  midjJoints: true,
+  mmjJoints: true,
+  lmjJoints: true,
   streetCabs: false,
   poles: false,
   distributionPoints: true,
+  ohDpJoints: true,
+  ugDpJoints: true,
   chambers: false,
   cables: false,
   dropCables: false,

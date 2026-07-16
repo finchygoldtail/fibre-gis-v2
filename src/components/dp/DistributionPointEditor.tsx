@@ -16,6 +16,7 @@ import CapacityPanel from "./dp/CapacityPanel";
 import RoutePanel from "./dp/RoutePanel";
 import FibreIntakePanel from "./dp/FibreIntakePanel";
 import { useDeviceLayout } from "../map/responsive/useDeviceLayout";
+import CompactClosureView from "../common/CompactClosureView";
 
 type ConnectedHomeRow = {
   id: string;
@@ -178,6 +179,36 @@ function clampFibres(values: number[], maxFibre: number): number[] {
 function getFibreColour(fibreNumber: number): FibreColour {
   const index = Math.max(0, (Number(fibreNumber) - 1) % FIBRE_COLOURS.length);
   return FIBRE_COLOURS[index];
+}
+
+function isUndergroundDpClosure(asset: SavedMapAsset | null): boolean {
+  const item = asset as any;
+  const haystack = [
+    item?.installMethod,
+    item?.routeType,
+    item?.dpType,
+    item?.closureType,
+    item?.jointType,
+    item?.name,
+    item?.label,
+    item?.dpDetails?.installMethod,
+    item?.dpDetails?.mounting,
+    item?.dpDetails?.locationType,
+    item?.dpDetails?.networkType,
+    item?.properties?.installMethod,
+    item?.properties?.routeType,
+  ]
+    .map((value) => normalise(value))
+    .join(" ");
+
+  return (
+    haystack.includes("underground") ||
+    haystack.includes(" duct") ||
+    haystack.includes(" ug ") ||
+    haystack.includes("-ug") ||
+    haystack.includes("ug-") ||
+    haystack.endsWith(" ug")
+  );
 }
 
 function buildParentFibreMappings(
@@ -1601,6 +1632,20 @@ export default function DistributionPointEditor({
   const selectedFibreColour = selectedFibre
     ? getFibreColour(selectedFibre)
     : null;
+  const showUndergroundClosureView = isUndergroundDpClosure(asset);
+  const undergroundBreakoutFibres = uniqueSorted([
+    ...displayDirectFibresOnCable,
+    ...displaySpliceFibresOnCable,
+  ]).map((fibre) => ({
+    fibre,
+    label: `F${fibre}`,
+    role: displaySpliceFibresOnCable.includes(fibre) ? "splice" as const : "breakout" as const,
+  }));
+  const undergroundSplitterFibres = displaySplitterFibresOnCable.map((fibre) => ({
+    fibre,
+    label: `F${fibre}`,
+    role: "splitter" as const,
+  }));
   const initialDraft = buildInitialDraft(asset);
   const hasDraftChanges =
     initialDraft.hasDownstreamCable !== draftRouting.hasDownstreamCable ||
@@ -2501,6 +2546,22 @@ export default function DistributionPointEditor({
               {portRoutes.length} capacity output port(s)
             </div>
           </div>
+
+          {showUndergroundClosureView ? (
+            <CompactClosureView
+              title={`${getAssetTitle(asset)} UG closure`}
+              subtitle="Underground DP splitter / splice holder"
+              mode="ug-dp"
+              loopFibres={allCableFibres}
+              splitterFibres={undergroundSplitterFibres}
+              breakoutFibres={undergroundBreakoutFibres}
+              passthroughFibres={passthroughFibres}
+              selectedFibre={selectedFibre}
+              onSelectFibre={(fibre) =>
+                setSelectedFibre(selectedFibre === fibre ? null : fibre)
+              }
+            />
+          ) : null}
 
           <div
             style={{
