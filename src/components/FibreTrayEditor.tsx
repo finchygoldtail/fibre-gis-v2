@@ -211,6 +211,24 @@ function isStandardJointType(value: EditorJointType): value is JointTypeLabel {
   );
 }
 
+function inferJointTypeFromAssetName(asset: any): JointTypeLabel | null {
+  const text = [
+    asset?.name,
+    asset?.jointName,
+    asset?.label,
+    asset?.assetId,
+    asset?.notes,
+  ]
+    .map((value) => String(value || "").toUpperCase())
+    .join(" ");
+
+  if (text.includes("MIDJ") || text.includes("MID J")) return "MidJ (4 trays)";
+  if (text.includes("LMJ")) return "LMJ (40 trays)";
+  if (text.includes("MMJ")) return "MMJ (20 trays)";
+  if (text.includes("CMJ")) return "CMJ (12 trays)";
+  return null;
+}
+
 
 function cloneTrayModel(model: FibreCell[]): FibreCell[] {
   return model.map((cell) => ({ ...cell }));
@@ -1079,17 +1097,22 @@ export const FibreTrayEditor: React.FC = () => {
       context: "fibre-tray-editor",
     });
 
+    const storedJointType = joint.jointType;
+    const inferredJointType = inferJointTypeFromAssetName(joint);
     const jt = (
-      joint.jointType === "Meet Me Chamber"
+      storedJointType === "Meet Me Chamber"
         ? "Meet Me Chamber"
-        : joint.jointType in JOINT_TYPES
-          ? joint.jointType
-          : "CMJ (12 trays)"
+        : inferredJointType ||
+          (isValidJointType(storedJointType) && storedJointType !== "Meet Me Chamber"
+            ? storedJointType
+            : "CMJ (12 trays)")
     ) as EditorJointType;
+    const inferredFromName = Boolean(inferredJointType && inferredJointType === jt && storedJointType !== jt);
 
     const persistedTrayModel = isPersistedTrayModel((joint as any).trayModel)
       ? cloneTrayModel((joint as any).trayModel)
       : null;
+    const usablePersistedTrayModel = inferredFromName ? null : persistedTrayModel;
 
     if (isStreetCab) {
       setAssetType("street-cab");
@@ -1097,12 +1120,12 @@ export const FibreTrayEditor: React.FC = () => {
     } else if (jt === "Meet Me Chamber") {
       setAssetType("meet-me");
       setJointType(jt);
-      setModel(persistedTrayModel || buildJointForRows("LMJ (40 trays)", []));
+      setModel(usablePersistedTrayModel || buildJointForRows("LMJ (40 trays)", []));
       setActiveView("editor");
     } else {
       setAssetType("ag-joint");
       setJointType(jt);
-      setModel(persistedTrayModel || buildJoint(jt));
+      setModel(usablePersistedTrayModel || buildJoint(jt));
       setActiveView("editor");
     }
 
@@ -1121,9 +1144,9 @@ export const FibreTrayEditor: React.FC = () => {
       setMappingRows(displayRows);
 
       if (!isStreetCab && jt !== "Meet Me Chamber") {
-        if (persistedTrayModel) {
+        if (usablePersistedTrayModel) {
           const expandedPersistedModel = expandTrayModelToFibreCount(
-            persistedTrayModel,
+            usablePersistedTrayModel,
             getMaxFibreNumberFromRows(displayRows),
             JOINT_TYPES[jt]?.fibresPerTray || 12,
           );
@@ -1669,6 +1692,12 @@ export const FibreTrayEditor: React.FC = () => {
 
   const svgWidth = left + cfg.fibresPerTray * gap + 96;
   const svgHeight = top + visibleTrays.length * (trayH + trayGap) + 54;
+  const editorModeTitle =
+    jointType === "MidJ (4 trays)"
+      ? "MidJ Tray Editor"
+      : jointType === "Meet Me Chamber"
+        ? "Meet Me Chamber Editor"
+        : "Fibre Tray Editor";
 
   return (
     <div
@@ -1714,7 +1743,7 @@ export const FibreTrayEditor: React.FC = () => {
       >
         <div style={editorHeroPanel}>
           <div style={editorKicker}>FIBRE OPERATIONS</div>
-          <h1 style={editorTitle}>Fibre Tray Editor</h1>
+          <h1 style={editorTitle}>{editorModeTitle}</h1>
           <div style={editorSubtleText}>
             {selectedMapJoint?.name || "No joint selected"}
           </div>

@@ -874,6 +874,17 @@ React.useEffect(() => {
       assetTypeText.includes("cmj") ||
       assetTypeText.includes("midj") ||
       assetTypeText.includes("lmj");
+    const isMidjAsset = [
+      (asset as any).assetType,
+      (asset as any).type,
+      (asset as any).jointType,
+      (asset as any).name,
+      (asset as any).jointName,
+      (asset as any).label,
+    ]
+      .map((value) => String(value || "").toLowerCase())
+      .join(" ")
+      .includes("midj");
     const canShowAuditAction =
       hasAuditFormTemplate(asset) && (canAuditJoints || !isJointAsset);
     const baseIcon = isSelectedSurveyDeleteHome
@@ -1135,7 +1146,11 @@ const icon = asset.id === highlightedAssetId
             <div style={actionsStyle}>
               {asset.assetType === "ag-joint" || asset.assetType === "street-cab" ? (
                 <button style={actionButtonStyle} onClick={() => onOpenAsset(asset)}>
-                  {asset.assetType === "ag-joint" ? "Open Fibre Tray" : "Open Operations"}
+                  {asset.assetType === "ag-joint"
+                    ? isMidjAsset
+                      ? "Open MidJ"
+                      : "Open Fibre Tray"
+                    : "Open Operations"}
                 </button>
               ) : null}
 
