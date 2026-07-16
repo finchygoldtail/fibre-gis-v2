@@ -30,6 +30,11 @@ type WorkspacePanelsProps = {
     piaNoiNumber: string;
     note: string;
   }) => void | Promise<void>;
+  onBulkUpdateJointInstallMethod: (args: {
+    assetIds: string[];
+    installMethod: "Underground" | "Overhead";
+    note: string;
+  }) => void | Promise<void>;
   onUpdateDpStatus: (args: {
     assetId: string;
     status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
@@ -62,6 +67,7 @@ export default function WorkspacePanels({
   onOpenAudit,
   onBulkUpdateDpStatus,
   onBulkUpdateCablePiaNoi,
+  onBulkUpdateJointInstallMethod,
   onUpdateDpStatus,
   onClearDpFibreAllocations,
   onApplyAddressSheetAssignments,
@@ -114,6 +120,7 @@ export default function WorkspacePanels({
       onOpenAudit={onOpenAudit}
       onBulkUpdateDpStatus={onBulkUpdateDpStatus}
       onBulkUpdateCablePiaNoi={onBulkUpdateCablePiaNoi}
+      onBulkUpdateJointInstallMethod={onBulkUpdateJointInstallMethod}
       onUpdateDpStatus={onUpdateDpStatus}
       onClearDpFibreAllocations={onClearDpFibreAllocations}
       onApplyAddressSheetAssignments={onApplyAddressSheetAssignments}
