@@ -125,6 +125,7 @@ function assetType(asset: SavedMapAsset): string {
   if (
     raw.includes("joint") ||
     raw.includes("cmj") ||
+    raw.includes("midj") ||
     raw.includes("lmj") ||
     raw.includes("mmj") ||
     raw.includes("ag")

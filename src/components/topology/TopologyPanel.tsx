@@ -16,7 +16,9 @@ function describeKind(kind: string): string {
     case "dp":
       return "DP";
     case "cmj":
-      return "CMJ / MIDJ";
+      return "CMJ";
+    case "midj":
+      return "MidJ";
     case "mmj":
       return "MMJ";
     case "lmj":

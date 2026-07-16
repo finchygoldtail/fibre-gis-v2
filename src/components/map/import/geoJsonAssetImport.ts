@@ -358,7 +358,7 @@ const classifyGeoJsonFeature = (
   }
 
   if (text.includes("exchange")) return "exchange" as AssetType;
-  if (text.includes("lmj") || text.includes("cmj") || text.includes("ag"))
+  if (text.includes("lmj") || text.includes("midj") || text.includes("cmj") || text.includes("ag"))
     return "ag-joint" as AssetType;
 
   return geometryType === "Point"

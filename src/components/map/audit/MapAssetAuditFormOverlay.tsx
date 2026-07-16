@@ -25,7 +25,7 @@ function templateForAsset(asset: SavedMapAsset | null): AuditTemplate | null {
 
   if (type.includes("pole")) return poleAuditTemplate;
   if (type.includes("chamber")) return chamberAuditTemplate;
-  if (type.includes("joint") || type.includes("cmj") || type.includes("lmj")) return jointAuditTemplate;
+  if (type.includes("joint") || type.includes("cmj") || type.includes("midj") || type.includes("lmj")) return jointAuditTemplate;
 
   return null;
 }

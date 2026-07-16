@@ -40,7 +40,7 @@ function isCable(asset: SavedMapAsset | null): boolean {
 
 function isJoint(asset: SavedMapAsset | null): boolean {
   const type = getAssetType(asset);
-  return type.includes("joint") || type.includes("lmj") || type.includes("cmj") || type.includes("ag");
+  return type.includes("joint") || type.includes("lmj") || type.includes("midj") || type.includes("cmj") || type.includes("ag");
 }
 
 function isDp(asset: SavedMapAsset | null): boolean {

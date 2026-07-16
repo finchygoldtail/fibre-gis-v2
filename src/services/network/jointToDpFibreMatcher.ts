@@ -160,6 +160,7 @@ function isJointAsset(asset: NetworkAsset): boolean {
     type.includes("ag-joint") ||
     type.includes("joint") ||
     type.includes("cmj") ||
+    type.includes("midj") ||
     type.includes("lmj") ||
     type.includes("mmj") ||
     Boolean((asset as any).mappingRows || (asset as any).mappingRowsJson)

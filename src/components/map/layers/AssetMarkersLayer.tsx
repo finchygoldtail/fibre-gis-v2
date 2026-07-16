@@ -872,6 +872,7 @@ React.useEffect(() => {
       asset.assetType === "ag-joint" ||
       assetTypeText.includes("joint") ||
       assetTypeText.includes("cmj") ||
+      assetTypeText.includes("midj") ||
       assetTypeText.includes("lmj");
     const canShowAuditAction =
       hasAuditFormTemplate(asset) && (canAuditJoints || !isJointAsset);

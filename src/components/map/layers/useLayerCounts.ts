@@ -134,7 +134,13 @@ export function useLayerCounts({
     const isJoint = (asset: SavedMapAsset) => {
       if (!hasPointGeometry(asset) || isDp(asset)) return false;
       const text = textForAsset(asset);
-      return text.includes("joint") || text.includes("cmj") || text.includes("lmj") || text.includes("mmj");
+      return (
+        text.includes("joint") ||
+        text.includes("cmj") ||
+        text.includes("midj") ||
+        text.includes("lmj") ||
+        text.includes("mmj")
+      );
     };
 
     const isPole = (asset: SavedMapAsset) =>

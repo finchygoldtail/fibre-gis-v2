@@ -198,7 +198,7 @@ export function classifyNodeKind(asset: any): GraphNodeKind {
   if (text.includes("street cab") || text.includes("cabinet") || text.includes("cab")) return "cabinet";
   if (text.includes("splitter")) return "splitter";
   if (text.includes("distribution") || text === "dp" || text.includes("afn") || text.includes("cbt")) return "dp";
-  if (text.includes("joint") || text.includes("lmj") || text.includes("cmj") || text.includes("ag")) return "joint";
+  if (text.includes("joint") || text.includes("lmj") || text.includes("midj") || text.includes("cmj") || text.includes("ag")) return "joint";
   if (text.includes("pole")) return "pole";
   if (text.includes("chamber") || text.includes("fw")) return "chamber";
   return "unknown";

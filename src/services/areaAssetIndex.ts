@@ -24,6 +24,7 @@ export type AreaAssetCategory =
   | "pole"
   | "chamber"
   | "joint-cmj"
+  | "joint-midj"
   | "joint-lmj"
   | "joint-mmj"
   | "joint"
@@ -311,6 +312,7 @@ export function inferAreaAssetCategory(asset: any): AreaAssetCategory {
 
   if (assetType === "ag-joint" || jointType || text.includes("joint")) {
     if (text.includes("cmj")) return "joint-cmj";
+    if (text.includes("midj")) return "joint-midj";
     if (text.includes("lmj")) return "joint-lmj";
     if (text.includes("mmj")) return "joint-mmj";
     return "joint";
@@ -408,6 +410,7 @@ export function getAreaAssetCategoryLabel(category: AreaAssetCategory): string {
     pole: "Poles",
     chamber: "Chambers",
     "joint-cmj": "Joints - CMJ",
+    "joint-midj": "Joints - MidJ",
     "joint-lmj": "Joints - LMJ",
     "joint-mmj": "Joints - MMJ",
     joint: "Joints",

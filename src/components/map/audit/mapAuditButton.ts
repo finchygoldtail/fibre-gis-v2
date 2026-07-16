@@ -11,7 +11,7 @@ function getAssetAuditTypeText(asset: SavedMapAsset): string {
 
 export function getAuditButtonLabel(asset: SavedMapAsset): string {
   const type = getAssetAuditTypeText(asset);
-  if (type.includes("joint") || type.includes("cmj") || type.includes("lmj")) return "Audit Joint";
+  if (type.includes("joint") || type.includes("cmj") || type.includes("midj") || type.includes("lmj")) return "Audit Joint";
   if (type.includes("chamber")) return "Audit Chamber";
   if (type.includes("pole")) return "Audit Pole";
   if (type.includes("distribution") || type === "dp") return "Audit DP";
@@ -25,6 +25,7 @@ export function hasAuditFormTemplate(asset: SavedMapAsset): boolean {
   return (
     type.includes("joint") ||
     type.includes("cmj") ||
+    type.includes("midj") ||
     type.includes("lmj") ||
     type.includes("chamber") ||
     type.includes("pole")

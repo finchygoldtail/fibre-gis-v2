@@ -115,7 +115,7 @@ export function useProjectWorkspaceStats({
     }).length;
 
     const jointCount = visibleProjectAssets.filter((asset) =>
-      isType(asset, ["joint", "cmj", "lmj", "mmj"]),
+      isType(asset, ["joint", "cmj", "midj", "lmj", "mmj"]),
     ).length;
 
     return {

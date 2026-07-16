@@ -2341,6 +2341,7 @@ export default function ProjectWorkspace({
       if (
         rawType.includes("joint") ||
         rawType.includes("cmj") ||
+        rawType.includes("midj") ||
         rawType.includes("lmj")
       )
         return "Joint";
@@ -3011,6 +3012,7 @@ export default function ProjectWorkspace({
       return (
         text.includes("joint") ||
         text.includes("cmj") ||
+        text.includes("midj") ||
         text.includes("lmj") ||
         text.includes("mmj")
       );
@@ -3203,6 +3205,7 @@ export default function ProjectWorkspace({
       selectedAssetTypeText.includes("cab") ||
       selectedAssetTypeText.includes("exchange") ||
       selectedAssetTypeText.includes("cmj") ||
+      selectedAssetTypeText.includes("midj") ||
       selectedAssetTypeText.includes("lmj")),
   );
 

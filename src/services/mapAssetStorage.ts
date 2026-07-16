@@ -118,6 +118,7 @@ function getAssetBucket(asset: any): keyof AssetInventory {
     assetType === "ag-joint" ||
     jointType.includes("joint") ||
     jointType.includes("lmj") ||
+    jointType.includes("midj") ||
     jointType.includes("cmj") ||
     jointType.includes("tray")
   ) {

@@ -2,12 +2,14 @@
 
 export type JointTypeLabel =
   | "CMJ (12 trays)"
+  | "MidJ (4 trays)"
   | "MMJ (20 trays)"
   | "LMJ (40 trays)";
 
 // Whatever else you already have in this file:
 export const JOINT_TYPES = {
   "CMJ (12 trays)": { trays: 12, fibresPerTray: 12 },
+  "MidJ (4 trays)": { trays: 4, fibresPerTray: 12 },
   "MMJ (20 trays)": { trays: 20, fibresPerTray: 12 },
   "LMJ (40 trays)": { trays: 40, fibresPerTray: 12 },
 };

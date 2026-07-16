@@ -399,7 +399,7 @@ function getAssetLookupKeysForConnection(asset: SavedMapAsset): string[] {
 
     keys.add(normalised);
 
-    const withoutJointSuffix = normalised.replace(/-(cmj|mmj|lmj)\d{1,4}$/i, "");
+    const withoutJointSuffix = normalised.replace(/-(cmj|midj|mmj|lmj)\d{1,4}$/i, "");
     if (withoutJointSuffix) keys.add(withoutJointSuffix);
 
     const nodeMatches = normalised.match(/(?:ag|lmj|mmj|cmj|lc|sb|midj|sc)\d{1,4}/gi);
@@ -630,7 +630,7 @@ function getAssetAliases(asset?: SavedMapAsset | null): string[] {
     aliases.add(value);
 
     // BD-BAW-AG11-CMJ01 should also match BD-BAW-AG11.
-    const withoutJointSuffix = value.replace(/-(cmj|mmj|lmj)\d{1,4}$/i, '');
+    const withoutJointSuffix = value.replace(/-(cmj|midj|mmj|lmj)\d{1,4}$/i, '');
     if (withoutJointSuffix && withoutJointSuffix !== value) {
       aliases.add(withoutJointSuffix);
     }

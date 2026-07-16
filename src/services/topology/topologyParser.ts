@@ -60,7 +60,8 @@ export function classifyTopologyAsset(asset: SavedMapAsset): TopologyNodeKind {
 
   if (compact.includes("LMJ")) return "lmj";
   if (compact.includes("MMJ")) return "mmj";
-  if (compact.includes("CMJ") || compact.includes("MIDJ")) return "cmj";
+  if (compact.includes("MIDJ")) return "midj";
+  if (compact.includes("CMJ")) return "cmj";
 
   if (
     assetType === "DISTRIBUTION-POINT" ||
@@ -86,6 +87,8 @@ export function topologyRank(kind: TopologyNodeKind): number {
       return 10;
     case "cmj":
       return 20;
+    case "midj":
+      return 21;
     case "mmj":
       return 25;
     case "lmj":

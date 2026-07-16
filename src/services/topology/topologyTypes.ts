@@ -6,6 +6,7 @@ export type TopologyNodeKind =
   | "meet-me"
   | "lmj"
   | "mmj"
+  | "midj"
   | "cmj"
   | "sb"
   | "dp"

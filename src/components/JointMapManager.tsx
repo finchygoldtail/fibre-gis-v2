@@ -4320,6 +4320,7 @@ export default function JointMapManager({
                     style={input}
                   >
                     <option>CMJ (12 trays)</option>
+                    <option>MidJ (4 trays)</option>
                     <option>MMJ (20 trays)</option>
                     <option>LMJ (40 trays)</option>
                   </select>

@@ -855,7 +855,7 @@ function selectWorkspaceAsset(asset: SavedMapAsset, onAssetSelect?: (asset: Save
 
 function getAuditButtonLabel(asset: SavedMapAsset): string {
   const type = getAssetType(asset).toLowerCase();
-  if (type.includes("joint") || type.includes("cmj") || type.includes("lmj")) return "Audit Joint";
+  if (type.includes("joint") || type.includes("cmj") || type.includes("midj") || type.includes("lmj")) return "Audit Joint";
   if (type.includes("chamber")) return "Audit Chamber";
   if (type.includes("pole")) return "Audit Pole";
   if (type.includes("distribution") || type === "dp") return "Audit DP";
@@ -869,6 +869,7 @@ function hasAuditFormTemplate(asset: SavedMapAsset): boolean {
   return (
     type.includes("joint") ||
     type.includes("cmj") ||
+    type.includes("midj") ||
     type.includes("lmj") ||
     type.includes("chamber") ||
     type.includes("pole")
@@ -892,7 +893,7 @@ function isLayerVisibleForAsset(asset: SavedMapAsset, visibleLayers: WorkspaceLa
   if (type.includes("pole")) return visibleLayers.poles;
   if (type.includes("chamber")) return visibleLayers.chambers;
   if (isStreetCabAsset(asset)) return visibleLayers.streetCabs;
-  if (type.includes("joint") || type.includes("ag") || type.includes("lmj") || type.includes("cmj")) return visibleLayers.joints;
+  if (type.includes("joint") || type.includes("ag") || type.includes("lmj") || type.includes("midj") || type.includes("cmj")) return visibleLayers.joints;
 
   return visibleLayers.other;
 }

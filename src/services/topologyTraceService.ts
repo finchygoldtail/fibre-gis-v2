@@ -132,7 +132,7 @@ function isJoint(asset: any): boolean {
   const joined = [asset?.assetType, asset?.type, asset?.jointType, asset?.name]
     .map((value) => text(value).toLowerCase())
     .join(" ");
-  return joined.includes("joint") || joined.includes("ag") || joined.includes("lmj") || joined.includes("cmj");
+  return joined.includes("joint") || joined.includes("ag") || joined.includes("lmj") || joined.includes("midj") || joined.includes("cmj");
 }
 
 function isHome(asset: any): boolean {

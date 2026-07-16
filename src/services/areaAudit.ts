@@ -139,9 +139,11 @@ function isJointAsset(asset: any): boolean {
     type === "joint" ||
     type === "ag-joint" ||
     type === "lmj" ||
+    type === "midj" ||
     type === "cmj" ||
     jointType.includes("joint") ||
     jointType === "lmj" ||
+    jointType === "midj" ||
     jointType === "cmj"
   );
 }
@@ -153,6 +155,7 @@ function isLocationAsset(asset: any): boolean {
     "joint",
     "ag-joint",
     "lmj",
+    "midj",
     "cmj",
     "cabinet",
     "street-cabinet",

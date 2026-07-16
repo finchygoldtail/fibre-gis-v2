@@ -96,7 +96,7 @@ function getAssetType(asset: SavedMapAsset | null): string {
 function getPrettyType(asset: SavedMapAsset | null): string {
   const raw = getAssetType(asset);
   if (raw.includes("cable") || raw.includes("line")) return "Cable";
-  if (raw.includes("joint") || raw.includes("lmj") || raw.includes("cmj")) return "Joint";
+  if (raw.includes("joint") || raw.includes("lmj") || raw.includes("midj") || raw.includes("cmj")) return "Joint";
   if (raw.includes("distribution") || raw === "dp" || raw.includes("cbt") || raw.includes("afn")) return "Distribution Point";
   if (raw.includes("pole")) return "Pole";
   if (raw.includes("chamber")) return "Chamber";
@@ -117,7 +117,7 @@ function isDesignCable(asset: SavedMapAsset | null): boolean {
 
 function isJoint(asset: SavedMapAsset | null): boolean {
   const type = getAssetType(asset);
-  return type.includes("joint") || type.includes("lmj") || type.includes("cmj") || type.includes("ag");
+  return type.includes("joint") || type.includes("lmj") || type.includes("midj") || type.includes("cmj") || type.includes("ag");
 }
 
 function isDp(asset: SavedMapAsset | null): boolean {

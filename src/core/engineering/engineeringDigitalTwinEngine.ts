@@ -107,7 +107,7 @@ export function summariseTwinAssets(assets: EngineeringAssetSnapshot[]): Enginee
     if (type.includes('pole')) summary.poleCount += 1;
     else if (type.includes('distribution') || type === 'dp' || type.includes('cbt') || type.includes('afn')) summary.dpCount += 1;
     else if (type.includes('chamber')) summary.chamberCount += 1;
-    else if (type.includes('joint') || type.includes('cmj') || type.includes('lmj')) summary.jointCount += 1;
+    else if (type.includes('joint') || type.includes('cmj') || type.includes('midj') || type.includes('lmj')) summary.jointCount += 1;
     else if (type.includes('cable') || type.includes('route')) summary.cableCount += 1;
     else if (type.includes('home') || type.includes('premise') || type.includes('address')) summary.homeCount += 1;
     else summary.otherCount += 1;

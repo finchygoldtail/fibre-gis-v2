@@ -195,6 +195,7 @@ type PersistedProject = {
 function isValidJointType(value: any): value is EditorJointType {
   return (
     value === "CMJ (12 trays)" ||
+    value === "MidJ (4 trays)" ||
     value === "MMJ (20 trays)" ||
     value === "LMJ (40 trays)" ||
     value === "Meet Me Chamber"
@@ -202,7 +203,12 @@ function isValidJointType(value: any): value is EditorJointType {
 }
 
 function isStandardJointType(value: EditorJointType): value is JointTypeLabel {
-  return value === "CMJ (12 trays)" || value === "MMJ (20 trays)" || value === "LMJ (40 trays)";
+  return (
+    value === "CMJ (12 trays)" ||
+    value === "MidJ (4 trays)" ||
+    value === "MMJ (20 trays)" ||
+    value === "LMJ (40 trays)"
+  );
 }
 
 
@@ -643,6 +649,7 @@ function detectJointTypeFromRows(rows: any[][]): EditorJointType {
     return "LMJ (40 trays)";
   }
 
+  if (text.includes("MIDJ") || text.includes("MID J")) return "MidJ (4 trays)";
   if (text.includes("MMJ")) return "MMJ (20 trays)";
   return "CMJ (12 trays)";
 }

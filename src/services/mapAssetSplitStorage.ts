@@ -145,6 +145,7 @@ export function getMapAssetSplitBucket(asset: SavedMapAsset): SplitBucket {
     assetType === "ag-joint" ||
     jointType.includes("joint") ||
     jointType.includes("lmj") ||
+    jointType.includes("midj") ||
     jointType.includes("cmj") ||
     jointType.includes("tray")
   ) {
