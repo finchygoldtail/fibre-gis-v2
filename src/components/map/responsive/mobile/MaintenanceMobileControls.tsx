@@ -5,6 +5,8 @@ type Props = {
   hasSelectedAsset: boolean;
   onOpenPanel: () => void;
   onOpenLayers: () => void;
+  onRefreshMapAssets?: () => void;
+  isRefreshingMapAssets?: boolean;
   onGpsLocate: () => void;
   onOpenMaintenance: () => void;
 };
@@ -13,6 +15,8 @@ export default function MaintenanceMobileControls({
   hasSelectedAsset,
   onOpenPanel,
   onOpenLayers,
+  onRefreshMapAssets,
+  isRefreshingMapAssets = false,
   onGpsLocate,
   onOpenMaintenance,
 }: Props) {
@@ -30,6 +34,15 @@ export default function MaintenanceMobileControls({
           onClick: onOpenMaintenance,
         },
         { key: "layers", label: "Layers", tone: "secondary", onClick: onOpenLayers },
+        ...(onRefreshMapAssets
+          ? [{
+              key: "refresh",
+              label: isRefreshingMapAssets ? "Refreshing" : "Refresh",
+              tone: "secondary" as const,
+              disabled: isRefreshingMapAssets,
+              onClick: onRefreshMapAssets,
+            }]
+          : []),
         { key: "gps", label: "GPS", tone: "primary", onClick: onGpsLocate },
       ]}
     />

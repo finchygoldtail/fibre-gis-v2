@@ -887,6 +887,7 @@ export const FibreTrayEditor: React.FC = () => {
   const [savedJoints, setSavedJoints] = useState<SavedJoint[]>([]);
   const [selectedJointId, setSelectedJointId] = useState<string | null>(null);
   const [firebaseLoaded, setFirebaseLoaded] = useState(false);
+  const [isRefreshingMapAssets, setIsRefreshingMapAssets] = useState(false);
   const lastFirebaseJsonRef = useRef("");
   const firebaseSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -962,6 +963,28 @@ export const FibreTrayEditor: React.FC = () => {
     },
     [],
   );
+
+  const applyLoadedMapAssets = useCallback((restored: SavedJoint[]) => {
+    const restoredJson = JSON.stringify(
+      cleanSavedJointsForFirebase(restored),
+    );
+    lastFirebaseJsonRef.current = restoredJson;
+    setSavedJoints((prev) => {
+      const prevJson = JSON.stringify(cleanSavedJointsForFirebase(prev));
+      return prevJson === restoredJson ? prev : restored;
+    });
+  }, []);
+
+  const refreshMapAssetsFromFirestore = useCallback(async () => {
+    setIsRefreshingMapAssets(true);
+    try {
+      const restored = await loadMapAssetsFromFirestore();
+      applyLoadedMapAssets(restored);
+    } finally {
+      setIsRefreshingMapAssets(false);
+      setFirebaseLoaded(true);
+    }
+  }, [applyLoadedMapAssets]);
 
   const selectedMapJoint = selectedJointId
     ? savedJoints.find((j) => j.id === selectedJointId) || null
@@ -1063,14 +1086,7 @@ export const FibreTrayEditor: React.FC = () => {
         try {
           const restored = await loadMapAssetsFromFirestore();
 
-          const restoredJson = JSON.stringify(
-            cleanSavedJointsForFirebase(restored),
-          );
-          lastFirebaseJsonRef.current = restoredJson;
-          setSavedJoints((prev) => {
-            const prevJson = JSON.stringify(cleanSavedJointsForFirebase(prev));
-            return prevJson === restoredJson ? prev : restored;
-          });
+          applyLoadedMapAssets(restored);
         } catch (err) {
           console.error("Firestore map asset load failed:", err);
         } finally {
@@ -1083,14 +1099,7 @@ export const FibreTrayEditor: React.FC = () => {
         // Try one direct load before giving up, useful when rules/listener timing is odd.
         try {
           const restored = await loadMapAssetsFromFirestore();
-          const restoredJson = JSON.stringify(
-            cleanSavedJointsForFirebase(restored),
-          );
-          lastFirebaseJsonRef.current = restoredJson;
-          setSavedJoints((prev) => {
-            const prevJson = JSON.stringify(cleanSavedJointsForFirebase(prev));
-            return prevJson === restoredJson ? prev : restored;
-          });
+          applyLoadedMapAssets(restored);
         } catch (loadErr) {
           console.error("Firestore fallback map asset load failed:", loadErr);
         } finally {
@@ -1100,7 +1109,7 @@ export const FibreTrayEditor: React.FC = () => {
     );
 
     return () => unsub();
-  }, []);
+  }, [applyLoadedMapAssets]);
 
   /* -------------------------------------------------------------
     Save shared project to Firestore
@@ -1781,6 +1790,8 @@ export const FibreTrayEditor: React.FC = () => {
         currentMappingRows={mappingRows}
         savedJoints={savedJoints}
         setSavedJoints={setSavedJoints}
+        onRefreshMapAssets={refreshMapAssetsFromFirestore}
+        isRefreshingMapAssets={isRefreshingMapAssets}
         onClose={() => setActiveView("editor")}
         onOpenJoint={openSavedJoint}
       />

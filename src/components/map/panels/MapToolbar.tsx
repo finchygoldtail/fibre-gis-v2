@@ -28,6 +28,8 @@ type Props = {
   autosaveSavedAt?: string;
   autosaveError?: string;
   onSaveMap: () => void;
+  onRefreshMapAssets?: () => void;
+  isRefreshingMapAssets?: boolean;
   onGpsLocate: () => void;
   isSharingLocation?: boolean;
   liveUserCount?: number;
@@ -66,6 +68,8 @@ export default function MapToolbar({
   autosaveSavedAt = "",
   autosaveError = "",
   onSaveMap,
+  onRefreshMapAssets,
+  isRefreshingMapAssets = false,
   onGpsLocate,
   isSharingLocation = false,
   liveUserCount = 0,
@@ -294,10 +298,23 @@ export default function MapToolbar({
           {moreMenuOpen ? (
             <div style={mobileMoreMenuStyle}>
               <button style={mobileMenuRowStyle} onClick={() => { setMoreMenuOpen(false); onGpsLocate(); }}>GPS</button>
+              {onRefreshMapAssets ? (
+                <button
+                  style={mobileMenuRowStyle}
+                  onClick={() => { setMoreMenuOpen(false); onRefreshMapAssets(); }}
+                  disabled={isRefreshingMapAssets}
+                >
+                  {isRefreshingMapAssets ? "Refreshing..." : "Refresh Map"}
+                </button>
+              ) : null}
               {onToggleLocationSharing ? (
                 <button style={mobileMenuRowStyle} onClick={() => { setMoreMenuOpen(false); onToggleLocationSharing(); }}>
                   {isSharingLocation ? "Stop Sharing Location" : "Share My Location"}
+                  {liveUserCount > 0 ? ` (${liveUserCount})` : ""}
                 </button>
+              ) : null}
+              {locationShareError ? (
+                <div style={mobileMenuErrorStyle}>{locationShareError}</div>
               ) : null}
               <button style={mobileMenuRowStyle} onClick={() => { setMoreMenuOpen(false); onToggleLayers(); }}>{isLayersOpen ? "Hide Layers" : "Layers"}</button>
               <button style={mobileMenuRowStyle} onClick={() => { setMoreMenuOpen(false); setMessagesOpen((value) => !value); }}>Messages {areaMessages.length ? `(${areaMessages.length})` : ""}</button>
@@ -405,6 +422,30 @@ export default function MapToolbar({
         <button onClick={onGpsLocate} style={actionButtonStyle}>
           GPS
         </button>
+
+        {onRefreshMapAssets ? (
+          <button
+            type="button"
+            onClick={onRefreshMapAssets}
+            disabled={isRefreshingMapAssets}
+            style={refreshButtonStyle(isRefreshingMapAssets)}
+            title="Refresh map data"
+          >
+            {isRefreshingMapAssets ? "Refreshing..." : "Refresh"}
+          </button>
+        ) : null}
+
+        {onToggleLocationSharing ? (
+          <button
+            type="button"
+            onClick={onToggleLocationSharing}
+            style={locationButtonStyle(isSharingLocation, Boolean(locationShareError))}
+            title={locationShareError || (isSharingLocation ? "Stop sharing live location" : "Share live location")}
+          >
+            {isSharingLocation ? "Sharing" : "Share Location"}
+            {liveUserCount > 0 ? ` (${liveUserCount})` : ""}
+          </button>
+        ) : null}
 
         <UserMenu variant="topbar" />
       </div>
@@ -912,6 +953,17 @@ const mobileMenuRowStyle: React.CSSProperties = {
   ...mobileButtonBase,
 };
 
+const mobileMenuErrorStyle: React.CSSProperties = {
+  border: "1px solid rgba(248,113,113,0.42)",
+  borderRadius: 10,
+  background: "rgba(127,29,29,0.32)",
+  color: "#fecaca",
+  padding: "9px 12px",
+  fontSize: 12,
+  fontWeight: 800,
+  lineHeight: 1.25,
+};
+
 const mobileUserMenuWrapStyle: React.CSSProperties = {
   borderTop: "1px solid rgba(148,163,184,0.22)",
   paddingTop: 6,
@@ -929,3 +981,32 @@ const actionButtonStyle: React.CSSProperties = {
   fontWeight: 850,
   whiteSpace: "nowrap",
 };
+
+const refreshButtonStyle = (isRefreshing: boolean): React.CSSProperties => ({
+  background: isRefreshing ? "rgba(148,163,184,0.18)" : "transparent",
+  color: isRefreshing ? "#cbd5e1" : "#e6edf7",
+  border: isRefreshing ? "1px solid rgba(148,163,184,0.35)" : "none",
+  padding: isRefreshing ? "7px 10px" : 0,
+  borderRadius: isRefreshing ? 999 : 0,
+  cursor: isRefreshing ? "wait" : "pointer",
+  boxShadow: "none",
+  fontSize: 13,
+  fontWeight: 850,
+  whiteSpace: "nowrap",
+});
+
+const locationButtonStyle = (
+  active: boolean,
+  hasError: boolean,
+): React.CSSProperties => ({
+  background: active ? "#dcfce7" : hasError ? "#fee2e2" : "transparent",
+  color: active ? "#14532d" : hasError ? "#991b1b" : "#e6edf7",
+  border: active || hasError ? "1px solid rgba(34,197,94,0.55)" : "none",
+  padding: active || hasError ? "7px 10px" : 0,
+  borderRadius: active || hasError ? 999 : 0,
+  cursor: "pointer",
+  boxShadow: active ? "0 0 0 3px rgba(34,197,94,0.12)" : "none",
+  fontSize: 13,
+  fontWeight: 900,
+  whiteSpace: "nowrap",
+});

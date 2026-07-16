@@ -6,7 +6,7 @@
 //       file is easier to maintain while the app is still evolving.
 // =====================================================
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -356,6 +356,8 @@ type Props = {
   currentMappingRows: any[][];
   savedJoints: SavedMapAsset[];
   setSavedJoints: React.Dispatch<React.SetStateAction<SavedMapAsset[]>>;
+  onRefreshMapAssets?: () => Promise<void> | void;
+  isRefreshingMapAssets?: boolean;
   onClose: () => void;
   onOpenJoint: (joint: SavedMapAsset) => void;
   onOpenAutoNetwork?: (areaAsset?: SavedMapAsset | null) => void;
@@ -893,6 +895,8 @@ export default function JointMapManager({
   currentMappingRows,
   savedJoints,
   setSavedJoints,
+  onRefreshMapAssets,
+  isRefreshingMapAssets = false,
   onClose,
   onOpenJoint,
   onOpenAutoNetwork,
@@ -1450,6 +1454,26 @@ export default function JointMapManager({
     activeProjectName: activeProjectAreaName || activeProjectArea?.name || null,
     subscribeEnabled: visibleLayers.liveUsers !== false,
   });
+
+  const toggleLocationSharing = useCallback(() => {
+    setIsSharingLocation((enabled) => {
+      const next = !enabled;
+      if (next) {
+        setVisibleLayers((prev) => ({ ...prev, liveUsers: true }));
+      }
+      return next;
+    });
+  }, [setIsSharingLocation, setVisibleLayers]);
+
+  const handleRefreshMapAssets = useCallback(async () => {
+    if (!onRefreshMapAssets || isRefreshingMapAssets) return;
+    try {
+      await onRefreshMapAssets();
+    } catch (error) {
+      console.error("Map asset refresh failed", error);
+      alert("Could not refresh the map data. Check your connection and try again.");
+    }
+  }, [isRefreshingMapAssets, onRefreshMapAssets]);
 
   const networkSnapCandidateAssets = useMemo(
     () => [...snapCandidateAssets, ...exchangeNetworkAssets],
@@ -5668,13 +5692,13 @@ export default function JointMapManager({
           autosaveSavedAt={lastMapAutosaveAt}
           autosaveError={mapAutosaveError}
           onSaveMap={handleSaveMapNow}
+          onRefreshMapAssets={handleRefreshMapAssets}
+          isRefreshingMapAssets={isRefreshingMapAssets}
           onGpsLocate={handleGpsLocate}
           isSharingLocation={isSharingLocation}
           liveUserCount={liveUsers.length}
           locationShareError={locationShareError}
-          onToggleLocationSharing={() =>
-            setIsSharingLocation((enabled) => !enabled)
-          }
+          onToggleLocationSharing={toggleLocationSharing}
           isLayersOpen={isLayersOpen}
           onToggleLayers={() => setIsLayersOpen(!isLayersOpen)}
           areaKey={activeProjectId}
@@ -5773,12 +5797,12 @@ export default function JointMapManager({
           onClose={() => setIsFieldQuickDrawerOpen(false)}
           onOpenPanel={() => setIsPanelOpen(true)}
           onOpenLayers={() => setIsLayersOpen((prev) => !prev)}
+          onRefreshMapAssets={handleRefreshMapAssets}
+          isRefreshingMapAssets={isRefreshingMapAssets}
           onGpsLocate={handleGpsLocate}
           isSharingLocation={isSharingLocation}
           liveUserCount={liveUsers.length}
-          onToggleLocationSharing={() =>
-            setIsSharingLocation((enabled) => !enabled)
-          }
+          onToggleLocationSharing={toggleLocationSharing}
           onToggleMoveHomes={handleToggleMoveHomesMode}
           onToggleDeleteHomes={handleAdminToggleSurveyDeleteHomesMode}
           onOpenMaintenance={() => {
@@ -5832,6 +5856,8 @@ export default function JointMapManager({
           selectedDeleteHomeCount={selectedSurveyDeleteHomeIds.length}
           onOpenPanel={() => setIsPanelOpen(true)}
           onOpenLayers={() => setIsLayersOpen((prev) => !prev)}
+          onRefreshMapAssets={handleRefreshMapAssets}
+          isRefreshingMapAssets={isRefreshingMapAssets}
           onGpsLocate={handleGpsLocate}
           onToggleMoveHomes={handleToggleMoveHomesMode}
           onToggleDeleteHomes={handleAdminToggleSurveyDeleteHomesMode}
@@ -5843,6 +5869,8 @@ export default function JointMapManager({
           hasSelectedAsset={Boolean(currentEditingAsset)}
           onOpenPanel={() => setIsPanelOpen(true)}
           onOpenLayers={() => setIsLayersOpen((prev) => !prev)}
+          onRefreshMapAssets={handleRefreshMapAssets}
+          isRefreshingMapAssets={isRefreshingMapAssets}
           onGpsLocate={handleGpsLocate}
           onOpenMaintenance={() => {
             if (currentEditingAsset) {
@@ -5861,6 +5889,8 @@ export default function JointMapManager({
           selectedDeleteHomeCount={selectedSurveyDeleteHomeIds.length}
           onOpenPanel={() => setIsPanelOpen(true)}
           onOpenLayers={() => setIsLayersOpen((prev) => !prev)}
+          onRefreshMapAssets={handleRefreshMapAssets}
+          isRefreshingMapAssets={isRefreshingMapAssets}
           onGpsLocate={handleGpsLocate}
           onToggleMoveHomes={handleToggleMoveHomesMode}
           onToggleDeleteHomes={handleAdminToggleSurveyDeleteHomesMode}
@@ -5872,6 +5902,8 @@ export default function JointMapManager({
           hasSelectedAsset={Boolean(currentEditingAsset)}
           onOpenPanel={() => setIsPanelOpen(true)}
           onOpenLayers={() => setIsLayersOpen((prev) => !prev)}
+          onRefreshMapAssets={handleRefreshMapAssets}
+          isRefreshingMapAssets={isRefreshingMapAssets}
           onGpsLocate={handleGpsLocate}
           onOpenMaintenance={() => {
             if (currentEditingAsset) {

@@ -8,6 +8,8 @@ type Props = {
   selectedDeleteHomeCount: number;
   onOpenPanel: () => void;
   onOpenLayers: () => void;
+  onRefreshMapAssets?: () => void;
+  isRefreshingMapAssets?: boolean;
   onGpsLocate: () => void;
   onToggleMoveHomes: () => void;
   onToggleDeleteHomes: () => void;
@@ -19,6 +21,8 @@ export default function SurveyTabletControls({
   selectedDeleteHomeCount,
   onOpenPanel,
   onOpenLayers,
+  onRefreshMapAssets,
+  isRefreshingMapAssets = false,
   onGpsLocate,
   onToggleMoveHomes,
   onToggleDeleteHomes,
@@ -43,6 +47,15 @@ export default function SurveyTabletControls({
           onClick: onToggleDeleteHomes,
         },
         { key: "layers", label: "Layers", tone: "secondary", onClick: onOpenLayers },
+        ...(onRefreshMapAssets
+          ? [{
+              key: "refresh",
+              label: isRefreshingMapAssets ? "Refreshing" : "Refresh",
+              tone: "secondary" as const,
+              disabled: isRefreshingMapAssets,
+              onClick: onRefreshMapAssets,
+            }]
+          : []),
         { key: "gps", label: "GPS", tone: "primary", onClick: onGpsLocate },
       ]}
     />

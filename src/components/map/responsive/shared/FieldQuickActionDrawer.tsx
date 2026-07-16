@@ -13,6 +13,8 @@ type Props = {
   onClose: () => void;
   onOpenPanel: () => void;
   onOpenLayers: () => void;
+  onRefreshMapAssets?: () => void;
+  isRefreshingMapAssets?: boolean;
   onGpsLocate: () => void;
   isSharingLocation?: boolean;
   liveUserCount?: number;
@@ -64,6 +66,8 @@ export default function FieldQuickActionDrawer({
   onClose,
   onOpenPanel,
   onOpenLayers,
+  onRefreshMapAssets,
+  isRefreshingMapAssets = false,
   onGpsLocate,
   isSharingLocation = false,
   liveUserCount = 0,
@@ -155,6 +159,16 @@ export default function FieldQuickActionDrawer({
             <button type="button" onClick={() => run(onOpenLayers)} style={drawerButton()}>
               Layers / Map View
             </button>
+            {onRefreshMapAssets ? (
+              <button
+                type="button"
+                onClick={() => run(onRefreshMapAssets, false)}
+                style={drawerButton("secondary", isRefreshingMapAssets)}
+                disabled={isRefreshingMapAssets}
+              >
+                {isRefreshingMapAssets ? "Refreshing Map" : "Refresh Map"}
+              </button>
+            ) : null}
             <button type="button" onClick={() => run(onGpsLocate)} style={drawerButton("primary")}>
               GPS Locate
             </button>
