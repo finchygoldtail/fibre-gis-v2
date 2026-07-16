@@ -18,6 +18,8 @@ type Props = {
   breakoutFibres?: CompactClosureFibre[];
   splitterFibres?: CompactClosureFibre[];
   passthroughFibres?: number[];
+  inputCableLabel?: string;
+  outputCableLabel?: string;
   selectedFibre?: number | null;
   onSelectFibre?: (fibre: number) => void;
 };
@@ -84,6 +86,8 @@ export default function CompactClosureView({
   breakoutFibres,
   splitterFibres,
   passthroughFibres,
+  inputCableLabel,
+  outputCableLabel,
   selectedFibre,
   onSelectFibre,
 }: Props) {
@@ -117,6 +121,17 @@ export default function CompactClosureView({
       </div>
 
       <div style={bodyStyle}>
+        {mode === "ug-dp" ? (
+          <UgDpClosureSvg
+            title={title}
+            loopFibres={visibleLoopFibres}
+            rows={highlightedRows}
+            inputCableLabel={inputCableLabel || "Incoming cable"}
+            outputCableLabel={outputCableLabel || "Outgoing cable"}
+            selectedFibre={selectedFibre}
+            onSelectFibre={onSelectFibre}
+          />
+        ) : (
         <svg viewBox="0 0 520 760" style={svgStyle} role="img" aria-label={`${title} compact closure`}>
           <defs>
             <linearGradient id="closure-cover" x1="0" x2="1" y1="0" y2="1">
@@ -219,6 +234,7 @@ export default function CompactClosureView({
             </text>
           )}
         </svg>
+        )}
 
         <div style={legendStyle}>
           <div style={calloutStyle}>
@@ -249,6 +265,127 @@ export default function CompactClosureView({
         </div>
       </div>
     </div>
+  );
+}
+
+function UgDpClosureSvg({
+  title,
+  loopFibres,
+  rows,
+  inputCableLabel,
+  outputCableLabel,
+  selectedFibre,
+  onSelectFibre,
+}: {
+  title: string;
+  loopFibres: number[];
+  rows: CompactClosureFibre[];
+  inputCableLabel: string;
+  outputCableLabel: string;
+  selectedFibre?: number | null;
+  onSelectFibre?: (fibre: number) => void;
+}) {
+  const activeRows = rows.slice(0, 8);
+  const outputRows = Array.from({ length: 8 }, (_, index) => activeRows[index] || activeRows[0] || { fibre: index + 1, role: "splitter" as const });
+
+  return (
+    <svg viewBox="0 0 620 760" style={svgStyle} role="img" aria-label={`${title} underground DP closure`}>
+      <defs>
+        <linearGradient id="ug-tray" x1="0" x2="1" y1="0" y2="1">
+          <stop offset="0%" stopColor="#ffffff" />
+          <stop offset="100%" stopColor="#dbeafe" />
+        </linearGradient>
+        <filter id="ug-shadow" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="16" stdDeviation="16" floodColor="#020617" floodOpacity="0.54" />
+        </filter>
+        <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#0ea5e9" />
+        </marker>
+      </defs>
+
+      <rect x="88" y="26" width="444" height="642" rx="42" fill="#05070a" stroke="#1f2937" strokeWidth="12" filter="url(#ug-shadow)" />
+      <rect x="125" y="58" width="370" height="538" rx="44" fill="url(#ug-tray)" stroke="#e5e7eb" strokeWidth="6" />
+      <rect x="142" y="76" width="336" height="500" rx="36" fill="#f8fafc" stroke="#cbd5e1" strokeWidth="2" />
+
+      <path d="M154 246 C160 96 460 96 466 246 C456 382 164 382 154 246Z" fill="#eef2ff" stroke="#bfdbfe" strokeWidth="4" />
+      <path d="M182 244 C188 142 432 142 438 244 C430 334 190 334 182 244Z" fill="none" stroke="#e5e7eb" strokeWidth="30" />
+      {loopFibres.slice(0, 30).map((fibre, index) => {
+        const lane = index % 9;
+        const selected = selectedFibre === fibre;
+        return (
+          <path
+            key={`ug-loop-${fibre}-${index}`}
+            d={`M182 ${212 + lane * 8} C224 ${126 + lane * 2} 396 ${126 + lane * 2} 438 ${212 + lane * 8}`}
+            fill="none"
+            stroke={fibreColour(fibre)}
+            strokeWidth={selected ? 5 : 2.4}
+            opacity={selected ? 1 : 0.78}
+          />
+        );
+      })}
+
+      <circle cx="238" cy="274" r="54" fill="#f8fafc" stroke="#d1d5db" strokeWidth="3" />
+      <circle cx="382" cy="274" r="54" fill="#f8fafc" stroke="#d1d5db" strokeWidth="3" />
+      <path d="M288 178 h44 l20 28 -42 34 -42 -34Z" fill="#f8fafc" stroke="#d1d5db" strokeWidth="3" />
+      <path d="M288 336 h44 l20 28 -42 34 -42 -34Z" fill="#f8fafc" stroke="#d1d5db" strokeWidth="3" />
+
+      <rect x="224" y="336" width="172" height="144" rx="14" fill="#f5f5f4" stroke="#d6d3d1" strokeWidth="4" />
+      {Array.from({ length: 12 }, (_, index) => (
+        <rect key={`splice-slot-${index}`} x="268" y={352 + index * 9} width="84" height="4" rx="2" fill="#9ca3af" opacity="0.8" />
+      ))}
+      <text x="310" y="326" fill="#0f172a" fontSize="14" fontWeight="900" textAnchor="middle">Splitter / splice holder</text>
+
+      <line x1="310" y1="486" x2="310" y2="624" stroke="#334155" strokeWidth="4" strokeDasharray="10 8" opacity="0.72" />
+      {outputRows.map((row, index) => {
+        const x = 188 + index * 35;
+        const selected = selectedFibre === row.fibre;
+        const outputFibre = row.breakoutFibre || index + 1;
+        return (
+          <g
+            key={`ug-output-${index}`}
+            onClick={() => onSelectFibre?.(row.fibre)}
+            style={{ cursor: onSelectFibre ? "pointer" : "default" }}
+          >
+            <path
+              d={`M${292 + Math.min(index, 4) * 8} 482 C${286 + index * 4} 520 ${x} 528 ${x} 586`}
+              fill="none"
+              stroke={fibreColour(row.fibre)}
+              strokeWidth={selected ? 6 : 4}
+              strokeLinecap="round"
+              opacity={selected ? 1 : 0.9}
+            />
+            <rect x={x - 15} y="574" width="30" height="40" rx="5" fill="#f8fafc" stroke="#cbd5e1" strokeWidth="2" />
+            <path
+              d={`M${x} 614 v46`}
+              fill="none"
+              stroke={fibreColour(outputFibre)}
+              strokeWidth={selected ? 7 : 5}
+              strokeLinecap="round"
+            />
+            <rect x={x - 15} y="650" width="30" height="24" rx="4" fill={selected ? "#fde68a" : "#0f172a"} stroke="#38bdf8" />
+            <text x={x} y="667" fill={selected ? "#111827" : "#e0f2fe"} fontSize="12" fontWeight="950" textAnchor="middle">
+              {index + 1}
+            </text>
+          </g>
+        );
+      })}
+
+      <path d="M206 700 C190 660 154 648 128 624" fill="none" stroke="#111827" strokeWidth="30" strokeLinecap="round" />
+      <path d="M414 700 C430 660 466 648 492 624" fill="none" stroke="#111827" strokeWidth="30" strokeLinecap="round" />
+      <rect x="150" y="604" width="76" height="44" rx="12" fill="#111827" stroke="#334155" strokeWidth="4" />
+      <rect x="394" y="604" width="76" height="44" rx="12" fill="#111827" stroke="#334155" strokeWidth="4" />
+
+      <rect x="34" y="628" width="130" height="34" rx="7" fill="#082f49" stroke="#0ea5e9" />
+      <text x="99" y="650" fill="#e0f2fe" fontSize="15" fontWeight="900" textAnchor="middle">{inputCableLabel}</text>
+      <path d="M164 645 H218" stroke="#0ea5e9" strokeWidth="2" markerEnd="url(#arrow)" />
+
+      <rect x="456" y="628" width="130" height="34" rx="7" fill="#082f49" stroke="#0ea5e9" />
+      <text x="521" y="650" fill="#e0f2fe" fontSize="15" fontWeight="900" textAnchor="middle">{outputCableLabel}</text>
+      <path d="M456 645 H402" stroke="#0ea5e9" strokeWidth="2" />
+
+      <rect x="240" y="704" width="140" height="34" rx="7" fill="#082f49" stroke="#0ea5e9" />
+      <text x="310" y="726" fill="#e0f2fe" fontSize="15" fontWeight="900" textAnchor="middle">F1-F8 outputs</text>
+    </svg>
   );
 }
 

@@ -1288,6 +1288,25 @@ export default function DistributionPointEditor({
 
   const throughCable =
     manualThroughCable || storedThroughCable || branchParentThroughCable || nearestThroughCable || null;
+  const downstreamCableRef = text(
+    afnDetails.downstreamCableId ||
+      afnDetails.outCableId ||
+      afnDetails.nextCableId ||
+      details.downstreamCableId ||
+      details.outCableId ||
+      (asset as any)?.downstreamCableId ||
+      (asset as any)?.outCableId ||
+      "",
+  );
+  const downstreamCable = downstreamCableRef
+    ? findCableByReference(allAssets, downstreamCableRef)
+    : null;
+  const ugInputCableLabel = throughCable ? `${cableName(throughCable)} in` : "Incoming cable";
+  const ugOutputCableLabel = downstreamCable
+    ? `${cableName(downstreamCable)} out`
+    : downstreamCableRef
+      ? `${downstreamCableRef} out`
+      : "Outgoing cable";
 
   const throughCableId =
     text(
@@ -2556,6 +2575,8 @@ export default function DistributionPointEditor({
               splitterFibres={undergroundSplitterFibres}
               breakoutFibres={undergroundBreakoutFibres}
               passthroughFibres={passthroughFibres}
+              inputCableLabel={ugInputCableLabel}
+              outputCableLabel={ugOutputCableLabel}
               selectedFibre={selectedFibre}
               onSelectFibre={(fibre) =>
                 setSelectedFibre(selectedFibre === fibre ? null : fibre)
