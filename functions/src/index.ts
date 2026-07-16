@@ -110,6 +110,148 @@ const permissionsByRole: Record<AppRole, {
   },
 };
 
+const LIVE_LOCATION_COLLECTION = "liveUserLocations";
+
+const cleanPathPart = (value: unknown, fallback: string): string => {
+  const cleaned = String(value || fallback).trim().replace(/\//g, "-");
+  return cleaned || fallback;
+};
+
+const toNumberOrNull = (value: unknown): number | null => {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+};
+
+const toStringOrNull = (value: unknown): string | null => {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+};
+
+const getCallableBusinessId = (value: unknown): string =>
+  cleanPathPart(value, "fibre-gis-v2");
+
+const getLiveLocationDocId = (uid: string, sessionId: unknown): string => {
+  const cleanSessionId = toStringOrNull(sessionId);
+  return cleanPathPart(cleanSessionId ? `${uid}-${cleanSessionId}` : uid, uid);
+};
+
+export const upsertLiveUserLocation = onCall(
+  {
+    region: "europe-west2",
+    cors: true,
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "You must be signed in.");
+    }
+
+    const lat = toNumberOrNull(request.data?.lat);
+    const lng = toNumberOrNull(request.data?.lng);
+    if (lat === null || lng === null) {
+      throw new HttpsError("invalid-argument", "Missing valid location.");
+    }
+
+    const now = Date.now();
+    const businessId = getCallableBusinessId(request.data?.businessId);
+    const sessionId = toStringOrNull(request.data?.sessionId);
+    const docId = getLiveLocationDocId(uid, sessionId);
+
+    const payload = {
+      uid,
+      sessionId,
+      deviceLabel: toStringOrNull(request.data?.deviceLabel),
+      displayName: toStringOrNull(request.data?.displayName) || request.auth?.token?.name || request.auth?.token?.email || "Alistra User",
+      email: toStringOrNull(request.data?.email) || request.auth?.token?.email || "",
+      role: toStringOrNull(request.data?.role) || "survey_user",
+      businessId,
+      activeProjectId: toStringOrNull(request.data?.activeProjectId),
+      activeProjectName: toStringOrNull(request.data?.activeProjectName),
+      lat,
+      lng,
+      accuracy: toNumberOrNull(request.data?.accuracy),
+      heading: toNumberOrNull(request.data?.heading),
+      speed: toNumberOrNull(request.data?.speed),
+      updatedAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + 10 * 60_000).toISOString(),
+      sharing: true,
+      serverUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    await admin
+      .firestore()
+      .doc(`businesses/${businessId}/${LIVE_LOCATION_COLLECTION}/${docId}`)
+      .set(payload, { merge: true });
+
+    return { success: true };
+  },
+);
+
+export const clearLiveUserLocation = onCall(
+  {
+    region: "europe-west2",
+    cors: true,
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "You must be signed in.");
+    }
+
+    const businessId = getCallableBusinessId(request.data?.businessId);
+    const requestedLocationId = toStringOrNull(request.data?.locationId);
+    const docId =
+      requestedLocationId && requestedLocationId.startsWith(uid)
+        ? cleanPathPart(requestedLocationId, uid)
+        : getLiveLocationDocId(uid, request.data?.sessionId);
+    await admin
+      .firestore()
+      .doc(`businesses/${businessId}/${LIVE_LOCATION_COLLECTION}/${docId}`)
+      .delete();
+
+    return { success: true };
+  },
+);
+
+export const getLiveUserLocations = onCall(
+  {
+    region: "europe-west2",
+    cors: true,
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "You must be signed in.");
+    }
+
+    const businessId = getCallableBusinessId(request.data?.businessId);
+    const now = Date.now();
+    const snapshot = await admin
+      .firestore()
+      .collection(`businesses/${businessId}/${LIVE_LOCATION_COLLECTION}`)
+      .get();
+
+    const locations = snapshot.docs
+      .map((item) => ({ id: item.id, ...item.data() }))
+      .filter((item: any) => {
+        const lat = Number(item.lat);
+        const lng = Number(item.lng);
+        const expiresAt = new Date(String(item.expiresAt || "")).getTime();
+        return (
+          item.sharing === true &&
+          Number.isFinite(lat) &&
+          Number.isFinite(lng) &&
+          Number.isFinite(expiresAt) &&
+          expiresAt > now
+        );
+      })
+      .sort((a: any, b: any) =>
+        String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")),
+      );
+
+    return { locations };
+  },
+);
+
 export const createLoginUser = onCall(
   {
     region: "europe-west2",
