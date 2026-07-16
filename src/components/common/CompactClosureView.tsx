@@ -13,7 +13,7 @@ export type CompactClosureFibre = {
 type Props = {
   title: string;
   subtitle?: string;
-  mode?: "midj" | "ug-dp" | "oh-dp";
+  mode?: "midj" | "ug-dp";
   loopFibres?: number[];
   breakoutFibres?: CompactClosureFibre[];
   splitterFibres?: CompactClosureFibre[];
@@ -89,25 +89,23 @@ export default function CompactClosureView({
 }: Props) {
   const breakoutRows = toRows(breakoutFibres, "breakout");
   const splitterRows = toRows(splitterFibres, "splitter");
-  const isOhDp = mode === "oh-dp";
-  const highlightedRows = (isOhDp ? [...splitterRows, ...breakoutRows] : [...breakoutRows, ...splitterRows]).slice(0, isOhDp ? 8 : 10);
+  const highlightedRows = [...breakoutRows, ...splitterRows].slice(0, 10);
   const loopSet = uniqueSorted([
     ...(loopFibres || []),
     ...(passthroughFibres || []),
     ...breakoutRows.map((item) => item.fibre),
     ...splitterRows.map((item) => item.fibre),
   ]);
-  const visibleLoopFibres = loopSet.length ? loopSet.slice(0, 48) : Array.from({ length: isOhDp ? 12 : 48 }, (_, index) => index + 1);
+  const visibleLoopFibres = loopSet.length ? loopSet.slice(0, 48) : Array.from({ length: 48 }, (_, index) => index + 1);
   const passCount = uniqueSorted(passthroughFibres || []).length || Math.max(0, visibleLoopFibres.length - highlightedRows.length);
-  const holderLabel = mode === "ug-dp" || mode === "oh-dp" ? "Splitter / splice holder" : "Splice holder";
-  const emptyLabel = mode === "ug-dp" ? "No UG splitter fibres selected yet" : mode === "oh-dp" ? "No OH splitter fibres selected yet" : "No breakout fibres mapped yet";
-  const kickerLabel = mode === "ug-dp" ? "UNDERGROUND DP CLOSURE" : mode === "oh-dp" ? "OVERHEAD DP CLOSURE" : "MIDJ LOOP-THROUGH CLOSURE";
+  const holderLabel = mode === "ug-dp" ? "Splitter / splice holder" : "Splice holder";
+  const emptyLabel = mode === "ug-dp" ? "No UG splitter fibres selected yet" : "No breakout fibres mapped yet";
 
   return (
     <div style={shellStyle}>
       <div style={headerStyle}>
         <div>
-          <div style={kickerStyle}>{kickerLabel}</div>
+          <div style={kickerStyle}>{mode === "ug-dp" ? "UNDERGROUND DP CLOSURE" : "MIDJ LOOP-THROUGH CLOSURE"}</div>
           <h3 style={titleStyle}>{title}</h3>
           {subtitle ? <div style={subtitleStyle}>{subtitle}</div> : null}
         </div>
@@ -119,15 +117,6 @@ export default function CompactClosureView({
       </div>
 
       <div style={bodyStyle}>
-        {isOhDp ? (
-          <OhDpClosureSvg
-            title={title}
-            loopFibres={visibleLoopFibres}
-            rows={highlightedRows}
-            selectedFibre={selectedFibre}
-            onSelectFibre={onSelectFibre}
-          />
-        ) : (
         <svg viewBox="0 0 520 760" style={svgStyle} role="img" aria-label={`${title} compact closure`}>
           <defs>
             <linearGradient id="closure-cover" x1="0" x2="1" y1="0" y2="1">
@@ -230,7 +219,6 @@ export default function CompactClosureView({
             </text>
           )}
         </svg>
-        )}
 
         <div style={legendStyle}>
           <div style={calloutStyle}>
@@ -239,7 +227,7 @@ export default function CompactClosureView({
           </div>
           <div style={calloutStyle}>
             <strong>{holderLabel}</strong>
-            <span>{mode === "ug-dp" ? "Use for the 1:8 UG DP splitter or direct splice connections." : mode === "oh-dp" ? "Use for the pole-mounted 1:8 splitter and drop outputs." : "Use for the few fibres broken out to a shoot-off cable."}</span>
+            <span>{mode === "ug-dp" ? "Use for the 1:8 UG DP splitter or direct splice connections." : "Use for the few fibres broken out to a shoot-off cable."}</span>
           </div>
           <div style={pillGridStyle}>
             {highlightedRows.map((row) => (
@@ -261,143 +249,6 @@ export default function CompactClosureView({
         </div>
       </div>
     </div>
-  );
-}
-
-function OhDpClosureSvg({
-  title,
-  loopFibres,
-  rows,
-  selectedFibre,
-  onSelectFibre,
-}: {
-  title: string;
-  loopFibres: number[];
-  rows: CompactClosureFibre[];
-  selectedFibre?: number | null;
-  onSelectFibre?: (fibre: number) => void;
-}) {
-  const splitterInput = rows[0]?.fibre || loopFibres[0] || 1;
-  const outputRows = Array.from({ length: 8 }, (_, index) => {
-    const row = rows[index] || rows[0] || { fibre: splitterInput, role: "splitter" as const };
-    return {
-      ...row,
-      breakoutFibre: row.breakoutFibre || index + 1,
-      breakoutLabel: row.breakoutLabel || `F${index + 1}`,
-    };
-  });
-
-  return (
-    <svg viewBox="0 0 560 760" style={svgStyle} role="img" aria-label={`${title} overhead DP closure`}>
-      <defs>
-        <linearGradient id="oh-tray" x1="0" x2="1" y1="0" y2="1">
-          <stop offset="0%" stopColor="#ffffff" />
-          <stop offset="100%" stopColor="#dbeafe" />
-        </linearGradient>
-        <filter id="oh-shadow" x="-20%" y="-20%" width="140%" height="140%">
-          <feDropShadow dx="0" dy="16" stdDeviation="18" floodColor="#020617" floodOpacity="0.5" />
-        </filter>
-      </defs>
-
-      <rect x="56" y="28" width="448" height="704" rx="36" fill="#111827" stroke="#020617" strokeWidth="12" filter="url(#oh-shadow)" />
-      <rect x="84" y="60" width="392" height="640" rx="28" fill="url(#oh-tray)" stroke="#e5e7eb" strokeWidth="6" />
-      <rect x="106" y="88" width="348" height="70" rx="8" fill="#f8fafc" stroke="#d1d5db" strokeWidth="3" />
-
-      {Array.from({ length: 5 }, (_, index) => (
-        <path
-          key={`top-port-${index}`}
-          d={`M130 ${82} h44 v36 h-20 c-8 0-14 8-14 18 h-10Z`}
-          transform={`translate(${index * 62},0)`}
-          fill="#e5e7eb"
-          stroke="#cbd5e1"
-          strokeWidth="2"
-          opacity="0.9"
-        />
-      ))}
-
-      <rect x="142" y="168" width="196" height="52" rx="8" fill="#86efac" stroke="#16a34a" strokeWidth="3" />
-      {Array.from({ length: 8 }, (_, index) => (
-        <g key={`green-port-${index}`}>
-          <rect x={154 + index * 21} y="180" width="12" height="18" rx="2" fill="#22c55e" opacity="0.72" />
-          <circle cx={160 + index * 21} cy="218" r="9" fill="#f8fafc" stroke="#d1d5db" strokeWidth="2" />
-        </g>
-      ))}
-      <text x="240" y="152" fill="#0f172a" fontSize="13" fontWeight="900" textAnchor="middle">1:8 splitter block</text>
-
-      <path d="M132 372 C138 234 390 234 396 372 C388 500 140 500 132 372Z" fill="#eef2ff" stroke="#c7d2fe" strokeWidth="4" />
-      <path d="M158 374 C160 278 368 278 370 374 C364 452 164 452 158 374Z" fill="none" stroke="#e5e7eb" strokeWidth="30" />
-
-      {loopFibres.slice(0, 18).map((fibre, index) => {
-        const lane = index % 6;
-        const selected = selectedFibre === fibre;
-        return (
-          <path
-            key={`oh-loop-${fibre}-${index}`}
-            d={`M150 ${350 + lane * 8} C182 ${266 + lane * 2} 340 ${266 + lane * 2} 378 ${350 + lane * 8}`}
-            fill="none"
-            stroke={fibreColour(fibre)}
-            strokeWidth={selected ? 5 : 2.4}
-            opacity={selected ? 1 : 0.72}
-          />
-        );
-      })}
-
-      <circle cx="214" cy="390" r="52" fill="#f8fafc" stroke="#d1d5db" strokeWidth="3" />
-      <circle cx="318" cy="390" r="52" fill="#f8fafc" stroke="#d1d5db" strokeWidth="3" />
-      {[
-        "M248 306 h42 l18 26 -39 32 -39 -32Z",
-        "M248 430 h42 l18 26 -39 32 -39 -32Z",
-        "M182 374 h42 l18 26 -39 32 -39 -32Z",
-        "M314 374 h42 l18 26 -39 32 -39 -32Z",
-      ].map((d, index) => (
-        <path key={`oh-guide-${index}`} d={d} fill="#f8fafc" stroke="#d1d5db" strokeWidth="3" />
-      ))}
-
-      <line x1="280" y1="500" x2="280" y2="656" stroke="#334155" strokeWidth="4" strokeDasharray="12 8" opacity="0.75" />
-      {Array.from({ length: 12 }, (_, index) => (
-        <path
-          key={`oh-comb-${index}`}
-          d={`M148 ${536 + index * 11} h264`}
-          stroke="#e5e7eb"
-          strokeWidth="7"
-          strokeLinecap="round"
-        />
-      ))}
-
-      {outputRows.map((row, index) => {
-        const x = 138 + index * 36;
-        const selected = selectedFibre === row.fibre;
-        const outputFibre = row.breakoutFibre || index + 1;
-        return (
-          <g
-            key={`oh-output-${index}`}
-            onClick={() => onSelectFibre?.(row.fibre)}
-            style={{ cursor: onSelectFibre ? "pointer" : "default" }}
-          >
-            <path
-              d={`M240 222 C240 ${246 + index * 2} ${x + 8} ${486 + index * 4} ${x + 8} 548`}
-              fill="none"
-              stroke={fibreColour(row.fibre)}
-              strokeWidth={selected ? 5 : 2.8}
-              opacity={selected ? 1 : 0.84}
-            />
-            <path
-              d={`M${x + 8} 548 v88`}
-              fill="none"
-              stroke={fibreColour(outputFibre)}
-              strokeWidth={selected ? 7 : 5}
-              strokeLinecap="round"
-            />
-            <rect x={x - 8} y="628" width="34" height="24" rx="5" fill={selected ? "#fde68a" : "#f59e0b"} stroke="#92400e" />
-            <text x={x + 9} y="645" fill="#111827" fontSize="12" fontWeight="950" textAnchor="middle">
-              {row.breakoutLabel || `F${outputFibre}`}
-            </text>
-          </g>
-        );
-      })}
-
-      <text x="280" y="684" fill="#0f172a" fontSize="13" fontWeight="900" textAnchor="middle">drop outputs F1-F8</text>
-    </svg>
   );
 }
 
