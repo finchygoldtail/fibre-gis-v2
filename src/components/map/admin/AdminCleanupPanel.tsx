@@ -17,13 +17,14 @@ type AdminCleanupPanelProps = {
   onSelectImportedPolygons: () => void;
   onSelectAllPolygons: () => void;
   onClearPolygonSelection: () => void;
-  onRemoveImportedAreas: () => void;
-  onRemoveSelectedPolygons: () => void;
-  onRemoveSelectedPolygon: () => void;
-  onRemoveAllPolygons: () => void;
-  onRemoveImportedDistributionPoints: () => void;
-  onRemoveImportedCables: () => void;
-  onSetAllPolygonsToL3: () => void;
+  onRemoveImportedAreas: () => void | Promise<void>;
+  onRemoveSelectedPolygons: () => void | Promise<void>;
+  onRemoveSelectedPolygon: () => void | Promise<void>;
+  onRemoveAllPolygons: () => void | Promise<void>;
+  onRemoveImportedDistributionPoints: () => void | Promise<void>;
+  onRemoveImportedCables: () => void | Promise<void>;
+  onRemoveAllJoints: () => void | Promise<void>;
+  onSetAllPolygonsToL3: () => void | Promise<void>;
   onRepairAreaStamps: () => void | Promise<void>;
   onDeletePiaOverlayForActiveProject: () => void | Promise<void>;
   onDeleteAllOrReferenceAssets: () => void | Promise<void>;
@@ -51,6 +52,7 @@ export default function AdminCleanupPanel({
   onRemoveAllPolygons,
   onRemoveImportedDistributionPoints,
   onRemoveImportedCables,
+  onRemoveAllJoints,
   onSetAllPolygonsToL3,
   onRepairAreaStamps,
   onDeletePiaOverlayForActiveProject,
@@ -188,6 +190,15 @@ export default function AdminCleanupPanel({
 
         <button
           type="button"
+          onClick={onRemoveAllJoints}
+          style={btnDanger}
+          title="Remove all AG joint assets such as LMJ, CMJ, MMJ and MidJ"
+        >
+          Remove ALL Joints
+        </button>
+
+        <button
+          type="button"
           onClick={onSetAllPolygonsToL3}
           style={{
             ...btnSecondary,
@@ -196,7 +207,7 @@ export default function AdminCleanupPanel({
             background: "#14532d",
             borderColor: "#22c55e",
           }}
-          title="Change every loaded polygon area level to L3. Press Save Map afterwards."
+          title="Change every loaded polygon area level to L3 and save it to Firebase."
         >
           Set All Polygons to L3
         </button>

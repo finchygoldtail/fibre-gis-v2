@@ -62,6 +62,30 @@ function isImportedCableAsset(asset: any): boolean {
   return source === "geojson-import" || Object.keys(importedProps || {}).length > 0;
 }
 
+function isJointAsset(asset: any): boolean {
+  const assetType = String(asset?.assetType || "").trim().toLowerCase();
+  const geometryType = String(asset?.geometry?.type || asset?.geometryType || "")
+    .trim()
+    .toLowerCase();
+  const jointType = String(asset?.jointType || "").trim().toLowerCase();
+  const name = String(asset?.name || asset?.jointName || asset?.label || "")
+    .trim()
+    .toLowerCase();
+
+  if (assetType === "distribution-point") return false;
+  if (["cable", "pole", "chamber", "area", "home", "street-cab", "exchange"].includes(assetType)) return false;
+  if (geometryType && geometryType !== "point") return false;
+
+  return (
+    assetType === "ag-joint" ||
+    assetType === "joint" ||
+    assetType.includes("joint") ||
+    jointType.includes("joint") ||
+    /\b(?:lmj|cmj|mmj|midj)\b/i.test(name) ||
+    /(?:lmj|cmj|mmj|midj)\d*/i.test(name)
+  );
+}
+
 type UsePolygonAdminToolsArgs = {
   isAdmin: boolean;
   operationalSavedJoints: SavedMapAsset[];
@@ -69,6 +93,13 @@ type UsePolygonAdminToolsArgs = {
   getVisiblePolygonAreas: () => SavedMapAsset[];
   setSavedJoints: React.Dispatch<React.SetStateAction<SavedMapAsset[]>>;
   resetEditor: () => void;
+  persistMapAssets?: (
+    assets: SavedMapAsset[],
+    options: {
+      reason: string;
+      explicitDeletedAssetIds?: string[];
+    },
+  ) => Promise<void>;
 };
 
 export function usePolygonAdminTools({
@@ -78,38 +109,69 @@ export function usePolygonAdminTools({
   getVisiblePolygonAreas,
   setSavedJoints,
   resetEditor,
+  persistMapAssets,
 }: UsePolygonAdminToolsArgs) {
   const [polygonBulkSelectEnabled, setPolygonBulkSelectEnabled] = useState(false);
   const [selectedPolygonIds, setSelectedPolygonIds] = useState<string[]>([]);
 
-  const removePolygonAssetsFromMapState = (
-    polygonsToRemove: SavedMapAsset[],
-    successLabel: string,
+  const persistAdminAssetChange = async (
+    nextAssets: SavedMapAsset[],
+    options: {
+      reason: string;
+      deletedAssetIds?: string[];
+      successMessage: string;
+    },
   ) => {
-    const polygonIds = new Set(
-      polygonsToRemove.map((asset) => String(asset.id || "")),
+    setSavedJoints(nextAssets);
+
+    if (!persistMapAssets) {
+      alert(
+        `${options.successMessage}\n\nPress Save Map to make this permanent in Firestore.`,
+      );
+      return;
+    }
+
+    try {
+      await persistMapAssets(nextAssets, {
+        reason: options.reason,
+        explicitDeletedAssetIds: options.deletedAssetIds,
+      });
+      alert(`${options.successMessage}\n\nFirebase has been updated.`);
+    } catch (error) {
+      console.error("Admin cleanup save failed", error);
+      alert(
+        `${options.successMessage}\n\nThe assets were removed on screen, but Firebase did not save the cleanup. Do not refresh yet; check the console / connection and try again.`,
+      );
+    }
+  };
+
+  const removeAssetsFromMapAndFirebase = async (
+    assetsToRemove: SavedMapAsset[],
+    successLabel: string,
+    reason: string,
+  ) => {
+    const assetIds = assetsToRemove.map((asset) => String(asset.id || ""));
+    const assetIdSet = new Set(assetIds);
+    const nextAssets = (operationalSavedJoints ?? []).filter(
+      (asset: any) => !assetIdSet.has(String(asset?.id || "")),
     );
 
-    setSavedJoints((prev) =>
-      (prev ?? []).filter(
-        (asset: any) => !polygonIds.has(String(asset?.id || "")),
-      ),
-    );
-
-    if (editingAssetId && polygonIds.has(String(editingAssetId))) {
+    if (editingAssetId && assetIdSet.has(String(editingAssetId))) {
       resetEditor();
     }
 
     setSelectedPolygonIds((prev) =>
-      prev.filter((id) => !polygonIds.has(String(id))),
+      prev.filter((id) => !assetIdSet.has(String(id))),
     );
 
-    alert(
-      `${polygonsToRemove.length} ${successLabel} removed from the map.\n\nPress Save Map to make this permanent in Firestore.`,
-    );
+    await persistAdminAssetChange(nextAssets, {
+      reason,
+      deletedAssetIds: assetIds,
+      successMessage: `${assetsToRemove.length} ${successLabel} removed from the map.`,
+    });
   };
 
-  const handleAdminRemoveImportedAreas = () => {
+  const handleAdminRemoveImportedAreas = async () => {
     if (!isAdmin) {
       alert("Administrator access required.");
       return;
@@ -123,13 +185,17 @@ export function usePolygonAdminTools({
     }
 
     const typed = window.prompt(
-      `Found ${importedAreas.length} imported area polygon(s).\n\nType DELETE IMPORTED AREAS to remove them from the map.\n\nYou must still press Save Map afterwards to persist the cleanup.`,
+      `Found ${importedAreas.length} imported area polygon(s).\n\nType DELETE IMPORTED AREAS to remove them from the map and Firebase.`,
       "",
     );
 
     if (typed !== "DELETE IMPORTED AREAS") return;
 
-    removePolygonAssetsFromMapState(importedAreas, "imported area polygon(s)");
+    await removeAssetsFromMapAndFirebase(
+      importedAreas,
+      "imported area polygon(s)",
+      "admin-remove-imported-areas",
+    );
   };
 
   const togglePolygonBulkSelection = (id: string) => {
@@ -170,7 +236,7 @@ export function usePolygonAdminTools({
     setSelectedPolygonIds([]);
   };
 
-  const handleAdminRemoveSelectedPolygons = () => {
+  const handleAdminRemoveSelectedPolygons = async () => {
     if (!isAdmin) {
       alert("Administrator access required.");
       return;
@@ -190,16 +256,20 @@ export function usePolygonAdminTools({
     }
 
     const typed = window.prompt(
-      `Selected ${selectedPolygons.length} polygon(s).\n\nType DELETE SELECTED POLYGONS to remove the selected polygons from the map.\n\nYou must still press Save Map afterwards to persist the cleanup.`,
+      `Selected ${selectedPolygons.length} polygon(s).\n\nType DELETE SELECTED POLYGONS to remove the selected polygons from the map and Firebase.`,
       "",
     );
 
     if (typed !== "DELETE SELECTED POLYGONS") return;
 
-    removePolygonAssetsFromMapState(selectedPolygons, "selected polygon(s)");
+    await removeAssetsFromMapAndFirebase(
+      selectedPolygons,
+      "selected polygon(s)",
+      "admin-remove-selected-polygons",
+    );
   };
 
-  const handleAdminRemoveSelectedPolygon = () => {
+  const handleAdminRemoveSelectedPolygon = async () => {
     if (!isAdmin) {
       alert("Administrator access required.");
       return;
@@ -223,16 +293,20 @@ export function usePolygonAdminTools({
         "selected polygon",
     );
     const typed = window.prompt(
-      `Selected polygon:\n${polygonName}\n\nType DELETE SELECTED POLYGON to remove only this polygon from the map.\n\nYou must still press Save Map afterwards to persist the cleanup.`,
+      `Selected polygon:\n${polygonName}\n\nType DELETE SELECTED POLYGON to remove only this polygon from the map and Firebase.`,
       "",
     );
 
     if (typed !== "DELETE SELECTED POLYGON") return;
 
-    removePolygonAssetsFromMapState([selectedPolygon], "selected polygon");
+    await removeAssetsFromMapAndFirebase(
+      [selectedPolygon],
+      "selected polygon",
+      "admin-remove-selected-polygon",
+    );
   };
 
-  const handleAdminRemoveAllPolygons = () => {
+  const handleAdminRemoveAllPolygons = async () => {
     if (!isAdmin) {
       alert("Administrator access required.");
       return;
@@ -246,16 +320,20 @@ export function usePolygonAdminTools({
     }
 
     const typed = window.prompt(
-      `WARNING: This will remove ALL ${allPolygons.length} polygon area(s) from the map.\n\nThis includes imported polygons and manually drawn project/area polygons.\n\nType DELETE ALL POLYGONS to continue.\n\nYou must still press Save Map afterwards to persist the cleanup.`,
+      `WARNING: This will remove ALL ${allPolygons.length} polygon area(s) from the map and Firebase.\n\nThis includes imported polygons and manually drawn project/area polygons.\n\nType DELETE ALL POLYGONS to continue.`,
       "",
     );
 
     if (typed !== "DELETE ALL POLYGONS") return;
 
-    removePolygonAssetsFromMapState(allPolygons, "polygon area(s)");
+    await removeAssetsFromMapAndFirebase(
+      allPolygons,
+      "polygon area(s)",
+      "admin-remove-all-polygons",
+    );
   };
 
-  const handleAdminRemoveImportedDistributionPoints = () => {
+  const handleAdminRemoveImportedDistributionPoints = async () => {
     if (!isAdmin) {
       alert("Administrator access required.");
       return;
@@ -269,32 +347,20 @@ export function usePolygonAdminTools({
     }
 
     const typed = window.prompt(
-      `Found ${importedDps.length} imported Distribution Point / SB asset(s).\n\nThis is intended for removing QGIS-imported SB/AFN DPs before re-importing them. Manually created DPs are protected where possible.\n\nType DELETE IMPORTED DPS to remove them from the map.\n\nYou must still press Save Map afterwards to persist the cleanup.`,
+      `Found ${importedDps.length} imported Distribution Point / SB asset(s).\n\nThis is intended for removing QGIS-imported SB/AFN DPs before re-importing them. Manually created DPs are protected where possible.\n\nType DELETE IMPORTED DPS to remove them from the map and Firebase.`,
       "",
     );
 
     if (typed !== "DELETE IMPORTED DPS") return;
 
-    const importedDpIds = new Set(
-      importedDps.map((asset) => String(asset.id || "")),
-    );
-
-    setSavedJoints((prev) =>
-      (prev ?? []).filter(
-        (asset: any) => !importedDpIds.has(String(asset?.id || "")),
-      ),
-    );
-
-    if (editingAssetId && importedDpIds.has(String(editingAssetId))) {
-      resetEditor();
-    }
-
-    alert(
-      `${importedDps.length} imported Distribution Point / SB asset(s) removed from the map.\n\nPress Save Map to make this permanent in Firestore.`,
+    await removeAssetsFromMapAndFirebase(
+      importedDps,
+      "imported Distribution Point / SB asset(s)",
+      "admin-remove-imported-dps",
     );
   };
 
-  const handleAdminRemoveImportedCables = () => {
+  const handleAdminRemoveImportedCables = async () => {
     if (!isAdmin) {
       alert("Administrator access required.");
       return;
@@ -308,32 +374,47 @@ export function usePolygonAdminTools({
     }
 
     const typed = window.prompt(
-      `Found ${importedCables.length} imported cable asset(s).\n\nThis removes GeoJSON/QGIS imported cables only. Manually drawn cables and OR / PIA reference routes are protected where possible.\n\nType DELETE IMPORTED CABLES to remove them from the map.\n\nYou must still press Save Map afterwards to persist the cleanup.`,
+      `Found ${importedCables.length} imported cable asset(s).\n\nThis removes GeoJSON/QGIS imported cables only. Manually drawn cables and OR / PIA reference routes are protected where possible.\n\nType DELETE IMPORTED CABLES to remove them from the map and Firebase.`,
       "",
     );
 
     if (typed !== "DELETE IMPORTED CABLES") return;
 
-    const importedCableIds = new Set(
-      importedCables.map((asset) => String(asset.id || "")),
-    );
-
-    setSavedJoints((prev) =>
-      (prev ?? []).filter(
-        (asset: any) => !importedCableIds.has(String(asset?.id || "")),
-      ),
-    );
-
-    if (editingAssetId && importedCableIds.has(String(editingAssetId))) {
-      resetEditor();
-    }
-
-    alert(
-      `${importedCables.length} imported cable asset(s) removed from the map.\n\nPress Save Map to make this permanent in Firestore.`,
+    await removeAssetsFromMapAndFirebase(
+      importedCables,
+      "imported cable asset(s)",
+      "admin-remove-imported-cables",
     );
   };
 
-  const handleAdminSetAllPolygonsToL3 = () => {
+  const handleAdminRemoveAllJoints = async () => {
+    if (!isAdmin) {
+      alert("Administrator access required.");
+      return;
+    }
+
+    const allJoints = operationalSavedJoints.filter(isJointAsset);
+
+    if (!allJoints.length) {
+      alert("No joint assets were found.");
+      return;
+    }
+
+    const typed = window.prompt(
+      `WARNING: This will remove ALL ${allJoints.length} joint asset(s) from the map and Firebase.\n\nThis targets AG joints such as LMJ, CMJ, MMJ and MidJ. Distribution Points / SBs, cables, poles, chambers and areas are protected where possible.\n\nType DELETE ALL JOINTS to continue.`,
+      "",
+    );
+
+    if (typed !== "DELETE ALL JOINTS") return;
+
+    await removeAssetsFromMapAndFirebase(
+      allJoints,
+      "joint asset(s)",
+      "admin-remove-all-joints",
+    );
+  };
+
+  const handleAdminSetAllPolygonsToL3 = async () => {
     if (!isAdmin) {
       alert("Administrator access required.");
       return;
@@ -356,16 +437,14 @@ export function usePolygonAdminTools({
     }
 
     const typed = window.prompt(
-      `Change ${needsUpdate.length} loaded polygon area(s) to L3?\n\nThis does not delete anything. You must still press Save Map afterwards to persist the level change.\n\nType SET POLYGONS L3 to continue.`,
+      `Change ${needsUpdate.length} loaded polygon area(s) to L3?\n\nThis does not delete anything and will save straight to Firebase.\n\nType SET POLYGONS L3 to continue.`,
       "",
     );
 
     if (typed !== "SET POLYGONS L3") return;
 
     const updatedIds = new Set(needsUpdate.map((asset) => String(asset.id || "")));
-
-    setSavedJoints((prev) =>
-      (prev ?? []).map((asset: any) =>
+    const nextAssets = (operationalSavedJoints ?? []).map((asset: any) =>
         updatedIds.has(String(asset?.id || ""))
           ? {
               ...asset,
@@ -376,12 +455,12 @@ export function usePolygonAdminTools({
               },
             }
           : asset,
-      ),
-    );
+      );
 
-    alert(
-      `${needsUpdate.length} polygon area(s) changed to L3 in the loaded map.\n\nPress Save Map to make this permanent in Firestore.`,
-    );
+    await persistAdminAssetChange(nextAssets, {
+      reason: "admin-set-all-polygons-l3",
+      successMessage: `${needsUpdate.length} polygon area(s) changed to L3 in the loaded map.`,
+    });
   };
 
   return {
@@ -399,6 +478,7 @@ export function usePolygonAdminTools({
     handleAdminRemoveAllPolygons,
     handleAdminRemoveImportedDistributionPoints,
     handleAdminRemoveImportedCables,
+    handleAdminRemoveAllJoints,
     handleAdminSetAllPolygonsToL3,
   };
 }

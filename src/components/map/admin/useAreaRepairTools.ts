@@ -153,6 +153,12 @@ type UseAreaRepairToolsArgs = {
   setProjectHomes: React.Dispatch<React.SetStateAction<SavedMapAsset[]>>;
   setLoadedHomesProjectId: React.Dispatch<React.SetStateAction<string | null>>;
   setSavedJoints: React.Dispatch<React.SetStateAction<SavedMapAsset[]>>;
+  persistMapAssets?: (
+    assets: SavedMapAsset[],
+    options: {
+      reason: string;
+    },
+  ) => Promise<void>;
 };
 
 export function useAreaRepairTools({
@@ -164,6 +170,7 @@ export function useAreaRepairTools({
   setProjectHomes,
   setLoadedHomesProjectId,
   setSavedJoints,
+  persistMapAssets,
 }: UseAreaRepairToolsArgs) {
   const handleAdminRepairAreaStamps = async () => {
     if (!isAdmin) {
@@ -343,20 +350,19 @@ export function useAreaRepairTools({
     ].join("\n");
 
     const typed = window.prompt(
-      `Repair area stamps for ${areaName}?\n\nThis will restamp ${repairableAssets.length} operational asset(s) and ${repairableHomes.length} project home(s).\n\nProject homes are restricted to homes physically inside the selected polygon only.\n\nArea code matches: ${areaCodes.length ? areaCodes.join(", ") : "none"}\n\n${summary}\n\nIt will NOT delete anything and it will NOT change fibre routing or DP-home assignments.\n\nType REPAIR AREA STAMPS to continue.\n\nPress Save Map afterwards to persist map assets. Project homes are saved by this repair tool.`,
+      `Repair area stamps for ${areaName}?\n\nThis will restamp ${repairableAssets.length} operational asset(s) and ${repairableHomes.length} project home(s).\n\nProject homes are restricted to homes physically inside the selected polygon only.\n\nArea code matches: ${areaCodes.length ? areaCodes.join(", ") : "none"}\n\n${summary}\n\nIt will NOT delete anything and it will NOT change fibre routing or DP-home assignments.\n\nType REPAIR AREA STAMPS to continue.\n\nMap assets and project homes will save straight to Firebase.`,
       "",
     );
 
     if (typed !== "REPAIR AREA STAMPS") return;
 
     const repairIds = new Set(repairableAssets.map((asset) => String(asset.id)));
+    const repairedMapAssets = (operationalSavedJoints ?? []).map((asset: any) => {
+      if (!repairIds.has(String(asset?.id || ""))) return asset;
+      return repairAreaStamp(asset as SavedMapAsset);
+    });
 
-    setSavedJoints((prev) =>
-      (prev ?? []).map((asset: any) => {
-        if (!repairIds.has(String(asset?.id || ""))) return asset;
-        return repairAreaStamp(asset as SavedMapAsset);
-      }),
-    );
+    setSavedJoints(repairedMapAssets);
 
     const repairHomeKeys = new Set(
       repairableHomes
@@ -398,16 +404,22 @@ export function useAreaRepairTools({
       for (const homeSaveKey of homeSaveKeys) {
         await saveProjectHomes(homeSaveKey, repairedHomes, areaName);
       }
+
+      if (persistMapAssets) {
+        await persistMapAssets(repairedMapAssets, {
+          reason: "admin-repair-area-stamps",
+        });
+      }
     } catch (err) {
-      console.error("Failed to save repaired project homes", err);
+      console.error("Failed to save repaired area stamps", err);
       alert(
-        "Map assets were repaired on screen, but saving repaired project homes failed. Do not refresh yet; check the console.",
+        "Area stamps were repaired on screen, but saving to Firebase failed. Do not refresh yet; check the console.",
       );
       return;
     }
 
     alert(
-      `Repaired area stamps for ${repairableAssets.length} asset(s) and ${repairableHomes.length} home(s) inside ${areaName}.\n\nProject homes have been saved. Press Save Map to make the map-asset repair permanent in Firestore.`,
+      `Repaired area stamps for ${repairableAssets.length} asset(s) and ${repairableHomes.length} home(s) inside ${areaName}.\n\nFirebase has been updated.`,
     );
   };
 

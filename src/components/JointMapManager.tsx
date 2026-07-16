@@ -1643,6 +1643,7 @@ export default function JointMapManager({
     handleAdminRemoveAllPolygons,
     handleAdminRemoveImportedDistributionPoints,
     handleAdminRemoveImportedCables,
+    handleAdminRemoveAllJoints,
     handleAdminSetAllPolygonsToL3,
   } = usePolygonAdminTools({
     isAdmin,
@@ -1654,6 +1655,14 @@ export default function JointMapManager({
       ),
     setSavedJoints,
     resetEditor,
+    persistMapAssets: async (assets, options) => {
+      await saveMapAssetsViaCoordinator(assets, {
+        reason: options.reason,
+        source: "admin-tool",
+        allowDestructiveSave: true,
+        explicitDeletedAssetIds: options.explicitDeletedAssetIds,
+      });
+    },
   });
 
   const { handleAdminRepairAreaStamps } = useAreaRepairTools({
@@ -1665,6 +1674,13 @@ export default function JointMapManager({
     setProjectHomes,
     setLoadedHomesProjectId,
     setSavedJoints,
+    persistMapAssets: async (assets, options) => {
+      await saveMapAssetsViaCoordinator(assets, {
+        reason: options.reason,
+        source: "admin-tool",
+        allowDestructiveSave: true,
+      });
+    },
   });
 
   const {
@@ -4179,6 +4195,7 @@ export default function JointMapManager({
           onRemoveAllPolygons={handleAdminRemoveAllPolygons}
           onRemoveImportedDistributionPoints={handleAdminRemoveImportedDistributionPoints}
           onRemoveImportedCables={handleAdminRemoveImportedCables}
+          onRemoveAllJoints={handleAdminRemoveAllJoints}
           onSetAllPolygonsToL3={handleAdminSetAllPolygonsToL3}
           onRepairAreaStamps={handleAdminRepairAreaStamps}
           onDeletePiaOverlayForActiveProject={
