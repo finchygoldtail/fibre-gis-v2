@@ -2343,6 +2343,8 @@ export default function JointMapManager({
       "joint-cmj": "CMJ (12 trays)",
       "joint-mmj": "MMJ (20 trays)",
       "joint-midj": "MidJ (4 trays)",
+      "joint-ug": "LMJ (40 trays)",
+      "joint-oh": "LMJ (40 trays)",
     };
     const isJointContextAction = Boolean(jointTypeByContextAction[type]);
     const isPoleContextAction = type === "pole" || type === "pole-or" || type === "pole-new";
@@ -2450,6 +2452,7 @@ export default function JointMapManager({
       setAssetType("ag-joint");
       setJointName(getNextAssetName(savedJoints, "ag-joint"));
       setJointType(jointTypeByContextAction[type] || "LMJ (40 trays)");
+      setInstallMethod(type === "joint-oh" ? "OH" : "Underground");
     }
 
     if (isPoleContextAction) {
@@ -4374,6 +4377,17 @@ export default function JointMapManager({
                     <option>MidJ (4 trays)</option>
                     <option>MMJ (20 trays)</option>
                     <option>LMJ (40 trays)</option>
+                  </select>
+                  <div style={{ ...label, marginTop: 10 }}>Joint Install Method</div>
+                  <select
+                    value={installMethod}
+                    onChange={(e) =>
+                      setInstallMethod(e.target.value as InstallMethod)
+                    }
+                    style={input}
+                  >
+                    <option>Underground</option>
+                    <option>Overhead</option>
                   </select>
                 </>
               ) : null}

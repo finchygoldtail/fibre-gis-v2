@@ -442,7 +442,14 @@ function isVisible(asset: SavedMapAsset, visibleLayers: LayerVisibility): boolea
 
     case "ag-joint":
     default:
-      return visibleLayers.agJoints && jointSubtypeVisible(asset, layers);
+      if (!visibleLayers.agJoints) return false;
+      if (!jointSubtypeVisible(asset, layers)) return false;
+      {
+        const isUg = isUndergroundDpAsset(asset);
+        if (isUg && layers.ugDpJoints === false) return false;
+        if (!isUg && layers.ohDpJoints === false) return false;
+      }
+      return true;
   }
 }
 

@@ -293,6 +293,10 @@ export function useAssetSaveHandlers({
               jointType: getPointJointType(assetType, jointType),
               notes: notes.trim(),
               assetType,
+              installMethod:
+                assetType === "ag-joint" || assetType === "distribution-point"
+                  ? installMethod
+                  : (asset as any).installMethod,
               ...getAssetDetailPatch({
                 assetType,
                 existingAsset: asset,
@@ -430,6 +434,10 @@ export function useAssetSaveHandlers({
       assetType,
       jointType: getPointJointType(assetType, jointType),
       notes: notes.trim(),
+      installMethod:
+        assetType === "ag-joint" || assetType === "distribution-point"
+          ? installMethod
+          : undefined,
       mappingRows: assetType === "ag-joint" ? currentMappingRows : [],
       mappingRowsCount:
         assetType === "ag-joint" ? currentMappingRows.length : undefined,

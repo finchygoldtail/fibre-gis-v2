@@ -51,6 +51,8 @@ const layerGroups: LayerGroup[] = [
     { label: "MidJs", key: "midjJoints" },
     { label: "MMJs", key: "mmjJoints" },
     { label: "LMJs", key: "lmjJoints" },
+    { label: "UG Joints", key: "ugDpJoints" },
+    { label: "OH Joints", key: "ohDpJoints" },
   ],
 },
   {
@@ -116,8 +118,8 @@ const layerGroups: LayerGroup[] = [
     title: "DPs",
     options: [
       { label: "All DPs", key: "distributionPoints" },
-      { label: "OH Joints", key: "ohDpJoints" },
-      { label: "UG Joints", key: "ugDpJoints" },
+      { label: "OH DPs", key: "ohDpJoints" },
+      { label: "UG DPs", key: "ugDpJoints" },
     ],
   },
   {

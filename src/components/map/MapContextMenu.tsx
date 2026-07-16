@@ -6,6 +6,8 @@ export type MapContextAction =
   | "joint-cmj"
   | "joint-mmj"
   | "joint-midj"
+  | "joint-ug"
+  | "joint-oh"
   | "pole"
   | "pole-or"
   | "pole-new"
@@ -133,6 +135,9 @@ export default function MapContextMenu({
             <MenuRow label="CMJ Joint" onClick={() => select("joint-cmj")} />
             <MenuRow label="MMJ Joint" onClick={() => select("joint-mmj")} />
             <MenuRow label="MidJ Joint" onClick={() => select("joint-midj")} />
+            <Divider />
+            <MenuRow label="UG Joint" onClick={() => select("joint-ug")} />
+            <MenuRow label="Overhead Joint" onClick={() => select("joint-oh")} />
           </Submenu>
         )}
 
