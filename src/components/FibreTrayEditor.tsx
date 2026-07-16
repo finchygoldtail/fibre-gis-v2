@@ -608,6 +608,44 @@ function chainForSelectedSlot(model: FibreCell[], fibre: number): string {
   return cell.label.trim();
 }
 
+function splitContinuityTokens(label: string): string[] {
+  return cleanCell(label)
+    .split(/\s*(?:→|->|â†’)\s*/)
+    .map(cleanCell)
+    .filter(Boolean);
+}
+
+function parseTokenFibre(value: string): number | null {
+  const trimmed = cleanCell(value);
+  if (!trimmed) return null;
+  const direct = trimmed.match(/^F?\s*(\d{1,4})$/i);
+  if (!direct) return null;
+  const parsed = Number(direct[1]);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function looksLikeBreakoutCableToken(value: string): boolean {
+  const text = cleanCell(value).toUpperCase();
+  if (!text) return false;
+  return /\b(?:UG|12F|24F|48F|FAE|FULW|ULW)\b/i.test(text) || /\d{1,3}\s*F/i.test(text);
+}
+
+function extractMidjBreakoutFibre(label: string, parentFibre: number): number | null {
+  const tokens = splitContinuityTokens(label);
+  for (let index = 0; index < tokens.length - 1; index += 1) {
+    if (!looksLikeBreakoutCableToken(tokens[index])) continue;
+
+    const nextFibre = parseTokenFibre(tokens[index + 1]);
+    if (nextFibre !== null && nextFibre !== parentFibre) return nextFibre;
+  }
+
+  const numericTokens = tokens
+    .map(parseTokenFibre)
+    .filter((value): value is number => value !== null);
+  const downstream = numericTokens.find((value, index) => index > 0 && value !== parentFibre);
+  return downstream ?? null;
+}
+
 function getTextColour(bg: string): string {
   const hex = bg.replace("#", "");
   const r = parseInt(hex.substring(0, 2), 16);
@@ -1700,7 +1738,16 @@ export const FibreTrayEditor: React.FC = () => {
   const svgHeight = top + visibleTrays.length * (trayH + trayGap) + 54;
   const midjBreakoutFibres = model
     .filter((cell) => cell.label.trim())
-    .map((cell) => ({ fibre: cell.globalNo, label: `F${cell.globalNo}`, role: "breakout" as const }));
+    .map((cell) => {
+      const breakoutFibre = extractMidjBreakoutFibre(cell.label, cell.globalNo);
+      return {
+        fibre: cell.globalNo,
+        breakoutFibre: breakoutFibre ?? undefined,
+        label: `F${cell.globalNo}`,
+        breakoutLabel: breakoutFibre ? `F${breakoutFibre}` : undefined,
+        role: "breakout" as const,
+      };
+    });
   const midjSelectedBreakout =
     jointType === "MidJ (4 trays)" && selectedFibre && !midjBreakoutFibres.some((item) => item.fibre === selectedFibre)
       ? [{ fibre: selectedFibre, label: `F${selectedFibre}`, role: "breakout" as const }]

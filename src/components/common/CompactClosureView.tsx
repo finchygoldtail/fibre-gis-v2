@@ -4,7 +4,9 @@ type FibreRole = "breakout" | "splitter" | "passthrough" | "splice" | "spare";
 
 export type CompactClosureFibre = {
   fibre: number;
+  breakoutFibre?: number;
   label?: string;
+  breakoutLabel?: string;
   role?: FibreRole;
 };
 
@@ -49,7 +51,9 @@ function toRows(values: CompactClosureFibre[] | undefined, fallbackRole: FibreRo
   return (values || [])
     .map((item) => ({
       fibre: Number(item.fibre),
+      breakoutFibre: item.breakoutFibre === undefined ? undefined : Number(item.breakoutFibre),
       label: item.label,
+      breakoutLabel: item.breakoutLabel,
       role: item.role || fallbackRole,
     }))
     .filter((item) => Number.isFinite(item.fibre) && item.fibre > 0)
@@ -171,6 +175,9 @@ export default function CompactClosureView({
           {highlightedRows.length ? highlightedRows.map((row, index) => {
             const y = 474 + index * 32;
             const selected = selectedFibre === row.fibre;
+            const breakoutFibre = Number.isFinite(row.breakoutFibre) && Number(row.breakoutFibre) > 0 ? Number(row.breakoutFibre) : null;
+            const incomingLabel = row.label || `F${row.fibre}`;
+            const outgoingLabel = row.breakoutLabel || (breakoutFibre ? `F${breakoutFibre}` : "");
             return (
               <g
                 key={`breakout-${row.fibre}-${index}`}
@@ -178,15 +185,30 @@ export default function CompactClosureView({
                 style={{ cursor: onSelectFibre ? "pointer" : "default" }}
               >
                 <path
-                  d={`M166 ${y} C218 ${y - 16} 304 ${y + 16} 354 ${y}`}
+                  d={`M166 ${y} C198 ${y - 12} 220 ${y - 6} 232 ${y}`}
                   fill="none"
                   stroke={fibreColour(row.fibre)}
                   strokeWidth={selected ? 7 : 5}
                   strokeLinecap="round"
                 />
+                <path
+                  d={`M288 ${y} C308 ${y + 8} 330 ${y + 12} 354 ${y}`}
+                  fill="none"
+                  stroke={fibreColour(breakoutFibre || row.fibre)}
+                  strokeWidth={selected ? 7 : 5}
+                  strokeLinecap="round"
+                />
                 <rect x="226" y={y - 14} width="68" height="28" rx="6" fill={selected ? "#fde68a" : "#f59e0b"} stroke="#92400e" />
-                <text x="260" y={y + 6} fill="#111827" fontSize="17" fontWeight="950" textAnchor="middle">
-                  {row.label || `F${row.fibre}`}
+                <text x="220" y={y - 18} fill="#e5e7eb" fontSize="13" fontWeight="950" textAnchor="end">
+                  {incomingLabel}
+                </text>
+                {outgoingLabel ? (
+                  <text x="300" y={y - 18} fill="#e5e7eb" fontSize="13" fontWeight="950" textAnchor="start">
+                    {outgoingLabel}
+                  </text>
+                ) : null}
+                <text x="260" y={y + 6} fill="#111827" fontSize="15" fontWeight="950" textAnchor="middle">
+                  Splice
                 </text>
                 <circle cx="374" cy={y} r="6" fill={getRoleColour(row.role || "breakout")} />
               </g>
@@ -220,7 +242,7 @@ export default function CompactClosureView({
                 }}
               >
                 <span style={{ background: fibreColour(row.fibre) }} />
-                F{row.fibre} · {getRoleLabel(row.role || "breakout")}
+                F{row.fibre}{row.breakoutFibre ? ` to F${row.breakoutFibre}` : ""} · {getRoleLabel(row.role || "breakout")}
               </button>
             ))}
           </div>

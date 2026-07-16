@@ -15,8 +15,7 @@ type ContinuityRow = {
 };
 
 function formatFibreLabel(row: ContinuityRow) {
-  const localLabel = `F${row.pos}`;
-  return row.fibre === row.pos ? localLabel : `${localLabel} (Fibre ${row.fibre})`;
+  return `F${row.fibre}`;
 }
 
 export const ContinuityViewer: React.FC<Props> = ({
