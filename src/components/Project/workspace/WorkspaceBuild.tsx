@@ -325,6 +325,18 @@ export default function WorkspaceBuild({
     setSelectedInstallAssetIds(new Set());
   };
 
+  const canApplyBulkJointInstallMethod =
+    selectedInstallMethodAssets.length > 0 &&
+    Boolean(onBulkUpdateJointInstallMethod) &&
+    Boolean(jointInstallAuditNote.trim());
+  const bulkJointInstallDisabledReason = !onBulkUpdateJointInstallMethod
+    ? "Bulk install updates are not available from this workspace view."
+    : !selectedInstallMethodAssets.length
+      ? "Select at least one joint or DP before applying."
+      : !jointInstallAuditNote.trim()
+        ? "Enter an audit note before applying."
+        : "";
+
   const applyBuildBulkPiaNoi = async () => {
     if (!onBulkUpdateCablePiaNoi) {
       return;
@@ -740,12 +752,30 @@ export default function WorkspaceBuild({
 
         <button
           type="button"
-          style={{ ...button, background: "#14532d", borderColor: "rgba(74,222,128,0.42)", marginTop: 12, opacity: selectedInstallMethodAssets.length && onBulkUpdateJointInstallMethod && jointInstallAuditNote.trim() ? 1 : 0.55 }}
+          style={{
+            ...button,
+            background: canApplyBulkJointInstallMethod ? "#15803d" : "#14532d",
+            borderColor: canApplyBulkJointInstallMethod ? "rgba(134,239,172,0.72)" : "rgba(74,222,128,0.24)",
+            color: canApplyBulkJointInstallMethod ? "#ffffff" : "#9ca3af",
+            marginTop: 12,
+            opacity: canApplyBulkJointInstallMethod ? 1 : 0.62,
+            cursor: canApplyBulkJointInstallMethod ? "pointer" : "not-allowed",
+            boxShadow: canApplyBulkJointInstallMethod ? "0 0 0 1px rgba(34,197,94,0.22), 0 8px 18px rgba(21,128,61,0.22)" : "none",
+          }}
           onClick={applyBulkJointInstallMethod}
-          disabled={!selectedInstallMethodAssets.length || !onBulkUpdateJointInstallMethod || !jointInstallAuditNote.trim()}
+          disabled={!canApplyBulkJointInstallMethod}
         >
           Set {n(selectedInstallMethodAssets.length)} Selected Asset{selectedInstallMethodAssets.length === 1 ? "" : "s"} To {jointInstallMethod}
         </button>
+        {bulkJointInstallDisabledReason ? (
+          <div style={{ color: "#fbbf24", fontSize: 12, marginTop: 8 }}>
+            {bulkJointInstallDisabledReason}
+          </div>
+        ) : (
+          <div style={{ color: "#86efac", fontSize: 12, marginTop: 8 }}>
+            Ready to update {n(selectedInstallMethodAssets.length)} selected asset{selectedInstallMethodAssets.length === 1 ? "" : "s"}.
+          </div>
+        )}
       </section>
     ) : null}
 
