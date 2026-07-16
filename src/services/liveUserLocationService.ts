@@ -13,6 +13,8 @@ import { db } from "../firebase";
 export type LiveUserLocation = {
   id: string;
   uid: string;
+  sessionId?: string;
+  deviceLabel?: string;
   displayName: string;
   email: string;
   role: string;
@@ -50,13 +52,13 @@ function liveLocationsCollection(businessId: string) {
   );
 }
 
-function liveLocationDoc(businessId: string, uid: string) {
+function liveLocationDoc(businessId: string, locationId: string) {
   return doc(
     db,
     "businesses",
     cleanPathPart(businessId, "fibre-gis-v2"),
     LIVE_LOCATION_COLLECTION,
-    cleanPathPart(uid, "unknown-user"),
+    cleanPathPart(locationId, "unknown-user"),
   );
 }
 
@@ -64,7 +66,10 @@ export async function upsertLiveUserLocation(
   location: LiveUserLocationWrite,
 ): Promise<void> {
   await setDoc(
-    liveLocationDoc(location.businessId, location.uid),
+    liveLocationDoc(
+      location.businessId,
+      location.sessionId ? `${location.uid}-${location.sessionId}` : location.uid,
+    ),
     {
       ...location,
       serverUpdatedAt: serverTimestamp(),
@@ -75,9 +80,9 @@ export async function upsertLiveUserLocation(
 
 export async function clearLiveUserLocation(
   businessId: string,
-  uid: string,
+  locationId: string,
 ): Promise<void> {
-  await deleteDoc(liveLocationDoc(businessId, uid));
+  await deleteDoc(liveLocationDoc(businessId, locationId));
 }
 
 export function subscribeToLiveUserLocations(

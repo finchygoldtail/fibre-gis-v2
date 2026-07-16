@@ -6,6 +6,10 @@ type FieldNavigationBarProps = {
   onGpsLocate: () => void;
   onZoomToSelected: () => void;
   onOpenLayers: () => void;
+  isSharingLocation?: boolean;
+  liveUserCount?: number;
+  locationShareError?: string;
+  onToggleLocationSharing?: () => void;
 };
 
 const buttonBase: React.CSSProperties = {
@@ -24,6 +28,10 @@ export default function FieldNavigationBar({
   onGpsLocate,
   onZoomToSelected,
   onOpenLayers,
+  isSharingLocation = false,
+  liveUserCount = 0,
+  locationShareError = "",
+  onToggleLocationSharing,
 }: FieldNavigationBarProps) {
   const isMobile = variant === "mobile";
 
@@ -55,6 +63,31 @@ export default function FieldNavigationBar({
       >
         GPS
       </button>
+
+      {onToggleLocationSharing ? (
+        <button
+          type="button"
+          onClick={onToggleLocationSharing}
+          style={{
+            ...buttonBase,
+            minWidth: isMobile ? 48 : 104,
+            minHeight: isMobile ? 48 : 42,
+            padding: isMobile ? "0 10px" : "0 14px",
+            borderRadius: 999,
+            background: isSharingLocation ? "#dcfce7" : locationShareError ? "#fee2e2" : buttonBase.background,
+            color: isSharingLocation ? "#14532d" : locationShareError ? "#991b1b" : buttonBase.color,
+            border: isSharingLocation
+              ? "1px solid rgba(34,197,94,0.65)"
+              : locationShareError
+                ? "1px solid rgba(248,113,113,0.65)"
+                : buttonBase.border,
+          }}
+          title={locationShareError || (isSharingLocation ? "Stop sharing live location" : "Share live location")}
+        >
+          {isMobile ? (isSharingLocation ? "Live" : "Share") : isSharingLocation ? "Live On" : "Share"}
+          {liveUserCount > 0 && !isMobile ? ` (${liveUserCount})` : ""}
+        </button>
+      ) : null}
 
       <button
         type="button"

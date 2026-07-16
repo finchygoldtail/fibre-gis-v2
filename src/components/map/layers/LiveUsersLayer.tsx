@@ -86,6 +86,11 @@ export default function LiveUsersLayer({ users, currentUid }: Props) {
           <Popup minWidth={220}>
             <div style={{ color: "#0f172a", display: "grid", gap: 6 }}>
               <strong style={{ fontSize: 14 }}>{user.displayName}</strong>
+              {user.deviceLabel ? (
+                <div>
+                  <strong>Device:</strong> {user.deviceLabel}
+                </div>
+              ) : null}
               <div>{roleLabel(user.role)}</div>
               {user.activeProjectName ? (
                 <div>

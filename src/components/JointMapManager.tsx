@@ -5781,6 +5781,10 @@ export default function JointMapManager({
             if (currentEditingAsset) handleZoomToAsset(currentEditingAsset);
           }}
           onOpenLayers={() => setIsLayersOpen((prev) => !prev)}
+          isSharingLocation={isSharingLocation}
+          liveUserCount={liveUsers.length}
+          locationShareError={locationShareError}
+          onToggleLocationSharing={toggleLocationSharing}
         />
       )}
 
