@@ -174,6 +174,22 @@ export function downloadCmjJointTemplate() {
   XLSX.writeFile(buildTemplateWorkbook("Alistra GIS CMJ Joint Blank Template", "CMJ Joint Template", columns), "Alistra_GIS_CMJ_Joint_Template.xlsx");
 }
 
+export function downloadMidjJointTemplate() {
+  const columns: TemplateColumn[] = [
+    { key: "MidJ Name", required: true, description: "MidJ joint / closure name as it appears on the map.", example: "BD-ALL-AG1-MIDJ08" },
+    { key: "Main Fibre", required: true, description: "Fibre number on the loop-through cable. Keep this in column B for upload.", example: 17 },
+    { key: "Holder / Slot", description: "Compact splice holder, slot or local position reference.", example: "Holder 1" },
+    { key: "Main Cable", required: true, description: "Main cable passing through the MidJ.", example: "BD-ALL-48F-OH01" },
+    { key: "Action", required: true, description: "Passthrough, breakout, splice, spare or local wording.", example: "breakout" },
+    { key: "Breakout Cable", description: "Shoot-off cable for fibres broken out of the main cable.", example: "BD-ALL-12F-UG01" },
+    { key: "Breakout Fibre", description: "Fibre number on the breakout cable.", example: 1 },
+    { key: "Status", description: "Installed, planned, spare or passthrough.", example: "installed" },
+    { key: "Notes", description: "Engineer notes or audit comments.", example: "F17 breaks out to UG DP feed; remaining fibres loop through" },
+  ];
+
+  XLSX.writeFile(buildTemplateWorkbook("Alistra GIS MidJ Joint Blank Template", "MidJ Joint Template", columns), "Alistra_GIS_MidJ_Joint_Template.xlsx");
+}
+
 export function downloadMeetMeJointTemplate() {
   const columns: TemplateColumn[] = [
     { key: "Meet Me Chamber Name", required: true, description: "Meet Me chamber / LMJ reference as it appears on the map.", example: "Meet Me LMJ01" },
