@@ -2,8 +2,16 @@ import React, { useState } from "react";
 
 export type MapContextAction =
   | "joint"
+  | "joint-lmj"
+  | "joint-cmj"
+  | "joint-mmj"
+  | "joint-midj"
   | "pole"
+  | "pole-or"
+  | "pole-new"
   | "distribution-point"
+  | "distribution-point-ug"
+  | "distribution-point-oh"
   | "chamber"
   | "street-cab"
   | "exchange"
@@ -22,6 +30,7 @@ type Props = {
 };
 
 type SubmenuKey = "assets" | "draw" | "tools" | null;
+type AssetSubmenuKey = "joints" | "poles" | "dps" | null;
 
 export default function MapContextMenu({
   visible,
@@ -31,6 +40,7 @@ export default function MapContextMenu({
   onClose,
 }: Props) {
   const [openSubmenu, setOpenSubmenu] = useState<SubmenuKey>(null);
+  const [openAssetSubmenu, setOpenAssetSubmenu] = useState<AssetSubmenuKey>(null);
 
   if (!visible) return null;
 
@@ -93,15 +103,50 @@ export default function MapContextMenu({
 
         {openSubmenu === "assets" && (
           <Submenu top={4}>
-            <MenuRow label="Create Joint" onClick={() => select("joint")} />
-            <MenuRow label="Create Pole" onClick={() => select("pole")} />
             <MenuRow
-              label="Create DP"
-              onClick={() => select("distribution-point")}
+              label="Joints"
+              hasSubmenu
+              active={openAssetSubmenu === "joints"}
+              onMouseEnter={() => setOpenAssetSubmenu("joints")}
+            />
+            <MenuRow
+              label="Poles"
+              hasSubmenu
+              active={openAssetSubmenu === "poles"}
+              onMouseEnter={() => setOpenAssetSubmenu("poles")}
+            />
+            <MenuRow
+              label="DPs"
+              hasSubmenu
+              active={openAssetSubmenu === "dps"}
+              onMouseEnter={() => setOpenAssetSubmenu("dps")}
             />
             <MenuRow label="Create Chamber" onClick={() => select("chamber")} />
             <MenuRow label="Create Street Cab" onClick={() => select("street-cab")} />
             <MenuRow label="Create Exchange" onClick={() => select("exchange")} />
+          </Submenu>
+        )}
+
+        {openSubmenu === "assets" && openAssetSubmenu === "joints" && (
+          <Submenu left={346} top={4}>
+            <MenuRow label="LMJ Joint" onClick={() => select("joint-lmj")} />
+            <MenuRow label="CMJ Joint" onClick={() => select("joint-cmj")} />
+            <MenuRow label="MMJ Joint" onClick={() => select("joint-mmj")} />
+            <MenuRow label="MidJ Joint" onClick={() => select("joint-midj")} />
+          </Submenu>
+        )}
+
+        {openSubmenu === "assets" && openAssetSubmenu === "poles" && (
+          <Submenu left={346} top={32}>
+            <MenuRow label="OR Pole" onClick={() => select("pole-or")} />
+            <MenuRow label="New Pole" onClick={() => select("pole-new")} />
+          </Submenu>
+        )}
+
+        {openSubmenu === "assets" && openAssetSubmenu === "dps" && (
+          <Submenu left={346} top={60}>
+            <MenuRow label="UG Joint / DP" onClick={() => select("distribution-point-ug")} />
+            <MenuRow label="Overhead Joint / DP" onClick={() => select("distribution-point-oh")} />
           </Submenu>
         )}
 
@@ -127,15 +172,17 @@ export default function MapContextMenu({
 function Submenu({
   children,
   top,
+  left = 168,
 }: {
   children: React.ReactNode;
   top: number;
+  left?: number;
 }) {
   return (
     <div
       style={{
         position: "absolute",
-        left: 168,
+        left,
         top,
         width: 175,
         background: "#0f172a",

@@ -2337,6 +2337,27 @@ export default function JointMapManager({
 
   const handleContextAddAsset = (type: MapContextAction) => {
     const clickedPoint = contextMenu.latlng;
+    const jointTypeByContextAction: Partial<Record<MapContextAction, string>> = {
+      joint: "LMJ (40 trays)",
+      "joint-lmj": "LMJ (40 trays)",
+      "joint-cmj": "CMJ (12 trays)",
+      "joint-mmj": "MMJ (20 trays)",
+      "joint-midj": "MidJ (4 trays)",
+    };
+    const isJointContextAction = Boolean(jointTypeByContextAction[type]);
+    const isPoleContextAction = type === "pole" || type === "pole-or" || type === "pole-new";
+    const isDpContextAction =
+      type === "distribution-point" ||
+      type === "distribution-point-ug" ||
+      type === "distribution-point-oh";
+    const baseAssetType =
+      isJointContextAction
+        ? "joint"
+        : isPoleContextAction
+          ? "pole"
+          : isDpContextAction
+            ? "distribution-point"
+            : type;
 
     if (type === "measure") {
       setMapMode("measure");
@@ -2415,34 +2436,43 @@ export default function JointMapManager({
     }
 
     setPickedLocation(clickedPoint);
-    setAssetType(type as AssetType);
+    setAssetType(baseAssetType as AssetType);
     setJointName(
       getNextAssetName(
         savedJoints,
-        type === "joint" ? "ag-joint" : (type as any),
+        isJointContextAction ? "ag-joint" : (baseAssetType as any),
       ),
     );
     setMapMode("pick");
     setIsPanelOpen(true);
 
-    if (type === "joint") {
+    if (isJointContextAction) {
       setAssetType("ag-joint");
       setJointName(getNextAssetName(savedJoints, "ag-joint"));
-      setJointType("LMJ (40 trays)");
+      setJointType(jointTypeByContextAction[type] || "LMJ (40 trays)");
     }
 
-    if (type === "pole") {
+    if (isPoleContextAction) {
       setJointType("Pole");
-      setPoleDetails({});
+      setPoleDetails({
+        poleType:
+          type === "pole-or"
+            ? "or"
+            : type === "pole-new"
+              ? "new"
+              : undefined,
+      });
     }
 
-    if (type === "distribution-point") {
+    if (isDpContextAction) {
       setJointType("Distribution Point");
+      setInstallMethod(type === "distribution-point-oh" ? "OH" : "Underground");
       setDpDetails({
         powerReadings: ["", "", "", ""],
         closureType: DEFAULT_DISTRIBUTION_CLOSURE_TYPE,
         connectionsToHomes: 8,
         buildStatus: "Planned",
+        installMethod: type === "distribution-point-oh" ? "OH" : "Underground",
       });
     }
 
