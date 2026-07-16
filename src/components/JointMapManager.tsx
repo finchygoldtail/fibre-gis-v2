@@ -2932,6 +2932,12 @@ export default function JointMapManager({
         asset?.name ||
           asset?.jointName ||
           asset?.label ||
+          asset?.splitterBox ||
+          asset?.splitterBoxName ||
+          asset?.dpDetails?.splitterBox ||
+          asset?.dpDetails?.splitterBoxName ||
+          asset?.properties?.splitterBox ||
+          asset?.properties?.splitterBoxName ||
           asset?.assetId ||
           asset?.id ||
           "",
@@ -2949,6 +2955,12 @@ export default function JointMapManager({
         item.closureType,
         item.name,
         item.label,
+        item.splitterBox,
+        item.splitterBoxName,
+        item.dpDetails?.splitterBox,
+        item.dpDetails?.splitterBoxName,
+        item.properties?.splitterBox,
+        item.properties?.splitterBoxName,
       ]
         .map((value) => String(value ?? ""))
         .join(" ")
@@ -2959,6 +2971,7 @@ export default function JointMapManager({
         haystack.includes("AFN") ||
         haystack.includes("CBT") ||
         haystack.includes("MDU") ||
+        haystack.includes("SPLITTER") ||
         /\bSB\s*\d+|SB\d+/.test(haystack)
       );
     };
@@ -2978,6 +2991,14 @@ export default function JointMapManager({
             item.jointName,
             item.label,
             item.dpId,
+            item.splitterBox,
+            item.splitterBoxName,
+            item.dpDetails?.splitterBox,
+            item.dpDetails?.splitterBoxName,
+            item.properties?.splitterBox,
+            item.properties?.splitterBoxName,
+            item.properties?.dpDetails?.splitterBox,
+            item.properties?.dpDetails?.splitterBoxName,
           ]
             .map(normaliseRef)
             .filter(Boolean);

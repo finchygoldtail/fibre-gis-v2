@@ -84,17 +84,45 @@ function routeKey(route: Omit<FasSbRouteImportRoute, "id">): string {
 
 function getAssetName(asset: SavedMapAsset): string {
   const item = asset as any;
-  return String(item.name || item.jointName || item.label || item.assetId || item.id || "");
+  return String(
+    item.name ||
+      item.jointName ||
+      item.label ||
+      item.splitterBox ||
+      item.splitterBoxName ||
+      item.dpDetails?.splitterBox ||
+      item.dpDetails?.splitterBoxName ||
+      item.properties?.splitterBox ||
+      item.properties?.splitterBoxName ||
+      item.assetId ||
+      item.id ||
+      "",
+  );
 }
 
 function isDp(asset: SavedMapAsset): boolean {
   const item = asset as any;
   if (asset.geometry?.type === "LineString") return false;
-  const haystack = [item.assetType, item.type, item.jointType, item.dpType, item.closureType, item.name, item.label]
+  const haystack = [
+    item.assetType,
+    item.type,
+    item.jointType,
+    item.dpType,
+    item.distributionPointType,
+    item.closureType,
+    item.name,
+    item.label,
+    item.splitterBox,
+    item.splitterBoxName,
+    item.dpDetails?.splitterBox,
+    item.dpDetails?.splitterBoxName,
+    item.properties?.splitterBox,
+    item.properties?.splitterBoxName,
+  ]
     .map(text)
     .join(" ")
     .toUpperCase();
-  return haystack.includes("DISTRIBUTION") || haystack.includes("AFN") || haystack.includes("CBT") || haystack.includes("MDU") || /\bSB\s*\d+|SB\d+/.test(haystack);
+  return haystack.includes("DISTRIBUTION") || haystack.includes("AFN") || haystack.includes("CBT") || haystack.includes("MDU") || haystack.includes("SPLITTER") || /\bSB\s*\d+|SB\d+/.test(haystack);
 }
 
 function findDpForSb(projectAssets: SavedMapAsset[], sbName: string): SavedMapAsset | null {
@@ -102,7 +130,24 @@ function findDpForSb(projectAssets: SavedMapAsset[], sbName: string): SavedMapAs
   if (!wanted) return null;
   return projectAssets.find((asset) => {
     if (!isDp(asset)) return false;
-    const candidates = [asset.id, (asset as any).assetId, getAssetName(asset), (asset as any).label]
+    const item = asset as any;
+    const candidates = [
+      asset.id,
+      item.assetId,
+      getAssetName(asset),
+      item.name,
+      item.jointName,
+      item.label,
+      item.splitterBox,
+      item.splitterBoxName,
+      item.dpId,
+      item.dpDetails?.splitterBox,
+      item.dpDetails?.splitterBoxName,
+      item.properties?.splitterBox,
+      item.properties?.splitterBoxName,
+      item.properties?.dpDetails?.splitterBox,
+      item.properties?.dpDetails?.splitterBoxName,
+    ]
       .map((value) => normaliseRef(stripSplitterPort(value)))
       .filter(Boolean);
     return candidates.some((candidate) => candidate === wanted || candidate.includes(wanted) || wanted.includes(candidate));

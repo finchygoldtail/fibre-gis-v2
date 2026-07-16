@@ -1185,6 +1185,11 @@ export const FibreTrayEditor: React.FC = () => {
       const removedCableReferenceCount = countRemovedCableReferenceCells(rawRows, rows);
       const detectedAssetType = detectAssetTypeFromRows(rows);
       const detectedJointType = detectJointTypeFromRows(rows);
+      const selectedNamedJointType = inferJointTypeFromAssetName(selectedMapJoint);
+      const effectiveJointType: EditorJointType =
+        detectedJointType === "Meet Me Chamber"
+          ? detectedJointType
+          : selectedNamedJointType || detectedJointType;
 
       if (selectedJointId) {
         await saveJointMappingRowsToFirestore(selectedJointId, rows);
@@ -1195,7 +1200,7 @@ export const FibreTrayEditor: React.FC = () => {
           const isStreetCabAsset =
             asset.assetType === "street-cab" ||
             detectedAssetType === "street-cab";
-          const isMeetMeAsset = detectedAssetType === "meet-me" || detectedJointType === "Meet Me Chamber";
+          const isMeetMeAsset = detectedAssetType === "meet-me" || effectiveJointType === "Meet Me Chamber";
 
           const nextAsset: any = {
             ...asset,
@@ -1203,7 +1208,7 @@ export const FibreTrayEditor: React.FC = () => {
             // Do not overwrite from spreadsheet contents.
             name: asset.name,
             assetType: isStreetCabAsset ? "street-cab" : "ag-joint",
-            jointType: isStreetCabAsset ? "Street Cab" : isMeetMeAsset ? "Meet Me Chamber" : detectedJointType,
+            jointType: isStreetCabAsset ? "Street Cab" : isMeetMeAsset ? "Meet Me Chamber" : effectiveJointType,
             mappingRowsRef: true,
             mappingRowsCount: rows.length,
             mappingRowsSummary: {
@@ -1246,7 +1251,7 @@ export const FibreTrayEditor: React.FC = () => {
           ? "street-cab"
           : detectedAssetType,
       );
-      const editorRows = detectedJointType === "Meet Me Chamber" ? normalizeMeetMeRows(rows) : rows;
+      const editorRows = effectiveJointType === "Meet Me Chamber" ? normalizeMeetMeRows(rows) : rows;
       setMappingRows(editorRows);
       setTrayFilter("all");
       setSelectedFibre(null);
@@ -1254,19 +1259,19 @@ export const FibreTrayEditor: React.FC = () => {
       setMoveSrcMeetMeTarget(null);
       setSearchTerm("");
 
-      if (detectedJointType === "Meet Me Chamber") {
+      if (effectiveJointType === "Meet Me Chamber") {
         const base = buildJointForRows("LMJ (40 trays)", editorRows);
         setJointType("Meet Me Chamber");
         setModel(base);
-      } else if (detectedJointType === "LMJ (40 trays)") {
-        const base = buildJoint(detectedJointType);
+      } else if (effectiveJointType === "LMJ (40 trays)") {
+        const base = buildJoint(effectiveJointType);
         applyLmjRowsToModel(rows, base, (row) => extractChain(row).join(" → "));
-        setJointType(detectedJointType);
+        setJointType(effectiveJointType);
         setModel(base);
       } else if (detectedAssetType === "ag-joint") {
-        const base = buildJointForRows(detectedJointType, rows);
+        const base = buildJointForRows(effectiveJointType, rows);
 
-        setJointType(detectedJointType);
+        setJointType(effectiveJointType);
         setModel(
           applyStandardRowsToTrayModel(base, rows, {
             overwriteExistingLabels: true,
