@@ -2835,7 +2835,24 @@ export default function JointMapManager({
 
     beforeAssets.forEach((asset) => {
       const item = asset as any;
-      const haystack = [item.assetType, item.jointType, item.name, item.label]
+      const haystack = [
+        item.assetType,
+        item.type,
+        item.jointType,
+        item.name,
+        item.label,
+        item.id,
+        item.dpType,
+        item.distributionPointType,
+        item.splitterBox,
+        item.splitterBoxName,
+        item.dpDetails?.closureType,
+        item.properties?.dpType,
+        item.properties?.distributionPointType,
+        item.properties?.splitterBox,
+        item.properties?.splitterBoxName,
+        item.properties?.dpDetails?.closureType,
+      ]
         .map((value) => String(value || "").toLowerCase())
         .join(" ");
       const isJoint =
@@ -2845,16 +2862,42 @@ export default function JointMapManager({
         haystack.includes("cmj") ||
         haystack.includes("mmj") ||
         haystack.includes("midj");
+      const isDistributionPoint =
+        item.assetType === "distribution-point" ||
+        haystack.includes("distribution point") ||
+        haystack.includes("dp") ||
+        haystack.includes("afn") ||
+        haystack.includes("cbt") ||
+        haystack.includes("mdu") ||
+        /(^|[-_\s])sb\s*\d+/.test(haystack);
 
-      if (!isJoint) return;
-      if (item.installMethod === args.installMethod && item.properties?.installMethod === args.installMethod) return;
+      if (!isJoint && !isDistributionPoint) return;
+
+      const topLevelMatches =
+        item.installMethod === args.installMethod &&
+        item.properties?.installMethod === args.installMethod;
+      const dpDetailsMatch =
+        !isDistributionPoint ||
+        (item.dpDetails?.installMethod === args.installMethod &&
+          item.properties?.dpDetails?.installMethod === args.installMethod);
+      if (topLevelMatches && dpDetailsMatch) return;
+
+      const nextDpDetails = isDistributionPoint
+        ? {
+            ...(item.properties?.dpDetails || {}),
+            ...(item.dpDetails || {}),
+            installMethod: args.installMethod,
+          }
+        : item.dpDetails;
 
       const rawNextAsset = {
         ...item,
         installMethod: args.installMethod,
+        ...(isDistributionPoint ? { dpDetails: nextDpDetails } : {}),
         properties: {
           ...(item.properties || {}),
           installMethod: args.installMethod,
+          ...(isDistributionPoint ? { dpDetails: nextDpDetails } : {}),
         },
       } as SavedMapAsset;
 
@@ -2868,7 +2911,7 @@ export default function JointMapManager({
     });
 
     if (!updatedById.size) {
-      alert(`No joint install method changes were needed; selected joints already show ${args.installMethod}.`);
+      alert(`No joint / DP install method changes were needed; selected assets already show ${args.installMethod}.`);
       return;
     }
 
@@ -2886,25 +2929,39 @@ export default function JointMapManager({
         asset: afterAsset,
         action: "updated",
         reason,
-        comment: `Manager bulk joint install method update from Project Workspace: ${args.installMethod}`,
-        before: { installMethod: (beforeAsset as any).installMethod || "" },
-        after: { installMethod: (afterAsset as any).installMethod || "" },
+        comment: `Manager bulk joint / DP install method update from Project Workspace: ${args.installMethod}`,
+        before: {
+          installMethod:
+            (beforeAsset as any).installMethod ||
+            (beforeAsset as any).dpDetails?.installMethod ||
+            (beforeAsset as any).properties?.installMethod ||
+            (beforeAsset as any).properties?.dpDetails?.installMethod ||
+            "",
+        },
+        after: {
+          installMethod:
+            (afterAsset as any).installMethod ||
+            (afterAsset as any).dpDetails?.installMethod ||
+            (afterAsset as any).properties?.installMethod ||
+            (afterAsset as any).properties?.dpDetails?.installMethod ||
+            "",
+        },
       });
     });
 
     try {
       await saveMapAssetsViaCoordinator(nextSavedJoints, {
-        reason: `bulk-joint-install:${reason}`,
+        reason: `bulk-joint-dp-install:${reason}`,
         source: "joint-map-manager",
       });
     } catch (error) {
-      console.error("Bulk joint install method map save failed", error);
+      console.error("Bulk joint / DP install method map save failed", error);
       throw new Error(
-        "Joint install methods were applied locally, but the map save failed. Check the console before refreshing.",
+        "Joint / DP install methods were applied locally, but the map save failed. Check the console before refreshing.",
       );
     }
 
-    alert(`Updated ${updatedById.size} joint${updatedById.size === 1 ? "" : "s"} to ${args.installMethod}.`);
+    alert(`Updated ${updatedById.size} joint / DP asset${updatedById.size === 1 ? "" : "s"} to ${args.installMethod}.`);
   };
 
   const handleWorkspaceClearDpFibreAllocations = async (args: {
