@@ -208,7 +208,8 @@ textarea:-webkit-autofill {
   overflow: hidden;
 }
 
-.alistra-field-mode-bar {
+.alistra-field-mode-bar,
+.alistra-mobile-topbar {
   position: fixed;
   top: max(10px, env(safe-area-inset-top));
   left: 50%;
@@ -226,26 +227,108 @@ textarea:-webkit-autofill {
   pointer-events: none;
 }
 
+.alistra-mobile-topbar {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  pointer-events: auto;
+}
+
 .alistra-field-mode-bar strong,
-.alistra-field-mode-bar span {
+.alistra-field-mode-bar span,
+.alistra-mobile-topbar strong,
+.alistra-mobile-topbar span {
   display: block;
 }
 
-.alistra-field-mode-bar strong {
+.alistra-field-mode-bar strong,
+.alistra-mobile-topbar strong {
   font-size: 12px;
   line-height: 1.2;
 }
 
-.alistra-field-mode-bar span {
+.alistra-field-mode-bar span,
+.alistra-mobile-topbar span {
   margin-top: 2px;
   color: #cbd5e1;
   font-size: 11px;
   line-height: 1.25;
 }
 
+.alistra-mobile-topbar-actions {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.alistra-mobile-topbar-actions button,
+.alistra-mobile-bottomnav button {
+  min-height: 44px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  background: rgba(30, 41, 59, 0.94);
+  color: #f8fafc;
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.alistra-mobile-topbar-actions button {
+  min-width: 58px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.alistra-mobile-bottomnav {
+  display: none;
+  position: fixed;
+  left: max(10px, env(safe-area-inset-left));
+  right: max(10px, env(safe-area-inset-right));
+  bottom: max(10px, env(safe-area-inset-bottom));
+  z-index: 999998;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.94);
+  box-shadow: 0 18px 44px rgba(2, 6, 23, 0.42);
+  backdrop-filter: blur(12px);
+}
+
+.alistra-mobile-bottomnav button {
+  min-width: 0;
+  padding: 0 4px;
+  font-size: 11px;
+}
+
 @media (min-width: 1200px) {
   .alistra-field-mode-bar {
     display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .alistra-mobile-shell .alistra-field-mode-bar {
+    display: none;
+  }
+
+  .alistra-mobile-shell .alistra-mobile-topbar {
+    display: flex;
+  }
+
+  .alistra-mobile-shell .alistra-mobile-bottomnav {
+    display: grid;
+  }
+
+  .alistra-mobile-shell .leaflet-control-container {
+    pointer-events: auto;
+  }
+
+  .alistra-mobile-shell .leaflet-bottom {
+    bottom: 76px;
   }
 }
 
