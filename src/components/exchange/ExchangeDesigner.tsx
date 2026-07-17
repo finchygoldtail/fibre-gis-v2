@@ -645,6 +645,7 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
     visibleHdSplitterPanels.find((panel) => panel.id === selectedSplitterPanelId) ??
     visibleHdSplitterPanels[0] ??
     null;
+  const selectedSplitterPanelRatio = selectedSplitterPanel ? panelSplitterRatio(selectedSplitterPanel) : "1:4";
 
   const selectedFeederPanel =
     visibleFeederPanels.find((panel) => panel.id === selectedFeederPanelId) ??
@@ -1700,7 +1701,43 @@ const handleConvertImportedWorkbook = async () => {
                   {visibleHdSplitterPanels.map((panel) => {
                     const ratio = panelSplitterRatio(panel);
                     return (
-                      <Compact2USplitterPanel
+                      ratio === "1:2" ? (
+                        <OneToTwoSplitterPanel
+                          key={panel.id}
+                          panel={panel}
+                          selectedInputId={
+                            selectedNode?.type === "splitter-input" && selectedNode.panelId === panel.id
+                              ? selectedNode.inputId
+                              : null
+                          }
+                          selectedOutputId={
+                            selectedNode?.type === "splitter-output" && selectedNode.panelId === panel.id
+                              ? selectedNode.outputId
+                              : null
+                          }
+                          highlightedInputIds={selectedChain.splitterInputIds}
+                          highlightedOutputIds={selectedChain.splitterOutputIds}
+                          search={search}
+                          onSelectInput={(inputItem) => {
+                            setSelectedSplitterPanelId(panel.id);
+                            setSelectedNode({
+                              type: "splitter-input",
+                              panelId: panel.id,
+                              inputId: inputItem.id,
+                            });
+                          }}
+                          onSelectOutput={(inputItem, output) => {
+                            setSelectedSplitterPanelId(panel.id);
+                            setSelectedNode({
+                              type: "splitter-output",
+                              panelId: panel.id,
+                              inputId: inputItem.id,
+                              outputId: output.id,
+                            });
+                          }}
+                        />
+                      ) : (
+                        <Compact2USplitterPanel
                         key={panel.id}
                         panel={panel}
                         selectedInputId={
@@ -1736,7 +1773,8 @@ const handleConvertImportedWorkbook = async () => {
                             outputId: output.id,
                           });
                         }}
-                      />
+                        />
+                      )
                     );
                   })}
                 </div>
@@ -2138,7 +2176,7 @@ const handleConvertImportedWorkbook = async () => {
                     style={{ ...input, maxWidth: 340, fontWeight: 700 }}
                   />
                   <select
-                    value={panelSplitterRatio(selectedSplitterPanel)}
+                    value={selectedSplitterPanelRatio}
                     onChange={(event) =>
                       handleUpdateSplitterPanelRatio(selectedSplitterPanel.id, event.target.value as SplitterRatio)
                     }
@@ -2151,36 +2189,62 @@ const handleConvertImportedWorkbook = async () => {
                     Delete Splitter Panel
                   </button>
                   <span style={{ color: "#cbd5e1" }}>
-                    24 inputs x {panelSplitterRatio(selectedSplitterPanel)} = {24 * outputCountForSplitterRatio(panelSplitterRatio(selectedSplitterPanel))} outputs / 1U HD splitter
+                    24 inputs x {selectedSplitterPanelRatio} = {24 * outputCountForSplitterRatio(selectedSplitterPanelRatio)} outputs / 1U HD splitter
                   </span>
                 </div>
 
-                <Compact2USplitterPanel
-                  panel={selectedSplitterPanel}
-                  selectedInputId={selectedNode?.type === "splitter-input" ? selectedNode.inputId : null}
-                  selectedOutputId={selectedNode?.type === "splitter-output" ? selectedNode.outputId : null}
-                  highlightedInputIds={selectedChain.splitterInputIds}
-                  highlightedOutputIds={selectedChain.splitterOutputIds}
-                  search={search}
-                  inputCount={24}
-                  outputCount={24 * outputCountForSplitterRatio(panelSplitterRatio(selectedSplitterPanel))}
-                  splitterRatio={panelSplitterRatio(selectedSplitterPanel)}
-                  onSelectInput={(inputItem) =>
-                    setSelectedNode({
-                      type: "splitter-input",
-                      panelId: selectedSplitterPanel.id,
-                      inputId: inputItem.id,
-                    })
-                  }
-                  onSelectOutput={(inputItem, output) =>
-                    setSelectedNode({
-                      type: "splitter-output",
-                      panelId: selectedSplitterPanel.id,
-                      inputId: inputItem.id,
-                      outputId: output.id,
-                    })
-                  }
-                />
+                {selectedSplitterPanelRatio === "1:2" ? (
+                  <OneToTwoSplitterPanel
+                    panel={selectedSplitterPanel}
+                    selectedInputId={selectedNode?.type === "splitter-input" ? selectedNode.inputId : null}
+                    selectedOutputId={selectedNode?.type === "splitter-output" ? selectedNode.outputId : null}
+                    highlightedInputIds={selectedChain.splitterInputIds}
+                    highlightedOutputIds={selectedChain.splitterOutputIds}
+                    search={search}
+                    onSelectInput={(inputItem) =>
+                      setSelectedNode({
+                        type: "splitter-input",
+                        panelId: selectedSplitterPanel.id,
+                        inputId: inputItem.id,
+                      })
+                    }
+                    onSelectOutput={(inputItem, output) =>
+                      setSelectedNode({
+                        type: "splitter-output",
+                        panelId: selectedSplitterPanel.id,
+                        inputId: inputItem.id,
+                        outputId: output.id,
+                      })
+                    }
+                  />
+                ) : (
+                  <Compact2USplitterPanel
+                    panel={selectedSplitterPanel}
+                    selectedInputId={selectedNode?.type === "splitter-input" ? selectedNode.inputId : null}
+                    selectedOutputId={selectedNode?.type === "splitter-output" ? selectedNode.outputId : null}
+                    highlightedInputIds={selectedChain.splitterInputIds}
+                    highlightedOutputIds={selectedChain.splitterOutputIds}
+                    search={search}
+                    inputCount={24}
+                    outputCount={24 * outputCountForSplitterRatio(selectedSplitterPanelRatio)}
+                    splitterRatio={selectedSplitterPanelRatio}
+                    onSelectInput={(inputItem) =>
+                      setSelectedNode({
+                        type: "splitter-input",
+                        panelId: selectedSplitterPanel.id,
+                        inputId: inputItem.id,
+                      })
+                    }
+                    onSelectOutput={(inputItem, output) =>
+                      setSelectedNode({
+                        type: "splitter-output",
+                        panelId: selectedSplitterPanel.id,
+                        inputId: inputItem.id,
+                        outputId: output.id,
+                      })
+                    }
+                  />
+                )}
               </>
             )}
           </div>
@@ -2623,6 +2687,103 @@ function WdmSide<TPort extends { id: string; portNumber: number; status?: Exchan
       </div>
       <div style={wdmNumberGuide}>1-24 / 25-48 / 49-72</div>
     </section>
+  );
+}
+
+function OneToTwoSplitterPanel({
+  panel,
+  selectedInputId,
+  selectedOutputId,
+  highlightedInputIds,
+  highlightedOutputIds,
+  search,
+  onSelectInput,
+  onSelectOutput,
+}: {
+  panel: HdSplitterPanel;
+  selectedInputId: string | null;
+  selectedOutputId: string | null;
+  highlightedInputIds: Set<string>;
+  highlightedOutputIds: Set<string>;
+  search: string;
+  onSelectInput: (input: HdSplitterPanel["inputs"][number]) => void;
+  onSelectOutput: (
+    input: HdSplitterPanel["inputs"][number],
+    output: HdSplitterPanel["inputs"][number]["outputs"][number],
+  ) => void;
+}) {
+  const visibleInputs = panel.inputs
+    .filter((inputItem) =>
+      matchesSearch(
+        [
+          inputItem.inputNumber,
+          inputItem.connectedPonPortId,
+          inputItem.notes,
+          ...inputItem.outputs.flatMap((output) => [
+            output.outputNumber,
+            output.connectedFeederFibreId,
+            output.notes,
+          ]),
+        ],
+        search,
+      ),
+    )
+    .slice(0, 24);
+
+  return (
+    <div style={oneToTwoPanelShell}>
+      <div style={oneToTwoHeader}>
+        <div>
+          <div style={oneToTwoKicker}>COMPACT 1U HD SPLITTER PANEL</div>
+          <strong>{panel.name}</strong>
+        </div>
+        <span style={oneToTwoBadge}>24 IN / 48 OUT</span>
+      </div>
+      <div style={oneToTwoBody}>
+        {visibleInputs.map((inputItem) => {
+          const inputActive = selectedInputId === inputItem.id || highlightedInputIds.has(inputItem.id);
+          const outputs = inputItem.outputs.slice(0, 2);
+
+          return (
+            <div key={inputItem.id} style={oneToTwoGroup}>
+              <button
+                type="button"
+                onClick={() => onSelectInput(inputItem)}
+                style={{
+                  ...oneToTwoInputPort,
+                  ...(inputActive ? selectedNodeStyle : {}),
+                }}
+                title={`Splitter input ${inputItem.inputNumber}`}
+              >
+                <span>IN</span>
+                <strong>{inputItem.inputNumber}</strong>
+              </button>
+              <div style={oneToTwoSplitterTrace} />
+              <div style={oneToTwoOutputRow}>
+                {outputs.map((output) => {
+                  const outputActive = selectedOutputId === output.id || highlightedOutputIds.has(output.id);
+                  return (
+                    <button
+                      key={output.id}
+                      type="button"
+                      onClick={() => onSelectOutput(inputItem, output)}
+                      style={{
+                        ...oneToTwoOutputPort,
+                        ...(outputActive ? selectedNodeStyle : {}),
+                      }}
+                      title={`Input ${inputItem.inputNumber} output ${output.outputNumber}`}
+                    >
+                      <span>OUT</span>
+                      <strong>{output.outputNumber}</strong>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -3673,6 +3834,108 @@ const wdmNumberGuide: React.CSSProperties = {
   fontSize: 10,
   textAlign: "center",
   fontWeight: 800,
+};
+
+const oneToTwoPanelShell: React.CSSProperties = {
+  background: "#101820",
+  border: "1px solid #334155",
+  borderRadius: 8,
+  padding: 12,
+  display: "grid",
+  gap: 12,
+  boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.04)",
+};
+
+const oneToTwoHeader: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  alignItems: "flex-start",
+};
+
+const oneToTwoKicker: React.CSSProperties = {
+  color: "#7dd3fc",
+  fontSize: 10,
+  fontWeight: 900,
+  marginBottom: 4,
+};
+
+const oneToTwoBadge: React.CSSProperties = {
+  border: "1px solid #475569",
+  borderRadius: 6,
+  color: "#e0f2fe",
+  background: "#020617",
+  fontSize: 11,
+  fontWeight: 900,
+  padding: "5px 8px",
+  whiteSpace: "nowrap",
+};
+
+const oneToTwoBody: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(74px, 1fr))",
+  gap: 8,
+  padding: 10,
+  borderRadius: 8,
+  background: "#050b12",
+  border: "1px solid #1f2937",
+};
+
+const oneToTwoGroup: React.CSSProperties = {
+  minHeight: 108,
+  border: "1px solid #263445",
+  borderRadius: 6,
+  padding: 6,
+  display: "grid",
+  gridTemplateRows: "32px 14px 1fr",
+  gap: 4,
+  background: "#0b1220",
+};
+
+const oneToTwoInputPort: React.CSSProperties = {
+  border: "1px solid #22c55e",
+  background: "#166534",
+  color: "#f8fafc",
+  borderRadius: 4,
+  cursor: "pointer",
+  display: "grid",
+  gridTemplateColumns: "1fr auto",
+  gap: 4,
+  alignItems: "center",
+  padding: "3px 5px",
+  fontSize: 10,
+  fontWeight: 900,
+};
+
+const oneToTwoSplitterTrace: React.CSSProperties = {
+  width: "70%",
+  height: 14,
+  justifySelf: "center",
+  borderLeft: "2px solid #facc15",
+  borderRight: "2px solid #facc15",
+  borderBottom: "2px solid #facc15",
+  borderRadius: "0 0 8px 8px",
+};
+
+const oneToTwoOutputRow: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 5,
+};
+
+const oneToTwoOutputPort: React.CSSProperties = {
+  minHeight: 34,
+  border: "1px solid #16a34a",
+  background: "#052e16",
+  color: "#dcfce7",
+  borderRadius: 4,
+  cursor: "pointer",
+  display: "grid",
+  justifyItems: "center",
+  alignContent: "center",
+  gap: 1,
+  fontSize: 9,
+  fontWeight: 900,
 };
 
 const rackDesignerGrid: React.CSSProperties = {
