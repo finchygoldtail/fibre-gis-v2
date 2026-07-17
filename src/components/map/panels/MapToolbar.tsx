@@ -111,6 +111,47 @@ export default function MapToolbar({
           : autosaveStatus === "saved"
             ? "#16a34a"
             : "#475569";
+  const mobileSaveBanner = isMobile && autosaveStatus !== "idle" ? (
+    <div
+      style={mobileSaveBannerStyle(autosaveStatus)}
+      title={autosaveError || autosaveLabel}
+      role={autosaveStatus === "error" ? "alert" : "status"}
+    >
+      <span style={mobileSaveDotStyle(autosaveStatus)} />
+      <div style={mobileSaveTextStyle}>
+        <strong>
+          {autosaveStatus === "error"
+            ? "Save failed"
+            : autosaveStatus === "pending"
+              ? "Unsaved changes"
+              : autosaveStatus === "saving"
+                ? "Saving..."
+                : "Saved"}
+        </strong>
+        <span>
+          {autosaveStatus === "error"
+            ? "Do not refresh. Retry the save."
+            : autosaveStatus === "pending"
+              ? "Do not refresh yet."
+              : autosaveStatus === "saving"
+                ? "Writing to Firestore."
+                : autosaveSavedAt
+                  ? `Safe at ${autosaveSavedAt}`
+                  : "Safe to refresh."}
+        </span>
+      </div>
+      {canSaveMap && (autosaveStatus === "error" || autosaveStatus === "pending") ? (
+        <button
+          type="button"
+          onClick={onSaveMap}
+          disabled={isSavingMap}
+          style={mobileSaveRetryButtonStyle}
+        >
+          {isSavingMap ? "Saving" : "Retry"}
+        </button>
+      ) : null}
+    </div>
+  ) : null;
 
   useEffect(() => {
     const refresh = () => setMessageStateVersion((value) => value + 1);
@@ -256,6 +297,7 @@ export default function MapToolbar({
 
   if (isMobile) {
     return (
+      <>
       <div style={mobileTopBarStyle(isSmallPhone)}>
         <button onClick={onOpenAssetPanel} style={mobileTopButtonStyle}>☰ Assets</button>
 
@@ -328,6 +370,8 @@ export default function MapToolbar({
 
         {mobileSearchOpen ? searchCard : null}
       </div>
+      {mobileSaveBanner}
+      </>
     );
   }
 
@@ -893,6 +937,95 @@ const mobileTopBarStyle = (isSmallPhone: boolean): React.CSSProperties => ({
   borderRight: "none",
   backdropFilter: "blur(10px)",
 });
+
+const mobileSaveBannerStyle = (
+  status: "idle" | "pending" | "saving" | "saved" | "error",
+): React.CSSProperties => {
+  const palette =
+    status === "error"
+      ? {
+          border: "rgba(248,113,113,0.58)",
+          background: "rgba(127,29,29,0.95)",
+          color: "#fee2e2",
+        }
+      : status === "pending"
+        ? {
+            border: "rgba(251,191,36,0.58)",
+            background: "rgba(120,53,15,0.95)",
+            color: "#fef3c7",
+          }
+        : status === "saving"
+          ? {
+              border: "rgba(96,165,250,0.58)",
+              background: "rgba(30,64,175,0.95)",
+              color: "#dbeafe",
+            }
+          : {
+              border: "rgba(74,222,128,0.54)",
+              background: "rgba(20,83,45,0.94)",
+              color: "#dcfce7",
+            };
+
+  return {
+    position: "absolute",
+    top: `calc(62px + ${responsiveSafeArea.top})`,
+    left: `calc(8px + ${responsiveSafeArea.left})`,
+    right: `calc(8px + ${responsiveSafeArea.right})`,
+    zIndex: responsiveZ.mobileMenu - 1,
+    minHeight: 48,
+    display: "grid",
+    gridTemplateColumns: "12px minmax(0, 1fr) auto",
+    alignItems: "center",
+    gap: 10,
+    padding: "8px 10px",
+    border: `1px solid ${palette.border}`,
+    borderRadius: 14,
+    background: palette.background,
+    color: palette.color,
+    boxShadow: "0 14px 34px rgba(0,0,0,0.34)",
+    backdropFilter: "blur(10px)",
+    pointerEvents: "auto",
+  };
+};
+
+const mobileSaveDotStyle = (
+  status: "idle" | "pending" | "saving" | "saved" | "error",
+): React.CSSProperties => ({
+  width: 10,
+  height: 10,
+  borderRadius: 999,
+  background:
+    status === "error"
+      ? "#fecaca"
+      : status === "pending"
+        ? "#fde68a"
+        : status === "saving"
+          ? "#bfdbfe"
+          : "#bbf7d0",
+  boxShadow:
+    status === "saving"
+      ? "0 0 0 4px rgba(191,219,254,0.18)"
+      : "0 0 0 3px rgba(255,255,255,0.12)",
+});
+
+const mobileSaveTextStyle: React.CSSProperties = {
+  minWidth: 0,
+  display: "grid",
+  gap: 1,
+  lineHeight: 1.15,
+};
+
+const mobileSaveRetryButtonStyle: React.CSSProperties = {
+  minHeight: 34,
+  minWidth: 66,
+  border: "1px solid rgba(255,255,255,0.34)",
+  borderRadius: 10,
+  background: "rgba(255,255,255,0.14)",
+  color: "#ffffff",
+  fontWeight: 900,
+  cursor: "pointer",
+  ...mobileButtonBase,
+};
 
 const mobileTopButtonStyle: React.CSSProperties = {
   minHeight: 42,
