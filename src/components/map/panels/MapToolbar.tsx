@@ -380,8 +380,6 @@ export default function MapToolbar({
               ) : null}
               <button style={mobileMenuRowStyle} onClick={() => { setMoreMenuOpen(false); onToggleLayers(); }}>{isLayersOpen ? "Hide Layers" : "Layers"}</button>
               <button style={mobileMenuRowStyle} onClick={() => { setMoreMenuOpen(false); setMessagesOpen((value) => !value); }}>Messages {areaMessages.length ? `(${areaMessages.length})` : ""}</button>
-              <div style={{ ...mobileMenuRowStyle, cursor: "default", background: "#111827", color: "#cbd5e1" }} title={autosaveError || autosaveLabel}>{autosaveLabel}</div>
-              {canSaveMap && <button style={mobileMenuRowStyle} onClick={() => { setMoreMenuOpen(false); onSaveMap(); }} disabled={isSavingMap}>{isSavingMap ? "Saving..." : "Save Now"}</button>}
               <div style={mobileUserMenuWrapStyle}><UserMenu variant="topbar" /></div>
             </div>
           ) : null}
