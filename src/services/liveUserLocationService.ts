@@ -36,6 +36,26 @@ export type LiveUserLocationWrite = Omit<LiveUserLocation, "id">;
 
 const LIVE_LOCATION_COLLECTION = "liveUserLocations";
 const POLL_INTERVAL_MS = 10_000;
+const MAX_CALLABLE_FAILURES = 3;
+
+function getErrorCode(error: unknown): string {
+  const code = (error as { code?: unknown })?.code;
+  return typeof code === "string" ? code : "";
+}
+
+function isPermissionError(error: unknown): boolean {
+  const code = getErrorCode(error).toLowerCase();
+  return code.includes("permission-denied") || code.includes("unauthenticated");
+}
+
+function logLiveLocationWarning(message: string, error: unknown): void {
+  if (isPermissionError(error)) {
+    console.info(message, error);
+    return;
+  }
+
+  console.warn(message, error);
+}
 
 function cleanPathPart(value: string | null | undefined, fallback: string): string {
   return (
@@ -80,7 +100,7 @@ export async function upsertLiveUserLocation(
       { merge: true },
     );
   } catch (error) {
-    console.warn("Direct live location write failed; trying callable fallback", error);
+    logLiveLocationWarning("Direct live location write failed; trying callable fallback", error);
     const upsertCallable = httpsCallable<LiveUserLocationWrite, { success: boolean }>(
       functions,
       "upsertLiveUserLocation",
@@ -96,7 +116,7 @@ export async function clearLiveUserLocation(
   try {
     await deleteDoc(liveLocationDoc(businessId, locationId));
   } catch (error) {
-    console.warn("Direct live location clear failed; trying callable fallback", error);
+    logLiveLocationWarning("Direct live location clear failed; trying callable fallback", error);
     const clearCallable = httpsCallable<
       { businessId: string; locationId: string },
       { success: boolean }
@@ -141,19 +161,35 @@ export function subscribeToLiveUserLocations(
 ): Unsubscribe {
   let stopped = false;
   let firestoreWorking = false;
+  let callableFailures = 0;
+  let callableDisabled = false;
+  let pollTimer: number | null = null;
 
   const pollCallable = async () => {
+    if (callableDisabled) return;
+
     try {
       const locations = await fetchLiveUserLocationsViaCallable(businessId);
+      callableFailures = 0;
       if (!stopped) onChange(filterLiveLocations(locations));
     } catch (error) {
-      console.warn("Live user location callable poll failed", error);
+      callableFailures += 1;
+      logLiveLocationWarning("Live user location callable poll failed", error);
+
+      if (callableFailures >= MAX_CALLABLE_FAILURES) {
+        callableDisabled = true;
+        if (pollTimer !== null) {
+          window.clearInterval(pollTimer);
+          pollTimer = null;
+        }
+      }
+
       if (!firestoreWorking) onError?.(error);
     }
   };
 
   void pollCallable();
-  const pollTimer = window.setInterval(pollCallable, POLL_INTERVAL_MS);
+  pollTimer = window.setInterval(pollCallable, POLL_INTERVAL_MS);
 
   const unsubscribeSnapshot = onSnapshot(
     query(liveLocationsCollection(businessId)),
@@ -166,7 +202,7 @@ export function subscribeToLiveUserLocations(
       onChange(filterLiveLocations(locations));
     },
     (error) => {
-      console.warn("Live user location subscription failed", error);
+      logLiveLocationWarning("Live user location subscription failed", error);
       firestoreWorking = false;
       void pollCallable();
     },
@@ -174,7 +210,9 @@ export function subscribeToLiveUserLocations(
 
   return () => {
     stopped = true;
-    window.clearInterval(pollTimer);
+    if (pollTimer !== null) {
+      window.clearInterval(pollTimer);
+    }
     unsubscribeSnapshot();
   };
 }

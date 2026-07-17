@@ -11,6 +11,27 @@ type UseMapNavigationArgs = {
   projectAreas: SavedMapAsset[];
 };
 
+const MIN_USEFUL_CABLE_FIT_ZOOM = 14;
+const LONG_CABLE_FOCUS_ZOOM = 17;
+
+function getClosestLinePoint(
+  points: [number, number][],
+  target: { lat: number; lng: number },
+): [number, number] | null {
+  if (!points.length) return null;
+
+  return points.reduce<[number, number] | null>((closest, point) => {
+    if (!closest) return point;
+
+    const pointDistance =
+      Math.abs(point[0] - target.lat) + Math.abs(point[1] - target.lng);
+    const closestDistance =
+      Math.abs(closest[0] - target.lat) + Math.abs(closest[1] - target.lng);
+
+    return pointDistance < closestDistance ? point : closest;
+  }, null);
+}
+
 export function useMapNavigation({
   mapRef,
   activeProjectIdRef,
@@ -51,12 +72,26 @@ export function useMapNavigation({
       }
 
       if (asset.geometry.type === "LineString") {
+        const map = mapRef.current;
         const points = (asset.geometry.coordinates || []) as [number, number][];
-        if (points.length === 0) return;
+        if (!map || points.length === 0) return;
 
-        mapRef.current?.fitBounds(Leaflet.latLngBounds(points), {
+        const bounds = Leaflet.latLngBounds(points);
+        const fitZoom = map.getBoundsZoom(bounds, false, [60, 60]);
+
+        if (fitZoom < MIN_USEFUL_CABLE_FIT_ZOOM) {
+          const focusPoint =
+            getClosestLinePoint(points, map.getCenter()) || points[0];
+          map.setView(focusPoint, Math.max(map.getZoom(), LONG_CABLE_FOCUS_ZOOM), {
+            animate: false,
+          });
+          return;
+        }
+
+        map.fitBounds(bounds, {
           padding: [60, 60],
           maxZoom: 19,
+          animate: false,
         });
         return;
       }

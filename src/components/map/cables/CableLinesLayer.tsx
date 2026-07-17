@@ -46,6 +46,13 @@ function formatCableLength(length: number): string {
   return `${(length / 1000).toFixed(3)} km`;
 }
 
+const LONG_CABLE_CLICK_ZOOM = 17;
+
+function focusCableClick(map: L.Map, point: L.LatLng) {
+  map.setView(point, Math.max(map.getZoom(), LONG_CABLE_CLICK_ZOOM), {
+    animate: false,
+  });
+}
 
 function isDropCableAsset(asset: SavedMapAsset): boolean {
   const cableType = String((asset as any).cableType || "").toLowerCase();
@@ -1212,16 +1219,6 @@ export default function CableLinesLayer({
 
   if (!cableDrawingMode && !allCableLayersVisible && !hasAnyIndividualCableLayerOn) return null;
 
-  const zoomToCable = (points: [number, number][]) => {
-    if (points.length < 2) return;
-
-    const bounds = L.latLngBounds(points);
-    map.fitBounds(bounds, {
-      padding: [80, 80],
-      maxZoom: 19,
-    });
-  };
-
   const updateCableCoordinates = (
     asset: SavedMapAsset,
     coordinates: [number, number][]
@@ -1409,7 +1406,7 @@ export default function CableLinesLayer({
                   L.DomEvent.stopPropagation(e);
                   if (cableDrawingMode) return;
                   setSelectedCableId(asset.id);
-                  zoomToCable(points);
+                  focusCableClick(map, e.latlng);
                 },
                 mouseover: () => setHoveredCableId(asset.id),
                 mouseout: () => setHoveredCableId(null),
@@ -1526,12 +1523,18 @@ export default function CableLinesLayer({
                       flexWrap: "wrap",
                     }}
                   >
-                    <button onClick={() => onEditAsset(asset)}>
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onEditAsset(asset);
+                      }}
+                    >
                       Edit details
                     </button>
 
                     <button
-                      onClick={() => {
+                      onClick={(event) => {
+                        event.stopPropagation();
                         setSelectedCableId(asset.id);
                         setEditingCableId(asset.id);
                       }}
@@ -1539,11 +1542,24 @@ export default function CableLinesLayer({
                       Edit route
                     </button>
 
-                    <button onClick={() => setEditingCableId(null)}>
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setEditingCableId(null);
+                      }}
+                    >
                       Done
                     </button>
 
-                    <button onClick={() => onDeleteAsset(asset.id)}>
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setSelectedCableId(null);
+                        setEditingCableId(null);
+                        map.closePopup();
+                        onDeleteAsset(asset.id);
+                      }}
+                    >
                       Delete
                     </button>
                   </div>

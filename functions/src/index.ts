@@ -1,6 +1,9 @@
 import * as admin from "firebase-admin";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 
+if (!admin.apps.length) {
+  admin.initializeApp();
+}
 
 type AppRole =
   | "admin"

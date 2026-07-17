@@ -159,7 +159,7 @@ export function useLiveUserLocationSharing(args: {
         expiresAt,
         sharing: true,
       }).catch((error) => {
-        console.warn("Failed to share live user location", error);
+        console.info("Failed to share live user location", error);
         setShareError("Could not share location. Check connection or Firebase permissions.");
       });
     };
@@ -202,7 +202,7 @@ export function useLiveUserLocationSharing(args: {
     if (sharingEnabled || !uid) return;
     lastWriteRef.current = null;
     void clearLiveUserLocation(businessId, `${uid}-${sessionIdRef.current}`).catch((error) => {
-      console.warn("Failed to clear live user location", error);
+      console.info("Failed to clear live user location", error);
     });
   }, [businessId, sharingEnabled, uid]);
 

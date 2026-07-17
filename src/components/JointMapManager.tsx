@@ -4957,6 +4957,9 @@ export default function JointMapManager({
           zoom={initialMapViewRef.current?.zoom ?? 6}
           maxZoom={22}
           zoomControl={false}
+          zoomAnimation={false}
+          fadeAnimation={false}
+          markerZoomAnimation={false}
           rotate={true}
           touchRotate={true}
           rotateControl={true}
