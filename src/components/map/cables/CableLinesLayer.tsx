@@ -40,6 +40,8 @@ type Props = {
   onDeleteAsset: (id: string) => void;
   onEditAsset: (asset: SavedMapAsset) => void;
   onUpdateAsset?: (asset: SavedMapAsset) => void;
+  canEditCables?: boolean;
+  canDeleteCables?: boolean;
 };
 
 function formatCableLength(length: number): string {
@@ -254,6 +256,26 @@ function hasMixedSegmentInstallMethods(asset: SavedMapAsset): boolean {
   const methods = (asset as any).cableSegmentInstallMethods;
   if (!Array.isArray(methods) || methods.length < 1) return false;
   return new Set(methods.map((method: unknown) => getSegmentInstallMethod({ ...(asset as any), cableSegmentInstallMethods: [method] }, 0))).size > 1;
+}
+
+function getCableInstallSummary(asset: SavedMapAsset): string {
+  const methods = (asset as any).cableSegmentInstallMethods;
+  if (Array.isArray(methods) && methods.length > 0) {
+    const normalised = methods
+      .map((_: unknown, index: number) => getSegmentInstallMethod(asset, index))
+      .filter(Boolean);
+    const ugCount = normalised.filter((method) => method === "Underground").length;
+    const ohCount = normalised.filter((method) => method === "OH").length;
+
+    if (ugCount > 0 && ohCount > 0) {
+      return `Mixed · ${ugCount} UG / ${ohCount} OH`;
+    }
+
+    if (ohCount > 0) return `Overhead · ${ohCount} span${ohCount === 1 ? "" : "s"}`;
+    if (ugCount > 0) return `Underground · ${ugCount} span${ugCount === 1 ? "" : "s"}`;
+  }
+
+  return isOverheadInstall(asset) ? "Overhead" : "Underground";
 }
 /* ======================= END CABLE STYLE HELPERS ======================= */
 
@@ -1034,6 +1056,8 @@ export default function CableLinesLayer({
   onDeleteAsset,
   onEditAsset,
   onUpdateAsset,
+  canEditCables = true,
+  canDeleteCables = true,
 }: Props) {
   const map = useMap();
   const { isMobile } = useDeviceLayout();
@@ -1574,15 +1598,17 @@ export default function CableLinesLayer({
                       Edit details
                     </button>
 
-                    <button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setSelectedCableId(asset.id);
-                        setEditingCableId(asset.id);
-                      }}
-                    >
-                      Edit route
-                    </button>
+                    {canEditCables ? (
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setSelectedCableId(asset.id);
+                          setEditingCableId(asset.id);
+                        }}
+                      >
+                        Edit route
+                      </button>
+                    ) : null}
 
                     <button
                       onClick={(event) => {
@@ -1593,17 +1619,19 @@ export default function CableLinesLayer({
                       Done
                     </button>
 
-                    <button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setSelectedCableId(null);
-                        setEditingCableId(null);
-                        map.closePopup();
-                        onDeleteAsset(asset.id);
-                      }}
-                    >
-                      Delete
-                    </button>
+                    {canDeleteCables ? (
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setSelectedCableId(null);
+                          setEditingCableId(null);
+                          map.closePopup();
+                          onDeleteAsset(asset.id);
+                        }}
+                      >
+                        Delete
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               </Popup>
@@ -1648,6 +1676,11 @@ export default function CableLinesLayer({
                 </div>
 
                 <div style={mobileCableSummaryStyle}>
+                  <span>Install</span>
+                  <strong>{getCableInstallSummary(asset)}</strong>
+                </div>
+
+                <div style={mobileCableSummaryStyle}>
                   <span>Used fibres</span>
                   <strong>{usedFibres} / {asset.fibreCount || "N/A"}</strong>
                 </div>
@@ -1660,16 +1693,18 @@ export default function CableLinesLayer({
                   <button type="button" style={mobilePrimaryButtonStyle} onClick={() => onEditAsset(asset)}>
                     View / Edit
                   </button>
-                  <button
-                    type="button"
-                    style={mobileSecondaryButtonStyle}
-                    onClick={() => {
-                      setSelectedCableId(asset.id);
-                      setEditingCableId(asset.id);
-                    }}
-                  >
-                    Edit Route
-                  </button>
+                  {canEditCables ? (
+                    <button
+                      type="button"
+                      style={mobileSecondaryButtonStyle}
+                      onClick={() => {
+                        setSelectedCableId(asset.id);
+                        setEditingCableId(asset.id);
+                      }}
+                    >
+                      Edit Route
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     style={mobileSecondaryButtonStyle}
@@ -1685,17 +1720,19 @@ export default function CableLinesLayer({
                   >
                     Navigate
                   </button>
-                  <button
-                    type="button"
-                    style={mobileDangerButtonStyle}
-                    onClick={() => {
-                      setSelectedCableId(null);
-                      setEditingCableId(null);
-                      onDeleteAsset(asset.id);
-                    }}
-                  >
-                    Delete
-                  </button>
+                  {canDeleteCables ? (
+                    <button
+                      type="button"
+                      style={mobileDangerButtonStyle}
+                      onClick={() => {
+                        setSelectedCableId(null);
+                        setEditingCableId(null);
+                        onDeleteAsset(asset.id);
+                      }}
+                    >
+                      Delete
+                    </button>
+                  ) : null}
                 </div>
               </div>
             ) : null}

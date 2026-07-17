@@ -2,7 +2,7 @@ import React from "react";
 import type { SavedMapAsset } from "../../types";
 import { getAssetDisplayName as getAssetLabel, getAssetTypeLabel } from "../../../../utils/assetDisplay";
 
-type FieldRole = "survey" | "maintenance";
+type FieldRole = "build" | "survey" | "maintenance";
 
 type Props = {
   role: FieldRole;
@@ -15,6 +15,7 @@ type Props = {
   onNavigate?: () => void;
   onOpenPhotos?: () => void;
   onClose: () => void;
+  canEditDetails?: boolean;
 };
 
 
@@ -39,8 +40,10 @@ export default function AssetBottomSheet({
   onNavigate,
   onOpenPhotos,
   onClose,
+  canEditDetails = true,
 }: Props) {
   const isSurvey = role === "survey";
+  const isBuild = role === "build";
   const modeText =
     mapMode === "move-homes"
       ? `${selectedMoveHomeCount} home${selectedMoveHomeCount === 1 ? "" : "s"} selected to move`
@@ -77,8 +80,8 @@ export default function AssetBottomSheet({
 
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 11, fontWeight: 900, color: isSurvey ? "#93c5fd" : "#fca5a5", textTransform: "uppercase", letterSpacing: 0.8 }}>
-            {isSurvey ? "Survey field asset" : "Maintenance field asset"}
+          <div style={{ fontSize: 11, fontWeight: 900, color: isBuild ? "#86efac" : isSurvey ? "#93c5fd" : "#fca5a5", textTransform: "uppercase", letterSpacing: 0.8 }}>
+            {isBuild ? "Build field asset" : isSurvey ? "Survey field asset" : "Maintenance field asset"}
           </div>
           <div style={{ fontSize: 18, fontWeight: 900, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {getAssetLabel(asset)}
@@ -125,8 +128,8 @@ export default function AssetBottomSheet({
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}>
-        <button type="button" onClick={onOpenDetails} style={primaryButton}>
-          View / Edit
+        <button type="button" onClick={canEditDetails ? onOpenDetails : onOpenMaintenance} style={primaryButton}>
+          {canEditDetails ? "View / Edit" : "View"}
         </button>
         <button type="button" onClick={onOpenPhotos || onOpenDetails} style={secondaryButton}>
           Photos

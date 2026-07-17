@@ -125,6 +125,8 @@ import { useDeviceLayout } from "./map/responsive/useDeviceLayout";
 import { useLiveUserLocationSharing } from "./map/hooks/useLiveUserLocationSharing";
 import SurveyMobileControls from "./map/responsive/mobile/SurveyMobileControls";
 import MaintenanceMobileControls from "./map/responsive/mobile/MaintenanceMobileControls";
+import BuildMobileControls from "./map/responsive/mobile/BuildMobileControls";
+import MobileCableDrawingSheet from "./map/responsive/mobile/MobileCableDrawingSheet";
 import FieldModeStatusPill from "./map/responsive/shared/FieldModeStatusPill";
 import FieldQuickActionDrawer from "./map/responsive/shared/FieldQuickActionDrawer";
 import FieldSelectedAssetCard from "./map/responsive/shared/FieldSelectedAssetCard";
@@ -1064,7 +1066,9 @@ export default function JointMapManager({
     isSurveyTabletMode ||
     isMaintenanceTabletMode;
   const fieldQuickRole =
-    roleMobileMode === "maintenance" || isMaintenanceTabletMode
+    roleMobileMode === "build"
+      ? "build"
+      : roleMobileMode === "maintenance" || isMaintenanceTabletMode
       ? "maintenance"
       : "survey";
   const [isFieldPhotoPanelOpen, setIsFieldPhotoPanelOpen] = useState(false);
@@ -2607,6 +2611,66 @@ export default function JointMapManager({
 
   const handleAreaPoint = (point: LatLngLiteral) => {
     setDraftAreaPoints((prev) => [...prev, point]);
+  };
+
+  const handleMobilePrepareAsset = () => {
+    if (!canManageNetworkDesign) {
+      alert("This account is view-only for build edits.");
+      return;
+    }
+
+    setEditingAssetId(null);
+    setEditingAreaId(null);
+    setPickedLocation(null);
+    setDraftCablePoints([]);
+    setDraftCableSegmentMethods([]);
+    setDraftAreaPoints([]);
+    setMapMode("pick");
+    setIsPanelOpen(true);
+  };
+
+  const handleMobileStartArea = () => {
+    if (!canManageNetworkDesign) {
+      alert("This account is view-only for area drawing.");
+      return;
+    }
+
+    setEditingAssetId(null);
+    setEditingAreaId(null);
+    setAssetType("area");
+    setJointType("Polygon Area");
+    setJointName(
+      `Area ${(savedJoints ?? []).filter((asset) => asset.assetType === "area").length + 1}`,
+    );
+    setAreaLevel("L0");
+    setPickedLocation(null);
+    setDraftCablePoints([]);
+    setDraftCableSegmentMethods([]);
+    setDraftAreaPoints([]);
+    setMapMode("draw-area");
+    setIsPanelOpen(false);
+  };
+
+  const handleMobilePrepareCable = () => {
+    if (!canManageNetworkDesign) {
+      alert("This account is view-only for cable drawing.");
+      return;
+    }
+
+    openCableModalForNew();
+  };
+
+  const handleMobileCloseCableDrawing = () => {
+    if (draftCablePoints.length > 0) {
+      const shouldClose = window.confirm(
+        "Exit cable drawing and discard the current draft points?",
+      );
+      if (!shouldClose) return;
+    }
+
+    handleClearCable();
+    setMapMode("pick");
+    setIsPanelOpen(false);
   };
 
   const { handleLoadOsmHomes, loadGeoJsonHomes, loadGeoJsonHomesInView } =
@@ -5416,6 +5480,8 @@ export default function JointMapManager({
             visibleLayers={visibleLayers}
             showCableDistances={visibleLayers.cableDistances}
             cableDrawingMode={mapMode === "draw-cable"}
+            canEditCables={canManageNetworkDesign}
+            canDeleteCables={isAdmin}
             onDeleteAsset={handleAdminDeleteAsset}
             onEditAsset={handleEditAsset}
             onUpdateAsset={(asset) => {
@@ -5966,6 +6032,7 @@ export default function JointMapManager({
               openMaintenanceHistory(currentEditingAsset)
             }
             onOpenPhotos={() => setIsFieldPhotoPanelOpen(true)}
+            canEditDetails={fieldQuickRole !== "maintenance"}
             onNavigate={() => {
               const point =
                 currentEditingAsset.geometry?.type === "Point" &&
@@ -5986,6 +6053,40 @@ export default function JointMapManager({
             onClose={resetEditor}
           />
         )}
+
+      {!showMaintenancePanel && roleMobileMode === "build" && mapMode !== "draw-cable" && (
+        <BuildMobileControls
+          mapMode={mapMode}
+          hasSelectedAsset={Boolean(currentEditingAsset)}
+          onOpenPanel={() => setIsPanelOpen(true)}
+          onPrepareAsset={handleMobilePrepareAsset}
+          onPrepareCable={handleMobilePrepareCable}
+          onStartArea={handleMobileStartArea}
+          onOpenLayers={() => setIsLayersOpen((prev) => !prev)}
+          onGpsLocate={handleGpsLocate}
+        />
+      )}
+
+      {!showMaintenancePanel && isMobile && mapMode === "draw-cable" && (
+        <MobileCableDrawingSheet
+          pointCount={draftCablePoints.length}
+          distanceLabel={formatDistance(draftCableDistance)}
+          installMethod={normaliseCableSegmentMethod(installMethod)}
+          isSaving={isRoutingCable}
+          isEditing={Boolean(editingAssetId)}
+          onInstallMethodChange={setInstallMethod}
+          onUndo={handleUndoCablePoint}
+          onClear={handleClearCable}
+          onFinish={() => {
+            if (editingAssetId) {
+              void handleSaveEdits();
+            } else {
+              void handleFinishCable();
+            }
+          }}
+          onClose={handleMobileCloseCableDrawing}
+        />
+      )}
 
       {!showMaintenancePanel && roleMobileMode === "survey" && (
         <SurveyMobileControls
