@@ -10,6 +10,22 @@ import { db } from "../../../firebase";
 
 export type ExchangePortStatus = "active" | "spare" | "reserved" | "fault";
 
+export type RackSide = "front" | "back";
+
+export type RackMountPosition = {
+  rackId?: string;
+  side?: RackSide;
+  uStart: number;
+  heightU: number;
+};
+
+export type ExchangeCabinet = {
+  id: string;
+  name: string;
+  uCount: number;
+  notes?: string;
+};
+
 export type PonPort = {
   id: string;
   portNumber: number;
@@ -28,14 +44,19 @@ export type OltPanel = {
 export type Olt = {
   id: string;
   name: string;
+  manufacturer?: string;
+  model?: string;
   panels: OltPanel[];
+  rackPosition?: RackMountPosition;
 };
 
 export type FeederPanel = {
   id: string;
   name: string;
   fibreCount: 144 | 288;
+  manufacturer?: string;
   feederCableId?: string;
+  rackPosition?: RackMountPosition;
   fibres: {
     id: string;
     fibreNumber: number;
@@ -49,13 +70,16 @@ export type FeederPanel = {
 export type HdSplitterPanel = {
   id: string;
   name: string;
+  manufacturer?: string;
+  splitterRatio?: "1:2" | "1:4";
+  rackPosition?: RackMountPosition;
   inputs: {
     id: string;
     inputNumber: number;
     connectedPonPortId?: string;
     status?: ExchangePortStatus;
     notes?: string;
-    splitterRatio: "1:4";
+    splitterRatio: "1:2" | "1:4";
     outputs: {
       id: string;
       outputNumber: number;
@@ -64,6 +88,37 @@ export type HdSplitterPanel = {
       notes?: string;
     }[];
   }[];
+};
+
+export type WdmPanel = {
+  id: string;
+  name: string;
+  manufacturer?: string;
+  model?: string;
+  portsPerSide: 72;
+  rackPosition?: RackMountPosition;
+  oltPorts: {
+    id: string;
+    portNumber: number;
+    connectedOltPortId?: string;
+    status?: ExchangePortStatus;
+    notes?: string;
+  }[];
+  odfPorts: {
+    id: string;
+    portNumber: number;
+    connectedSplitterInputId?: string;
+    status?: ExchangePortStatus;
+    notes?: string;
+  }[];
+};
+
+export type EbclPanel = {
+  id: string;
+  name: string;
+  manufacturer?: string;
+  rackPosition?: RackMountPosition;
+  notes?: string;
 };
 
 export type ExchangeAsset = {
@@ -77,6 +132,9 @@ export type ExchangeAsset = {
   olts?: Olt[];
   feederPanels?: FeederPanel[];
   hdSplitterPanels?: HdSplitterPanel[];
+  wdmPanels?: WdmPanel[];
+  ebclPanels?: EbclPanel[];
+  cabinets?: ExchangeCabinet[];
   createdAt?: number;
   updatedAt?: number;
 };
@@ -98,14 +156,14 @@ function stripUndefined<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function exchangeSummary(exchange: ExchangeAsset): Omit<ExchangeAsset, "olts" | "feederPanels" | "hdSplitterPanels"> {
-  const { olts, feederPanels, hdSplitterPanels, ...summary } = exchange;
+function exchangeSummary(exchange: ExchangeAsset): Omit<ExchangeAsset, "olts" | "feederPanels" | "hdSplitterPanels" | "wdmPanels" | "ebclPanels"> {
+  const { olts, feederPanels, hdSplitterPanels, wdmPanels, ebclPanels, ...summary } = exchange;
   return summary;
 }
 
 function exchangeSubcollectionRef(
   exchangeId: string,
-  subcollectionName: "olts" | "hdSplitterPanels" | "feederPanels"
+  subcollectionName: "olts" | "hdSplitterPanels" | "feederPanels" | "wdmPanels" | "ebclPanels"
 ) {
   return collection(
     db,
@@ -119,7 +177,7 @@ function exchangeSubcollectionRef(
 
 async function getSubcollectionDeletes<T extends { id: string }>(
   exchangeId: string,
-  subcollectionName: "olts" | "hdSplitterPanels" | "feederPanels",
+  subcollectionName: "olts" | "hdSplitterPanels" | "feederPanels" | "wdmPanels" | "ebclPanels",
   nextItems: T[]
 ) {
   const subcollectionRef = exchangeSubcollectionRef(exchangeId, subcollectionName);
@@ -142,6 +200,8 @@ export async function loadExchanges(): Promise<ExchangeAsset[]> {
     olts: [],
     feederPanels: [],
     hdSplitterPanels: [],
+    wdmPanels: [],
+    ebclPanels: [],
   }));
 }
 
@@ -149,10 +209,12 @@ export async function loadExchange(exchangeId: string): Promise<ExchangeAsset | 
   const rootSnap = await getDoc(exchangeDoc(exchangeId));
   if (!rootSnap.exists()) return null;
 
-  const [oltsSnap, splitterPanelsSnap, feederPanelsSnap] = await Promise.all([
+  const [oltsSnap, splitterPanelsSnap, feederPanelsSnap, wdmPanelsSnap, ebclPanelsSnap] = await Promise.all([
     getDocs(collection(db, "businesses", BUSINESS_ID, "exchanges", exchangeId, "olts")),
     getDocs(collection(db, "businesses", BUSINESS_ID, "exchanges", exchangeId, "hdSplitterPanels")),
     getDocs(collection(db, "businesses", BUSINESS_ID, "exchanges", exchangeId, "feederPanels")),
+    getDocs(collection(db, "businesses", BUSINESS_ID, "exchanges", exchangeId, "wdmPanels")),
+    getDocs(collection(db, "businesses", BUSINESS_ID, "exchanges", exchangeId, "ebclPanels")),
   ]);
 
   return {
@@ -166,6 +228,14 @@ export async function loadExchange(exchangeId: string): Promise<ExchangeAsset | 
     feederPanels: feederPanelsSnap.docs.map((docSnap) => ({
       id: docSnap.id,
       ...(docSnap.data() as Omit<FeederPanel, "id">),
+    })),
+    wdmPanels: wdmPanelsSnap.docs.map((docSnap) => ({
+      id: docSnap.id,
+      ...(docSnap.data() as Omit<WdmPanel, "id">),
+    })),
+    ebclPanels: ebclPanelsSnap.docs.map((docSnap) => ({
+      id: docSnap.id,
+      ...(docSnap.data() as Omit<EbclPanel, "id">),
     })),
   };
 }
@@ -181,11 +251,15 @@ export async function saveExchange(exchange: ExchangeAsset) {
   const olts = exchangeWithDates.olts ?? [];
   const hdSplitterPanels = exchangeWithDates.hdSplitterPanels ?? [];
   const feederPanels = exchangeWithDates.feederPanels ?? [];
+  const wdmPanels = exchangeWithDates.wdmPanels ?? [];
+  const ebclPanels = exchangeWithDates.ebclPanels ?? [];
 
-  const [oltDeletes, splitterDeletes, feederDeletes] = await Promise.all([
+  const [oltDeletes, splitterDeletes, feederDeletes, wdmDeletes, ebclDeletes] = await Promise.all([
     getSubcollectionDeletes(exchange.id, "olts", olts),
     getSubcollectionDeletes(exchange.id, "hdSplitterPanels", hdSplitterPanels),
     getSubcollectionDeletes(exchange.id, "feederPanels", feederPanels),
+    getSubcollectionDeletes(exchange.id, "wdmPanels", wdmPanels),
+    getSubcollectionDeletes(exchange.id, "ebclPanels", ebclPanels),
   ]);
 
   const totalWrites =
@@ -193,9 +267,13 @@ export async function saveExchange(exchange: ExchangeAsset) {
     oltDeletes.length +
     splitterDeletes.length +
     feederDeletes.length +
+    wdmDeletes.length +
+    ebclDeletes.length +
     olts.length +
     hdSplitterPanels.length +
-    feederPanels.length;
+    feederPanels.length +
+    wdmPanels.length +
+    ebclPanels.length;
 
   // Firestore allows a maximum of 500 operations in a single atomic batch.
   if (totalWrites > 500) {
@@ -210,7 +288,7 @@ export async function saveExchange(exchange: ExchangeAsset) {
   // Root document stays tiny: good for map markers and avoids the 1 MiB document limit.
   batch.set(exchangeDoc(exchange.id), stripUndefined(exchangeSummary(exchangeWithDates)), { merge: true });
 
-  [...oltDeletes, ...splitterDeletes, ...feederDeletes].forEach((docRef) => {
+  [...oltDeletes, ...splitterDeletes, ...feederDeletes, ...wdmDeletes, ...ebclDeletes].forEach((docRef) => {
     batch.delete(docRef);
   });
 
@@ -234,18 +312,36 @@ export async function saveExchange(exchange: ExchangeAsset) {
     );
   });
 
+  wdmPanels.forEach((panel) => {
+    batch.set(
+      doc(exchangeSubcollectionRef(exchange.id, "wdmPanels"), panel.id),
+      stripUndefined(panel),
+      { merge: true }
+    );
+  });
+
+  ebclPanels.forEach((panel) => {
+    batch.set(
+      doc(exchangeSubcollectionRef(exchange.id, "ebclPanels"), panel.id),
+      stripUndefined(panel),
+      { merge: true }
+    );
+  });
+
   await batch.commit();
 }
 
 export async function deleteExchange(exchangeId: string) {
-  const [oltsSnap, splitterPanelsSnap, feederPanelsSnap] = await Promise.all([
+  const [oltsSnap, splitterPanelsSnap, feederPanelsSnap, wdmPanelsSnap, ebclPanelsSnap] = await Promise.all([
     getDocs(collection(db, "businesses", BUSINESS_ID, "exchanges", exchangeId, "olts")),
     getDocs(collection(db, "businesses", BUSINESS_ID, "exchanges", exchangeId, "hdSplitterPanels")),
     getDocs(collection(db, "businesses", BUSINESS_ID, "exchanges", exchangeId, "feederPanels")),
+    getDocs(collection(db, "businesses", BUSINESS_ID, "exchanges", exchangeId, "wdmPanels")),
+    getDocs(collection(db, "businesses", BUSINESS_ID, "exchanges", exchangeId, "ebclPanels")),
   ]);
 
   const batch = writeBatch(db);
-  [...oltsSnap.docs, ...splitterPanelsSnap.docs, ...feederPanelsSnap.docs].forEach((docSnap) => {
+  [...oltsSnap.docs, ...splitterPanelsSnap.docs, ...feederPanelsSnap.docs, ...wdmPanelsSnap.docs, ...ebclPanelsSnap.docs].forEach((docSnap) => {
     batch.delete(docSnap.ref);
   });
   batch.delete(exchangeDoc(exchangeId));

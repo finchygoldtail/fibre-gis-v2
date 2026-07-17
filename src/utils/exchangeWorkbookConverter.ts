@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 
 import type {
+  EbclPanel,
   ExchangeAsset,
   FeederPanel,
   HdSplitterPanel,
@@ -293,9 +294,9 @@ function buildSplitterPanels(rows: TemplateRow[]): HdSplitterPanel[] {
 
   return panelNumbers.map((panelNumber) => {
     const panelRows = rows.filter((row) => row.splitterPanel === panelNumber);
-    const panelName = `HD Splitter Panel ${panelNumber}`;
+    const panelName = `48 Input HD Splitter Panel ${panelNumber}`;
 
-    const inputs = Array.from({ length: 24 }, (_, index) => {
+    const inputs = Array.from({ length: 48 }, (_, index) => {
       const inputNumber = index + 1;
       const matchingInputRows = panelRows.filter((row) => getSplitterInputNumber(rows, row) === inputNumber);
       const first = matchingInputRows[0];
@@ -323,6 +324,8 @@ function buildSplitterPanels(rows: TemplateRow[]): HdSplitterPanel[] {
     return {
       id: safeId("splitter-panel", panelNumber),
       name: panelName,
+      manufacturer: "Prysmian",
+      splitterRatio: "1:4" as const,
       inputs,
     };
   });
@@ -356,12 +359,25 @@ function buildFeederPanels(rows: TemplateRow[]): FeederPanel[] {
 
     return {
       id: safeId("feeder-panel", feederName),
-      name: `${feederName} (${fibreCount}F)`,
+      name: `${feederName} Prysmian Feeder Panel (${fibreCount}F)`,
       fibreCount,
+      manufacturer: "Prysmian",
       feederCableId: feederName,
       fibres,
     };
   });
+}
+
+function buildEbclPanels(rows: TemplateRow[]): EbclPanel[] {
+  const ebclRefs = Array.from(new Set(rows.map((row) => row.ebcl).filter(Boolean))).sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true }),
+  );
+
+  return ebclRefs.map((ebcl) => ({
+    id: safeId("ebcl-panel", ebcl),
+    name: `EBCL ${ebcl} Prysmian Panel`,
+    manufacturer: "Prysmian",
+  }));
 }
 
 function pickMainSheetRows(workbook: XLSX.WorkBook): TemplateRow[] {
@@ -381,6 +397,7 @@ export async function convertExchangeWorkbook(file: File, existingExchange: Exch
   const olts = buildOlts(rows);
   const hdSplitterPanels = buildSplitterPanels(rows);
   const feederPanels = buildFeederPanels(rows);
+  const ebclPanels = buildEbclPanels(rows);
 
   return {
     ...existingExchange,
@@ -388,13 +405,14 @@ export async function convertExchangeWorkbook(file: File, existingExchange: Exch
     code: exchangeCode,
     notes: [
       existingExchange.notes,
-      `Converted from exchange template: ${rows.length} rows, ${olts.length} OLT(s), ${hdSplitterPanels.length} splitter panel(s), ${feederPanels.length} feeder cable panel(s).`,
+      `Converted from exchange template: ${rows.length} rows, ${olts.length} OLT(s), ${hdSplitterPanels.length} splitter panel(s), ${feederPanels.length} feeder cable panel(s), ${ebclPanels.length} EBCL panel(s).`,
     ]
       .filter(Boolean)
       .join("\n"),
     olts,
     hdSplitterPanels,
     feederPanels,
+    ebclPanels,
     updatedAt: Date.now(),
   };
 }

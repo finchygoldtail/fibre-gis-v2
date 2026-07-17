@@ -4,12 +4,17 @@ import Compact2USplitterPanel from "../topology/Compact2USplitterPanel";
 
 import type {
   ExchangeAsset,
+  ExchangeCabinet,
   ExchangePortStatus,
+  EbclPanel,
   FeederPanel,
   HdSplitterPanel,
   Olt,
   OltPanel,
   PonPort,
+  RackMountPosition,
+  RackSide,
+  WdmPanel,
 } from "../map/storage/exchangeStorage";
 
 type Props = {
@@ -54,7 +59,39 @@ type SelectedNode =
       type: "feeder-fibre";
       panelId: string;
       fibreId: string;
+    }
+  | {
+      type: "wdm-olt-port";
+      panelId: string;
+      portId: string;
+    }
+  | {
+      type: "wdm-odf-port";
+      panelId: string;
+      portId: string;
     };
+
+type RackEquipmentKind = "olt" | "wdm" | "splitter" | "feeder" | "ebcl";
+
+type RackDragPayload = {
+  kind: RackEquipmentKind;
+  id: string;
+};
+
+type RackEquipmentItem = {
+  kind: RackEquipmentKind;
+  id: string;
+  name: string;
+  meta: string;
+  heightU: number;
+  colour: string;
+  position?: RackMountPosition;
+};
+
+type SplitterRatio = "1:2" | "1:4";
+
+const DEFAULT_RACK_ID = "rack-1";
+const CABINET_U_COUNT = 42;
 
 // =====================================================
 // FACTORY HELPERS
@@ -76,6 +113,8 @@ function createOlt(oltNumber: number): Olt {
   return {
     id: crypto.randomUUID(),
     name: `OLT ${oltNumber}`,
+    manufacturer: "Nokia",
+    model: "7360 ISAM FX-16",
     panels: [createOltPanel(1)],
   };
 }
@@ -83,8 +122,9 @@ function createOlt(oltNumber: number): Olt {
 function createFeederPanel(panelNumber: number, fibreCount: 144 | 288): FeederPanel {
   return {
     id: crypto.randomUUID(),
-    name: `${fibreCount}F Feeder Panel ${panelNumber}`,
+    name: `${fibreCount}F Prysmian Feeder Panel ${panelNumber}`,
     fibreCount,
+    manufacturer: "Prysmian",
     fibres: Array.from({ length: fibreCount }, (_, index) => ({
       id: crypto.randomUUID(),
       fibreNumber: index + 1,
@@ -93,18 +133,223 @@ function createFeederPanel(panelNumber: number, fibreCount: 144 | 288): FeederPa
 }
 
 function createHdSplitterPanel(panelNumber: number): HdSplitterPanel {
+  const splitterRatio: SplitterRatio = "1:4";
   return {
     id: crypto.randomUUID(),
-    name: `HD Splitter Panel ${panelNumber}`,
-    inputs: Array.from({ length: 24 }, (_, inputIndex) => ({
+    name: `48 Input HD Splitter Panel ${panelNumber}`,
+    manufacturer: "Prysmian",
+    splitterRatio,
+    inputs: Array.from({ length: 48 }, (_, inputIndex) => ({
       id: crypto.randomUUID(),
       inputNumber: inputIndex + 1,
-      splitterRatio: "1:4",
-      outputs: Array.from({ length: 4 }, (_, outputIndex) => ({
+      splitterRatio,
+      outputs: Array.from({ length: outputCountForSplitterRatio(splitterRatio) }, (_, outputIndex) => ({
         id: crypto.randomUUID(),
         outputNumber: outputIndex + 1,
       })),
     })),
+  };
+}
+
+function outputCountForSplitterRatio(ratio: SplitterRatio | undefined) {
+  return ratio === "1:2" ? 2 : 4;
+}
+
+function panelSplitterRatio(panel: HdSplitterPanel): SplitterRatio {
+  return panel.splitterRatio ?? panel.inputs[0]?.splitterRatio ?? "1:4";
+}
+
+function ensure48InputSplitterPanel(panel: HdSplitterPanel): HdSplitterPanel {
+  const splitterRatio = panelSplitterRatio(panel);
+  const outputCount = outputCountForSplitterRatio(splitterRatio);
+  const normaliseInputOutputs = (inputItem: HdSplitterPanel["inputs"][number]) => ({
+    ...inputItem,
+    splitterRatio,
+    outputs: Array.from({ length: outputCount }, (_, outputIndex) => {
+      const outputNumber = outputIndex + 1;
+      return (
+        inputItem.outputs.find((output) => output.outputNumber === outputNumber) ?? {
+          id: crypto.randomUUID(),
+          outputNumber,
+        }
+      );
+    }),
+  });
+
+  if (panel.inputs.length >= 48) {
+    return {
+      ...panel,
+      manufacturer: panel.manufacturer ?? "Prysmian",
+      splitterRatio,
+      rackPosition: panel.rackPosition
+        ? { ...panel.rackPosition, heightU: defaultRackHeight("splitter") }
+        : panel.rackPosition,
+      inputs: panel.inputs.map(normaliseInputOutputs),
+    };
+  }
+
+  const existingInputNumbers = new Set(panel.inputs.map((inputItem) => inputItem.inputNumber));
+  const missingInputs = Array.from({ length: 48 }, (_, index) => index + 1)
+    .filter((inputNumber) => !existingInputNumbers.has(inputNumber))
+    .map((inputNumber) => ({
+      id: crypto.randomUUID(),
+      inputNumber,
+      splitterRatio,
+      outputs: Array.from({ length: outputCount }, (_, outputIndex) => ({
+        id: crypto.randomUUID(),
+        outputNumber: outputIndex + 1,
+      })),
+    }));
+
+  return {
+    ...panel,
+    name: panel.name.replace(/^HD Splitter Panel/i, "48 Input HD Splitter Panel"),
+    manufacturer: panel.manufacturer ?? "Prysmian",
+    splitterRatio,
+    rackPosition: panel.rackPosition
+      ? { ...panel.rackPosition, heightU: defaultRackHeight("splitter") }
+      : panel.rackPosition,
+    inputs: [...panel.inputs.map(normaliseInputOutputs), ...missingInputs].sort((a, b) => a.inputNumber - b.inputNumber),
+  };
+}
+
+function makeEbclPanelFromRef(ebcl: string): EbclPanel {
+  const suffix = ebcl.replace(/^EBCL\s*/i, "").trim();
+  return {
+    id: `ebcl-panel-${suffix.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}`,
+    name: `EBCL ${suffix} Prysmian Panel`,
+    manufacturer: "Prysmian",
+  };
+}
+
+function collectEbclRefsFromExchange(exchange: ExchangeAsset): string[] {
+  return Array.from(
+    new Set([
+      ...(exchange.ebclPanels ?? []).flatMap((panel) => extractEbclRefs([panel.name, panel.notes])),
+      ...(exchange.hdSplitterPanels ?? []).flatMap((panel) => splitterPanelEbcls(panel)),
+      ...(exchange.feederPanels ?? []).flatMap((panel) => feederPanelEbcls(panel)),
+    ]),
+  ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+}
+
+function normaliseEbclPanels(exchange: ExchangeAsset): EbclPanel[] {
+  const existingPanels = exchange.ebclPanels ?? [];
+  const existingRefs = new Set(existingPanels.flatMap((panel) => extractEbclRefs([panel.name, panel.notes])));
+  const inferredPanels = collectEbclRefsFromExchange(exchange)
+    .filter((ebcl) => !existingRefs.has(ebcl))
+    .map(makeEbclPanelFromRef);
+
+  return [...existingPanels, ...inferredPanels].map((panel) => ({
+    ...panel,
+    manufacturer: panel.manufacturer ?? "Prysmian",
+    rackPosition: panel.rackPosition
+      ? { ...panel.rackPosition, heightU: defaultRackHeight("ebcl") }
+      : panel.rackPosition,
+  }));
+}
+
+function normaliseExchangeForDesigner(exchange: ExchangeAsset): ExchangeAsset {
+  const baseExchange: ExchangeAsset = {
+    ...exchange,
+    hdSplitterPanels: (exchange.hdSplitterPanels ?? []).map(ensure48InputSplitterPanel),
+  };
+
+  return {
+    ...baseExchange,
+    feederPanels: (baseExchange.feederPanels ?? []).map((panel) => ({
+      ...panel,
+      manufacturer: panel.manufacturer ?? "Prysmian",
+      rackPosition: panel.rackPosition
+        ? { ...panel.rackPosition, heightU: defaultRackHeight("feeder") }
+        : panel.rackPosition,
+    })),
+    wdmPanels: (baseExchange.wdmPanels ?? []).map((panel) => ({
+      ...panel,
+      rackPosition: panel.rackPosition
+        ? { ...panel.rackPosition, heightU: defaultRackHeight("wdm") }
+        : panel.rackPosition,
+    })),
+    olts: (baseExchange.olts ?? []).map((olt) => ({
+      ...olt,
+      manufacturer: olt.manufacturer ?? "Nokia",
+      model: olt.model ?? "7360 ISAM FX-16",
+      rackPosition: olt.rackPosition
+        ? { ...olt.rackPosition, heightU: defaultRackHeight("olt") }
+        : olt.rackPosition,
+    })),
+    ebclPanels: normaliseEbclPanels(baseExchange),
+  };
+}
+
+function createEbclPanel(panelNumber: number): EbclPanel {
+  return {
+    id: crypto.randomUUID(),
+    name: `EBCL Prysmian Panel ${panelNumber}`,
+    manufacturer: "Prysmian",
+    rackPosition: undefined,
+  };
+}
+
+function createWdmPanel(panelNumber: number): WdmPanel {
+  return {
+    id: crypto.randomUUID(),
+    name: `VIAVI WDM Panel ${panelNumber}`,
+    manufacturer: "VIAVI",
+    model: "72-port WDM",
+    portsPerSide: 72,
+    oltPorts: Array.from({ length: 72 }, (_, index) => ({
+      id: crypto.randomUUID(),
+      portNumber: index + 1,
+    })),
+    odfPorts: Array.from({ length: 72 }, (_, index) => ({
+      id: crypto.randomUUID(),
+      portNumber: index + 1,
+    })),
+  };
+}
+
+function defaultRackHeight(kind: RackEquipmentKind) {
+  if (kind === "wdm") return 1;
+  if (kind === "splitter") return 1;
+  if (kind === "olt") return 14;
+  return 3;
+}
+
+function rackItemKey(kind: RackEquipmentKind, id: string) {
+  return `${kind}:${id}`;
+}
+
+function parseRackDragPayload(value: string): RackDragPayload | null {
+  try {
+    const parsed = JSON.parse(value) as RackDragPayload;
+    if (!parsed?.id) return null;
+    if (!["olt", "wdm", "splitter", "feeder", "ebcl"].includes(parsed.kind)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function getRackPosition(item: RackEquipmentItem): RackMountPosition | undefined {
+  return item.position?.uStart ? item.position : undefined;
+}
+
+function rackPositionOverlaps(
+  left: RackMountPosition,
+  right: RackMountPosition,
+) {
+  if ((left.rackId ?? DEFAULT_RACK_ID) !== (right.rackId ?? DEFAULT_RACK_ID)) return false;
+  if ((left.side ?? "front") !== (right.side ?? "front")) return false;
+  const leftEnd = left.uStart + left.heightU - 1;
+  const rightEnd = right.uStart + right.heightU - 1;
+  return left.uStart <= rightEnd && right.uStart <= leftEnd;
+}
+
+function createCabinet(cabinetNumber: number): ExchangeCabinet {
+  return {
+    id: cabinetNumber === 1 ? DEFAULT_RACK_ID : crypto.randomUUID(),
+    name: `Cabinet ${cabinetNumber}`,
+    uCount: CABINET_U_COUNT,
   };
 }
 
@@ -148,12 +393,17 @@ const statusColours: Record<ExchangePortStatus, { background: string; border: st
   fault: { background: "#450a0a", border: "#ef4444", text: "#fecaca", dot: "#ef4444" },
 };
 
-function getPortStatus(item: { status?: ExchangePortStatus } | null | undefined, connected = false): ExchangePortStatus {
-  return item?.status ?? (connected ? "active" : "spare");
+function normalisePortStatus(value: unknown, connected = false): ExchangePortStatus {
+  if (value === "active" || value === "spare" || value === "reserved" || value === "fault") return value;
+  return connected ? "active" : "spare";
 }
 
-function portStatusStyle(status: ExchangePortStatus): React.CSSProperties {
-  const colours = statusColours[status];
+function getPortStatus(item: { status?: ExchangePortStatus | string } | null | undefined, connected = false): ExchangePortStatus {
+  return normalisePortStatus(item?.status, connected);
+}
+
+function portStatusStyle(status: ExchangePortStatus | string | undefined): React.CSSProperties {
+  const colours = statusColours[normalisePortStatus(status)];
   return {
     background: colours.background,
     borderColor: colours.border,
@@ -161,9 +411,10 @@ function portStatusStyle(status: ExchangePortStatus): React.CSSProperties {
   };
 }
 
-function statusDot(status: ExchangePortStatus): React.CSSProperties {
+function statusDot(status: ExchangePortStatus | string | undefined): React.CSSProperties {
+  const safeStatus = normalisePortStatus(status);
   return {
-    background: statusColours[status].dot,
+    background: statusColours[safeStatus].dot,
   };
 }
 
@@ -175,7 +426,7 @@ function extractEbclRefs(values: unknown[]): string[] {
     const matches = text.matchAll(/\bEBCL\s*[-:]?\s*([A-Z0-9][A-Z0-9/_-]*)/gi);
     for (const match of matches) {
       const ref = match[1]?.trim().toUpperCase();
-      if (ref) refs.add(`EBCL ${ref}`);
+      if (ref && /\d/.test(ref) && ref !== "STRAND") refs.add(`EBCL ${ref}`);
     }
   });
 
@@ -225,6 +476,24 @@ function feederFibreMatchesEbcl(fibre: FeederPanel["fibres"][number], ebcl: stri
   ]).includes(ebcl);
 }
 
+function wdmPanelEbcls(panel: WdmPanel): string[] {
+  return Array.from(
+    new Set(
+      [...panel.oltPorts, ...panel.odfPorts].flatMap((port) =>
+        extractEbclRefs([
+          port.notes,
+          "connectedOltPortId" in port ? port.connectedOltPortId : undefined,
+          "connectedSplitterInputId" in port ? port.connectedSplitterInputId : undefined,
+        ]),
+      ),
+    ),
+  );
+}
+
+function wdmPanelMatchesEbcl(panel: WdmPanel, ebcl: string) {
+  return wdmPanelEbcls(panel).includes(ebcl);
+}
+
 export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
   const [isMobileDesigner, setIsMobileDesigner] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth < 1100 : false,
@@ -250,7 +519,9 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
   // 1) CORE STATE
   // =====================================================
 
-  const [draftExchange, setDraftExchange] = useState<ExchangeAsset>(exchange);
+  const [draftExchange, setDraftExchange] = useState<ExchangeAsset>(() =>
+    normaliseExchangeForDesigner(exchange)
+  );
   const [activeTab, setActiveTab] = useState<ExchangeTab>("rack");
   const [selectedNode, setSelectedNode] = useState<SelectedNode>(null);
 
@@ -266,6 +537,18 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
     exchange.feederPanels?.[0]?.id ?? null
   );
 
+  const [selectedWdmPanelId, setSelectedWdmPanelId] = useState<string | null>(
+    exchange.wdmPanels?.[0]?.id ?? null
+  );
+
+  const [selectedEbclPanelId, setSelectedEbclPanelId] = useState<string | null>(
+    exchange.ebclPanels?.[0]?.id ?? null
+  );
+
+  const [selectedCabinetId, setSelectedCabinetId] = useState<string>(
+    exchange.cabinets?.[0]?.id ?? DEFAULT_RACK_ID
+  );
+
   const [search, setSearch] = useState("");
   const [selectedEbcl, setSelectedEbcl] = useState<string>("all");
   const [importWorkbook, setImportWorkbook] = useState<File | null>(null);
@@ -279,15 +562,21 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
   const olts = draftExchange.olts ?? [];
   const hdSplitterPanels = draftExchange.hdSplitterPanels ?? [];
   const feederPanels = draftExchange.feederPanels ?? [];
+  const wdmPanels = draftExchange.wdmPanels ?? [];
+  const ebclPanels = draftExchange.ebclPanels ?? [];
+  const cabinets = draftExchange.cabinets?.length ? draftExchange.cabinets : [createCabinet(1)];
+  const selectedCabinet = cabinets.find((cabinet) => cabinet.id === selectedCabinetId) ?? cabinets[0];
 
   const ebclTabs = useMemo(() => {
     return Array.from(
       new Set([
         ...hdSplitterPanels.flatMap(splitterPanelEbcls),
         ...feederPanels.flatMap(feederPanelEbcls),
-      ]),
+        ...wdmPanels.flatMap(wdmPanelEbcls),
+        ...ebclPanels.flatMap((panel) => extractEbclRefs([panel.name, panel.notes])),
+      ].filter((ebcl) => /\d/.test(ebcl) && !/\bSTRAND\b/i.test(ebcl))),
     ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  }, [hdSplitterPanels, feederPanels]);
+  }, [hdSplitterPanels, feederPanels, wdmPanels, ebclPanels]);
 
   const activeEbcl = selectedEbcl !== "all" && ebclTabs.includes(selectedEbcl) ? selectedEbcl : "all";
 
@@ -305,6 +594,11 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
       }))
       .filter((panel) => panel.fibres.length > 0);
   }, [activeEbcl, feederPanels]);
+
+  const visibleWdmPanels = useMemo(() => {
+    if (activeEbcl === "all") return wdmPanels;
+    return wdmPanels.filter((panel) => wdmPanelMatchesEbcl(panel, activeEbcl));
+  }, [activeEbcl, wdmPanels]);
 
   const visibleOltPanels = useMemo(() => {
     if (activeEbcl === "all") return olts;
@@ -349,6 +643,79 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
     visibleFeederPanels[0] ??
     null;
 
+  const selectedWdmPanel =
+    visibleWdmPanels.find((panel) => panel.id === selectedWdmPanelId) ??
+    visibleWdmPanels[0] ??
+    null;
+
+  const selectedEbclPanel =
+    ebclPanels.find((panel) => panel.id === selectedEbclPanelId) ??
+    ebclPanels[0] ??
+    null;
+
+  const rackEquipment = useMemo<RackEquipmentItem[]>(() => {
+    const oltItems = olts.map((olt): RackEquipmentItem => ({
+      kind: "olt",
+      id: olt.id,
+      name: olt.name,
+      meta: `${olt.model ?? "7360 ISAM FX-16"} / ${olt.panels.length}/16 cards / ${olt.panels.reduce((total, panel) => total + panel.ports.length, 0)} PON`,
+      heightU: defaultRackHeight("olt"),
+      colour: "#38bdf8",
+      position: olt.rackPosition ? { ...olt.rackPosition, heightU: defaultRackHeight("olt") } : undefined,
+    }));
+    const wdmItems = wdmPanels.map((panel): RackEquipmentItem => ({
+      kind: "wdm",
+      id: panel.id,
+      name: panel.name,
+      meta: "VIAVI WDM / 72 OLT + 72 ODF",
+      heightU: defaultRackHeight("wdm"),
+      colour: "#22c55e",
+      position: panel.rackPosition ? { ...panel.rackPosition, heightU: defaultRackHeight("wdm") } : undefined,
+    }));
+    const splitterItems = hdSplitterPanels.map((panel): RackEquipmentItem => ({
+      kind: "splitter",
+      id: panel.id,
+      name: panel.name,
+      meta: `${panel.inputs.length} inputs / ${panel.inputs.reduce((total, inputItem) => total + inputItem.outputs.length, 0)} outputs / ${panelSplitterRatio(panel)}`,
+      heightU: defaultRackHeight("splitter"),
+      colour: "#a78bfa",
+      position: panel.rackPosition ? { ...panel.rackPosition, heightU: defaultRackHeight("splitter") } : undefined,
+    }));
+    const feederItems = feederPanels.map((panel): RackEquipmentItem => ({
+      kind: "feeder",
+      id: panel.id,
+      name: panel.name,
+      meta: `${panel.fibreCount}F Prysmian feeder panel`,
+      heightU: defaultRackHeight("feeder"),
+      colour: "#f59e0b",
+      position: panel.rackPosition ? { ...panel.rackPosition, heightU: defaultRackHeight("feeder") } : undefined,
+    }));
+    const ebclItems = ebclPanels.map((panel): RackEquipmentItem => ({
+      kind: "ebcl",
+      id: panel.id,
+      name: panel.name,
+      meta: "Prysmian EBCL panel",
+      heightU: defaultRackHeight("ebcl"),
+      colour: "#fb7185",
+      position: panel.rackPosition ? { ...panel.rackPosition, heightU: defaultRackHeight("ebcl") } : undefined,
+    }));
+
+    return [...oltItems, ...ebclItems, ...wdmItems, ...splitterItems, ...feederItems];
+  }, [olts, wdmPanels, hdSplitterPanels, feederPanels, ebclPanels]);
+
+  const positionedRackEquipment = useMemo(
+    () =>
+      rackEquipment
+        .filter((item) => getRackPosition(item))
+        .sort((a, b) => (a.position?.uStart ?? 0) - (b.position?.uStart ?? 0)),
+    [rackEquipment],
+  );
+
+  const unpositionedRackEquipment = useMemo(
+    () => rackEquipment.filter((item) => !getRackPosition(item)),
+    [rackEquipment],
+  );
+
   const selectedDetails = useMemo(() => {
     if (!selectedNode) return null;
 
@@ -376,10 +743,21 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
         : null;
     }
 
-    const panel = feederPanels.find((item) => item.id === selectedNode.panelId);
-    const fibre = panel?.fibres.find((item) => item.id === selectedNode.fibreId);
-    return panel && fibre ? { type: "feeder-fibre" as const, panel, fibre } : null;
-  }, [selectedNode, olts, hdSplitterPanels, feederPanels]);
+    if (selectedNode.type === "feeder-fibre") {
+      const panel = feederPanels.find((item) => item.id === selectedNode.panelId);
+      const fibre = panel?.fibres.find((item) => item.id === selectedNode.fibreId);
+      return panel && fibre ? { type: "feeder-fibre" as const, panel, fibre } : null;
+    }
+
+    const panel = wdmPanels.find((item) => item.id === selectedNode.panelId);
+    if (selectedNode.type === "wdm-olt-port") {
+      const port = panel?.oltPorts.find((item) => item.id === selectedNode.portId);
+      return panel && port ? { type: "wdm-olt-port" as const, panel, port } : null;
+    }
+
+    const port = panel?.odfPorts.find((item) => item.id === selectedNode.portId);
+    return panel && port ? { type: "wdm-odf-port" as const, panel, port } : null;
+  }, [selectedNode, olts, hdSplitterPanels, feederPanels, wdmPanels]);
 
   const selectedChain = useMemo(() => {
     return buildSelectedExchangeChain(selectedDetails, olts, hdSplitterPanels, feederPanels);
@@ -436,6 +814,19 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
       0
     );
 
+    const wdmPanelCount = wdmPanels.length;
+    const wdmOltPortCount = wdmPanels.reduce((total, panel) => total + panel.oltPorts.length, 0);
+    const wdmOdfPortCount = wdmPanels.reduce((total, panel) => total + panel.odfPorts.length, 0);
+    const connectedWdmOltPorts = wdmPanels.reduce(
+      (total, panel) => total + panel.oltPorts.filter((port) => Boolean(port.connectedOltPortId)).length,
+      0
+    );
+    const connectedWdmOdfPorts = wdmPanels.reduce(
+      (total, panel) => total + panel.odfPorts.filter((port) => Boolean(port.connectedSplitterInputId)).length,
+      0
+    );
+    const ebclPanelCount = ebclPanels.length;
+
     return {
       oltCount,
       oltCardCount,
@@ -449,8 +840,14 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
       feederPanelCount,
       feederFibreCount,
       connectedFeederFibres,
+      wdmPanelCount,
+      wdmOltPortCount,
+      wdmOdfPortCount,
+      connectedWdmOltPorts,
+      connectedWdmOdfPorts,
+      ebclPanelCount,
     };
-  }, [olts, hdSplitterPanels, feederPanels]);
+  }, [olts, hdSplitterPanels, feederPanels, wdmPanels, ebclPanels]);
 
   const selectedPanelStatusSummary = useMemo(() => {
     const inputCounts: Record<ExchangePortStatus, number> = { active: 0, spare: 0, reserved: 0, fault: 0 };
@@ -484,6 +881,18 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
 
   const updateFeederPanels = (nextPanels: FeederPanel[]) => {
     setDraftExchange((prev) => ({ ...prev, feederPanels: nextPanels }));
+  };
+
+  const updateWdmPanels = (nextPanels: WdmPanel[]) => {
+    setDraftExchange((prev) => ({ ...prev, wdmPanels: nextPanels }));
+  };
+
+  const updateEbclPanels = (nextPanels: EbclPanel[]) => {
+    setDraftExchange((prev) => ({ ...prev, ebclPanels: nextPanels }));
+  };
+
+  const updateCabinets = (nextCabinets: ExchangeCabinet[]) => {
+    setDraftExchange((prev) => ({ ...prev, cabinets: nextCabinets }));
   };
 
   // =====================================================
@@ -590,6 +999,15 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
     updateSplitterPanels(hdSplitterPanels.map((panel) => (panel.id === panelId ? { ...panel, name } : panel)));
   };
 
+  const handleUpdateSplitterPanelRatio = (panelId: string, splitterRatio: SplitterRatio) => {
+    updateSplitterPanels(
+      hdSplitterPanels.map((panel) => {
+        if (panel.id !== panelId) return panel;
+        return ensure48InputSplitterPanel({ ...panel, splitterRatio });
+      })
+    );
+  };
+
   const handleDeleteSplitterPanel = (panelId: string) => {
     const panel = hdSplitterPanels.find((item) => item.id === panelId);
     if (!panel) return;
@@ -690,8 +1108,184 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
     );
   };
 
+  // =====================================================
+  // 7) VIAVI WDM PANEL HANDLERS
+  // =====================================================
+
+  const handleAddWdmPanel = () => {
+    const nextPanel = createWdmPanel(wdmPanels.length + 1);
+    updateWdmPanels([...wdmPanels, nextPanel]);
+    setSelectedWdmPanelId(nextPanel.id);
+    setActiveTab("wdm");
+  };
+
+  const handleRenameWdmPanel = (panelId: string, name: string) => {
+    updateWdmPanels(wdmPanels.map((panel) => (panel.id === panelId ? { ...panel, name } : panel)));
+  };
+
+  const handleDeleteWdmPanel = (panelId: string) => {
+    const panel = wdmPanels.find((item) => item.id === panelId);
+    if (!panel) return;
+    if (!confirm(`Delete ${panel.name}? This removes its 72 OLT-side and 72 ODF-side WDM ports.`)) return;
+
+    const nextPanels = wdmPanels.filter((item) => item.id !== panelId);
+    updateWdmPanels(nextPanels);
+    setSelectedWdmPanelId(nextPanels[0]?.id ?? null);
+    if (selectedNode?.type.startsWith("wdm") && selectedNode.panelId === panelId) setSelectedNode(null);
+  };
+
+  const handleUpdateWdmOltPort = (
+    panelId: string,
+    portId: string,
+    patch: Partial<WdmPanel["oltPorts"][number]>
+  ) => {
+    updateWdmPanels(
+      wdmPanels.map((panel) => {
+        if (panel.id !== panelId) return panel;
+        return {
+          ...panel,
+          oltPorts: panel.oltPorts.map((port) => (port.id === portId ? { ...port, ...patch } : port)),
+        };
+      })
+    );
+  };
+
+  const handleUpdateWdmOdfPort = (
+    panelId: string,
+    portId: string,
+    patch: Partial<WdmPanel["odfPorts"][number]>
+  ) => {
+    updateWdmPanels(
+      wdmPanels.map((panel) => {
+        if (panel.id !== panelId) return panel;
+        return {
+          ...panel,
+          odfPorts: panel.odfPorts.map((port) => (port.id === portId ? { ...port, ...patch } : port)),
+        };
+      })
+    );
+  };
+
+  const handleAddEbclPanel = () => {
+    const nextPanel = createEbclPanel(ebclPanels.length + 1);
+    updateEbclPanels([...ebclPanels, nextPanel]);
+    setSelectedEbclPanelId(nextPanel.id);
+    setActiveTab("rack");
+  };
+
+  const handleRenameEbclPanel = (panelId: string, name: string) => {
+    updateEbclPanels(ebclPanels.map((panel) => (panel.id === panelId ? { ...panel, name } : panel)));
+  };
+
+  const handleDeleteEbclPanel = (panelId: string) => {
+    const panel = ebclPanels.find((item) => item.id === panelId);
+    if (!panel) return;
+    if (!confirm(`Delete ${panel.name}?`)) return;
+
+    const nextPanels = ebclPanels.filter((item) => item.id !== panelId);
+    updateEbclPanels(nextPanels);
+    setSelectedEbclPanelId(nextPanels[0]?.id ?? null);
+  };
+
+  const handleAddCabinet = () => {
+    const nextCabinet = createCabinet(cabinets.length + 1);
+    updateCabinets([...cabinets, nextCabinet]);
+    setSelectedCabinetId(nextCabinet.id);
+  };
+
+  const handleRenameCabinet = (cabinetId: string, name: string) => {
+    updateCabinets(cabinets.map((cabinet) => (cabinet.id === cabinetId ? { ...cabinet, name } : cabinet)));
+  };
+
+  const handleDeleteCabinet = (cabinetId: string) => {
+    if (cabinets.length <= 1) {
+      alert("You need at least one cabinet in the exchange layout.");
+      return;
+    }
+
+    const cabinet = cabinets.find((item) => item.id === cabinetId);
+    if (!cabinet) return;
+
+    const mountedItems = rackEquipment.filter((item) => item.position?.rackId === cabinetId);
+    if (
+      mountedItems.length > 0 &&
+      !confirm(
+        `Delete ${cabinet.name}? ${mountedItems.length} mounted panel(s) will be moved back to the equipment palette.`
+      )
+    ) {
+      return;
+    }
+
+    mountedItems.forEach((item) => {
+      updateRackPosition({ kind: item.kind, id: item.id }, undefined);
+    });
+
+    const nextCabinets = cabinets.filter((item) => item.id !== cabinetId);
+    updateCabinets(nextCabinets);
+    setSelectedCabinetId(nextCabinets[0]?.id ?? DEFAULT_RACK_ID);
+  };
+
+  const updateRackPosition = (
+    payload: RackDragPayload,
+    rackPosition: RackMountPosition | undefined
+  ) => {
+    if (payload.kind === "olt") {
+      updateOlts(olts.map((olt) => (olt.id === payload.id ? { ...olt, rackPosition } : olt)));
+      return;
+    }
+
+    if (payload.kind === "wdm") {
+      updateWdmPanels(wdmPanels.map((panel) => (panel.id === payload.id ? { ...panel, rackPosition } : panel)));
+      return;
+    }
+
+    if (payload.kind === "splitter") {
+      updateSplitterPanels(hdSplitterPanels.map((panel) => (panel.id === payload.id ? { ...panel, rackPosition } : panel)));
+      return;
+    }
+
+    if (payload.kind === "feeder") {
+      updateFeederPanels(feederPanels.map((panel) => (panel.id === payload.id ? { ...panel, rackPosition } : panel)));
+      return;
+    }
+
+    updateEbclPanels(ebclPanels.map((panel) => (panel.id === payload.id ? { ...panel, rackPosition } : panel)));
+  };
+
+  const handleDropRackEquipment = (payload: RackDragPayload, uStart: number, side: RackSide) => {
+    const item = rackEquipment.find((equipment) => equipment.kind === payload.kind && equipment.id === payload.id);
+    if (!item) return;
+
+    const heightU = item.heightU || defaultRackHeight(payload.kind);
+    const cabinetUCount = selectedCabinet?.uCount ?? CABINET_U_COUNT;
+    const clampedUStart = Math.max(1, Math.min(cabinetUCount - heightU + 1, uStart));
+    const nextPosition: RackMountPosition = {
+      rackId: selectedCabinet?.id ?? DEFAULT_RACK_ID,
+      side,
+      uStart: clampedUStart,
+      heightU,
+    };
+
+    const overlap = rackEquipment.some((equipment) => {
+      if (equipment.id === payload.id && equipment.kind === payload.kind) return false;
+      const position = getRackPosition(equipment);
+      return Boolean(position && rackPositionOverlaps(nextPosition, position));
+    });
+
+    if (overlap) {
+      alert("That rack position is already occupied. Drop the panel into a free U space.");
+      return;
+    }
+
+    updateRackPosition(payload, nextPosition);
+  };
+
+  const handleClearRackPosition = (payload: RackDragPayload) => {
+    updateRackPosition(payload, undefined);
+  };
+
 // =====================================================
-// 7) EXCEL IMPORT / CONVERT HANDLERS
+// 8) EXCEL IMPORT / CONVERT HANDLERS
 // =====================================================
 
 const handleImportWorkbookFile = (file: File | null) => {
@@ -711,10 +1305,16 @@ const handleConvertImportedWorkbook = async () => {
   }
 
   try {
-    const convertedExchange = await convertExchangeWorkbook(
-      importWorkbook,
-      draftExchange
-    );
+    const convertedExchange = normaliseExchangeForDesigner(await convertExchangeWorkbook(
+        importWorkbook,
+        {
+          ...draftExchange,
+          olts: [],
+          hdSplitterPanels: [],
+          feederPanels: [],
+          ebclPanels: [],
+        }
+      ));
 
     setDraftExchange(convertedExchange);
 
@@ -725,6 +1325,13 @@ const handleConvertImportedWorkbook = async () => {
     setSelectedFeederPanelId(
       convertedExchange.feederPanels?.[0]?.id ?? null
     );
+    setSelectedWdmPanelId(
+      convertedExchange.wdmPanels?.[0]?.id ?? null
+    );
+    setSelectedEbclPanelId(
+      convertedExchange.ebclPanels?.[0]?.id ?? null
+    );
+    setSelectedCabinetId(convertedExchange.cabinets?.[0]?.id ?? DEFAULT_RACK_ID);
 
     setSelectedNode(null);
     setActiveTab("feeders");
@@ -827,6 +1434,12 @@ const handleConvertImportedWorkbook = async () => {
           <button onClick={handleAddHdSplitterPanel} style={btnPrimary}>
             + Add HD Splitter Panel
           </button>
+          <button onClick={handleAddWdmPanel} style={btnPrimary}>
+            + Add VIAVI WDM Panel
+          </button>
+          <button onClick={handleAddEbclPanel} style={btnPrimary}>
+            + Add EBCL Prysmian Panel
+          </button>
           <button onClick={() => handleAddFeederPanel(144)} style={btnPrimary}>
             + Add 144F Feeder Panel
           </button>
@@ -871,6 +1484,14 @@ const handleConvertImportedWorkbook = async () => {
             <strong>{summary.connectedPonCount}/{summary.ponPortCount}</strong>
             <div>HD Splitter Panels</div>
             <strong>{summary.splitterPanelCount}</strong>
+            <div>WDM Panels</div>
+            <strong>{summary.wdmPanelCount}</strong>
+            <div>WDM OLT Side</div>
+            <strong>{summary.connectedWdmOltPorts}/{summary.wdmOltPortCount}</strong>
+            <div>WDM ODF Side</div>
+            <strong>{summary.connectedWdmOdfPorts}/{summary.wdmOdfPortCount}</strong>
+            <div>EBCL Panels</div>
+            <strong>{summary.ebclPanelCount}</strong>
             <div>Splitter Inputs</div>
             <strong>{summary.connectedSplitterInputs}/{summary.splitterInputCount}</strong>
             <div>Splitter Outputs</div>
@@ -974,7 +1595,7 @@ const handleConvertImportedWorkbook = async () => {
                 <h2 style={{ ...sectionTitle, marginBottom: 4 }}>{activeEbcl} Rack Layout</h2>
                 <div style={{ color: "#cbd5e1" }}>OLT, splitter panel and feeder fibres for this EBCL.</div>
               </div>
-              <div style={ebclMetricPill}>{visibleOltPanels.length} OLT / {visibleHdSplitterPanels.length} splitter / {visibleFeederPanels.length} feeder</div>
+              <div style={ebclMetricPill}>{visibleOltPanels.length} OLT / {visibleWdmPanels.length} WDM / {visibleHdSplitterPanels.length} splitter / {visibleFeederPanels.length} feeder / {summary.ebclPanelCount} EBCL</div>
             </div>
 
             <section style={ebclSection}>
@@ -1034,50 +1655,82 @@ const handleConvertImportedWorkbook = async () => {
 
             <section style={ebclSection}>
               <div style={panelTitle}>
-                <span>HD Splitter Panels</span>
-                <span style={{ color: "#cbd5e1" }}>{visibleHdSplitterPanels.length} panel{visibleHdSplitterPanels.length === 1 ? "" : "s"} / 24 inputs x 1:4 = 96 outputs each</span>
+                <span>VIAVI WDM Panels</span>
+                <span style={{ color: "#cbd5e1" }}>{visibleWdmPanels.length} panel{visibleWdmPanels.length === 1 ? "" : "s"} / 72 OLT + 72 ODF ports each</span>
               </div>
-              {visibleHdSplitterPanels.length ? (
+              {visibleWdmPanels.length ? (
                 <div style={splitterPanelStack}>
-                  {visibleHdSplitterPanels.map((panel) => (
-                    <Compact2USplitterPanel
+                  {visibleWdmPanels.map((panel) => (
+                    <ViaviWdmPanelView
                       key={panel.id}
                       panel={panel}
-                      selectedInputId={
-                        selectedNode?.type === "splitter-input" && selectedNode.panelId === panel.id
-                          ? selectedNode.inputId
-                          : null
-                      }
-                      selectedOutputId={
-                        selectedNode?.type === "splitter-output" && selectedNode.panelId === panel.id
-                          ? selectedNode.outputId
-                          : null
-                      }
-                      highlightedInputIds={selectedChain.splitterInputIds}
-                      highlightedOutputIds={selectedChain.splitterOutputIds}
                       search={search}
-                      inputCount={24}
-                      outputCount={96}
-                      splitterRatio="1:4"
-                      onSelectInput={(inputItem) => {
-                        setSelectedSplitterPanelId(panel.id);
-                        setSelectedNode({
-                          type: "splitter-input",
-                          panelId: panel.id,
-                          inputId: inputItem.id,
-                        });
+                      selectedNode={selectedNode}
+                      onSelectOltPort={(port) => {
+                        setSelectedWdmPanelId(panel.id);
+                        setSelectedNode({ type: "wdm-olt-port", panelId: panel.id, portId: port.id });
                       }}
-                      onSelectOutput={(inputItem, output) => {
-                        setSelectedSplitterPanelId(panel.id);
-                        setSelectedNode({
-                          type: "splitter-output",
-                          panelId: panel.id,
-                          inputId: inputItem.id,
-                          outputId: output.id,
-                        });
+                      onSelectOdfPort={(port) => {
+                        setSelectedWdmPanelId(panel.id);
+                        setSelectedNode({ type: "wdm-odf-port", panelId: panel.id, portId: port.id });
                       }}
                     />
                   ))}
+                </div>
+              ) : (
+                <div style={emptyState}>No WDM panel found for {activeEbcl}.</div>
+              )}
+            </section>
+
+            <section style={ebclSection}>
+              <div style={panelTitle}>
+                <span>HD Splitter Panels</span>
+                <span style={{ color: "#cbd5e1" }}>{visibleHdSplitterPanels.length} panel{visibleHdSplitterPanels.length === 1 ? "" : "s"} / 48 inputs / 1U / 1:2 or 1:4</span>
+              </div>
+              {visibleHdSplitterPanels.length ? (
+                <div style={splitterPanelStack}>
+                  {visibleHdSplitterPanels.map((panel) => {
+                    const ratio = panelSplitterRatio(panel);
+                    return (
+                      <Compact2USplitterPanel
+                        key={panel.id}
+                        panel={panel}
+                        selectedInputId={
+                          selectedNode?.type === "splitter-input" && selectedNode.panelId === panel.id
+                            ? selectedNode.inputId
+                            : null
+                        }
+                        selectedOutputId={
+                          selectedNode?.type === "splitter-output" && selectedNode.panelId === panel.id
+                            ? selectedNode.outputId
+                            : null
+                        }
+                        highlightedInputIds={selectedChain.splitterInputIds}
+                        highlightedOutputIds={selectedChain.splitterOutputIds}
+                        search={search}
+                        inputCount={48}
+                        outputCount={48 * outputCountForSplitterRatio(ratio)}
+                        splitterRatio={ratio}
+                        onSelectInput={(inputItem) => {
+                          setSelectedSplitterPanelId(panel.id);
+                          setSelectedNode({
+                            type: "splitter-input",
+                            panelId: panel.id,
+                            inputId: inputItem.id,
+                          });
+                        }}
+                        onSelectOutput={(inputItem, output) => {
+                          setSelectedSplitterPanelId(panel.id);
+                          setSelectedNode({
+                            type: "splitter-output",
+                            panelId: panel.id,
+                            inputId: inputItem.id,
+                            outputId: output.id,
+                          });
+                        }}
+                      />
+                    );
+                  })}
                 </div>
               ) : (
                 <div style={emptyState}>No splitter panel found for {activeEbcl}.</div>
@@ -1139,22 +1792,68 @@ const handleConvertImportedWorkbook = async () => {
           <div style={ebclWorkspace}>
             <div style={ebclWorkspaceHeader}>
               <div>
-                <h2 style={{ ...sectionTitle, marginBottom: 4 }}>Exchange Rack Layout</h2>
-                <div style={{ color: "#cbd5e1" }}>Select an EBCL tab to open a focused OLT, splitter and feeder rack slice.</div>
+                <h2 style={{ ...sectionTitle, marginBottom: 4 }}>Exchange Cabinet Layout</h2>
+                <div style={{ color: "#cbd5e1" }}>Drag OLT, WDM, splitter and feeder panels into the cabinet so the editor matches the exchange rack.</div>
               </div>
-              <div style={ebclMetricPill}>{summary.oltCount} OLT / {summary.splitterPanelCount} splitter / {summary.feederPanelCount} feeder</div>
+              <div style={ebclMetricPill}>{summary.oltCount} OLT / {summary.wdmPanelCount} WDM / {summary.splitterPanelCount} splitter / {summary.feederPanelCount} feeder / {summary.ebclPanelCount} EBCL</div>
             </div>
-            <div style={overviewGrid}>
-              <OverviewCard title="OLT" value={`${summary.connectedPonCount}/${summary.ponPortCount}`} label="PON ports allocated" />
-              <OverviewCard title="HD Splitters" value={`${summary.connectedSplitterOutputs}/${summary.splitterOutputCount}`} label="outputs allocated" />
-              <OverviewCard title="Feeder Panels" value={`${summary.connectedFeederFibres}/${summary.feederFibreCount}`} label="fibres patched or cabled" />
-            </div>
+            <RackCabinetLayout
+              cabinets={cabinets}
+              selectedCabinet={selectedCabinet}
+              selectedCabinetId={selectedCabinetId}
+              equipment={rackEquipment}
+              positionedEquipment={positionedRackEquipment}
+              unpositionedEquipment={unpositionedRackEquipment}
+              onSelectCabinet={setSelectedCabinetId}
+              onAddCabinet={handleAddCabinet}
+              onRenameCabinet={handleRenameCabinet}
+              onDeleteCabinet={handleDeleteCabinet}
+              onDropEquipment={handleDropRackEquipment}
+              onClearPosition={handleClearRackPosition}
+            />
+            {ebclPanels.length ? (
+              <div style={card}>
+                <div style={panelTitle}>
+                  <span>EBCL Prysmian Panels</span>
+                  <span style={{ color: "#cbd5e1" }}>3U each</span>
+                </div>
+                <div style={selectorRow}>
+                  {ebclPanels.map((panel) => (
+                    <button
+                      key={panel.id}
+                      type="button"
+                      onClick={() => setSelectedEbclPanelId(panel.id)}
+                      style={selectedEbclPanel?.id === panel.id ? btnPrimary : btnSecondary}
+                    >
+                      {panel.name}
+                    </button>
+                  ))}
+                </div>
+                {selectedEbclPanel ? (
+                  <div style={toolbar}>
+                    <input
+                      value={selectedEbclPanel.name}
+                      onChange={(event) => handleRenameEbclPanel(selectedEbclPanel.id, event.target.value)}
+                      style={{ ...input, maxWidth: 340, fontWeight: 700 }}
+                    />
+                    <button type="button" onClick={() => handleDeleteEbclPanel(selectedEbclPanel.id)} style={btnDanger}>
+                      Delete EBCL Panel
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         )}
 
         {activeTab === "overview" && (
           <div style={overviewGrid}>
             <OverviewCard title="OLT" value={`${summary.connectedPonCount}/${summary.ponPortCount}`} label="PON ports allocated" />
+            <OverviewCard
+              title="WDM"
+              value={`${summary.connectedWdmOltPorts + summary.connectedWdmOdfPorts}/${summary.wdmOltPortCount + summary.wdmOdfPortCount}`}
+              label="OLT and ODF side patches"
+            />
             <OverviewCard
               title="HD Splitters"
               value={`${summary.connectedSplitterOutputs}/${summary.splitterOutputCount}`}
@@ -1176,6 +1875,8 @@ const handleConvertImportedWorkbook = async () => {
               <div style={flowLine}>
                 <FlowBox label="OLT" value="PON Port" />
                 <FlowArrow />
+                <FlowBox label="VIAVI WDM" value="OLT side to ODF side" />
+                <FlowArrow />
                 <FlowBox label="HD Splitter" value="Input 1:4" />
                 <FlowArrow />
                 <FlowBox label="Splitter Output" value="1-96" />
@@ -1194,6 +1895,8 @@ const handleConvertImportedWorkbook = async () => {
             description="Patch route view for OLT to WDM, splitter input, splitter output and feeder fibres."
             rows={[
               ["OLT ports", `${summary.connectedPonCount}/${summary.ponPortCount}`],
+              ["WDM OLT side", `${summary.connectedWdmOltPorts}/${summary.wdmOltPortCount}`],
+              ["WDM ODF side", `${summary.connectedWdmOdfPorts}/${summary.wdmOdfPortCount}`],
               ["Splitter inputs", `${summary.connectedSplitterInputs}/${summary.splitterInputCount}`],
               ["Splitter outputs", `${summary.connectedSplitterOutputs}/${summary.splitterOutputCount}`],
               ["Feeder fibres", `${summary.connectedFeederFibres}/${summary.feederFibreCount}`],
@@ -1220,6 +1923,8 @@ const handleConvertImportedWorkbook = async () => {
             description="Capacity view for exchange rack utilisation."
             rows={[
               ["PON utilisation", `${summary.connectedPonCount}/${summary.ponPortCount}`],
+              ["WDM OLT-side utilisation", `${summary.connectedWdmOltPorts}/${summary.wdmOltPortCount}`],
+              ["WDM ODF-side utilisation", `${summary.connectedWdmOdfPorts}/${summary.wdmOdfPortCount}`],
               ["Splitter output utilisation", `${summary.connectedSplitterOutputs}/${summary.splitterOutputCount}`],
               ["Feeder utilisation", `${summary.connectedFeederFibres}/${summary.feederFibreCount}`],
               ["Active EBCL", activeEbcl === "all" ? "All EBCL" : activeEbcl],
@@ -1228,15 +1933,54 @@ const handleConvertImportedWorkbook = async () => {
         )}
 
         {activeTab === "wdm" && (
-          <WorkspaceInfoPanel
-            title="WDM Management"
-            description="WDM shelf view for OLT patch-through into splitter inputs. WDM records can be expanded here without touching map storage."
-            rows={[
-              ["Known EBCL tabs", String(ebclTabs.length)],
-              ["Connected splitter inputs", String(summary.connectedSplitterInputs)],
-              ["OLT cards", String(summary.oltCardCount)],
-            ]}
-          />
+          <div>
+            <h2 style={sectionTitle}>VIAVI WDM Panels</h2>
+            <div style={selectorRow}>
+              {visibleWdmPanels.length === 0 ? (
+                <div style={emptyState}>
+                  {activeEbcl === "all" ? "No VIAVI WDM panels added yet." : `No VIAVI WDM panels found for ${activeEbcl}.`}
+                </div>
+              ) : (
+                visibleWdmPanels.map((panel) => (
+                  <button
+                    key={panel.id}
+                    onClick={() => setSelectedWdmPanelId(panel.id)}
+                    style={selectedWdmPanel?.id === panel.id ? btnPrimary : btnSecondary}
+                  >
+                    {panel.name} - 72 + 72
+                  </button>
+                ))
+              )}
+            </div>
+
+            {selectedWdmPanel && (
+              <>
+                <div style={toolbar}>
+                  <input
+                    value={selectedWdmPanel.name}
+                    onChange={(event) => handleRenameWdmPanel(selectedWdmPanel.id, event.target.value)}
+                    style={{ ...input, maxWidth: 340, fontWeight: 700 }}
+                  />
+                  <button onClick={() => handleDeleteWdmPanel(selectedWdmPanel.id)} style={btnDanger}>
+                    Delete WDM Panel
+                  </button>
+                  <span style={{ color: "#cbd5e1" }}>OLT side: 72 ports / ODF to splitter in: 72 ports</span>
+                </div>
+
+                <ViaviWdmPanelView
+                  panel={selectedWdmPanel}
+                  search={search}
+                  selectedNode={selectedNode}
+                  onSelectOltPort={(port) =>
+                    setSelectedNode({ type: "wdm-olt-port", panelId: selectedWdmPanel.id, portId: port.id })
+                  }
+                  onSelectOdfPort={(port) =>
+                    setSelectedNode({ type: "wdm-odf-port", panelId: selectedWdmPanel.id, portId: port.id })
+                  }
+                />
+              </>
+            )}
+          </div>
         )}
 
         {activeTab === "documents" && (
@@ -1385,10 +2129,22 @@ const handleConvertImportedWorkbook = async () => {
                     onChange={(event) => handleRenameSplitterPanel(selectedSplitterPanel.id, event.target.value)}
                     style={{ ...input, maxWidth: 340, fontWeight: 700 }}
                   />
+                  <select
+                    value={panelSplitterRatio(selectedSplitterPanel)}
+                    onChange={(event) =>
+                      handleUpdateSplitterPanelRatio(selectedSplitterPanel.id, event.target.value as SplitterRatio)
+                    }
+                    style={{ ...input, maxWidth: 120, fontWeight: 800 }}
+                  >
+                    <option value="1:4">1:4</option>
+                    <option value="1:2">1:2</option>
+                  </select>
                   <button onClick={() => handleDeleteSplitterPanel(selectedSplitterPanel.id)} style={btnDanger}>
                     Delete Splitter Panel
                   </button>
-                  <span style={{ color: "#cbd5e1" }}>24 inputs x 1:4 = 96 outputs</span>
+                  <span style={{ color: "#cbd5e1" }}>
+                    48 inputs x {panelSplitterRatio(selectedSplitterPanel)} = {48 * outputCountForSplitterRatio(panelSplitterRatio(selectedSplitterPanel))} outputs / 1U HD splitter
+                  </span>
                 </div>
 
                 <Compact2USplitterPanel
@@ -1398,9 +2154,9 @@ const handleConvertImportedWorkbook = async () => {
                   highlightedInputIds={selectedChain.splitterInputIds}
                   highlightedOutputIds={selectedChain.splitterOutputIds}
                   search={search}
-                  inputCount={24}
-                  outputCount={96}
-                  splitterRatio="1:4"
+                  inputCount={48}
+                  outputCount={48 * outputCountForSplitterRatio(panelSplitterRatio(selectedSplitterPanel))}
+                  splitterRatio={panelSplitterRatio(selectedSplitterPanel)}
                   onSelectInput={(inputItem) =>
                     setSelectedNode({
                       type: "splitter-input",
@@ -1588,6 +2344,14 @@ const handleConvertImportedWorkbook = async () => {
             if (selectedDetails?.type !== "feeder-fibre") return;
             handleUpdateFeederFibre(selectedDetails.panel.id, selectedDetails.fibre.id, patch);
           }}
+          onUpdateWdmOltPort={(patch) => {
+            if (selectedDetails?.type !== "wdm-olt-port") return;
+            handleUpdateWdmOltPort(selectedDetails.panel.id, selectedDetails.port.id, patch);
+          }}
+          onUpdateWdmOdfPort={(patch) => {
+            if (selectedDetails?.type !== "wdm-odf-port") return;
+            handleUpdateWdmOdfPort(selectedDetails.panel.id, selectedDetails.port.id, patch);
+          }}
         />
       </div>
     </div>
@@ -1729,6 +2493,339 @@ function buildSelectedExchangeChain(
   return chain;
 }
 
+function ViaviWdmPanelView({
+  panel,
+  search,
+  selectedNode,
+  onSelectOltPort,
+  onSelectOdfPort,
+}: {
+  panel: WdmPanel;
+  search: string;
+  selectedNode: SelectedNode;
+  onSelectOltPort: (port: WdmPanel["oltPorts"][number]) => void;
+  onSelectOdfPort: (port: WdmPanel["odfPorts"][number]) => void;
+}) {
+  const visibleOltPorts = panel.oltPorts.filter((port) =>
+    matchesSearch([port.portNumber, port.connectedOltPortId, port.notes, "OLT"], search)
+  );
+  const visibleOdfPorts = panel.odfPorts.filter((port) =>
+    matchesSearch([port.portNumber, port.connectedSplitterInputId, port.notes, "ODF", "Splitter In"], search)
+  );
+
+  return (
+    <div style={wdmPanelShell}>
+      <div style={wdmBrandBlock}>
+        <strong>VIAVI</strong>
+        <span>{panel.name}</span>
+        <span style={wdmCapacityPill}>72 ports each side</span>
+      </div>
+      <div style={wdmRouteLegend}>
+        <span><i style={{ ...wdmLegendLine, background: "#38bdf8" }} />OLT to WDM OLT side</span>
+        <span><i style={{ ...wdmLegendLine, background: "#22c55e" }} />WDM ODF side to Splitter In</span>
+      </div>
+      <div style={wdmSides}>
+        <WdmSide
+          title="OLT SIDE"
+          subtitle="OLT equipment patches in"
+          ports={visibleOltPorts}
+          totalPorts={panel.oltPorts.length}
+          side="olt"
+          selectedNode={selectedNode}
+          panelId={panel.id}
+          onSelect={onSelectOltPort}
+        />
+        <WdmSide
+          title="ODF / SPLITTER IN"
+          subtitle="ODF side patched to splitter inputs"
+          ports={visibleOdfPorts}
+          totalPorts={panel.odfPorts.length}
+          side="odf"
+          selectedNode={selectedNode}
+          panelId={panel.id}
+          onSelect={onSelectOdfPort}
+        />
+      </div>
+    </div>
+  );
+}
+
+function WdmSide<TPort extends { id: string; portNumber: number; status?: ExchangePortStatus }>({
+  title,
+  subtitle,
+  ports,
+  totalPorts,
+  side,
+  selectedNode,
+  panelId,
+  onSelect,
+}: {
+  title: string;
+  subtitle: string;
+  ports: TPort[];
+  totalPorts: number;
+  side: "olt" | "odf";
+  selectedNode: SelectedNode;
+  panelId: string;
+  onSelect: (port: TPort) => void;
+}) {
+  const selectedType = side === "olt" ? "wdm-olt-port" : "wdm-odf-port";
+  const accent = side === "olt" ? "#38bdf8" : "#22c55e";
+
+  return (
+    <section style={{ ...wdmSideCard, borderColor: `${accent}66` }}>
+      <div style={wdmSideHeader}>
+        <div>
+          <div style={{ ...wdmSideTitle, color: accent }}>{title}</div>
+          <div style={wdmSideSubtitle}>{subtitle}</div>
+        </div>
+        <strong>{ports.length}/{totalPorts}</strong>
+      </div>
+      <div style={wdmPortGrid}>
+        {ports.map((port) => {
+          const isSelected =
+            selectedNode?.type === selectedType &&
+            selectedNode.panelId === panelId &&
+            selectedNode.portId === port.id;
+          const connected =
+            "connectedOltPortId" in port
+              ? Boolean(port.connectedOltPortId)
+              : "connectedSplitterInputId" in port
+                ? Boolean(port.connectedSplitterInputId)
+                : false;
+          const status = getPortStatus(port, connected);
+
+          return (
+            <button
+              key={port.id}
+              type="button"
+              onClick={() => onSelect(port)}
+              style={{
+                ...wdmPortButton,
+                ...(isSelected ? selectedNodeStyle : {}),
+                borderColor: connected ? accent : "#64748b",
+              }}
+              title={`${title} port ${port.portNumber}`}
+            >
+              <span style={{ ...wdmPortCore, ...portStatusStyle(status) }}>{port.portNumber}</span>
+              <span style={{ ...wdmPortDot, ...statusDot(status) }} />
+            </button>
+          );
+        })}
+      </div>
+      <div style={wdmNumberGuide}>1-24 / 25-48 / 49-72</div>
+    </section>
+  );
+}
+
+function RackCabinetLayout({
+  cabinets,
+  selectedCabinet,
+  selectedCabinetId,
+  equipment,
+  positionedEquipment,
+  unpositionedEquipment,
+  onSelectCabinet,
+  onAddCabinet,
+  onRenameCabinet,
+  onDeleteCabinet,
+  onDropEquipment,
+  onClearPosition,
+}: {
+  cabinets: ExchangeCabinet[];
+  selectedCabinet: ExchangeCabinet;
+  selectedCabinetId: string;
+  equipment: RackEquipmentItem[];
+  positionedEquipment: RackEquipmentItem[];
+  unpositionedEquipment: RackEquipmentItem[];
+  onSelectCabinet: (cabinetId: string) => void;
+  onAddCabinet: () => void;
+  onRenameCabinet: (cabinetId: string, name: string) => void;
+  onDeleteCabinet: (cabinetId: string) => void;
+  onDropEquipment: (payload: RackDragPayload, uStart: number, side: RackSide) => void;
+  onClearPosition: (payload: RackDragPayload) => void;
+}) {
+  return (
+    <div style={rackDesignerGrid}>
+      <section style={rackPalettePanel}>
+        <div style={panelTitle}>
+          <span>Equipment Palette</span>
+          <span style={{ color: "#cbd5e1" }}>{unpositionedEquipment.length} unplaced</span>
+        </div>
+        <div
+          style={rackPaletteDropZone}
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault();
+            const payload = parseRackDragPayload(event.dataTransfer.getData("application/json"));
+            if (payload) onClearPosition(payload);
+          }}
+        >
+          {unpositionedEquipment.length ? (
+            unpositionedEquipment.map((item) => <RackEquipmentCard key={rackItemKey(item.kind, item.id)} item={item} />)
+          ) : (
+            <div style={emptyState}>All exchange panels have been placed into the cabinet.</div>
+          )}
+        </div>
+      </section>
+
+      <section style={rackCabinetPanel}>
+        <div style={rackCabinetHeader}>
+          <div>
+            <strong>Exchange Cabinets</strong>
+            <div style={{ color: "#94a3b8", fontSize: 12 }}>Use front/back faces to match the physical cabinet.</div>
+          </div>
+          <span style={ebclMetricPill}>{positionedEquipment.length}/{equipment.length} placed</span>
+        </div>
+
+        <div style={cabinetToolbar}>
+          <select value={selectedCabinetId} onChange={(event) => onSelectCabinet(event.target.value)} style={{ ...input, maxWidth: 220 }}>
+            {cabinets.map((cabinet) => (
+              <option key={cabinet.id} value={cabinet.id}>{cabinet.name}</option>
+            ))}
+          </select>
+          <input
+            value={selectedCabinet.name}
+            onChange={(event) => onRenameCabinet(selectedCabinet.id, event.target.value)}
+            style={{ ...input, maxWidth: 260, fontWeight: 700 }}
+          />
+          <button type="button" onClick={onAddCabinet} style={btnPrimary}>+ Add Cabinet</button>
+          <button type="button" onClick={() => onDeleteCabinet(selectedCabinet.id)} style={btnDanger}>Delete Cabinet</button>
+        </div>
+
+        <div style={cabinetFacesGrid}>
+          <RackFace
+            side="front"
+            cabinet={selectedCabinet}
+            positionedEquipment={positionedEquipment}
+            onDropEquipment={onDropEquipment}
+          />
+          <RackFace
+            side="back"
+            cabinet={selectedCabinet}
+            positionedEquipment={positionedEquipment}
+            onDropEquipment={onDropEquipment}
+          />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function RackFace({
+  side,
+  cabinet,
+  positionedEquipment,
+  onDropEquipment,
+}: {
+  side: RackSide;
+  cabinet: ExchangeCabinet;
+  positionedEquipment: RackEquipmentItem[];
+  onDropEquipment: (payload: RackDragPayload, uStart: number, side: RackSide) => void;
+}) {
+  const occupiedSlots = new Set<number>();
+  const equipmentByStartU = new Map<number, RackEquipmentItem>();
+
+  positionedEquipment.forEach((item) => {
+    const position = getRackPosition(item);
+    if (!position) return;
+    if ((position.rackId ?? DEFAULT_RACK_ID) !== cabinet.id) return;
+    if ((position.side ?? "front") !== side) return;
+    equipmentByStartU.set(position.uStart, item);
+    Array.from({ length: position.heightU }, (_, index) => position.uStart + index).forEach((slot) =>
+      occupiedSlots.add(slot),
+    );
+  });
+
+  return (
+    <div style={rackFacePanel}>
+      <div style={rackFaceTitle}>{side === "front" ? "Front" : "Back"}</div>
+      <div style={{ ...rackFrame, gridTemplateRows: `repeat(${cabinet.uCount}, 34px)` }}>
+        {Array.from({ length: cabinet.uCount }, (_, index) => {
+          const u = cabinet.uCount - index;
+          const isCoveredByEquipment = occupiedSlots.has(u);
+          const row = index + 1;
+
+          return (
+            <React.Fragment key={`${side}-${u}`}>
+              <div style={{ ...rackUIndex, gridColumn: 1, gridRow: row }}>U{u}</div>
+              <div
+                style={{
+                  ...(isCoveredByEquipment ? rackCoveredSlot : rackEmptySlot),
+                  gridColumn: 2,
+                  gridRow: row,
+                }}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const payload = parseRackDragPayload(event.dataTransfer.getData("application/json"));
+                  if (payload) onDropEquipment(payload, u, side);
+                }}
+              >
+                {isCoveredByEquipment ? "" : "Drop panel here"}
+              </div>
+            </React.Fragment>
+          );
+        })}
+        {Array.from(equipmentByStartU.values()).map((item) => {
+          const position = getRackPosition(item);
+          if (!position) return null;
+          const heightU = position.heightU || item.heightU;
+          const topU = position.uStart + heightU - 1;
+          const topRow = cabinet.uCount - topU + 1;
+
+          return (
+            <div
+              key={rackItemKey(item.kind, item.id)}
+              style={{
+                ...rackPlacedItem,
+                gridColumn: 2,
+                gridRow: `${topRow} / span ${heightU}`,
+                borderColor: item.colour,
+                boxShadow: `inset 4px 0 0 ${item.colour}`,
+              }}
+              draggable
+              onDragStart={(event) => {
+                event.dataTransfer.setData(
+                  "application/json",
+                  JSON.stringify({ kind: item.kind, id: item.id } satisfies RackDragPayload),
+                );
+              }}
+            >
+              <div>
+                <strong>{item.name}</strong>
+                <div style={rackItemMeta}>{item.kind.toUpperCase()} / {item.meta}</div>
+              </div>
+              <span style={rackHeightPill}>{heightU}U</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function RackEquipmentCard({ item }: { item: RackEquipmentItem }) {
+  return (
+    <div
+      style={{ ...rackEquipmentCard, borderColor: item.colour, boxShadow: `inset 4px 0 0 ${item.colour}` }}
+      draggable
+      onDragStart={(event) => {
+        event.dataTransfer.setData(
+          "application/json",
+          JSON.stringify({ kind: item.kind, id: item.id } satisfies RackDragPayload),
+        );
+      }}
+    >
+      <div>
+        <strong>{item.name}</strong>
+        <div style={rackItemMeta}>{item.kind.toUpperCase()} / {item.meta}</div>
+      </div>
+      <span style={rackHeightPill}>{item.heightU}U</span>
+    </div>
+  );
+}
+
 function WorkspaceInfoPanel({
   title,
   description,
@@ -1803,6 +2900,8 @@ function SelectionPanel({
   onUpdateSplitterInput,
   onUpdateSplitterOutput,
   onUpdateFeederFibre,
+  onUpdateWdmOltPort,
+  onUpdateWdmOdfPort,
 }: {
   selectedDetails: ReturnType<typeof useSelectionDetailsType> | null;
   onClear: () => void;
@@ -1810,13 +2909,15 @@ function SelectionPanel({
   onUpdateSplitterInput: (patch: Partial<HdSplitterPanel["inputs"][number]>) => void;
   onUpdateSplitterOutput: (patch: Partial<HdSplitterPanel["inputs"][number]["outputs"][number]>) => void;
   onUpdateFeederFibre: (patch: Partial<FeederPanel["fibres"][number]>) => void;
+  onUpdateWdmOltPort: (patch: Partial<WdmPanel["oltPorts"][number]>) => void;
+  onUpdateWdmOdfPort: (patch: Partial<WdmPanel["odfPorts"][number]>) => void;
 }) {
   if (!selectedDetails) {
     return (
       <div style={card}>
         <div style={{ fontWeight: 800 }}>Selection</div>
         <div style={{ color: "#cbd5e1", lineHeight: 1.5 }}>
-          Click a PON port, splitter input, splitter output, or feeder fibre to view and edit its existing exchange fields.
+          Click a PON port, WDM port, splitter input, splitter output, or feeder fibre to view and edit its existing exchange fields.
         </div>
       </div>
     );
@@ -1875,6 +2976,38 @@ function SelectionPanel({
     );
   }
 
+  if (selectedDetails.type === "wdm-olt-port") {
+    const { panel, port } = selectedDetails;
+    return (
+      <div style={card}>
+        <PanelHeader title="WDM OLT Side Port" subtitle={`${panel.name} / OLT side port ${port.portNumber}`} onClear={onClear} />
+        <Field
+          label="Connected OLT port ref"
+          value={port.connectedOltPortId ?? ""}
+          onChange={(value) => onUpdateWdmOltPort({ connectedOltPortId: value })}
+        />
+        <StatusField value={getPortStatus(port, Boolean(port.connectedOltPortId))} onChange={(status) => onUpdateWdmOltPort({ status })} />
+        <Field label="Notes" value={port.notes ?? ""} onChange={(value) => onUpdateWdmOltPort({ notes: value })} multiline />
+      </div>
+    );
+  }
+
+  if (selectedDetails.type === "wdm-odf-port") {
+    const { panel, port } = selectedDetails;
+    return (
+      <div style={card}>
+        <PanelHeader title="WDM ODF / Splitter In Port" subtitle={`${panel.name} / ODF side port ${port.portNumber}`} onClear={onClear} />
+        <Field
+          label="Connected splitter input ref"
+          value={port.connectedSplitterInputId ?? ""}
+          onChange={(value) => onUpdateWdmOdfPort({ connectedSplitterInputId: value })}
+        />
+        <StatusField value={getPortStatus(port, Boolean(port.connectedSplitterInputId))} onChange={(status) => onUpdateWdmOdfPort({ status })} />
+        <Field label="Notes" value={port.notes ?? ""} onChange={(value) => onUpdateWdmOdfPort({ notes: value })} multiline />
+      </div>
+    );
+  }
+
   const { panel, fibre } = selectedDetails;
   const colour = getFibreColour(fibre.fibreNumber);
   return (
@@ -1912,6 +3045,8 @@ function useSelectionDetailsType() {
         output: HdSplitterPanel["inputs"][number]["outputs"][number];
       }
     | { type: "feeder-fibre"; panel: FeederPanel; fibre: FeederPanel["fibres"][number] }
+    | { type: "wdm-olt-port"; panel: WdmPanel; port: WdmPanel["oltPorts"][number] }
+    | { type: "wdm-odf-port"; panel: WdmPanel; port: WdmPanel["odfPorts"][number] }
     | null;
 }
 
@@ -2402,6 +3537,293 @@ const flowBox: React.CSSProperties = {
   border: "1px solid #475569",
   borderRadius: 10,
   padding: "0.75rem 1rem",
+};
+
+const wdmPanelShell: React.CSSProperties = {
+  background: "linear-gradient(180deg, #171322 0%, #0f172a 100%)",
+  border: "1px solid #334155",
+  borderRadius: 8,
+  padding: 12,
+  display: "grid",
+  gap: 10,
+  boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.04)",
+};
+
+const wdmBrandBlock: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  color: "#f8fafc",
+  fontSize: 13,
+  letterSpacing: 0,
+};
+
+const wdmCapacityPill: React.CSSProperties = {
+  marginLeft: "auto",
+  border: "1px solid #475569",
+  background: "#020617",
+  color: "#cbd5e1",
+  borderRadius: 6,
+  padding: "4px 8px",
+  fontSize: 11,
+  fontWeight: 900,
+};
+
+const wdmRouteLegend: React.CSSProperties = {
+  display: "flex",
+  gap: 14,
+  flexWrap: "wrap",
+  color: "#cbd5e1",
+  fontSize: 12,
+};
+
+const wdmLegendLine: React.CSSProperties = {
+  display: "inline-block",
+  width: 28,
+  height: 4,
+  borderRadius: 999,
+  marginRight: 7,
+  verticalAlign: "middle",
+};
+
+const wdmSides: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 12,
+};
+
+const wdmSideCard: React.CSSProperties = {
+  background: "#020617",
+  border: "1px solid #334155",
+  borderRadius: 8,
+  padding: 10,
+  display: "grid",
+  gap: 8,
+};
+
+const wdmSideHeader: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 10,
+  alignItems: "flex-start",
+};
+
+const wdmSideTitle: React.CSSProperties = {
+  fontWeight: 900,
+  fontSize: 13,
+};
+
+const wdmSideSubtitle: React.CSSProperties = {
+  color: "#94a3b8",
+  fontSize: 11,
+  marginTop: 2,
+};
+
+const wdmPortGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(24, minmax(18px, 1fr))",
+  gridTemplateRows: "repeat(3, 26px)",
+  gap: 4,
+};
+
+const wdmPortButton: React.CSSProperties = {
+  border: "1px solid #64748b",
+  background: "#14532d",
+  borderRadius: 4,
+  padding: 0,
+  cursor: "pointer",
+  position: "relative",
+  minWidth: 0,
+};
+
+const wdmPortCore: React.CSSProperties = {
+  width: 18,
+  height: 18,
+  borderRadius: 999,
+  border: "2px solid #f8fafc",
+  background: "#1f2937",
+  color: "#f8fafc",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontSize: 7,
+  fontWeight: 900,
+  lineHeight: 1,
+};
+
+const wdmPortDot: React.CSSProperties = {
+  position: "absolute",
+  right: 1,
+  top: 1,
+  width: 5,
+  height: 5,
+  borderRadius: 999,
+};
+
+const wdmNumberGuide: React.CSSProperties = {
+  color: "#64748b",
+  fontSize: 10,
+  textAlign: "center",
+  fontWeight: 800,
+};
+
+const rackDesignerGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "360px minmax(560px, 1fr)",
+  gap: 16,
+  alignItems: "start",
+};
+
+const rackPalettePanel: React.CSSProperties = {
+  background: "#111827",
+  border: "1px solid #374151",
+  borderRadius: 10,
+  padding: "1rem",
+  display: "grid",
+  gap: 12,
+};
+
+const rackPaletteDropZone: React.CSSProperties = {
+  display: "grid",
+  gap: 10,
+  minHeight: 180,
+  alignContent: "start",
+};
+
+const rackEquipmentCard: React.CSSProperties = {
+  border: "1px solid #475569",
+  background: "#020617",
+  borderRadius: 8,
+  padding: "0.75rem",
+  cursor: "grab",
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1fr) auto",
+  gap: 10,
+  alignItems: "center",
+};
+
+const rackCabinetPanel: React.CSSProperties = {
+  background: "#111827",
+  border: "1px solid #374151",
+  borderRadius: 10,
+  padding: "1rem",
+  display: "grid",
+  gap: 12,
+};
+
+const rackCabinetHeader: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  alignItems: "flex-start",
+};
+
+const cabinetToolbar: React.CSSProperties = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+  alignItems: "center",
+};
+
+const cabinetFacesGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 14,
+};
+
+const rackFacePanel: React.CSSProperties = {
+  display: "grid",
+  gap: 8,
+  minWidth: 0,
+};
+
+const rackFaceTitle: React.CSSProperties = {
+  textTransform: "uppercase",
+  color: "#cbd5e1",
+  fontSize: 12,
+  fontWeight: 900,
+  letterSpacing: 0,
+};
+
+const rackFrame: React.CSSProperties = {
+  border: "1px solid #475569",
+  borderRadius: 8,
+  background: "#020617",
+  padding: "8px 10px",
+  display: "grid",
+  gridTemplateColumns: "46px minmax(0, 1fr)",
+  gap: 2,
+  alignItems: "stretch",
+  boxShadow: "inset 18px 0 0 #0f172a, inset -18px 0 0 #0f172a",
+};
+
+const rackSlot: React.CSSProperties = {
+  minHeight: 34,
+  display: "grid",
+  gridTemplateColumns: "46px minmax(0, 1fr)",
+  gap: 8,
+  alignItems: "stretch",
+};
+
+const rackUIndex: React.CSSProperties = {
+  color: "#64748b",
+  fontSize: 11,
+  fontWeight: 900,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  borderRight: "1px solid #1f2937",
+};
+
+const rackEmptySlot: React.CSSProperties = {
+  border: "1px dashed #334155",
+  borderRadius: 4,
+  color: "#334155",
+  fontSize: 11,
+  fontWeight: 800,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: 30,
+};
+
+const rackCoveredSlot: React.CSSProperties = {
+  minHeight: 30,
+  borderRadius: 4,
+  background: "rgba(15, 23, 42, 0.55)",
+};
+
+const rackPlacedItem: React.CSSProperties = {
+  border: "1px solid #475569",
+  background: "#1f2937",
+  borderRadius: 6,
+  padding: "0.45rem 0.55rem",
+  cursor: "grab",
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1fr) auto",
+  gap: 10,
+  alignItems: "center",
+  zIndex: 1,
+  minHeight: 0,
+};
+
+const rackItemMeta: React.CSSProperties = {
+  color: "#94a3b8",
+  fontSize: 11,
+  marginTop: 3,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const rackHeightPill: React.CSSProperties = {
+  border: "1px solid #475569",
+  borderRadius: 999,
+  color: "#cbd5e1",
+  fontSize: 11,
+  fontWeight: 900,
+  padding: "3px 7px",
+  background: "#020617",
 };
 
 const oltRackGrid: React.CSSProperties = {

@@ -23,6 +23,8 @@ function toExchangeMarker(exchange: ExchangeAsset): ExchangeAsset {
     olts: [],
     feederPanels: [],
     hdSplitterPanels: [],
+    wdmPanels: [],
+    ebclPanels: [],
   };
 }
 
