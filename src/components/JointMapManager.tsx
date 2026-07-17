@@ -2270,59 +2270,89 @@ export default function JointMapManager({
         }
       });
 
-      setSavedJoints((prev) => {
-        // Keep newly drawn cables inside the active Project Workspace view.
-        // Without the area index stamp the cable is saved to state, but the
-        // project-area filter can hide it immediately after Finish Cable/reset,
-        // which makes it look like the cable has been removed from the map.
-        const markedCableRecord = markAssetForLiveSync(
-          withAreaAssetIndex(cableRecord, activeProjectId, activeProjectAreaName),
+      // Keep newly drawn cables inside the active Project Workspace view.
+      // Without the area index stamp the cable is saved to state, but the
+      // project-area filter can hide it immediately after Finish Cable/reset,
+      // which makes it look like the cable has been removed from the map.
+      const markedCableRecord = markAssetForLiveSync(
+        withAreaAssetIndex(cableRecord, activeProjectId, activeProjectAreaName),
+        true,
+      );
+      const markedAutoDrops = autoDrops.map((asset) =>
+        markAssetForLiveSync(
+          withAreaAssetIndex(asset, activeProjectId, activeProjectAreaName),
           true,
-        );
-        const markedAutoDrops = autoDrops.map((asset) =>
-          markAssetForLiveSync(
-            withAreaAssetIndex(asset, activeProjectId, activeProjectAreaName),
-            true,
-          ),
-        );
+        ),
+      );
 
-        const updatedExistingAssets = prev.map((asset) => {
-          if (asset.assetType !== "home") return asset;
+      const updatedExistingAssets = (savedJoints ?? []).map((asset) => {
+        if (asset.assetType !== "home") return asset;
 
-          const update = dropHomeConnections.get(getHomeConnectionKey(asset));
-          if (!update) return asset;
+        const update = dropHomeConnections.get(getHomeConnectionKey(asset));
+        if (!update) return asset;
 
-          // Respect a manual override. Auto-generated drops should not overwrite a
-          // home that the user manually assigned to a specific DP.
-          const isManualOverride =
-            String((asset as any).connectionMode || "").toLowerCase() ===
-              "manual" && Boolean((asset as any).connectedDpId);
+        // Respect a manual override. Auto-generated drops should not overwrite a
+        // home that the user manually assigned to a specific DP.
+        const isManualOverride =
+          String((asset as any).connectionMode || "").toLowerCase() ===
+            "manual" && Boolean((asset as any).connectedDpId);
 
-          if (isManualOverride) return asset;
+        if (isManualOverride) return asset;
 
-          return markAssetForLiveSync(
-            {
-              ...asset,
+        return markAssetForLiveSync(
+          {
+            ...asset,
+            connectedDpId: update.connectedDpId,
+            connection: "connected",
+            connectionMode: "auto-dp-drop",
+            properties: {
+              ...((asset as any).properties || {}),
               connectedDpId: update.connectedDpId,
               connection: "connected",
               connectionMode: "auto-dp-drop",
-              properties: {
-                ...((asset as any).properties || {}),
-                connectedDpId: update.connectedDpId,
-                connection: "connected",
-                connectionMode: "auto-dp-drop",
-              },
             },
-            true,
-          );
-        });
-
-        return [
-          ...updatedExistingAssets,
-          markedCableRecord,
-          ...markedAutoDrops,
-        ];
+          },
+          true,
+        );
       });
+
+      const nextSavedJoints = [
+        ...updatedExistingAssets,
+        markedCableRecord,
+        ...markedAutoDrops,
+      ];
+
+      setSavedJoints(nextSavedJoints);
+
+      try {
+        await saveMapAssetsViaCoordinator(nextSavedJoints, {
+          reason: `cable-create:${cableName}`,
+          source: "joint-map-manager",
+        });
+        lastSavedMapSignatureRef.current = getMapAssetsSaveSignature(nextSavedJoints);
+        setLastMapAutosaveAt(
+          new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        );
+        setMapAutosaveStatus("saved");
+        setMapAutosaveError("");
+        if (mapAutosaveTimerRef.current !== null) {
+          window.clearTimeout(mapAutosaveTimerRef.current);
+          mapAutosaveTimerRef.current = null;
+        }
+      } catch (error) {
+        console.error("Cable Firestore save failed", error);
+        setMapAutosaveStatus("error");
+        setMapAutosaveError(error instanceof Error ? error.message : String(error));
+        alert(
+          `Cable is still on this screen, but it did not save to Firestore.\n\nDo not refresh yet. Error: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return;
+      }
 
       // Project GeoJSON homes are stored separately from savedJoints. Stamp and
       // persist them here so the home popup can show connected DP immediately and
