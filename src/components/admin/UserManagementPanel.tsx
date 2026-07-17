@@ -72,6 +72,9 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
   const [newRole, setNewRole] = useState<UserRole>("survey_user");
   const [openAreaUserUid, setOpenAreaUserUid] = useState<string | null>(null);
   const [areaSearch, setAreaSearch] = useState("");
+  const [isNarrowViewport, setIsNarrowViewport] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth <= 720 : false,
+  );
 
   const loadUsers = async () => {
     setIsLoading(true);
@@ -175,6 +178,16 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
     void loadUsers();
     void loadAreaOptions();
   }, [visible, canManageUsers]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const updateViewport = () => setIsNarrowViewport(window.innerWidth <= 720);
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+
+    return () => window.removeEventListener("resize", updateViewport);
+  }, []);
 
   const filteredAreaOptions = useMemo(() => {
     const term = areaSearch.trim().toLowerCase();
@@ -401,7 +414,7 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
 
   if (!canManageUsers) {
     return (
-      <section style={panelStyle}>
+      <section style={getPanelStyle(isNarrowViewport)}>
         <div style={headerStyle}>
           <div>
             <h3 style={titleStyle}>No access</h3>
@@ -417,7 +430,7 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
 
   return (
     <div style={backdropStyle}>
-      <section style={panelStyle}>
+      <section style={getPanelStyle(isNarrowViewport)}>
         <div style={headerStyle}>
           <div>
             <h3 style={titleStyle}>Manage Users</h3>
@@ -431,8 +444,8 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
           </button>
         </div>
 
-        <div style={scrollBodyStyle}>
-          <div style={cardStyle}>
+        <div style={getScrollBodyStyle(isNarrowViewport)}>
+          <div style={getCardStyle(isNarrowViewport)}>
             <h4 style={sectionTitleStyle}>Create Login / Update User</h4>
 
             <label style={labelStyle}>
@@ -506,7 +519,7 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
             {saveError && <div style={errorStyle}>{saveError}</div>}
           </div>
 
-          <div style={cardStyle}>
+          <div style={getCardStyle(isNarrowViewport)}>
             <h4 style={sectionTitleStyle}>Existing Users</h4>
 
             {isLoading ? (
@@ -525,7 +538,7 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
                   );
 
                   return (
-                    <div key={user.uid} style={userRowStyle}>
+                    <div key={user.uid} style={getUserRowStyle(isNarrowViewport)}>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontWeight: 900 }}>{user.name}</div>
                         <div style={userMetaStyle}>
@@ -717,6 +730,19 @@ const panelStyle: React.CSSProperties = {
   boxSizing: "border-box",
 };
 
+function getPanelStyle(isNarrowViewport: boolean): React.CSSProperties {
+  if (!isNarrowViewport) return panelStyle;
+
+  return {
+    ...panelStyle,
+    top: "calc(env(safe-area-inset-top, 0px) + 18px)",
+    bottom: "calc(env(safe-area-inset-bottom, 0px) + 18px)",
+    width: "calc(100vw - 20px)",
+    padding: 12,
+    borderRadius: 14,
+  };
+}
+
 const scrollBodyStyle: React.CSSProperties = {
   overflow: "hidden",
   minHeight: 0,
@@ -725,6 +751,22 @@ const scrollBodyStyle: React.CSSProperties = {
   gridTemplateColumns: "360px minmax(0, 1fr)",
   gap: 14,
 };
+
+function getScrollBodyStyle(isNarrowViewport: boolean): React.CSSProperties {
+  if (!isNarrowViewport) return scrollBodyStyle;
+
+  return {
+    ...scrollBodyStyle,
+    display: "flex",
+    flexDirection: "column",
+    gap: 12,
+    overflowY: "auto",
+    overflowX: "hidden",
+    paddingRight: 2,
+    paddingBottom: 16,
+    WebkitOverflowScrolling: "touch",
+  };
+}
 
 const headerStyle: React.CSSProperties = {
   display: "flex",
@@ -757,6 +799,16 @@ const cardStyle: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
 };
+
+function getCardStyle(isNarrowViewport: boolean): React.CSSProperties {
+  if (!isNarrowViewport) return cardStyle;
+
+  return {
+    ...cardStyle,
+    overflow: "visible",
+    flex: "0 0 auto",
+  };
+}
 
 const sectionTitleStyle: React.CSSProperties = {
   margin: "0 0 8px",
@@ -848,6 +900,15 @@ const userRowStyle: React.CSSProperties = {
   background: "#0f172a",
   alignItems: "start",
 };
+
+function getUserRowStyle(isNarrowViewport: boolean): React.CSSProperties {
+  if (!isNarrowViewport) return userRowStyle;
+
+  return {
+    ...userRowStyle,
+    gridTemplateColumns: "minmax(0, 1fr)",
+  };
+}
 
 const userMetaStyle: React.CSSProperties = {
   color: "#94a3b8",
