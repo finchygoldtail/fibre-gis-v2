@@ -15,6 +15,7 @@ type UseEditorResetArgs = {
   setSelectedReferenceDuctId: Setter<string | null>;
   setSelectedReferenceDuctName: Setter<string>;
   setDraftCablePoints: Setter<any[]>;
+  setDraftCableSegmentMethods: Setter<any[]>;
   setDraftAreaPoints: Setter<any[]>;
   setCableType: Setter<any>;
   setFibreCount: Setter<any>;
@@ -43,6 +44,7 @@ export function useEditorReset(args: UseEditorResetArgs) {
     args.setSelectedReferenceDuctId(null);
     args.setSelectedReferenceDuctName("");
     args.setDraftCablePoints([]);
+    args.setDraftCableSegmentMethods([]);
     args.setDraftAreaPoints([]);
     args.setCableType("Feeder Cable");
     args.setFibreCount("12F");

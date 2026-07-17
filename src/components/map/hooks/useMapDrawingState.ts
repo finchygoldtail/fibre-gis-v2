@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { LatLngLiteral } from "leaflet";
+import type { CableSegmentInstallMethod } from "../types";
 import type { OsmBounds } from "../utils/loadOsmBuildings";
 
 export type MapMode =
@@ -23,6 +24,9 @@ export function useMapDrawingState({ initialZoom = 6 }: UseMapDrawingStateArgs =
   const [roadOverlayVisible, setRoadOverlayVisible] = useState(false);
   const [measurePoints, setMeasurePoints] = useState<LatLngLiteral[]>([]);
   const [draftCablePoints, setDraftCablePoints] = useState<LatLngLiteral[]>([]);
+  const [draftCableSegmentMethods, setDraftCableSegmentMethods] = useState<
+    CableSegmentInstallMethod[]
+  >([]);
   const [draftAreaPoints, setDraftAreaPoints] = useState<LatLngLiteral[]>([]);
   const [isLayersOpen, setIsLayersOpen] = useState(false);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
@@ -63,6 +67,8 @@ export function useMapDrawingState({ initialZoom = 6 }: UseMapDrawingStateArgs =
     setMeasurePoints,
     draftCablePoints,
     setDraftCablePoints,
+    draftCableSegmentMethods,
+    setDraftCableSegmentMethods,
     draftAreaPoints,
     setDraftAreaPoints,
     isLayersOpen,

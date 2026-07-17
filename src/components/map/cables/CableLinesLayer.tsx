@@ -242,6 +242,19 @@ function getDashArray(
 
   return undefined;
 }
+
+function getSegmentInstallMethod(asset: SavedMapAsset, index: number): "OH" | "Underground" | null {
+  const methods = (asset as any).cableSegmentInstallMethods;
+  if (!Array.isArray(methods) || !methods.length) return null;
+  const text = normaliseCableText(methods[index]);
+  return text === "oh" || text.includes("overhead") ? "OH" : "Underground";
+}
+
+function hasMixedSegmentInstallMethods(asset: SavedMapAsset): boolean {
+  const methods = (asset as any).cableSegmentInstallMethods;
+  if (!Array.isArray(methods) || methods.length < 1) return false;
+  return new Set(methods.map((method: unknown) => getSegmentInstallMethod({ ...(asset as any), cableSegmentInstallMethods: [method] }, 0))).size > 1;
+}
 /* ======================= END CABLE STYLE HELPERS ======================= */
 
 function getAssetPoint(asset: SavedMapAsset): [number, number] | null {
@@ -1289,6 +1302,7 @@ export default function CableLinesLayer({
         const routeEditInsertSegmentIndexes = isEditing
           ? new Set(getRouteEditInsertSegmentIndexes(points, routeEditHandleIndexes))
           : new Set<number>();
+        const rendersMixedInstallSegments = hasMixedSegmentInstallMethods(asset);
 
         const startAsset = shouldCalculateCableDetails
           ? points.length >= 2
@@ -1393,13 +1407,39 @@ export default function CableLinesLayer({
 
         return (
           <React.Fragment key={asset.id}>
+            {rendersMixedInstallSegments
+              ? points.slice(0, -1).map((point, index) => {
+                  const nextPoint = points[index + 1];
+                  if (!nextPoint) return null;
+                  const segmentMethod = getSegmentInstallMethod(asset, index);
+
+                  return (
+                    <Polyline
+                      key={`${asset.id}-install-segment-${index}`}
+                      renderer={cableCanvasRenderer}
+                      positions={[point, nextPoint]}
+                      interactive={false}
+                      pathOptions={{
+                        color: cableColor,
+                        weight: isSelected ? 9 : isHovered || isEditing ? 7 : 4,
+                        opacity: isSelected || isHovered || isEditing ? 1 : 0.85,
+                        dashArray: segmentMethod === "OH" ? "10, 8" : undefined,
+                      }}
+                    />
+                  );
+                })
+              : null}
             <Polyline
               renderer={cableCanvasRenderer}
               positions={points}
               pathOptions={{
                 color: cableColor,
                 weight: isSelected ? 9 : isHovered || isEditing ? 7 : 4,
-                opacity: isSelected || isHovered || isEditing ? 1 : 0.85,
+                opacity: rendersMixedInstallSegments
+                  ? 0.02
+                  : isSelected || isHovered || isEditing
+                    ? 1
+                    : 0.85,
                 dashArray: getDashArray(asset),
                 className: isSelected ? "selected-cable-glow" : "",
               }}

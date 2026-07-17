@@ -1008,6 +1008,8 @@ export default function JointMapManager({
     setMeasurePoints,
     draftCablePoints,
     setDraftCablePoints,
+    draftCableSegmentMethods,
+    setDraftCableSegmentMethods,
     draftAreaPoints,
     setDraftAreaPoints,
     isLayersOpen,
@@ -1387,6 +1389,7 @@ export default function JointMapManager({
     setEditingAreaId(null);
     setPickedLocation(null);
     setDraftCablePoints([]);
+    setDraftCableSegmentMethods([]);
     setDraftAreaPoints([]);
     setSelectedReferenceDuctId(null);
     setSelectedReferenceDuctName("");
@@ -1636,6 +1639,7 @@ export default function JointMapManager({
     setSelectedReferenceDuctId,
     setSelectedReferenceDuctName,
     setDraftCablePoints,
+    setDraftCableSegmentMethods,
     setDraftAreaPoints,
     setCableType,
     setFibreCount,
@@ -1752,11 +1756,13 @@ export default function JointMapManager({
     setPickedLocation,
     setDraftAreaPoints,
     setDraftCablePoints,
+    setDraftCableSegmentMethods,
     setSelectedReferenceDuctId,
     setSelectedReferenceDuctName,
     setMapMode,
     setShowCableModal,
     setIsPanelOpen,
+    currentInstallMethod: installMethod,
   });
 
   // =====================================================
@@ -1785,6 +1791,7 @@ export default function JointMapManager({
     setIsPanelOpen,
     setPickedLocation,
     setDraftCablePoints,
+    setDraftCableSegmentMethods,
     setDraftAreaPoints,
     setMapMode,
     setShowPoleModal,
@@ -2071,6 +2078,18 @@ export default function JointMapManager({
     resetEditor,
   });
 
+  const normaliseCableSegmentMethod = (value: unknown): "OH" | "Underground" => {
+    const text = String(value || "").trim().toLowerCase();
+    return text === "oh" || text.includes("overhead") ? "OH" : "Underground";
+  };
+
+  const getDraftCableSegmentMethods = () => {
+    const segmentCount = Math.max(0, draftCablePoints.length - 1);
+    return Array.from({ length: segmentCount }, (_, index) =>
+      normaliseCableSegmentMethod(draftCableSegmentMethods[index] || installMethod),
+    );
+  };
+
   const handleFinishCable = async () => {
     if (draftCablePoints.length < 2) {
       alert("Add at least two cable points.");
@@ -2083,8 +2102,11 @@ export default function JointMapManager({
     setIsRoutingCable(true);
 
     try {
+      const cableSegmentInstallMethods = getDraftCableSegmentMethods();
+      const hasMixedInstallMethods =
+        new Set(cableSegmentInstallMethods).size > 1;
       const shouldUseReferenceDuct =
-        shouldUseDuctTraceForInstallMethod(installMethod);
+        !hasMixedInstallMethods && shouldUseDuctTraceForInstallMethod(installMethod);
       const ductTracePoints =
         shouldUseReferenceDuct && selectedReferenceDuctId
           ? traceReferenceDuctRouteBetweenPoints(
@@ -2108,8 +2130,17 @@ export default function JointMapManager({
       }
 
       const routedCoordinates = sanitiseCableRouteCoordinates(
-        ductTracePoints ?? (await routePointsToRoads(draftCablePoints)),
+        hasMixedInstallMethods
+          ? draftCablePoints
+          : ductTracePoints ?? (await routePointsToRoads(draftCablePoints)),
       );
+      const savedSegmentInstallMethods =
+        hasMixedInstallMethods
+          ? cableSegmentInstallMethods
+          : Array.from(
+              { length: Math.max(0, routedCoordinates.length - 1) },
+              () => normaliseCableSegmentMethod(installMethod),
+            );
 
       const endpointAssets = findCableEndpointAssets(
         allNetworkAssetsWithExchanges,
@@ -2127,6 +2158,7 @@ export default function JointMapManager({
         cableType,
         fibreCount,
         installMethod,
+        cableSegmentInstallMethods: savedSegmentInstallMethods,
         parentCableId,
         fromAssetId: endpointAssets.fromAssetId,
         toAssetId: endpointAssets.toAssetId,
@@ -2137,7 +2169,11 @@ export default function JointMapManager({
         fromAssetName: (endpointAssets.fromAsset as any)?.name,
         toAssetName: (endpointAssets.toAsset as any)?.name,
         allocatedInputFibres,
-        routeMode: ductTracePoints ? "selected-or-duct" : "road",
+        routeMode: hasMixedInstallMethods
+          ? "manual-mixed-install"
+          : ductTracePoints
+            ? "selected-or-duct"
+            : "road",
         referenceDuctId: ductTracePoints
           ? selectedReferenceDuctId || undefined
           : undefined,
@@ -4511,8 +4547,8 @@ export default function JointMapManager({
                     }
                     style={input}
                   >
-                    <option>Underground</option>
-                    <option>Overhead</option>
+                    <option value="Underground">Underground</option>
+                    <option value="OH">Overhead</option>
                     <option>Existing Duct</option>
                     <option>New Duct</option>
                   </select>
@@ -4583,8 +4619,8 @@ export default function JointMapManager({
                     }
                     style={input}
                   >
-                    <option>Underground</option>
-                    <option>Overhead</option>
+                    <option value="Underground">Underground</option>
+                    <option value="OH">Overhead</option>
                   </select>
                 </>
               ) : null}
@@ -4872,6 +4908,36 @@ export default function JointMapManager({
                   </div>
                   <div style={{ fontWeight: 700, color: "#fbbf24" }}>
                     Length: {formatDistance(draftCableDistance)}
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 10,
+                      padding: 10,
+                      borderRadius: 10,
+                      background: "rgba(15,23,42,0.75)",
+                      border: "1px solid rgba(148,163,184,0.24)",
+                    }}
+                  >
+                    <div style={{ ...label, marginBottom: 6 }}>Next Span</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      <button
+                        type="button"
+                        onClick={() => setInstallMethod("Underground")}
+                        style={installMethod === "Underground" ? btnPrimary : btnSecondary}
+                      >
+                        UG
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setInstallMethod("OH")}
+                        style={installMethod === "OH" ? btnPrimary : btnSecondary}
+                      >
+                        OH
+                      </button>
+                    </div>
+                    <div style={{ marginTop: 6, color: "#9ca3af", fontSize: 12 }}>
+                      Change this before placing the next point to transition on the same cable.
+                    </div>
                   </div>
                   <div
                     style={{
@@ -5531,7 +5597,12 @@ export default function JointMapManager({
                           ? "#3b82f6"
                           : "#f59e0b",
                     weight: 6,
-                    dashArray: installMethod === "OH" ? "10, 8" : undefined,
+                    dashArray:
+                      normaliseCableSegmentMethod(
+                        draftCableSegmentMethods[index] || installMethod,
+                      ) === "OH"
+                        ? "10, 8"
+                        : undefined,
                   }}
                   eventHandlers={{
                     click: (event) => {

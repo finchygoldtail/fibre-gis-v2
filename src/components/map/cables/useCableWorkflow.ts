@@ -5,6 +5,7 @@ import { snapPointToAssets } from "../utils/snapToAssets";
 import type {
   AssetType,
   CableType,
+  CableSegmentInstallMethod,
   FibreCount,
   InstallMethod,
   SavedMapAsset,
@@ -38,12 +39,23 @@ type UseCableWorkflowArgs = {
   setPickedLocation: React.Dispatch<React.SetStateAction<LatLngLiteral | null>>;
   setDraftAreaPoints: React.Dispatch<React.SetStateAction<LatLngLiteral[]>>;
   setDraftCablePoints: React.Dispatch<React.SetStateAction<LatLngLiteral[]>>;
+  setDraftCableSegmentMethods: React.Dispatch<
+    React.SetStateAction<CableSegmentInstallMethod[]>
+  >;
   setSelectedReferenceDuctId: React.Dispatch<React.SetStateAction<string | null>>;
   setSelectedReferenceDuctName: React.Dispatch<React.SetStateAction<string>>;
   setMapMode: React.Dispatch<React.SetStateAction<MapMode>>;
   setShowCableModal: React.Dispatch<React.SetStateAction<boolean>>;
   setIsPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  currentInstallMethod: InstallMethod;
 };
+
+function normaliseSegmentInstallMethod(
+  value: InstallMethod | string | null | undefined,
+): CableSegmentInstallMethod {
+  const text = String(value || "").trim().toLowerCase();
+  return text === "oh" || text.includes("overhead") ? "OH" : "Underground";
+}
 
 export function useCableWorkflow({
   jointName,
@@ -64,11 +76,13 @@ export function useCableWorkflow({
   setPickedLocation,
   setDraftAreaPoints,
   setDraftCablePoints,
+  setDraftCableSegmentMethods,
   setSelectedReferenceDuctId,
   setSelectedReferenceDuctName,
   setMapMode,
   setShowCableModal,
   setIsPanelOpen,
+  currentInstallMethod,
 }: UseCableWorkflowArgs) {
   const snapCablePoint = (point: LatLngLiteral): LatLngLiteral =>
     snapPointToAssets(
@@ -93,6 +107,7 @@ export function useCableWorkflow({
     setPickedLocation(null);
     setDraftAreaPoints([]);
     setDraftCablePoints([]);
+    setDraftCableSegmentMethods([]);
     setSelectedReferenceDuctId(null);
     setSelectedReferenceDuctName("");
     setMapMode("pick");
@@ -113,11 +128,17 @@ export function useCableWorkflow({
   };
 
   const handleUndoCablePoint = () => {
-    setDraftCablePoints((prev) => prev.slice(0, -1));
+    setDraftCablePoints((prev) => {
+      if (prev.length > 1) {
+        setDraftCableSegmentMethods((methods) => methods.slice(0, -1));
+      }
+      return prev.slice(0, -1);
+    });
   };
 
   const handleClearCable = () => {
     setDraftCablePoints([]);
+    setDraftCableSegmentMethods([]);
   };
 
   const handleMoveCablePoint = (index: number, point: LatLngLiteral) => {
@@ -131,11 +152,29 @@ export function useCableWorkflow({
   };
 
   const handleDeleteCablePoint = (index: number) => {
-    setDraftCablePoints((prev) => prev.filter((_, i) => i !== index));
+    setDraftCablePoints((prev) => {
+      if (prev.length > 1) {
+        const methodIndex = index >= prev.length - 1 ? index - 1 : index;
+        setDraftCableSegmentMethods((methods) =>
+          methods.filter((_, i) => i !== Math.max(0, methodIndex)),
+        );
+      }
+      return prev.filter((_, i) => i !== index);
+    });
   };
 
   const handleInsertCablePoint = (index: number, point: LatLngLiteral) => {
     const snapped = snapCablePoint(point);
+
+    setDraftCableSegmentMethods((methods) => {
+      const inherited =
+        methods[index] || normaliseSegmentInstallMethod(currentInstallMethod);
+      return [
+        ...methods.slice(0, index + 1),
+        inherited,
+        ...methods.slice(index + 1),
+      ];
+    });
 
     setDraftCablePoints((prev) => [
       ...prev.slice(0, index + 1),
@@ -145,7 +184,15 @@ export function useCableWorkflow({
   };
 
   const handleCablePoint = (point: LatLngLiteral) => {
-    setDraftCablePoints((prev) => [...prev, snapCablePoint(point)]);
+    setDraftCablePoints((prev) => {
+      if (prev.length > 0) {
+        setDraftCableSegmentMethods((methods) => [
+          ...methods,
+          normaliseSegmentInstallMethod(currentInstallMethod),
+        ]);
+      }
+      return [...prev, snapCablePoint(point)];
+    });
   };
 
   return {

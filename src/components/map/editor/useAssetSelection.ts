@@ -61,6 +61,7 @@ type UseAssetSelectionArgs = {
   setIsPanelOpen: Setter<boolean>;
   setPickedLocation: Setter<LatLngLiteral | null>;
   setDraftCablePoints: Setter<LatLngLiteral[]>;
+  setDraftCableSegmentMethods: Setter<any[]>;
   setDraftAreaPoints: Setter<LatLngLiteral[]>;
   setMapMode: Setter<MapMode>;
   setShowPoleModal: Setter<boolean>;
@@ -90,6 +91,7 @@ export function useAssetSelection({
   setIsPanelOpen,
   setPickedLocation,
   setDraftCablePoints,
+  setDraftCableSegmentMethods,
   setDraftAreaPoints,
   setMapMode,
   setShowPoleModal,
@@ -148,6 +150,7 @@ export function useAssetSelection({
         const [lat, lng] = asset.geometry.coordinates;
         setPickedLocation({ lat, lng });
         setDraftCablePoints([]);
+        setDraftCableSegmentMethods([]);
         setMapMode("pick");
 
         setShowPoleModal(false);
@@ -157,6 +160,7 @@ export function useAssetSelection({
       } else if (asset.geometry?.type === "Polygon") {
         setPickedLocation(null);
         setDraftCablePoints([]);
+        setDraftCableSegmentMethods([]);
         setDraftAreaPoints(
           (asset.geometry.coordinates[0] || []).map(([lat, lng]) => ({
             lat,
@@ -173,6 +177,7 @@ export function useAssetSelection({
         // Route handles are controlled by CableLinesLayer's "Edit route" button.
         // Keeping this empty prevents every stored route vertex rendering as a marker.
         setDraftCablePoints([]);
+        setDraftCableSegmentMethods([]);
         setMapMode("pick");
         setShowCableModal(false);
       }
@@ -188,6 +193,7 @@ export function useAssetSelection({
       setDpDetails,
       setDraftAreaPoints,
       setDraftCablePoints,
+      setDraftCableSegmentMethods,
       setEditingAssetId,
       setFibreCount,
       setInstallMethod,

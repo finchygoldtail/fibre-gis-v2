@@ -31,6 +31,7 @@ export type FibreCount =
   | "288F";
 
 export type InstallMethod = "OH" | "Underground";
+export type CableSegmentInstallMethod = "OH" | "Underground";
 
 export type AreaLevel = "L0" | "L1" | "L2" | "L3";
 
@@ -173,6 +174,7 @@ export type SavedMapAsset = {
   cableType?: CableType;
   fibreCount?: FibreCount;
   installMethod?: InstallMethod;
+  cableSegmentInstallMethods?: CableSegmentInstallMethod[];
   usedFibres?: number;
 
   // Branch / jump-off cable fibre reservation from a parent spine cable.
