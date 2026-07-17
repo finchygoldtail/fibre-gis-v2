@@ -29,6 +29,7 @@ import { getCableUsedFibres } from "../cableUsage";
 import { buildNetworkState } from "../../../services/network";
 import { isOpenreachReferenceAsset } from "../../../services/orAssetStorage";
 import { getPaddedRenderBounds, isLineStringInsideRenderBounds } from "../utils/renderBounds";
+import { useDeviceLayout } from "../responsive/useDeviceLayout";
 type Props = {
   assets: SavedMapAsset[];
   cablesVisible: boolean;
@@ -1022,6 +1023,7 @@ export default function CableLinesLayer({
   onUpdateAsset,
 }: Props) {
   const map = useMap();
+  const { isMobile } = useDeviceLayout();
   const [selectedCableId, setSelectedCableId] = useState<string | null>(null);
   const [editingCableId, setEditingCableId] = useState<string | null>(null);
   const [hoveredCableId, setHoveredCableId] = useState<string | null>(null);
@@ -1412,7 +1414,7 @@ export default function CableLinesLayer({
                 mouseout: () => setHoveredCableId(null),
               }}
             >
-              {!cableDrawingMode ? (
+              {!cableDrawingMode && !isMobile ? (
               <Popup>
                 <div style={{ minWidth: 240 }}>
                   <div style={{ fontWeight: 700, fontSize: "1rem" }}>
@@ -1575,6 +1577,89 @@ export default function CableLinesLayer({
               ) : null}
             </Polyline>
 
+            {!cableDrawingMode && isMobile && isSelected ? (
+              <div
+                style={mobileCableSheetStyle}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div style={mobileSheetHandleStyle} />
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={mobileSheetKickerStyle}>Cable asset</div>
+                    <div style={mobileSheetTitleStyle}>
+                      {asset.name || "Unnamed Cable"}
+                    </div>
+                    <div style={mobileSheetMetaStyle}>
+                      {asset.cableType || "Cable"} · {asset.fibreCount || "N/A"} · {formatCableLength(length)}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCableId(null);
+                      setEditingCableId(null);
+                    }}
+                    aria-label="Close selected cable panel"
+                    style={mobileSheetCloseButtonStyle}
+                  >
+                    x
+                  </button>
+                </div>
+
+                <div style={mobileCableSummaryStyle}>
+                  <span>Used fibres</span>
+                  <strong>{usedFibres} / {asset.fibreCount || "N/A"}</strong>
+                </div>
+
+                {capacityWarning ? (
+                  <div style={mobileCableWarningStyle}>{capacityWarning}</div>
+                ) : null}
+
+                <div style={mobileCableButtonGridStyle}>
+                  <button type="button" style={mobilePrimaryButtonStyle} onClick={() => onEditAsset(asset)}>
+                    View / Edit
+                  </button>
+                  <button
+                    type="button"
+                    style={mobileSecondaryButtonStyle}
+                    onClick={() => {
+                      setSelectedCableId(asset.id);
+                      setEditingCableId(asset.id);
+                    }}
+                  >
+                    Edit Route
+                  </button>
+                  <button
+                    type="button"
+                    style={mobileSecondaryButtonStyle}
+                    onClick={() => {
+                      const point = points[0];
+                      if (!point) return;
+                      window.open(
+                        `https://www.google.com/maps/dir/?api=1&destination=${point[0]},${point[1]}&travelmode=driving`,
+                        "_blank",
+                        "noopener,noreferrer",
+                      );
+                    }}
+                  >
+                    Navigate
+                  </button>
+                  <button
+                    type="button"
+                    style={mobileDangerButtonStyle}
+                    onClick={() => {
+                      setSelectedCableId(null);
+                      setEditingCableId(null);
+                      onDeleteAsset(asset.id);
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
             {showCableDistances === true && mapViewZoom >= 17 &&
               points.slice(0, -1).map((coord, i) => {
                 const next = points[i + 1];
@@ -1645,3 +1730,114 @@ export default function CableLinesLayer({
     </>
   );
 }
+
+const mobileCableSheetStyle: React.CSSProperties = {
+  position: "absolute",
+  left: 10,
+  right: 10,
+  bottom: 14,
+  zIndex: 2450,
+  borderRadius: 22,
+  border: "1px solid rgba(148,163,184,0.35)",
+  background: "rgba(15,23,42,0.96)",
+  color: "white",
+  boxShadow: "0 18px 42px rgba(0,0,0,0.45)",
+  padding: 14,
+  backdropFilter: "blur(12px)",
+  pointerEvents: "auto",
+};
+
+const mobileSheetHandleStyle: React.CSSProperties = {
+  width: 46,
+  height: 5,
+  borderRadius: 999,
+  background: "rgba(148,163,184,0.55)",
+  margin: "0 auto 12px",
+};
+
+const mobileSheetKickerStyle: React.CSSProperties = {
+  color: "#93c5fd",
+  fontSize: 11,
+  fontWeight: 900,
+  letterSpacing: 0.8,
+  textTransform: "uppercase",
+};
+
+const mobileSheetTitleStyle: React.CSSProperties = {
+  marginTop: 3,
+  fontSize: 18,
+  fontWeight: 900,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const mobileSheetMetaStyle: React.CSSProperties = {
+  marginTop: 4,
+  color: "#cbd5e1",
+  fontSize: 12,
+};
+
+const mobileSheetCloseButtonStyle: React.CSSProperties = {
+  width: 34,
+  height: 34,
+  borderRadius: 999,
+  border: "1px solid rgba(148,163,184,0.35)",
+  background: "rgba(30,41,59,0.9)",
+  color: "white",
+  fontWeight: 900,
+  flex: "0 0 auto",
+};
+
+const mobileCableSummaryStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 10,
+  marginTop: 12,
+  padding: "9px 10px",
+  borderRadius: 12,
+  background: "rgba(30,41,59,0.78)",
+  border: "1px solid rgba(148,163,184,0.22)",
+  color: "#cbd5e1",
+  fontSize: 12,
+};
+
+const mobileCableWarningStyle: React.CSSProperties = {
+  marginTop: 10,
+  padding: "8px 10px",
+  borderRadius: 12,
+  background: "rgba(127,29,29,0.35)",
+  border: "1px solid rgba(248,113,113,0.45)",
+  color: "#fecaca",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const mobileCableButtonGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 8,
+  marginTop: 12,
+};
+
+const mobilePrimaryButtonStyle: React.CSSProperties = {
+  minHeight: 44,
+  borderRadius: 14,
+  border: "none",
+  background: "#2563eb",
+  color: "white",
+  fontWeight: 900,
+  fontSize: 13,
+};
+
+const mobileSecondaryButtonStyle: React.CSSProperties = {
+  ...mobilePrimaryButtonStyle,
+  border: "1px solid rgba(148,163,184,0.35)",
+  background: "rgba(30,41,59,0.92)",
+};
+
+const mobileDangerButtonStyle: React.CSSProperties = {
+  ...mobilePrimaryButtonStyle,
+  border: "1px solid rgba(248,113,113,0.55)",
+  background: "#991b1b",
+};

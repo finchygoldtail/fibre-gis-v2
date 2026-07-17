@@ -12,6 +12,8 @@ type Props = {
   selectedDeleteHomeCount: number;
   onOpenDetails: () => void;
   onOpenMaintenance: () => void;
+  onNavigate?: () => void;
+  onOpenPhotos?: () => void;
   onClose: () => void;
 };
 
@@ -34,6 +36,8 @@ export default function AssetBottomSheet({
   selectedDeleteHomeCount,
   onOpenDetails,
   onOpenMaintenance,
+  onNavigate,
+  onOpenPhotos,
   onClose,
 }: Props) {
   const isSurvey = role === "survey";
@@ -50,7 +54,7 @@ export default function AssetBottomSheet({
         position: "absolute",
         left: 10,
         right: 10,
-        bottom: 92,
+        bottom: 14,
         zIndex: 1450,
         borderRadius: 22,
         border: "1px solid rgba(148,163,184,0.35)",
@@ -122,7 +126,13 @@ export default function AssetBottomSheet({
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}>
         <button type="button" onClick={onOpenDetails} style={primaryButton}>
-          Open / Edit
+          View / Edit
+        </button>
+        <button type="button" onClick={onOpenPhotos || onOpenDetails} style={secondaryButton}>
+          Photos
+        </button>
+        <button type="button" onClick={onNavigate || onOpenDetails} style={secondaryButton}>
+          Navigate
         </button>
         <button type="button" onClick={onOpenMaintenance} style={secondaryButton}>
           {isSurvey ? "Asset History" : "Maintenance"}

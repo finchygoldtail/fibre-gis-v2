@@ -5042,6 +5042,17 @@ export default function JointMapManager({
                 (asset as any).assetType || (asset as any).type || "",
               ).toLowerCase();
 
+              if (isMobile) {
+                handleEditAsset(asset);
+                setShowDpModal(false);
+                setShowPoleModal(false);
+                setShowChamberModal(false);
+                setOpenStreetCabAsset(null);
+                setOpenDistributionPointAsset(null);
+                setIsPanelOpen(false);
+                return;
+              }
+
               // WORKSPACE WIRING:
               // Open operational editors directly where possible.
               // This deliberately does not touch storage, cable drawing, drops, AFN/MDU logic,
@@ -5764,7 +5775,7 @@ export default function JointMapManager({
           </button>
         )}
 
-      {!showMaintenancePanel && isFieldResponsiveMode && (
+      {!showMaintenancePanel && (isFieldResponsiveMode || isMobile) && (
         <FieldPhotoCapturePanel
           isOpen={isFieldPhotoPanelOpen}
           assetName={currentEditingAsset?.name || null}
@@ -5840,7 +5851,6 @@ export default function JointMapManager({
 
       {!showMaintenancePanel &&
         isMobile &&
-        isFieldResponsiveMode &&
         currentEditingAsset && (
           <AssetBottomSheet
             role={fieldQuickRole}
@@ -5852,6 +5862,24 @@ export default function JointMapManager({
             onOpenMaintenance={() =>
               openMaintenanceHistory(currentEditingAsset)
             }
+            onOpenPhotos={() => setIsFieldPhotoPanelOpen(true)}
+            onNavigate={() => {
+              const point =
+                currentEditingAsset.geometry?.type === "Point" &&
+                Array.isArray(currentEditingAsset.geometry.coordinates)
+                  ? {
+                      lat: Number(currentEditingAsset.geometry.coordinates[0]),
+                      lng: Number(currentEditingAsset.geometry.coordinates[1]),
+                    }
+                  : null;
+
+              if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lng)) {
+                setIsPanelOpen(true);
+                return;
+              }
+
+              handleDriveToLocation(point);
+            }}
             onClose={resetEditor}
           />
         )}
