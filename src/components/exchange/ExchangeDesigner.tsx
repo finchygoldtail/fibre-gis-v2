@@ -319,8 +319,9 @@ function createWdmPanel(panelNumber: number): WdmPanel {
 function defaultRackHeight(kind: RackEquipmentKind) {
   if (kind === "wdm") return 1;
   if (kind === "splitter") return 1;
-  if (kind === "olt") return 14;
-  return 3;
+  if (kind === "olt") return 12;
+  if (kind === "feeder") return 2;
+  return 2;
 }
 
 function rackItemKey(kind: RackEquipmentKind, id: string) {
