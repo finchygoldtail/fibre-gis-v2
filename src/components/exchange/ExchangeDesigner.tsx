@@ -14,6 +14,7 @@ import type {
   PonPort,
   RackMountPosition,
   RackSide,
+  TestHead,
   WdmPanel,
 } from "../map/storage/exchangeStorage";
 
@@ -71,7 +72,7 @@ type SelectedNode =
       portId: string;
     };
 
-type RackEquipmentKind = "olt" | "wdm" | "splitter" | "feeder" | "ebcl";
+type RackEquipmentKind = "olt" | "wdm" | "splitter" | "feeder" | "ebcl" | "test-head";
 
 type RackDragPayload = {
   kind: RackEquipmentKind;
@@ -277,6 +278,13 @@ function normaliseExchangeForDesigner(exchange: ExchangeAsset): ExchangeAsset {
         ? { ...panel.rackPosition, heightU: defaultRackHeight("wdm") }
         : panel.rackPosition,
     })),
+    testHeads: (baseExchange.testHeads ?? []).map((testHead) => ({
+      ...testHead,
+      manufacturer: testHead.manufacturer ?? "VIAVI",
+      rackPosition: testHead.rackPosition
+        ? { ...testHead.rackPosition, heightU: defaultRackHeight("test-head") }
+        : testHead.rackPosition,
+    })),
     olts: (baseExchange.olts ?? []).map((olt) => ({
       ...olt,
       manufacturer: olt.manufacturer ?? "Nokia",
@@ -316,9 +324,19 @@ function createWdmPanel(panelNumber: number): WdmPanel {
   };
 }
 
+function createTestHead(testHeadNumber: number): TestHead {
+  return {
+    id: crypto.randomUUID(),
+    name: `VIAVI Test Head ${testHeadNumber}`,
+    manufacturer: "VIAVI",
+    model: "Test Head",
+  };
+}
+
 function defaultRackHeight(kind: RackEquipmentKind) {
   if (kind === "wdm") return 1;
   if (kind === "splitter") return 1;
+  if (kind === "test-head") return 3;
   if (kind === "olt") return 12;
   if (kind === "feeder") return 2;
   return 2;
@@ -332,7 +350,7 @@ function parseRackDragPayload(value: string): RackDragPayload | null {
   try {
     const parsed = JSON.parse(value) as RackDragPayload;
     if (!parsed?.id) return null;
-    if (!["olt", "wdm", "splitter", "feeder", "ebcl"].includes(parsed.kind)) return null;
+    if (!["olt", "wdm", "splitter", "feeder", "ebcl", "test-head"].includes(parsed.kind)) return null;
     return parsed;
   } catch {
     return null;
@@ -550,6 +568,10 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
     exchange.wdmPanels?.[0]?.id ?? null
   );
 
+  const [selectedTestHeadId, setSelectedTestHeadId] = useState<string | null>(
+    exchange.testHeads?.[0]?.id ?? null
+  );
+
   const [selectedEbclPanelId, setSelectedEbclPanelId] = useState<string | null>(
     exchange.ebclPanels?.[0]?.id ?? null
   );
@@ -573,6 +595,7 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
   const feederPanels = draftExchange.feederPanels ?? [];
   const wdmPanels = draftExchange.wdmPanels ?? [];
   const ebclPanels = draftExchange.ebclPanels ?? [];
+  const testHeads = draftExchange.testHeads ?? [];
   const cabinets = draftExchange.cabinets?.length ? draftExchange.cabinets : [createCabinet(1)];
   const selectedCabinet = cabinets.find((cabinet) => cabinet.id === selectedCabinetId) ?? cabinets[0];
 
@@ -658,6 +681,11 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
     visibleWdmPanels[0] ??
     null;
 
+  const selectedTestHead =
+    testHeads.find((testHead) => testHead.id === selectedTestHeadId) ??
+    testHeads[0] ??
+    null;
+
   const selectedEbclPanel =
     ebclPanels.find((panel) => panel.id === selectedEbclPanelId) ??
     ebclPanels[0] ??
@@ -681,6 +709,15 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
       heightU: defaultRackHeight("wdm"),
       colour: "#22c55e",
       position: panel.rackPosition ? { ...panel.rackPosition, heightU: defaultRackHeight("wdm") } : undefined,
+    }));
+    const testHeadItems = testHeads.map((testHead): RackEquipmentItem => ({
+      kind: "test-head",
+      id: testHead.id,
+      name: testHead.name,
+      meta: `${testHead.manufacturer ?? "VIAVI"} ${testHead.model ?? "Test Head"}`,
+      heightU: defaultRackHeight("test-head"),
+      colour: "#f97316",
+      position: testHead.rackPosition ? { ...testHead.rackPosition, heightU: defaultRackHeight("test-head") } : undefined,
     }));
     const splitterItems = hdSplitterPanels.map((panel): RackEquipmentItem => ({
       kind: "splitter",
@@ -710,8 +747,8 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
       position: panel.rackPosition ? { ...panel.rackPosition, heightU: defaultRackHeight("ebcl") } : undefined,
     }));
 
-    return [...oltItems, ...ebclItems, ...wdmItems, ...splitterItems, ...feederItems];
-  }, [olts, wdmPanels, hdSplitterPanels, feederPanels, ebclPanels]);
+    return [...oltItems, ...ebclItems, ...wdmItems, ...testHeadItems, ...splitterItems, ...feederItems];
+  }, [olts, wdmPanels, testHeads, hdSplitterPanels, feederPanels, ebclPanels]);
 
   const positionedRackEquipment = useMemo(
     () =>
@@ -836,6 +873,7 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
       0
     );
     const ebclPanelCount = ebclPanels.length;
+    const testHeadCount = testHeads.length;
 
     return {
       oltCount,
@@ -856,8 +894,9 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
       connectedWdmOltPorts,
       connectedWdmOdfPorts,
       ebclPanelCount,
+      testHeadCount,
     };
-  }, [olts, hdSplitterPanels, feederPanels, wdmPanels, ebclPanels]);
+  }, [olts, hdSplitterPanels, feederPanels, wdmPanels, ebclPanels, testHeads]);
 
   const selectedPanelStatusSummary = useMemo(() => {
     const inputCounts: Record<ExchangePortStatus, number> = { active: 0, spare: 0, reserved: 0, fault: 0 };
@@ -899,6 +938,10 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
 
   const updateEbclPanels = (nextPanels: EbclPanel[]) => {
     setDraftExchange((prev) => ({ ...prev, ebclPanels: nextPanels }));
+  };
+
+  const updateTestHeads = (nextTestHeads: TestHead[]) => {
+    setDraftExchange((prev) => ({ ...prev, testHeads: nextTestHeads }));
   };
 
   const updateCabinets = (nextCabinets: ExchangeCabinet[]) => {
@@ -1188,6 +1231,30 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
     );
   };
 
+  const handleAddTestHead = () => {
+    const nextTestHead = createTestHead(testHeads.length + 1);
+    updateTestHeads([...testHeads, nextTestHead]);
+    setSelectedTestHeadId(nextTestHead.id);
+    setActiveTab("rack");
+  };
+
+  const handleRenameTestHead = (testHeadId: string, name: string) => {
+    updateTestHeads(testHeads.map((testHead) => (testHead.id === testHeadId ? { ...testHead, name } : testHead)));
+  };
+
+  const handleDeleteTestHead = (testHeadId: string) => {
+    const testHead = testHeads.find((item) => item.id === testHeadId);
+    if (!testHead) return;
+    if (!confirm(`Delete ${testHead.name}?`)) return;
+
+    const nextTestHeads = testHeads.filter((item) => item.id !== testHeadId);
+    setDraftExchange((prev) => ({
+      ...prev,
+      testHeads: (prev.testHeads ?? []).filter((item) => item.id !== testHeadId),
+    }));
+    setSelectedTestHeadId(nextTestHeads[0]?.id ?? null);
+  };
+
   const handleAddEbclPanel = () => {
     const nextPanel = createEbclPanel(ebclPanels.length + 1);
     updateEbclPanels([...ebclPanels, nextPanel]);
@@ -1261,6 +1328,11 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
 
     if (payload.kind === "wdm") {
       updateWdmPanels(wdmPanels.map((panel) => (panel.id === payload.id ? { ...panel, rackPosition } : panel)));
+      return;
+    }
+
+    if (payload.kind === "test-head") {
+      updateTestHeads(testHeads.map((testHead) => (testHead.id === payload.id ? { ...testHead, rackPosition } : testHead)));
       return;
     }
 
@@ -1352,6 +1424,9 @@ const handleConvertImportedWorkbook = async () => {
     );
     setSelectedWdmPanelId(
       convertedExchange.wdmPanels?.[0]?.id ?? null
+    );
+    setSelectedTestHeadId(
+      convertedExchange.testHeads?.[0]?.id ?? null
     );
     setSelectedEbclPanelId(
       convertedExchange.ebclPanels?.[0]?.id ?? null
@@ -1462,6 +1537,9 @@ const handleConvertImportedWorkbook = async () => {
           <button onClick={handleAddWdmPanel} style={btnPrimary}>
             + Add VIAVI WDM Panel
           </button>
+          <button onClick={handleAddTestHead} style={btnPrimary}>
+            + Add VIAVI Test Head
+          </button>
           <button onClick={handleAddEbclPanel} style={btnPrimary}>
             + Add EBCL Prysmian Panel
           </button>
@@ -1511,6 +1589,8 @@ const handleConvertImportedWorkbook = async () => {
             <strong>{summary.splitterPanelCount}</strong>
             <div>WDM Panels</div>
             <strong>{summary.wdmPanelCount}</strong>
+            <div>VIAVI Test Heads</div>
+            <strong>{summary.testHeadCount}</strong>
             <div>WDM OLT Side</div>
             <strong>{summary.connectedWdmOltPorts}/{summary.wdmOltPortCount}</strong>
             <div>WDM ODF Side</div>
@@ -1855,9 +1935,9 @@ const handleConvertImportedWorkbook = async () => {
             <div style={ebclWorkspaceHeader}>
               <div>
                 <h2 style={{ ...sectionTitle, marginBottom: 4 }}>Exchange Cabinet Layout</h2>
-                <div style={{ color: "#cbd5e1" }}>Drag OLT, WDM, splitter and feeder panels into the cabinet so the editor matches the exchange rack.</div>
+                <div style={{ color: "#cbd5e1" }}>Drag OLT, WDM, VIAVI test head, splitter and feeder panels into the cabinet so the editor matches the exchange rack.</div>
               </div>
-              <div style={ebclMetricPill}>{summary.oltCount} OLT / {summary.wdmPanelCount} WDM / {summary.splitterPanelCount} splitter / {summary.feederPanelCount} feeder / {summary.ebclPanelCount} EBCL</div>
+              <div style={ebclMetricPill}>{summary.oltCount} OLT / {summary.wdmPanelCount} WDM / {summary.testHeadCount} test head / {summary.splitterPanelCount} splitter / {summary.feederPanelCount} feeder / {summary.ebclPanelCount} EBCL</div>
             </div>
             <RackCabinetLayout
               cabinets={cabinets}
@@ -1873,11 +1953,43 @@ const handleConvertImportedWorkbook = async () => {
               onDropEquipment={handleDropRackEquipment}
               onClearPosition={handleClearRackPosition}
             />
+            {testHeads.length ? (
+              <div style={card}>
+                <div style={panelTitle}>
+                  <span>VIAVI Test Heads</span>
+                  <span style={{ color: "#cbd5e1" }}>3U each</span>
+                </div>
+                <div style={selectorRow}>
+                  {testHeads.map((testHead) => (
+                    <button
+                      key={testHead.id}
+                      type="button"
+                      onClick={() => setSelectedTestHeadId(testHead.id)}
+                      style={selectedTestHead?.id === testHead.id ? btnPrimary : btnSecondary}
+                    >
+                      {testHead.name}
+                    </button>
+                  ))}
+                </div>
+                {selectedTestHead ? (
+                  <div style={toolbar}>
+                    <input
+                      value={selectedTestHead.name}
+                      onChange={(event) => handleRenameTestHead(selectedTestHead.id, event.target.value)}
+                      style={{ ...input, maxWidth: 340, fontWeight: 700 }}
+                    />
+                    <button type="button" onClick={() => handleDeleteTestHead(selectedTestHead.id)} style={btnDanger}>
+                      Delete Test Head
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {ebclPanels.length ? (
               <div style={card}>
                 <div style={panelTitle}>
                   <span>EBCL Prysmian Panels</span>
-                  <span style={{ color: "#cbd5e1" }}>3U each</span>
+                  <span style={{ color: "#cbd5e1" }}>2U each</span>
                 </div>
                 <div style={selectorRow}>
                   {ebclPanels.map((panel) => (

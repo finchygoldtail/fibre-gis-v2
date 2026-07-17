@@ -25,6 +25,7 @@ function toExchangeMarker(exchange: ExchangeAsset): ExchangeAsset {
     hdSplitterPanels: [],
     wdmPanels: [],
     ebclPanels: [],
+    testHeads: [],
   };
 }
 
