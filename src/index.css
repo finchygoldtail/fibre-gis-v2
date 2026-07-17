@@ -208,8 +208,7 @@ textarea:-webkit-autofill {
   overflow: hidden;
 }
 
-.alistra-field-mode-bar,
-.alistra-mobile-topbar {
+.alistra-field-mode-bar {
   position: fixed;
   top: max(10px, env(safe-area-inset-top));
   left: 50%;
@@ -227,29 +226,17 @@ textarea:-webkit-autofill {
   pointer-events: none;
 }
 
-.alistra-mobile-topbar {
-  display: none;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  pointer-events: auto;
-}
-
 .alistra-field-mode-bar strong,
-.alistra-field-mode-bar span,
-.alistra-mobile-topbar strong,
-.alistra-mobile-topbar span {
+.alistra-field-mode-bar span {
   display: block;
 }
 
-.alistra-field-mode-bar strong,
-.alistra-mobile-topbar strong {
+.alistra-field-mode-bar strong {
   font-size: 12px;
   line-height: 1.2;
 }
 
-.alistra-field-mode-bar span,
-.alistra-mobile-topbar span {
+.alistra-field-mode-bar span {
   margin-top: 2px;
   color: #cbd5e1;
   font-size: 11px;
@@ -303,10 +290,6 @@ textarea:-webkit-autofill {
     display: none;
   }
 
-  .alistra-mobile-shell .alistra-mobile-topbar {
-    display: flex;
-  }
-
   .alistra-mobile-shell .alistra-mobile-bottomnav {
     display: grid;
   }
@@ -320,8 +303,11 @@ textarea:-webkit-autofill {
   }
 
   .alistra-mobile-shell .alistra-legal-footer {
-    bottom: calc(86px + env(safe-area-inset-bottom));
-    max-width: calc(100vw - 40px);
+    display: none;
+  }
+
+  .alistra-mobile-shell .leaflet-control-attribution {
+    display: none !important;
   }
 }
 

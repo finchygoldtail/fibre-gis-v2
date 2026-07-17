@@ -13,13 +13,6 @@ function dispatchMobileShellAction(action: MobileShellAction) {
 export default function MobileOperationsShell() {
   return (
     <section className="alistra-device-shell alistra-mobile-shell" data-device-shell="mobile">
-      <header className="alistra-mobile-topbar" aria-label="Mobile field operations header">
-        <div>
-          <strong>Alistra Field</strong>
-          <span>Map first</span>
-        </div>
-      </header>
-
       <FibreTrayEditor />
 
       <nav className="alistra-mobile-bottomnav" aria-label="Mobile field navigation">
