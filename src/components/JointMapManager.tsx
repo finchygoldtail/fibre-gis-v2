@@ -132,7 +132,10 @@ import FieldQuickActionDrawer from "./map/responsive/shared/FieldQuickActionDraw
 import FieldSelectedAssetCard from "./map/responsive/shared/FieldSelectedAssetCard";
 import FieldNavigationBar from "./map/responsive/shared/FieldNavigationBar";
 import AssetBottomSheet from "./map/responsive/mobile/AssetBottomSheet";
-import { useOfflineFieldMode } from "./map/responsive/offline/useOfflineFieldMode";
+import {
+  PENDING_MAP_SAVE_CHANGED_EVENT,
+  useOfflineFieldMode,
+} from "./map/responsive/offline/useOfflineFieldMode";
 import OfflineFieldModeBanner from "./map/responsive/offline/OfflineFieldModeBanner";
 import FieldPhotoCapturePanel from "./map/responsive/photos/FieldPhotoCapturePanel";
 import ResponsiveFieldPolish from "./map/responsive/shared/ResponsiveFieldPolish";
@@ -182,8 +185,53 @@ export type { SavedMapAsset };
 
 const MAP_AUTOSAVE_IDLE_DELAY_MS = 15_000;
 const MAP_AUTOSAVE_MIN_INTERVAL_MS = 90_000;
+const PENDING_SAVE_PREFIX = "alistra-pending-map-save";
 
 type MapAutosaveStatus = "idle" | "pending" | "saving" | "saved" | "error";
+
+function getPendingSaveKey(projectId: string | null) {
+  return `${PENDING_SAVE_PREFIX}:${projectId || "global"}`;
+}
+
+function storePendingMapSaveSnapshot(
+  projectId: string | null,
+  assets: SavedMapAsset[],
+  reason: string,
+  error?: unknown,
+): boolean {
+  if (typeof window === "undefined") return false;
+
+  try {
+    window.localStorage.setItem(
+      getPendingSaveKey(projectId),
+      JSON.stringify({
+        id: `pending-${Date.now()}`,
+        projectId,
+        reason,
+        error: error instanceof Error ? error.message : error ? String(error) : "",
+        savedAt: new Date().toISOString(),
+        assetCount: assets.length,
+        assets,
+      }),
+    );
+    window.dispatchEvent(new Event(PENDING_MAP_SAVE_CHANGED_EVENT));
+    return true;
+  } catch (storageError) {
+    console.error("Failed to store pending map save snapshot", storageError);
+    return false;
+  }
+}
+
+function clearPendingMapSaveSnapshot(projectId: string | null): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.removeItem(getPendingSaveKey(projectId));
+    window.dispatchEvent(new Event(PENDING_MAP_SAVE_CHANGED_EVENT));
+  } catch (error) {
+    console.error("Failed to clear pending map save snapshot", error);
+  }
+}
 
 function getMapAssetsSaveSignature(assets: SavedMapAsset[]): string {
   return (assets || [])
@@ -1158,6 +1206,7 @@ export default function JointMapManager({
         source: "joint-map-manager",
       });
 
+      clearPendingMapSaveSnapshot(activeProjectIdRef.current);
       lastSavedMapSignatureRef.current = getMapAssetsSaveSignature(
         normalizedSavedJoints,
       );
@@ -1175,11 +1224,17 @@ export default function JointMapManager({
       return true;
     } catch (err) {
       console.error("MANUAL MAP SAVE FAILED", err);
+      storePendingMapSaveSnapshot(
+        activeProjectIdRef.current,
+        normalizedSavedJoints,
+        reason,
+        err,
+      );
       setMapAutosaveStatus("error");
       setMapAutosaveError(err instanceof Error ? err.message : String(err));
       if (options.showAlert) {
         const message = err instanceof Error ? err.message : String(err);
-        alert(`Map save failed: ${message}`);
+        alert(`Map save failed: ${message}\n\nA pending save has been stored on this device so you can retry it.`);
       }
       return false;
     } finally {
@@ -1539,6 +1594,66 @@ export default function JointMapManager({
     assets: visibleProjectAssets,
     homes: projectHomes,
   });
+  const [isRetryingPendingSave, setIsRetryingPendingSave] = useState(false);
+
+  const handleRetryPendingMapSave = async () => {
+    const pending = offlineFieldMode.getPendingMapSave();
+
+    if (!pending?.assets?.length) {
+      alert("No pending map save found on this device.");
+      return;
+    }
+
+    setIsRetryingPendingSave(true);
+    setMapAutosaveStatus("saving");
+    setMapAutosaveError("");
+
+    try {
+      const result = await saveMapAssetsViaCoordinator(pending.assets, {
+        reason: `retry-pending:${pending.reason || "map-save"}`,
+        source: "joint-map-manager",
+      });
+
+      setSavedJoints(pending.assets);
+      offlineFieldMode.clearPendingMapSave();
+      lastSavedMapSignatureRef.current = getMapAssetsSaveSignature(pending.assets);
+      const savedAt = new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      setLastMapAutosaveAt(savedAt);
+      setMapAutosaveStatus("saved");
+      alert(`Pending save recovered. ${result.assetCount} asset(s) written to Firestore.`);
+    } catch (error) {
+      console.error("Pending map save retry failed", error);
+      offlineFieldMode.storePendingMapSave(
+        pending.assets,
+        pending.reason || "retry-pending-map-save",
+        error,
+      );
+      setMapAutosaveStatus("error");
+      setMapAutosaveError(error instanceof Error ? error.message : String(error));
+      alert(
+        `Retry failed. The pending save is still stored on this device.\n\n${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    } finally {
+      setIsRetryingPendingSave(false);
+    }
+  };
+
+  const handleClearPendingMapSave = () => {
+    const pending = offlineFieldMode.getPendingMapSave();
+    if (!pending) return;
+
+    const okToClear = window.confirm(
+      `Clear the pending save stored on this device?\n\nThis removes the local recovery copy for ${pending.assetCount || pending.assets.length} asset(s).`,
+    );
+    if (!okToClear) return;
+
+    offlineFieldMode.clearPendingMapSave();
+  };
 
   // =====================================================
   // ASSET PERSISTENCE / AUDIT LOGGING
@@ -2333,6 +2448,7 @@ export default function JointMapManager({
           reason: `cable-create:${cableName}`,
           source: "joint-map-manager",
         });
+        clearPendingMapSaveSnapshot(activeProjectIdRef.current);
         lastSavedMapSignatureRef.current = getMapAssetsSaveSignature(nextSavedJoints);
         setLastMapAutosaveAt(
           new Date().toLocaleTimeString([], {
@@ -2348,10 +2464,16 @@ export default function JointMapManager({
         }
       } catch (error) {
         console.error("Cable Firestore save failed", error);
+        storePendingMapSaveSnapshot(
+          activeProjectIdRef.current,
+          nextSavedJoints,
+          `cable-create:${cableName}`,
+          error,
+        );
         setMapAutosaveStatus("error");
         setMapAutosaveError(error instanceof Error ? error.message : String(error));
         alert(
-          `Cable is still on this screen, but it did not save to Firestore.\n\nDo not refresh yet. Error: ${
+          `Cable is still on this screen, but it did not save to Firestore.\n\nA pending save has been stored on this device. Retry it before refreshing another device.\n\nError: ${
             error instanceof Error ? error.message : String(error)
           }`,
         );
@@ -5899,12 +6021,18 @@ export default function JointMapManager({
 
       <ResponsiveFieldPolish enabled={isFieldResponsiveMode} />
 
-      {!showMaintenancePanel && isFieldResponsiveMode && (
+      {!showMaintenancePanel &&
+        (isFieldResponsiveMode ||
+          (isMobile && offlineFieldMode.pendingSaveCount > 0) ||
+          (isMobile && roleMobileMode === "build" && offlineFieldMode.isOffline)) && (
         <OfflineFieldModeBanner
           isOffline={offlineFieldMode.isOffline}
           lastCachedAt={offlineFieldMode.lastCachedAt}
           cachedAssetCount={offlineFieldMode.cachedAssetCount}
           cachedHomeCount={offlineFieldMode.cachedHomeCount}
+          pendingSaveCount={offlineFieldMode.pendingSaveCount}
+          pendingSaveUpdatedAt={offlineFieldMode.pendingSaveUpdatedAt}
+          pendingSaveError={offlineFieldMode.pendingSaveError}
           onCacheNow={() => {
             const ok = offlineFieldMode.cacheFieldData();
             alert(
@@ -5917,6 +6045,9 @@ export default function JointMapManager({
             const ok = offlineFieldMode.clearCachedFieldData();
             if (ok) alert("Field cache cleared from this device.");
           }}
+          onRetryPendingSave={handleRetryPendingMapSave}
+          onClearPendingSave={handleClearPendingMapSave}
+          isRetryingPendingSave={isRetryingPendingSave}
         />
       )}
 
