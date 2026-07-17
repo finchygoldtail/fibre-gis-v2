@@ -136,10 +136,10 @@ function createHdSplitterPanel(panelNumber: number): HdSplitterPanel {
   const splitterRatio: SplitterRatio = "1:4";
   return {
     id: crypto.randomUUID(),
-    name: `48 Input HD Splitter Panel ${panelNumber}`,
+    name: `24 Input HD Splitter Panel ${panelNumber}`,
     manufacturer: "Prysmian",
     splitterRatio,
-    inputs: Array.from({ length: 48 }, (_, inputIndex) => ({
+    inputs: Array.from({ length: 24 }, (_, inputIndex) => ({
       id: crypto.randomUUID(),
       inputNumber: inputIndex + 1,
       splitterRatio,
@@ -159,7 +159,7 @@ function panelSplitterRatio(panel: HdSplitterPanel): SplitterRatio {
   return panel.splitterRatio ?? panel.inputs[0]?.splitterRatio ?? "1:4";
 }
 
-function ensure48InputSplitterPanel(panel: HdSplitterPanel): HdSplitterPanel {
+function ensure24InputSplitterPanel(panel: HdSplitterPanel): HdSplitterPanel {
   const splitterRatio = panelSplitterRatio(panel);
   const outputCount = outputCountForSplitterRatio(splitterRatio);
   const normaliseInputOutputs = (inputItem: HdSplitterPanel["inputs"][number]) => ({
@@ -176,20 +176,23 @@ function ensure48InputSplitterPanel(panel: HdSplitterPanel): HdSplitterPanel {
     }),
   });
 
-  if (panel.inputs.length >= 48) {
+  if (panel.inputs.length >= 24) {
     return {
       ...panel,
+      name: panel.name.replace(/^48 Input HD Splitter Panel/i, "24 Input HD Splitter Panel"),
       manufacturer: panel.manufacturer ?? "Prysmian",
       splitterRatio,
       rackPosition: panel.rackPosition
         ? { ...panel.rackPosition, heightU: defaultRackHeight("splitter") }
         : panel.rackPosition,
-      inputs: panel.inputs.map(normaliseInputOutputs),
+      inputs: panel.inputs
+        .filter((inputItem) => inputItem.inputNumber <= 24)
+        .map(normaliseInputOutputs),
     };
   }
 
   const existingInputNumbers = new Set(panel.inputs.map((inputItem) => inputItem.inputNumber));
-  const missingInputs = Array.from({ length: 48 }, (_, index) => index + 1)
+  const missingInputs = Array.from({ length: 24 }, (_, index) => index + 1)
     .filter((inputNumber) => !existingInputNumbers.has(inputNumber))
     .map((inputNumber) => ({
       id: crypto.randomUUID(),
@@ -203,13 +206,18 @@ function ensure48InputSplitterPanel(panel: HdSplitterPanel): HdSplitterPanel {
 
   return {
     ...panel,
-    name: panel.name.replace(/^HD Splitter Panel/i, "48 Input HD Splitter Panel"),
+    name: panel.name
+      .replace(/^48 Input HD Splitter Panel/i, "24 Input HD Splitter Panel")
+      .replace(/^HD Splitter Panel/i, "24 Input HD Splitter Panel"),
     manufacturer: panel.manufacturer ?? "Prysmian",
     splitterRatio,
     rackPosition: panel.rackPosition
       ? { ...panel.rackPosition, heightU: defaultRackHeight("splitter") }
       : panel.rackPosition,
-    inputs: [...panel.inputs.map(normaliseInputOutputs), ...missingInputs].sort((a, b) => a.inputNumber - b.inputNumber),
+    inputs: [
+      ...panel.inputs.filter((inputItem) => inputItem.inputNumber <= 24).map(normaliseInputOutputs),
+      ...missingInputs,
+    ].sort((a, b) => a.inputNumber - b.inputNumber),
   };
 }
 
@@ -251,7 +259,7 @@ function normaliseEbclPanels(exchange: ExchangeAsset): EbclPanel[] {
 function normaliseExchangeForDesigner(exchange: ExchangeAsset): ExchangeAsset {
   const baseExchange: ExchangeAsset = {
     ...exchange,
-    hdSplitterPanels: (exchange.hdSplitterPanels ?? []).map(ensure48InputSplitterPanel),
+    hdSplitterPanels: (exchange.hdSplitterPanels ?? []).map(ensure24InputSplitterPanel),
   };
 
   return {
@@ -1003,7 +1011,7 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
     updateSplitterPanels(
       hdSplitterPanels.map((panel) => {
         if (panel.id !== panelId) return panel;
-        return ensure48InputSplitterPanel({ ...panel, splitterRatio });
+        return ensure24InputSplitterPanel({ ...panel, splitterRatio });
       })
     );
   };
@@ -1685,7 +1693,7 @@ const handleConvertImportedWorkbook = async () => {
             <section style={ebclSection}>
               <div style={panelTitle}>
                 <span>HD Splitter Panels</span>
-                <span style={{ color: "#cbd5e1" }}>{visibleHdSplitterPanels.length} panel{visibleHdSplitterPanels.length === 1 ? "" : "s"} / 48 inputs / 1U / 1:2 or 1:4</span>
+                <span style={{ color: "#cbd5e1" }}>{visibleHdSplitterPanels.length} panel{visibleHdSplitterPanels.length === 1 ? "" : "s"} / 24 inputs / 1U / 1:2 or 1:4</span>
               </div>
               {visibleHdSplitterPanels.length ? (
                 <div style={splitterPanelStack}>
@@ -1708,8 +1716,8 @@ const handleConvertImportedWorkbook = async () => {
                         highlightedInputIds={selectedChain.splitterInputIds}
                         highlightedOutputIds={selectedChain.splitterOutputIds}
                         search={search}
-                        inputCount={48}
-                        outputCount={48 * outputCountForSplitterRatio(ratio)}
+                        inputCount={24}
+                        outputCount={24 * outputCountForSplitterRatio(ratio)}
                         splitterRatio={ratio}
                         onSelectInput={(inputItem) => {
                           setSelectedSplitterPanelId(panel.id);
@@ -2143,7 +2151,7 @@ const handleConvertImportedWorkbook = async () => {
                     Delete Splitter Panel
                   </button>
                   <span style={{ color: "#cbd5e1" }}>
-                    48 inputs x {panelSplitterRatio(selectedSplitterPanel)} = {48 * outputCountForSplitterRatio(panelSplitterRatio(selectedSplitterPanel))} outputs / 1U HD splitter
+                    24 inputs x {panelSplitterRatio(selectedSplitterPanel)} = {24 * outputCountForSplitterRatio(panelSplitterRatio(selectedSplitterPanel))} outputs / 1U HD splitter
                   </span>
                 </div>
 
@@ -2154,8 +2162,8 @@ const handleConvertImportedWorkbook = async () => {
                   highlightedInputIds={selectedChain.splitterInputIds}
                   highlightedOutputIds={selectedChain.splitterOutputIds}
                   search={search}
-                  inputCount={48}
-                  outputCount={48 * outputCountForSplitterRatio(panelSplitterRatio(selectedSplitterPanel))}
+                  inputCount={24}
+                  outputCount={24 * outputCountForSplitterRatio(panelSplitterRatio(selectedSplitterPanel))}
                   splitterRatio={panelSplitterRatio(selectedSplitterPanel)}
                   onSelectInput={(inputItem) =>
                     setSelectedNode({
