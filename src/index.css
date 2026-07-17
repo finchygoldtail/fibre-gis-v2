@@ -256,12 +256,6 @@ textarea:-webkit-autofill {
   line-height: 1.25;
 }
 
-.alistra-mobile-topbar-actions {
-  display: inline-flex;
-  gap: 8px;
-}
-
-.alistra-mobile-topbar-actions button,
 .alistra-mobile-bottomnav button {
   min-height: 44px;
   border: 1px solid rgba(148, 163, 184, 0.28);
@@ -273,12 +267,6 @@ textarea:-webkit-autofill {
   cursor: pointer;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
-}
-
-.alistra-mobile-topbar-actions button {
-  min-width: 58px;
-  padding: 0 10px;
-  font-size: 12px;
 }
 
 .alistra-mobile-bottomnav {
@@ -329,6 +317,11 @@ textarea:-webkit-autofill {
 
   .alistra-mobile-shell .leaflet-bottom {
     bottom: 76px;
+  }
+
+  .alistra-mobile-shell .alistra-legal-footer {
+    bottom: calc(86px + env(safe-area-inset-bottom));
+    max-width: calc(100vw - 40px);
   }
 }
 

@@ -18,14 +18,6 @@ export default function MobileOperationsShell() {
           <strong>Alistra Field</strong>
           <span>Map first</span>
         </div>
-        <div className="alistra-mobile-topbar-actions">
-          <button type="button" onClick={() => dispatchMobileShellAction("gps")}>
-            GPS
-          </button>
-          <button type="button" onClick={() => dispatchMobileShellAction("layers")}>
-            Layers
-          </button>
-        </div>
       </header>
 
       <FibreTrayEditor />
