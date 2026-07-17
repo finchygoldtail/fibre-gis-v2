@@ -263,7 +263,7 @@ textarea:-webkit-autofill {
   right: max(10px, env(safe-area-inset-right));
   bottom: max(10px, env(safe-area-inset-bottom));
   z-index: 999998;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
   padding: 6px;
   border: 1px solid rgba(148, 163, 184, 0.26);
@@ -302,7 +302,7 @@ textarea:-webkit-autofill {
     bottom: 76px;
   }
 
-  .alistra-mobile-shell .alistra-legal-footer {
+  .alistra-legal-footer {
     display: none;
   }
 

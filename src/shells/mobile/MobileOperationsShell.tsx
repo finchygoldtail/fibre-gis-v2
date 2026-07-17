@@ -1,6 +1,6 @@
 import { FibreTrayEditor } from "../../components/FibreTrayEditor";
 
-type MobileShellAction = "map" | "assets" | "work" | "layers" | "gps";
+type MobileShellAction = "map" | "work";
 
 function dispatchMobileShellAction(action: MobileShellAction) {
   window.dispatchEvent(
@@ -19,17 +19,8 @@ export default function MobileOperationsShell() {
         <button type="button" onClick={() => dispatchMobileShellAction("map")}>
           <strong>Map</strong>
         </button>
-        <button type="button" onClick={() => dispatchMobileShellAction("assets")}>
-          <strong>Assets</strong>
-        </button>
         <button type="button" onClick={() => dispatchMobileShellAction("work")}>
           <strong>Work</strong>
-        </button>
-        <button type="button" onClick={() => dispatchMobileShellAction("layers")}>
-          <strong>Layers</strong>
-        </button>
-        <button type="button" onClick={() => dispatchMobileShellAction("gps")}>
-          <strong>GPS</strong>
         </button>
       </nav>
     </section>
