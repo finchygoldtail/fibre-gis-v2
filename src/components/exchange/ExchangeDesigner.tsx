@@ -925,7 +925,10 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
     if (!confirm(`Delete ${olt.name}? This removes its OLT cards and PON ports from this exchange.`)) return;
 
     const nextOlts = olts.filter((item) => item.id !== oltId);
-    updateOlts(nextOlts);
+    setDraftExchange((prev) => ({
+      ...prev,
+      olts: (prev.olts ?? []).filter((item) => item.id !== oltId),
+    }));
     setSelectedOltId(nextOlts[0]?.id ?? null);
     if (selectedNode?.type === "pon" && selectedNode.oltId === oltId) setSelectedNode(null);
   };
@@ -1023,7 +1026,10 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
     if (!confirm(`Delete ${panel.name}?`)) return;
 
     const nextPanels = hdSplitterPanels.filter((item) => item.id !== panelId);
-    updateSplitterPanels(nextPanels);
+    setDraftExchange((prev) => ({
+      ...prev,
+      hdSplitterPanels: (prev.hdSplitterPanels ?? []).filter((item) => item.id !== panelId),
+    }));
     setSelectedSplitterPanelId(nextPanels[0]?.id ?? null);
     if (selectedNode && selectedNode.type.startsWith("splitter") && selectedNode.panelId === panelId) setSelectedNode(null);
   };
@@ -1091,7 +1097,10 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
     if (!confirm(`Delete ${panel.name}? This removes all ${panel.fibreCount} fibres from this exchange.`)) return;
 
     const nextPanels = feederPanels.filter((item) => item.id !== panelId);
-    updateFeederPanels(nextPanels);
+    setDraftExchange((prev) => ({
+      ...prev,
+      feederPanels: (prev.feederPanels ?? []).filter((item) => item.id !== panelId),
+    }));
     setSelectedFeederPanelId(nextPanels[0]?.id ?? null);
     if (selectedNode?.type === "feeder-fibre" && selectedNode.panelId === panelId) setSelectedNode(null);
   };
@@ -1138,7 +1147,10 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
     if (!confirm(`Delete ${panel.name}? This removes its 72 OLT-side and 72 ODF-side WDM ports.`)) return;
 
     const nextPanels = wdmPanels.filter((item) => item.id !== panelId);
-    updateWdmPanels(nextPanels);
+    setDraftExchange((prev) => ({
+      ...prev,
+      wdmPanels: (prev.wdmPanels ?? []).filter((item) => item.id !== panelId),
+    }));
     setSelectedWdmPanelId(nextPanels[0]?.id ?? null);
     if (selectedNode?.type.startsWith("wdm") && selectedNode.panelId === panelId) setSelectedNode(null);
   };
@@ -1192,7 +1204,10 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
     if (!confirm(`Delete ${panel.name}?`)) return;
 
     const nextPanels = ebclPanels.filter((item) => item.id !== panelId);
-    updateEbclPanels(nextPanels);
+    setDraftExchange((prev) => ({
+      ...prev,
+      ebclPanels: (prev.ebclPanels ?? []).filter((item) => item.id !== panelId),
+    }));
     setSelectedEbclPanelId(nextPanels[0]?.id ?? null);
   };
 
