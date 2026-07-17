@@ -54,6 +54,103 @@ function getAreaDisplayName(activeProjectArea: SavedMapAsset | null): string | u
   ).trim() || undefined;
 }
 
+function slugifyFilename(value: unknown): string {
+  return String(value || "area")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "area";
+}
+
+function assetToGeoJsonFeature(asset: SavedMapAsset) {
+  const baseProperties = {
+    id: asset.id,
+    name: asset.name,
+    assetType: asset.assetType || "",
+    jointType: asset.jointType,
+    notes: asset.notes || "",
+    cableType: asset.cableType || "",
+    fibreCount: asset.fibreCount || "",
+    installMethod: asset.installMethod || "",
+    areaId: (asset as any).areaId || (asset as any).projectAreaId || "",
+    areaCode: (asset as any).areaCode || (asset as any).projectAreaCode || "",
+    areaName: (asset as any).areaName || (asset as any).projectAreaName || "",
+  };
+
+  if (asset.geometry?.type === "Point") {
+    const [lat, lng] = asset.geometry.coordinates;
+    return {
+      type: "Feature",
+      properties: {
+        ...baseProperties,
+        assetType: asset.assetType || "ag-joint",
+        poleDetails: asset.poleDetails || null,
+        dpDetails: asset.dpDetails || null,
+        chamberDetails: asset.chamberDetails || null,
+        streetCabDetails: asset.streetCabDetails || null,
+      },
+      geometry: {
+        type: "Point",
+        coordinates: [lng, lat],
+      },
+    };
+  }
+
+  if (asset.geometry?.type === "LineString") {
+    return {
+      type: "Feature",
+      properties: {
+        ...baseProperties,
+        assetType: asset.assetType || "cable",
+        cableSegmentInstallMethods: (asset as any).cableSegmentInstallMethods || [],
+      },
+      geometry: {
+        type: "LineString",
+        coordinates: asset.geometry.coordinates.map(([lat, lng]) => [
+          lng,
+          lat,
+        ]),
+      },
+    };
+  }
+
+  if (asset.geometry?.type === "Polygon") {
+    return {
+      type: "Feature",
+      properties: {
+        ...baseProperties,
+        assetType: asset.assetType || "area",
+        areaLevel: (asset as any).areaLevel || "L0",
+      },
+      geometry: {
+        type: "Polygon",
+        coordinates: asset.geometry.coordinates.map((ring) =>
+          ring.map(([lat, lng]) => [lng, lat]),
+        ),
+      },
+    };
+  }
+
+  return null;
+}
+
+function buildGeoJsonFeatureCollection(assets: SavedMapAsset[]) {
+  return {
+    type: "FeatureCollection",
+    features: (assets ?? []).map(assetToGeoJsonFeature).filter(Boolean),
+  };
+}
+
+function uniqueAssetsById(assets: SavedMapAsset[]): SavedMapAsset[] {
+  const byId = new Map<string, SavedMapAsset>();
+  assets.forEach((asset) => {
+    const id = String(asset?.id || "").trim();
+    if (!id) return;
+    byId.set(id, asset);
+  });
+  return Array.from(byId.values());
+}
+
 function alertSkippedDuplicateImports(count: number): void {
   if (count <= 0) return;
   alert(
@@ -80,84 +177,46 @@ export function useMapImportExportTools({
   };
 
   const handleExportGeoJson = () => {
-    const geojson = {
-      type: "FeatureCollection",
-      features: (savedJoints ?? [])
-        .map((asset) => {
-          if (asset.geometry?.type === "Point") {
-            const [lat, lng] = asset.geometry.coordinates;
-            return {
-              type: "Feature",
-              properties: {
-                id: asset.id,
-                name: asset.name,
-                assetType: asset.assetType || "ag-joint",
-                jointType: asset.jointType,
-                notes: asset.notes || "",
-                cableType: asset.cableType || "",
-                fibreCount: asset.fibreCount || "",
-                installMethod: asset.installMethod || "",
-                poleDetails: asset.poleDetails || null,
-                dpDetails: asset.dpDetails || null,
-                chamberDetails: asset.chamberDetails || null,
-                streetCabDetails: asset.streetCabDetails || null,
-              },
-              geometry: {
-                type: "Point",
-                coordinates: [lng, lat],
-              },
-            };
-          }
-
-          if (asset.geometry?.type === "LineString") {
-            return {
-              type: "Feature",
-              properties: {
-                id: asset.id,
-                name: asset.name,
-                assetType: asset.assetType || "cable",
-                jointType: asset.jointType,
-                notes: asset.notes || "",
-                cableType: asset.cableType || "",
-                fibreCount: asset.fibreCount || "",
-                installMethod: asset.installMethod || "",
-              },
-              geometry: {
-                type: "LineString",
-                coordinates: asset.geometry.coordinates.map(([lat, lng]) => [
-                  lng,
-                  lat,
-                ]),
-              },
-            };
-          }
-
-          if (asset.geometry?.type === "Polygon") {
-            return {
-              type: "Feature",
-              properties: {
-                id: asset.id,
-                name: asset.name,
-                assetType: asset.assetType || "area",
-                jointType: asset.jointType,
-                notes: asset.notes || "",
-                areaLevel: (asset as any).areaLevel || "L0",
-              },
-              geometry: {
-                type: "Polygon",
-                coordinates: asset.geometry.coordinates.map((ring) =>
-                  ring.map(([lat, lng]) => [lng, lat]),
-                ),
-              },
-            };
-          }
-
-          return null;
-        })
-        .filter(Boolean),
-    };
-
+    const geojson = buildGeoJsonFeatureCollection(savedJoints ?? []);
     downloadJsonFile("saved-assets.geojson", geojson, "application/geo+json");
+  };
+
+  const handleExportActiveAreaGeoJson = () => {
+    if (!activeProjectArea) {
+      alert("Select a project area first, then export the current area.");
+      return;
+    }
+
+    const filteredAssets = filterAssetsForProjectArea(
+      uniqueAssetsById([...(savedJoints ?? []), ...(projectHomes ?? [])]),
+      activeProjectArea,
+    );
+    const exportAssets = uniqueAssetsById([activeProjectArea, ...filteredAssets]);
+    const areaName =
+      activeProjectAreaName ||
+      getAreaDisplayName(activeProjectArea) ||
+      (activeProjectArea as any).areaCode ||
+      activeProjectArea.id ||
+      "selected-area";
+    const areaCode = String(
+      (activeProjectArea as any).areaCode ||
+        (activeProjectArea as any).projectAreaCode ||
+        (activeProjectArea as any).properties?.areaCode ||
+        "",
+    ).trim();
+    const filenameBase = areaCode || areaName;
+    const geojson = buildGeoJsonFeatureCollection(exportAssets);
+
+    if (!geojson.features.length) {
+      alert(`No GeoJSON features found for ${areaName}.`);
+      return;
+    }
+
+    downloadJsonFile(
+      `${slugifyFilename(filenameBase)}-area-assets.geojson`,
+      geojson,
+      "application/geo+json",
+    );
   };
 
   const loadPiaOverlayGeoJson = async (file: File) => {
@@ -400,6 +459,7 @@ export function useMapImportExportTools({
   return {
     handleExportJson,
     handleExportGeoJson,
+    handleExportActiveAreaGeoJson,
     loadPiaOverlayGeoJson,
     loadAnyGeoJsonMapAssets,
     handleImportJson,

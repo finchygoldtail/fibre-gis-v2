@@ -6,6 +6,7 @@ type Props = {
   onImportJson: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onExportJson: () => void;
   onExportGeoJson: () => void;
+  onExportActiveAreaGeoJson: () => void;
   onLoadOsmHomes: () => void;
   onLoadAnyGeoJsonMapAssets: (file: File) => void;
   cardStyle: React.CSSProperties;
@@ -22,6 +23,7 @@ export default function ImportExportPanel({
   onImportJson,
   onExportJson,
   onExportGeoJson,
+  onExportActiveAreaGeoJson,
   onLoadOsmHomes,
   onLoadAnyGeoJsonMapAssets,
   cardStyle,
@@ -39,6 +41,7 @@ export default function ImportExportPanel({
 
         <button onClick={onExportJson} style={secondaryButtonStyle}>Export JSON</button>
         <button onClick={onExportGeoJson} style={secondaryButtonStyle}>Export GeoJSON</button>
+        <button onClick={onExportActiveAreaGeoJson} style={primaryButtonStyle}>Export Current Area GeoJSON</button>
 
         <button onClick={onLoadOsmHomes} style={primaryButtonStyle} disabled={isLoadingOsmHomes}>
           {isLoadingOsmHomes ? "Loading OSM Homes..." : "Load OSM Homes in View"}

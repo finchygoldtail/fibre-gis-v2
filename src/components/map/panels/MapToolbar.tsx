@@ -88,6 +88,7 @@ export default function MapToolbar({
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [messageStateVersion, setMessageStateVersion] = useState(0);
+  const [showRecentSavedBanner, setShowRecentSavedBanner] = useState(false);
   const { isMobile, isTablet, isSmallPhone } = useDeviceLayout();
   const autosaveLabel =
     autosaveStatus === "pending"
@@ -111,7 +112,10 @@ export default function MapToolbar({
           : autosaveStatus === "saved"
             ? "#16a34a"
             : "#475569";
-  const mobileSaveBanner = isMobile && autosaveStatus !== "idle" ? (
+  const mobileSaveBanner =
+    isMobile &&
+    autosaveStatus !== "idle" &&
+    (autosaveStatus !== "saved" || showRecentSavedBanner) ? (
     <div
       style={mobileSaveBannerStyle(autosaveStatus)}
       title={autosaveError || autosaveLabel}
@@ -151,7 +155,23 @@ export default function MapToolbar({
         </button>
       ) : null}
     </div>
-  ) : null;
+    ) : null;
+
+  useEffect(() => {
+    if (!isMobile) return;
+
+    if (autosaveStatus !== "saved") {
+      setShowRecentSavedBanner(true);
+      return;
+    }
+
+    setShowRecentSavedBanner(true);
+    const timer = window.setTimeout(() => {
+      setShowRecentSavedBanner(false);
+    }, 2600);
+
+    return () => window.clearTimeout(timer);
+  }, [autosaveStatus, autosaveSavedAt, isMobile]);
 
   useEffect(() => {
     const refresh = () => setMessageStateVersion((value) => value + 1);

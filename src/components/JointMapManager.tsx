@@ -2627,6 +2627,7 @@ export default function JointMapManager({
   const {
     handleExportJson,
     handleExportGeoJson,
+    handleExportActiveAreaGeoJson,
     loadPiaOverlayGeoJson,
     loadAnyGeoJsonMapAssets,
     handleImportJson,
@@ -4193,7 +4194,7 @@ export default function JointMapManager({
         onApplyAddressSheetAssignments={handleWorkspaceAddressSheetAssignments}
         onApplySbRouteAssignments={handleWorkspaceSbRouteAssignments}
         onAutoSpreadStackedHomes={handleAutoSpreadStackedHomes}
-        onExport={handleExportGeoJson}
+        onExport={handleExportActiveAreaGeoJson}
         onUpdateWorkspaceAsset={(asset) => {
           void persistMapAssetImmediately(asset, {
             reason: "workspace-asset-update",
@@ -5022,6 +5023,7 @@ export default function JointMapManager({
             onImportJson={handleImportJson}
             onExportJson={handleExportJson}
             onExportGeoJson={handleExportGeoJson}
+            onExportActiveAreaGeoJson={handleExportActiveAreaGeoJson}
             onLoadOsmHomes={handleLoadOsmHomes}
             onLoadAnyGeoJsonMapAssets={loadAnyGeoJsonMapAssets}
             cardStyle={card}
