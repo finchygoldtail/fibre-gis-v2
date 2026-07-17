@@ -243,42 +243,6 @@ textarea:-webkit-autofill {
   line-height: 1.25;
 }
 
-.alistra-mobile-bottomnav button {
-  min-height: 44px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  border-radius: 8px;
-  background: rgba(30, 41, 59, 0.94);
-  color: #f8fafc;
-  font: inherit;
-  font-weight: 900;
-  cursor: pointer;
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.alistra-mobile-bottomnav {
-  display: none;
-  position: fixed;
-  left: max(10px, env(safe-area-inset-left));
-  right: max(10px, env(safe-area-inset-right));
-  bottom: max(10px, env(safe-area-inset-bottom));
-  z-index: 999998;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-  padding: 6px;
-  border: 1px solid rgba(148, 163, 184, 0.26);
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.94);
-  box-shadow: 0 18px 44px rgba(2, 6, 23, 0.42);
-  backdrop-filter: blur(12px);
-}
-
-.alistra-mobile-bottomnav button {
-  min-width: 0;
-  padding: 0 4px;
-  font-size: 11px;
-}
-
 @media (min-width: 1200px) {
   .alistra-field-mode-bar {
     display: none;
@@ -290,16 +254,12 @@ textarea:-webkit-autofill {
     display: none;
   }
 
-  .alistra-mobile-shell .alistra-mobile-bottomnav {
-    display: grid;
-  }
-
   .alistra-mobile-shell .leaflet-control-container {
     pointer-events: auto;
   }
 
   .alistra-mobile-shell .leaflet-bottom {
-    bottom: 76px;
+    bottom: 0;
   }
 
   .alistra-legal-footer {

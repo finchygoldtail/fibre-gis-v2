@@ -2625,57 +2625,6 @@ export default function JointMapManager({
     );
   };
 
-  useEffect(() => {
-    const handleMobileShellAction = (event: Event) => {
-      const action = String(
-        (event as CustomEvent<{ action?: string }>).detail?.action || "",
-      );
-
-      if (action === "map") {
-        setIsLayersOpen(false);
-        setIsPanelOpen(false);
-        setIsFieldQuickDrawerOpen(false);
-        setMapMode("pick");
-        return;
-      }
-
-      if (action === "assets") {
-        setIsLayersOpen(false);
-        setIsFieldQuickDrawerOpen(false);
-        setIsPanelOpen(true);
-        return;
-      }
-
-      if (action === "work") {
-        setIsLayersOpen(false);
-        setIsPanelOpen(false);
-        setIsFieldQuickDrawerOpen(true);
-        return;
-      }
-
-      if (action === "layers") {
-        setIsPanelOpen(false);
-        setIsFieldQuickDrawerOpen(false);
-        setIsLayersOpen((prev) => !prev);
-        return;
-      }
-
-      if (action === "gps") {
-        handleGpsLocate();
-      }
-    };
-
-    window.addEventListener("alistra:mobile-shell-action", handleMobileShellAction);
-    return () => {
-      window.removeEventListener("alistra:mobile-shell-action", handleMobileShellAction);
-    };
-  }, [
-    handleGpsLocate,
-    setIsLayersOpen,
-    setIsPanelOpen,
-    setMapMode,
-  ]);
-
   // =====================================================
   // PROJECT WORKSPACE — PERSIST BULK DP STATUS
   // Called by Workspace → Build manager tools. This uses the
