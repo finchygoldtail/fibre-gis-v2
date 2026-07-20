@@ -4,7 +4,7 @@ import { getAssetDisplayName as getAssetLabel, getAssetTypeLabel } from "../../.
 
 type Props = {
   variant: "mobile" | "tablet";
-  role: "survey" | "maintenance";
+  role: "survey" | "maintenance" | "build";
   asset: SavedMapAsset;
   onOpenDetails: () => void;
   onClearSelection: () => void;
@@ -67,7 +67,7 @@ export default function FieldSelectedAssetCard({
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 800 }}>
-            Selected {role === "maintenance" ? "maintenance" : "survey"} asset
+            Selected {role === "maintenance" ? "maintenance" : role === "build" ? "build" : "survey"} asset
           </div>
           <div
             style={{

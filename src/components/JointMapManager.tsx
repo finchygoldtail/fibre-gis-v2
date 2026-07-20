@@ -1107,14 +1107,19 @@ export default function JointMapManager({
     !isSuperUser &&
     !permissions.build &&
     (permissions.maintenance || activeMode === "maintenance");
+  const isBuildTabletMode =
+    isTablet &&
+    !isSuperUser &&
+    (permissions.build || activeMode === "build");
   const [isFieldQuickDrawerOpen, setIsFieldQuickDrawerOpen] = useState(false);
   const isFieldResponsiveMode =
     roleMobileMode === "survey" ||
     roleMobileMode === "maintenance" ||
+    isBuildTabletMode ||
     isSurveyTabletMode ||
     isMaintenanceTabletMode;
   const fieldQuickRole =
-    roleMobileMode === "build"
+    roleMobileMode === "build" || isBuildTabletMode
       ? "build"
       : roleMobileMode === "maintenance" || isMaintenanceTabletMode
       ? "maintenance"
@@ -6102,7 +6107,7 @@ export default function JointMapManager({
         />
       )}
 
-      {!showMaintenancePanel && isFieldResponsiveMode && (
+      {!showMaintenancePanel && isFieldResponsiveMode && fieldQuickRole !== "build" && (
         <FieldQuickActionDrawer
           variant={isMobile ? "mobile" : "tablet"}
           role={fieldQuickRole}
@@ -6185,8 +6190,11 @@ export default function JointMapManager({
           />
         )}
 
-      {!showMaintenancePanel && roleMobileMode === "build" && mapMode !== "draw-cable" && (
+      {!showMaintenancePanel &&
+        (roleMobileMode === "build" || isBuildTabletMode) &&
+        mapMode !== "draw-cable" && (
         <BuildMobileControls
+          variant={isBuildTabletMode ? "tablet" : "mobile"}
           mapMode={mapMode}
           hasSelectedAsset={Boolean(currentEditingAsset)}
           onOpenPanel={() => setIsPanelOpen(true)}
@@ -6198,8 +6206,11 @@ export default function JointMapManager({
         />
       )}
 
-      {!showMaintenancePanel && isMobile && mapMode === "draw-cable" && (
+      {!showMaintenancePanel &&
+        (isMobile || isBuildTabletMode) &&
+        mapMode === "draw-cable" && (
         <MobileCableDrawingSheet
+          variant={isBuildTabletMode ? "tablet" : "mobile"}
           pointCount={draftCablePoints.length}
           distanceLabel={formatDistance(draftCableDistance)}
           installMethod={normaliseCableSegmentMethod(installMethod)}

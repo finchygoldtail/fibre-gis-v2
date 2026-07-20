@@ -3,6 +3,7 @@ import type { MapMode } from "../../hooks/useMapDrawingState";
 import FieldActionDock from "../shared/FieldActionDock";
 
 type Props = {
+  variant?: "mobile" | "tablet";
   mapMode: MapMode;
   hasSelectedAsset: boolean;
   onOpenPanel: () => void;
@@ -14,6 +15,7 @@ type Props = {
 };
 
 export default function BuildMobileControls({
+  variant = "mobile",
   mapMode,
   hasSelectedAsset,
   onOpenPanel,
@@ -23,9 +25,11 @@ export default function BuildMobileControls({
   onOpenLayers,
   onGpsLocate,
 }: Props) {
+  const isTablet = variant === "tablet";
+
   return (
     <FieldActionDock
-      variant="mobile"
+      variant={variant}
       actions={[
         {
           key: "panel",
@@ -53,8 +57,22 @@ export default function BuildMobileControls({
           active: mapMode === "draw-area",
           onClick: onStartArea,
         },
-        { key: "layers", label: "Layers", tone: "secondary", onClick: onOpenLayers },
-        { key: "gps", label: "GPS", tone: "primary", onClick: onGpsLocate },
+        ...(!isTablet
+          ? [
+              {
+                key: "layers",
+                label: "Layers",
+                tone: "secondary" as const,
+                onClick: onOpenLayers,
+              },
+              {
+                key: "gps",
+                label: "GPS",
+                tone: "primary" as const,
+                onClick: onGpsLocate,
+              },
+            ]
+          : []),
       ]}
     />
   );

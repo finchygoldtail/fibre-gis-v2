@@ -2,6 +2,7 @@ import React from "react";
 import type { CableSegmentInstallMethod } from "../../types";
 
 type Props = {
+  variant?: "mobile" | "tablet";
   pointCount: number;
   distanceLabel: string;
   installMethod: CableSegmentInstallMethod;
@@ -15,6 +16,7 @@ type Props = {
 };
 
 export default function MobileCableDrawingSheet({
+  variant = "mobile",
   pointCount,
   distanceLabel,
   installMethod,
@@ -27,10 +29,11 @@ export default function MobileCableDrawingSheet({
   onClose,
 }: Props) {
   const canFinish = pointCount >= 2 && !isSaving;
+  const isTablet = variant === "tablet";
 
   return (
-    <div style={sheet}>
-      <div style={handle} />
+    <div style={getSheetStyle(isTablet)}>
+      {!isTablet ? <div style={handle} /> : null}
       <div style={headerRow}>
         <div>
           <div style={kicker}>{isEditing ? "Edit cable route" : "Draw cable"}</div>
@@ -62,7 +65,7 @@ export default function MobileCableDrawingSheet({
         <div style={hint}>Choose UG or OH before placing the next point.</div>
       </div>
 
-      <div style={actionGrid}>
+      <div style={getActionGridStyle(isTablet)}>
         <button type="button" onClick={onUndo} disabled={pointCount === 0} style={secondaryButton}>
           Undo
         </button>
@@ -91,6 +94,19 @@ const sheet: React.CSSProperties = {
   padding: 14,
   backdropFilter: "blur(12px)",
 };
+
+function getSheetStyle(isTablet: boolean): React.CSSProperties {
+  if (!isTablet) return sheet;
+
+  return {
+    ...sheet,
+    left: "auto",
+    right: 14,
+    bottom: 18,
+    width: 330,
+    borderRadius: 18,
+  };
+}
 
 const handle: React.CSSProperties = {
   width: 46,
@@ -164,6 +180,15 @@ const actionGrid: React.CSSProperties = {
   gap: 8,
   marginTop: 12,
 };
+
+function getActionGridStyle(isTablet: boolean): React.CSSProperties {
+  if (!isTablet) return actionGrid;
+
+  return {
+    ...actionGrid,
+    gridTemplateColumns: "1fr 1fr",
+  };
+}
 
 const buttonBase: React.CSSProperties = {
   minHeight: 46,

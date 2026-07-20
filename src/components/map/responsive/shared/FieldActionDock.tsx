@@ -60,10 +60,12 @@ export default function FieldActionDock({ variant, actions }: Props) {
         zIndex: 2400,
         ...(isTablet
           ? {
-              right: 14,
-              top: 78,
-              width: 150,
-              flexDirection: "column" as const,
+              left: "50%",
+              bottom: 18,
+              transform: "translateX(-50%)",
+              maxWidth: "calc(100% - 28px)",
+              flexDirection: "row" as const,
+              flexWrap: "wrap" as const,
             }
           : {
               left: 10,
