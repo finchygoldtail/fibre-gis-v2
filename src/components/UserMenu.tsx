@@ -97,6 +97,8 @@ export default function UserMenu({ variant = "topbar" }: Props) {
               right: 0,
               top: "calc(100% + 8px)",
               width: 260,
+              maxWidth: "calc(100vw - 24px)",
+              boxSizing: "border-box",
               background: "#111827",
               color: "white",
               border: "1px solid #374151",
@@ -244,6 +246,7 @@ const roleBoxStyle: React.CSSProperties = {
 
 const sidebarButtonStyle: React.CSSProperties = {
   width: "100%",
+  boxSizing: "border-box",
   marginTop: 10,
   border: "1px solid #374151",
   background: "#1f2937",
@@ -257,6 +260,8 @@ const sidebarButtonStyle: React.CSSProperties = {
 
 const menuButtonStyle: React.CSSProperties = {
   width: "100%",
+  boxSizing: "border-box",
+  display: "block",
   marginTop: 10,
   border: "1px solid #374151",
   background: "#1f2937",
