@@ -1060,7 +1060,8 @@ export default function CableLinesLayer({
   canDeleteCables = true,
 }: Props) {
   const map = useMap();
-  const { isMobile } = useDeviceLayout();
+  const { isMobile, isTablet } = useDeviceLayout();
+  const usesTouchCableSheet = isMobile || isTablet;
   const [selectedCableId, setSelectedCableId] = useState<string | null>(null);
   const [editingCableId, setEditingCableId] = useState<string | null>(null);
   const [hoveredCableId, setHoveredCableId] = useState<string | null>(null);
@@ -1645,12 +1646,12 @@ export default function CableLinesLayer({
               ) : null}
             </Polyline>
 
-            {!cableDrawingMode && isMobile && isSelected ? (
+            {!cableDrawingMode && usesTouchCableSheet && isSelected ? (
               <div
-                style={mobileCableSheetStyle}
+                style={getTouchCableSheetStyle(isTablet)}
                 onClick={(event) => event.stopPropagation()}
               >
-                <div style={mobileSheetHandleStyle} />
+                {!isTablet ? <div style={mobileSheetHandleStyle} /> : null}
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={mobileSheetKickerStyle}>Cable asset</div>
@@ -1823,6 +1824,20 @@ const mobileCableSheetStyle: React.CSSProperties = {
   backdropFilter: "blur(12px)",
   pointerEvents: "auto",
 };
+
+function getTouchCableSheetStyle(isTablet: boolean): React.CSSProperties {
+  if (!isTablet) return mobileCableSheetStyle;
+
+  return {
+    ...mobileCableSheetStyle,
+    left: "auto",
+    right: 14,
+    bottom: 88,
+    width: 340,
+    maxWidth: "calc(100% - 28px)",
+    borderRadius: 18,
+  };
+}
 
 const mobileSheetHandleStyle: React.CSSProperties = {
   width: 46,

@@ -1817,6 +1817,10 @@ export default function JointMapManager({
     homes: projectHomes,
   });
   const [isRetryingPendingSave, setIsRetryingPendingSave] = useState(false);
+  const shouldShowFieldRecoveryBanner =
+    offlineFieldMode.pendingSaveCount > 0 ||
+    offlineFieldMode.isOffline ||
+    (isMobile && roleMobileMode === "build" && offlineFieldMode.isOffline);
 
   const handleRetryPendingMapSave = async () => {
     const pending = offlineFieldMode.getPendingMapSave();
@@ -6244,9 +6248,7 @@ export default function JointMapManager({
       <ResponsiveFieldPolish enabled={isFieldResponsiveMode} />
 
       {!showMaintenancePanel &&
-        (isFieldResponsiveMode ||
-          (isMobile && offlineFieldMode.pendingSaveCount > 0) ||
-          (isMobile && roleMobileMode === "build" && offlineFieldMode.isOffline)) && (
+        shouldShowFieldRecoveryBanner && (
         <OfflineFieldModeBanner
           isOffline={offlineFieldMode.isOffline}
           lastCachedAt={offlineFieldMode.lastCachedAt}
@@ -6419,6 +6421,8 @@ export default function JointMapManager({
           onPrepareCable={handleMobilePrepareCable}
           onStartArea={handleMobileStartArea}
           onOpenLayers={() => setIsLayersOpen((prev) => !prev)}
+          onRefreshMapAssets={isBuildTabletMode ? handleRefreshMapAssets : undefined}
+          isRefreshingMapAssets={isRefreshingMapAssets}
           onGpsLocate={handleGpsLocate}
         />
       )}

@@ -11,6 +11,8 @@ type Props = {
   onPrepareCable: () => void;
   onStartArea: () => void;
   onOpenLayers: () => void;
+  onRefreshMapAssets?: () => void;
+  isRefreshingMapAssets?: boolean;
   onGpsLocate: () => void;
 };
 
@@ -23,6 +25,8 @@ export default function BuildMobileControls({
   onPrepareCable,
   onStartArea,
   onOpenLayers,
+  onRefreshMapAssets,
+  isRefreshingMapAssets = false,
   onGpsLocate,
 }: Props) {
   const isTablet = variant === "tablet";
@@ -57,6 +61,17 @@ export default function BuildMobileControls({
           active: mapMode === "draw-area",
           onClick: onStartArea,
         },
+        ...(isTablet && onRefreshMapAssets
+          ? [
+              {
+                key: "refresh",
+                label: isRefreshingMapAssets ? "Refreshing" : "Refresh",
+                tone: "secondary" as const,
+                disabled: isRefreshingMapAssets,
+                onClick: onRefreshMapAssets,
+              },
+            ]
+          : []),
         ...(!isTablet
           ? [
               {
