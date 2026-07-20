@@ -418,11 +418,11 @@ function getDpStatusForSidebar(
   details: DistributionPointDetails,
 ): string {
   const raw = String(
-    (currentDp as any)?.dpDetails?.buildStatus ||
+    details.buildStatus ||
+      (currentDp as any)?.dpDetails?.buildStatus ||
       (currentDp as any)?.properties?.dpDetails?.buildStatus ||
       (currentDp as any)?.buildStatus ||
       (currentDp as any)?.status ||
-      details.buildStatus ||
       "Planned",
   )
     .trim()
