@@ -2371,8 +2371,12 @@ function StreetCabinetLayoutView({
                     {getPanelIcon(panel)}
                   </span>
                   <span style={cabinetPanelText}>
-                    <strong>{getPanelTypeLabel(panel)}</strong>
-                    {heightU > 1 ? <span>{panel.name}</span> : null}
+                    <strong>
+                      {panel.type === "splitter-panel"
+                        ? panel.name
+                        : getPanelTypeLabel(panel)}
+                    </strong>
+                    {panel.type === "splitter-panel" ? null : <span>{panel.name}</span>}
                     <span style={{ color: "#93c5fd" }}>
                       Front U{uEnd}
                       {heightU > 1 ? `-U${uStart}` : ""} / {usedCount} used
