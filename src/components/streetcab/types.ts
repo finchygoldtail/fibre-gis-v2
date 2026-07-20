@@ -1,5 +1,6 @@
 export type StreetCabPanelType =
   | "96f-panel"
+  | "144f-panel"
   | "splitter-panel"
   | "link-cable-panel";
 
@@ -16,11 +17,17 @@ export type StreetCabSplitterBlock = {
   outputs: StreetCabPort[];
 };
 
+export type StreetCabRackPosition = {
+  uStart: number;
+  heightU: number;
+};
+
 export type StreetCab96FPanel = {
   id: string;
-  type: "96f-panel";
+  type: "96f-panel" | "144f-panel";
   name: string;
   position: number;
+  rackPosition?: StreetCabRackPosition;
   ports: StreetCabPort[];
 };
 
@@ -29,6 +36,7 @@ export type StreetCabSplitterPanel = {
   type: "splitter-panel";
   name: string;
   position: number;
+  rackPosition?: StreetCabRackPosition;
   splitters: StreetCabSplitterBlock[];
 };
 
@@ -37,6 +45,7 @@ export type StreetCabLinkCablePanel = {
   type: "link-cable-panel";
   name: string;
   position: number;
+  rackPosition?: StreetCabRackPosition;
   ports: StreetCabPort[];
 };
 

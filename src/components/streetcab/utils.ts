@@ -24,6 +24,20 @@ export function create96FPanel(position: number): StreetCab96FPanel {
   };
 }
 
+export function create144FPanel(position: number): StreetCab96FPanel {
+  return {
+    id: makeId("144f"),
+    type: "144f-panel",
+    name: `144F Panel ${position}`,
+    position,
+    ports: Array.from({ length: 144 }, (_, i) => ({
+      id: makeId(`port-${i + 1}`),
+      number: i + 1,
+      label: `${i + 1}`,
+    })),
+  };
+}
+
 export function createSplitterPanel(position: number): StreetCabSplitterPanel {
   const splitters: StreetCabSplitterBlock[] = Array.from({ length: 8 }, (_, i) => ({
     id: makeId(`splitter-${i + 1}`),
@@ -120,7 +134,7 @@ export function getPortRole(
   const panel = panels.find((p) => p.id === panelId);
   if (!panel) return "unknown";
 
-  if (panel.type === "96f-panel") {
+  if (panel.type === "96f-panel" || panel.type === "144f-panel") {
     return panel.ports.some((p) => p.id === portId) ? "96f" : "unknown";
   }
 

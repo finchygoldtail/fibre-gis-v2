@@ -8,6 +8,7 @@ import type {
   StreetCabPort,
 } from "./types";
 import {
+  create144FPanel,
   create96FPanel,
   createLinkCablePanel,
   createSplitterPanel,
@@ -65,6 +66,9 @@ type ImportMappingRow = {
 type PortAnnotations = Record<string, string[]>;
 
 const SPLITTERS_PER_PANEL = 8;
+const CABINET_U_COUNT = 30;
+
+type StreetCabViewMode = "patching" | "cabinet";
 
 function parseNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
@@ -174,6 +178,68 @@ function getFibreMovePanelKind(panel: StreetCabPanel): "feeder" | "link" {
 
   if (type.includes("link") || name.includes("link")) return "link";
   return "feeder";
+}
+
+function getPanelTypeLabel(panel: StreetCabPanel): string {
+  if (panel.type === "144f-panel") return "144F Feeder Panel";
+  if (panel.type === "96f-panel") return "96F Feeder Panel";
+  if (panel.type === "link-cable-panel") return "Link Cable Panel";
+  return "Splitter Panel";
+}
+
+function getPanelCapacityLabel(panel: StreetCabPanel): string {
+  if ("ports" in panel) return `${panel.ports.length}F`;
+  return `${panel.splitters.length} splitters`;
+}
+
+function getPanelRackHeight(panel: StreetCabPanel): number {
+  if (panel.type === "144f-panel") return 2;
+  if (panel.type === "splitter-panel") return 1;
+  return 2;
+}
+
+function getPanelAccent(panel: StreetCabPanel): string {
+  if (panel.type === "144f-panel") return "#2563eb";
+  if (panel.type === "96f-panel") return "#22c55e";
+  if (panel.type === "link-cable-panel") return "#8b5cf6";
+  return "#f97316";
+}
+
+function getPanelIcon(panel: StreetCabPanel): string {
+  if (panel.type === "link-cable-panel") return "L";
+  if (panel.type === "splitter-panel") return "S";
+  if (panel.type === "96f-panel") return "P";
+  return "F";
+}
+
+function countPanelPorts(panel: StreetCabPanel): number {
+  if ("ports" in panel) return panel.ports.length;
+  return panel.splitters.reduce(
+    (total, splitter) => total + 1 + splitter.outputs.length,
+    0
+  );
+}
+
+function countUsedPanelPorts(
+  panel: StreetCabPanel,
+  connections: StreetCabConnection[]
+): number {
+  const usedPortIds = new Set<string>();
+
+  connections.forEach((connection) => {
+    if (connection.fromPanelId === panel.id) usedPortIds.add(connection.fromPortId);
+    if (connection.toPanelId === panel.id) usedPortIds.add(connection.toPortId);
+  });
+
+  return usedPortIds.size;
+}
+
+function getPanelSpareCount(
+  panel: StreetCabPanel,
+  connections: StreetCabConnection[]
+): number {
+  if (!("ports" in panel)) return 0;
+  return Math.max(0, panel.ports.length - countUsedPanelPorts(panel, connections));
 }
 
 function addPortAnnotation(
@@ -673,6 +739,7 @@ export default function StreetCabDesigner({
 
   const [selectedPanelId, setSelectedPanelId] = useState<string | null>(null);
   const [selectedPort, setSelectedPort] = useState<SelectedPort>(null);
+  const [viewMode, setViewMode] = useState<StreetCabViewMode>("patching");
   const [moveTargetFibre, setMoveTargetFibre] = useState("");
   const [pendingConnectionStart, setPendingConnectionStart] =
     useState<SelectedPort>(null);
@@ -684,6 +751,49 @@ export default function StreetCabDesigner({
   const selectedPanel = useMemo(
     () => panels.find((p) => p.id === selectedPanelId) || null,
     [panels, selectedPanelId]
+  );
+
+  const patchingPanels = useMemo(
+    () =>
+      panels
+        .slice()
+        .sort((a, b) => {
+          const typeOrder: Record<string, number> = {
+            "144f-panel": 1,
+            "96f-panel": 2,
+            "splitter-panel": 3,
+            "link-cable-panel": 4,
+          };
+
+          const aOrder = typeOrder[a.type] ?? 99;
+          const bOrder = typeOrder[b.type] ?? 99;
+
+          if (aOrder !== bOrder) return aOrder - bOrder;
+          return a.position - b.position;
+        }),
+    [panels]
+  );
+
+  const layoutPanels = useMemo(
+    () =>
+      panels
+        .filter((panel) => panel.rackPosition || panel.position > 0)
+        .slice()
+        .sort((a, b) => {
+          const aU = a.rackPosition?.uStart ?? a.position;
+          const bU = b.rackPosition?.uStart ?? b.position;
+          return bU - aU;
+        }),
+    [panels]
+  );
+
+  const unplacedPanels = useMemo(
+    () =>
+      panels
+        .filter((panel) => !panel.rackPosition && panel.position <= 0)
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [panels]
   );
 
   const selectedPortPanel = useMemo(
@@ -801,20 +911,25 @@ export default function StreetCabDesigner({
 
   const handleAdd96FPanel = () => {
     const position = getNextPanelPosition(panels);
-    setPanels((prev) => [...prev, create96FPanel(position)]);
+    setPanels((prev) => [...prev, { ...create96FPanel(position), position: 0 }]);
+  };
+
+  const handleAdd144FPanel = () => {
+    const position = getNextPanelPosition(panels);
+    setPanels((prev) => [...prev, { ...create144FPanel(position), position: 0 }]);
   };
 
   const handleAddSplitterPanel = () => {
     const position = getNextPanelPosition(panels);
     setPanels((prev) => [
       ...prev,
-      createSplitterPanel(position, SPLITTERS_PER_PANEL),
+      { ...createSplitterPanel(position, SPLITTERS_PER_PANEL), position: 0 },
     ]);
   };
 
   const handleAddLinkCablePanel = () => {
     const position = getNextPanelPosition(panels);
-    setPanels((prev) => [...prev, createLinkCablePanel(position)]);
+    setPanels((prev) => [...prev, { ...createLinkCablePanel(position), position: 0 }]);
   };
 
   const handleRemoveSelectedPanel = () => {
@@ -855,6 +970,108 @@ export default function StreetCabDesigner({
         panel.id === selectedPanelId ? { ...panel, name: newName } : panel
       )
     );
+  };
+
+  const handleMovePanelInCabinet = (panelId: string, direction: "up" | "down") => {
+    setPanels((prev) => {
+      const ordered = prev.slice().sort((a, b) => a.position - b.position);
+      const currentIndex = ordered.findIndex((panel) => panel.id === panelId);
+      if (currentIndex === -1) return prev;
+
+      const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+      if (targetIndex < 0 || targetIndex >= ordered.length) return prev;
+
+      const nextOrdered = ordered.slice();
+      const current = nextOrdered[currentIndex];
+      const target = nextOrdered[targetIndex];
+      nextOrdered[currentIndex] = target;
+      nextOrdered[targetIndex] = current;
+
+      const positionByPanelId = new Map(
+        nextOrdered.map((panel, index) => [panel.id, index + 1])
+      );
+
+      return prev.map((panel) => ({
+        ...panel,
+        position: positionByPanelId.get(panel.id) ?? panel.position,
+      }));
+    });
+  };
+
+  const handleDropPanelInCabinet = (draggedPanelId: string, targetPanelId: string | null) => {
+    if (draggedPanelId === targetPanelId) return;
+
+    setPanels((prev) => {
+      const ordered = prev
+        .filter((panel) => panel.position > 0)
+        .slice()
+        .sort((a, b) => a.position - b.position);
+      const draggedPanel = prev.find((panel) => panel.id === draggedPanelId);
+      if (!draggedPanel) return prev;
+
+      const withoutDragged = ordered.filter((panel) => panel.id !== draggedPanelId);
+      const targetIndex = targetPanelId
+        ? withoutDragged.findIndex((panel) => panel.id === targetPanelId)
+        : withoutDragged.length;
+
+      if (targetIndex === -1) return prev;
+
+      const nextOrdered = withoutDragged.slice();
+      nextOrdered.splice(targetIndex, 0, draggedPanel);
+
+      const positionByPanelId = new Map(
+        nextOrdered.map((panel, index) => [panel.id, index + 1])
+      );
+
+      return prev.map((panel) => ({
+        ...panel,
+        position: positionByPanelId.get(panel.id) ?? (panel.position > 0 ? 0 : panel.position),
+      }));
+    });
+  };
+
+  const handlePlacePanelInCabinet = (panelId: string, uStart: number) => {
+    setPanels((prev) => {
+      const panel = prev.find((item) => item.id === panelId);
+      if (!panel) return prev;
+
+      const heightU = getPanelRackHeight(panel);
+      const safeUStart = Math.max(1, Math.min(uStart, CABINET_U_COUNT - heightU + 1));
+
+      return prev.map((item) =>
+        item.id === panelId
+          ? {
+              ...item,
+              position: safeUStart,
+              rackPosition: { uStart: safeUStart, heightU },
+            }
+          : item
+      );
+    });
+  };
+
+  const handleUnplacePanelFromCabinet = (panelId: string) => {
+    setPanels((prev) => {
+      const ordered = prev
+        .filter((panel) => panel.position > 0 && panel.id !== panelId)
+        .slice()
+        .sort((a, b) => a.position - b.position);
+      const positionByPanelId = new Map(
+        ordered.map((panel, index) => [panel.id, index + 1])
+      );
+
+      return prev.map((panel) => {
+        if (panel.id === panelId) {
+          const { rackPosition, ...rest } = panel;
+          void rackPosition;
+          return { ...rest, position: 0 } as StreetCabPanel;
+        }
+        if (panel.position > 0) {
+          return { ...panel, position: positionByPanelId.get(panel.id) ?? panel.position };
+        }
+        return panel;
+      });
+    });
   };
 
   const handleSelectPort = (panelId: string, port: StreetCabPort) => {
@@ -1465,7 +1682,11 @@ export default function StreetCabDesigner({
         width: isMobileDesigner ? 1700 : "100vw",
         minWidth: isMobileDesigner ? 1700 : undefined,
         display: "grid",
-        gridTemplateColumns: "280px minmax(1100px, 1fr) 320px",
+        gridTemplateColumns:
+          viewMode === "cabinet"
+            ? "280px minmax(1300px, 1fr)"
+            : "280px minmax(1100px, 1fr) 320px",
+        gridTemplateRows: "64px minmax(0, 1fr)",
         background: "#111827",
         color: "white",
         overflow: "hidden",
@@ -1473,6 +1694,26 @@ export default function StreetCabDesigner({
         WebkitOverflowScrolling: "touch",
       }}
     >
+      <div style={topHeader}>
+        <div style={brandLockup}>
+          <div style={brandMark}>AG</div>
+          <div>
+            <div style={brandText}>
+              ALISTRA <span style={{ color: "#22c55e" }}>GIS</span>
+            </div>
+            <div style={headerTitle}>Street Cab / Cabinet Layout</div>
+          </div>
+        </div>
+        <div style={headerActions}>
+          <button onClick={handleSave} style={btnPrimary}>
+            Save Cabinet
+          </button>
+          <button onClick={onClose} style={btnSecondary}>
+            Back to Map
+          </button>
+        </div>
+      </div>
+
       <div style={{ ...sidebar, borderRight: sidebar.borderRight, borderBottom: "none", flex: undefined, maxHeight: undefined, overflowY: "auto" }}>
         <div
           style={{
@@ -1539,9 +1780,6 @@ export default function StreetCabDesigner({
           />
         </div>
 
-        <button onClick={handleSave} style={btnPrimary}>
-          Save
-        </button>
       </div>
 
       <div
@@ -1555,6 +1793,23 @@ export default function StreetCabDesigner({
         onDragOver={(e) => e.preventDefault()}
         onDrop={() => setDragStartPort(null)}
       >
+        <div style={viewTabs}>
+          <button
+            type="button"
+            onClick={() => setViewMode("patching")}
+            style={viewMode === "patching" ? activeViewTab : viewTab}
+          >
+            Patching View
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("cabinet")}
+            style={viewMode === "cabinet" ? activeViewTab : viewTab}
+          >
+            Cabinet Layout
+          </button>
+        </div>
+
         <div
           style={{
             display: "flex",
@@ -1563,6 +1818,10 @@ export default function StreetCabDesigner({
             flexWrap: "wrap",
           }}
         >
+          <button onClick={handleAdd144FPanel} style={btnPrimary}>
+            Add 144F Panel
+          </button>
+
           <button onClick={handleAdd96FPanel} style={btnPrimary}>
             Add 96F Panel
           </button>
@@ -1627,43 +1886,42 @@ export default function StreetCabDesigner({
             gridTemplateColumns: "1fr",
             gap: 8,
             alignItems: "start",
-            maxWidth: 1120,
+            maxWidth: viewMode === "cabinet" ? "none" : 1120,
           }}
         >
-          {panels
-            .slice()
-            .sort((a, b) => {
-              const typeOrder: Record<string, number> = {
-                "96f-panel": 1,
-                "splitter-panel": 2,
-                "link-cable-panel": 3,
-              };
-
-              const aOrder = typeOrder[a.type] ?? 99;
-              const bOrder = typeOrder[b.type] ?? 99;
-
-              if (aOrder !== bOrder) return aOrder - bOrder;
-              return a.position - b.position;
-            })
-            .map((panel) => (
-              <StreetCabPanelView
-                key={panel.id}
-                panel={panel}
-                selectedPanelId={selectedPanelId}
-                selectedPort={selectedPort}
-                highlightedPortKeys={highlightedPortKeys}
-                connections={connections}
-                dragStartPort={dragStartPort}
-                portAnnotations={portAnnotations}
-                onSelectPanel={setSelectedPanelId}
-                onSelectPort={handleSelectPort}
-                onStartDragConnection={handleStartDragConnection}
-                onDropConnection={handleDropConnection}
-              />
-            ))}
+          {viewMode === "cabinet" ? (
+            <StreetCabinetLayoutView
+              panels={layoutPanels}
+              unplacedPanels={unplacedPanels}
+              selectedPanelId={selectedPanelId}
+              connections={connections}
+              onSelectPanel={setSelectedPanelId}
+              onDropPanel={handleDropPanelInCabinet}
+              onPlacePanel={handlePlacePanelInCabinet}
+              onUnplacePanel={handleUnplacePanelFromCabinet}
+            />
+          ) : (
+            patchingPanels.map((panel) => (
+                <StreetCabPanelView
+                  key={panel.id}
+                  panel={panel}
+                  selectedPanelId={selectedPanelId}
+                  selectedPort={selectedPort}
+                  highlightedPortKeys={highlightedPortKeys}
+                  connections={connections}
+                  dragStartPort={dragStartPort}
+                  portAnnotations={portAnnotations}
+                  onSelectPanel={setSelectedPanelId}
+                  onSelectPort={handleSelectPort}
+                  onStartDragConnection={handleStartDragConnection}
+                  onDropConnection={handleDropConnection}
+                />
+              ))
+          )}
         </div>
       </div>
 
+      {viewMode === "patching" ? (
       <div style={{ ...sidebar, borderRight: "none", borderLeft: "1px solid #374151", borderTop: "none", flex: undefined, maxHeight: undefined, overflowY: "auto" }}>
         <h3 style={{ marginTop: 0 }}>Selection</h3>
 
@@ -1873,9 +2131,688 @@ export default function StreetCabDesigner({
           <div>{connections.length}</div>
         </div>
       </div>
+      ) : null}
     </div>
   );
 }
+
+function StreetCabinetLayoutView({
+  panels,
+  unplacedPanels,
+  selectedPanelId,
+  connections,
+  onSelectPanel,
+  onDropPanel,
+  onPlacePanel,
+  onUnplacePanel,
+}: {
+  panels: StreetCabPanel[];
+  unplacedPanels: StreetCabPanel[];
+  selectedPanelId: string | null;
+  connections: StreetCabConnection[];
+  onSelectPanel: (panelId: string) => void;
+  onDropPanel: (draggedPanelId: string, targetPanelId: string | null) => void;
+  onPlacePanel: (panelId: string, uStart: number) => void;
+  onUnplacePanel: (panelId: string) => void;
+}) {
+  const [draggedPanelId, setDraggedPanelId] = useState<string | null>(null);
+  let fallbackNextU = CABINET_U_COUNT;
+  const overflowPanels: StreetCabPanel[] = [];
+  const placements: Array<{
+    panel: StreetCabPanel;
+    heightU: number;
+    uStart: number;
+    uEnd: number;
+  }> = [];
+
+  panels.forEach((panel) => {
+    const heightU = getPanelRackHeight(panel);
+    const fallbackStart = Math.max(1, fallbackNextU - heightU + 1);
+    const uStart = panel.rackPosition?.uStart ?? fallbackStart;
+    const effectiveHeight = panel.rackPosition?.heightU ?? heightU;
+    const uEnd = uStart + effectiveHeight - 1;
+    const fallbackDoesNotFit = !panel.rackPosition && fallbackNextU - heightU + 1 < 1;
+
+    if (uStart < 1 || uEnd > CABINET_U_COUNT || fallbackDoesNotFit) {
+      overflowPanels.push(panel);
+      return;
+    }
+
+    placements.push({
+      panel,
+      heightU: effectiveHeight,
+      uStart,
+      uEnd,
+    });
+
+    fallbackNextU -= heightU;
+  });
+
+  const occupiedU = placements.reduce((total, placement) => total + placement.heightU, 0);
+  const spareU = Math.max(0, CABINET_U_COUNT - occupiedU);
+  const occupiedSlots = new Set<number>();
+  const placementByStartU = new Map<number, (typeof placements)[number]>();
+  const palettePanels = [...unplacedPanels, ...overflowPanels];
+
+  placements.forEach((placement) => {
+    placementByStartU.set(placement.uStart, placement);
+    Array.from({ length: placement.heightU }, (_, index) => placement.uStart + index)
+      .filter((u) => u >= 1 && u <= CABINET_U_COUNT)
+      .forEach((u) => occupiedSlots.add(u));
+  });
+
+  return (
+    <div style={cabinetLayoutShell}>
+      <div style={cabinetLayoutHeader}>
+        <div>
+          <h2 style={{ margin: 0 }}>Cabinet Layout</h2>
+          <div style={{ color: "#94a3b8", fontSize: "0.82rem" }}>
+            Front elevation only. Drag panels up or down to match the physical cab.
+          </div>
+        </div>
+        <div style={cabinetStats}>
+          <span style={cabinetStatPill}>{occupiedU}/{CABINET_U_COUNT}U placed</span>
+          <span style={cabinetStatPill}>{spareU}U spare</span>
+        </div>
+      </div>
+
+      <div style={cabinetBuilderGrid}>
+        <aside style={equipmentPalette}>
+          <div style={paletteHeader}>
+            <strong>Panel Palette</strong>
+            <span style={cabinetStatPill}>{palettePanels.length} unplaced</span>
+          </div>
+
+          <div
+            style={{
+              ...paletteDropZone,
+              borderColor: draggedPanelId ? "#60a5fa" : "#334155",
+              color: draggedPanelId ? "#dbeafe" : "#94a3b8",
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "move";
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              const droppedPanelId =
+                event.dataTransfer.getData("text/plain") || draggedPanelId;
+              if (droppedPanelId) onUnplacePanel(droppedPanelId);
+              setDraggedPanelId(null);
+            }}
+          >
+            Drop here to undock from cab
+          </div>
+
+          {palettePanels.length ? (
+            <div style={paletteList}>
+              {palettePanels.map((panel) => {
+                const accent = getPanelAccent(panel);
+                return (
+                  <div
+                    key={panel.id}
+                    draggable
+                    onDragStart={(event) => {
+                      setDraggedPanelId(panel.id);
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", panel.id);
+                    }}
+                    onDragEnd={() => setDraggedPanelId(null)}
+                    onClick={() => onSelectPanel(panel.id)}
+                    style={{
+                      ...palettePanel,
+                      borderColor: panel.id === selectedPanelId ? "#60a5fa" : "#334155",
+                    }}
+                  >
+                    <span style={{ ...cabinetPanelIcon, background: accent }}>
+                      {getPanelIcon(panel)}
+                    </span>
+                    <span style={cabinetPanelText}>
+                      <strong>{getPanelTypeLabel(panel)}</strong>
+                      <span>{panel.name}</span>
+                    </span>
+                    <span style={{ ...cabinetCapacityBadge, background: accent }}>
+                      {getPanelCapacityLabel(panel)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={paletteEmpty}>No unplaced panels.</div>
+          )}
+        </aside>
+
+        <section style={streetCabRackPanel}>
+          <div style={rackCabinetHeader}>
+            <div>
+              <strong>Street Cab Rack</strong>
+              <div style={{ color: "#94a3b8", fontSize: 12 }}>Drag panels from the palette onto a 30U front rack slot.</div>
+            </div>
+            <span style={cabinetStatPill}>{placements.length}/{placements.length + palettePanels.length} placed</span>
+          </div>
+
+          <div style={streetCabFaceGrid}>
+            <div style={rackFacePanel}>
+              <div style={rackFaceTitle}>Front</div>
+              <div style={{ ...streetCabRackFrame, gridTemplateRows: `repeat(${CABINET_U_COUNT}, 42px)` }}>
+                {Array.from({ length: CABINET_U_COUNT }, (_, index) => {
+                  const u = CABINET_U_COUNT - index;
+                  const covered = occupiedSlots.has(u);
+                  const row = index + 1;
+
+                  return (
+                    <React.Fragment key={`street-cab-u-${u}`}>
+                      <div style={{ ...rackUIndex, gridColumn: 1, gridRow: row }}>U{u}</div>
+                      <div
+                        style={{
+                          ...(covered ? rackCoveredSlot : rackEmptySlot),
+                          gridColumn: 2,
+                          gridRow: row,
+                        }}
+                        onDragOver={(event) => {
+                          event.preventDefault();
+                          event.dataTransfer.dropEffect = "move";
+                        }}
+                        onDrop={(event) => {
+                          event.preventDefault();
+                          const droppedPanelId =
+                            event.dataTransfer.getData("text/plain") || draggedPanelId;
+                          if (droppedPanelId) onPlacePanel(droppedPanelId, u);
+                          setDraggedPanelId(null);
+                        }}
+                      >
+                        {covered ? "" : "Drop panel here"}
+                      </div>
+                    </React.Fragment>
+                  );
+                })}
+
+                {Array.from(placementByStartU.values()).map(({ panel, heightU, uStart, uEnd }, index) => {
+              const panelPortCount = countPanelPorts(panel);
+              const usedCount = countUsedPanelPorts(panel, connections);
+              const spareCount = getPanelSpareCount(panel, connections);
+              const occupancy = panelPortCount
+                ? Math.min(100, Math.round((usedCount / panelPortCount) * 100))
+                : 0;
+              const accent = getPanelAccent(panel);
+              const selected = panel.id === selectedPanelId;
+              const topU = uStart + heightU - 1;
+              const topRow = CABINET_U_COUNT - topU + 1;
+
+              return (
+                <div
+                  key={panel.id}
+                  draggable
+                  onDragStart={(event) => {
+                    setDraggedPanelId(panel.id);
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", panel.id);
+                  }}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                  }}
+                  onDragEnd={() => setDraggedPanelId(null)}
+                  onClick={() => onSelectPanel(panel.id)}
+                  style={{
+                    ...cabinetPanelButton,
+                    gridColumn: 2,
+                    gridRow: `${topRow} / span ${heightU}`,
+                    minHeight: 0,
+                    borderColor: selected ? "#60a5fa" : accent,
+                    boxShadow: selected
+                      ? "0 0 0 2px rgba(96,165,250,0.5), 0 0 22px rgba(37,99,235,0.28)"
+                      : `inset 4px 0 0 ${accent}`,
+                    opacity: draggedPanelId === panel.id ? 0.58 : 1,
+                  }}
+                >
+                  <span style={{ ...cabinetPanelIcon, background: accent }}>
+                    {getPanelIcon(panel)}
+                  </span>
+                  <span style={cabinetPanelText}>
+                    <strong>{getPanelTypeLabel(panel)}</strong>
+                    {heightU > 1 ? <span>{panel.name}</span> : null}
+                    <span style={{ color: "#93c5fd" }}>
+                      Front U{uEnd}
+                      {heightU > 1 ? `-U${uStart}` : ""} / {usedCount} used
+                      {"ports" in panel ? ` / ${spareCount} spare` : ""}
+                    </span>
+                  </span>
+                  <span style={cabinetPanelMeta}>
+                    <span style={{ ...cabinetCapacityBadge, background: accent }}>
+                      {getPanelCapacityLabel(panel)}
+                    </span>
+                    {"ports" in panel ? (
+                      <span style={{ ...cabinetOccupancyBadge, borderColor: "#94a3b8", color: "#cbd5e1" }}>
+                        {spareCount} spare
+                      </span>
+                    ) : null}
+                    <span style={{ ...cabinetOccupancyBadge, borderColor: accent, color: accent }}>
+                      {occupancy}%
+                    </span>
+                    <span style={cabinetRackHeightPill}>{heightU}U</span>
+                  </span>
+                </div>
+              );
+              })}
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+const topHeader: React.CSSProperties = {
+  gridColumn: "1 / -1",
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 16,
+  padding: "10px 16px",
+  borderBottom: "1px solid #374151",
+  background:
+    "radial-gradient(circle at 45% -45%, rgba(37,99,235,0.26), transparent 36%), #07111d",
+};
+
+const brandLockup: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 12,
+  minWidth: 0,
+};
+
+const brandMark: React.CSSProperties = {
+  width: 38,
+  height: 38,
+  borderRadius: 8,
+  border: "1px solid #43566e",
+  background: "linear-gradient(145deg, #1f2937, #0f172a)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  color: "#dbeafe",
+  fontWeight: 900,
+};
+
+const brandText: React.CSSProperties = {
+  fontWeight: 900,
+  letterSpacing: "0.06em",
+  fontSize: "1.05rem",
+  lineHeight: 1,
+};
+
+const headerTitle: React.CSSProperties = {
+  color: "#cbd5e1",
+  fontWeight: 800,
+  marginTop: 4,
+};
+
+const headerActions: React.CSSProperties = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+  justifyContent: "flex-end",
+};
+
+const viewTabs: React.CSSProperties = {
+  display: "flex",
+  width: "fit-content",
+  overflow: "hidden",
+  border: "1px solid #374151",
+  borderRadius: 8,
+  marginBottom: 12,
+  background: "#0f172a",
+};
+
+const viewTab: React.CSSProperties = {
+  minWidth: 150,
+  background: "transparent",
+  color: "#cbd5e1",
+  border: "none",
+  borderRight: "1px solid #374151",
+  padding: "12px 18px",
+  cursor: "pointer",
+  fontWeight: 800,
+};
+
+const activeViewTab: React.CSSProperties = {
+  ...viewTab,
+  background: "#2563eb",
+  color: "white",
+};
+
+const cabinetLayoutShell: React.CSSProperties = {
+  background:
+    "radial-gradient(circle at 50% -20%, rgba(37,99,235,0.18), transparent 35%), #0f172a",
+  border: "1px solid #374151",
+  borderRadius: 10,
+  padding: 14,
+  width: "100%",
+  maxWidth: "none",
+};
+
+const cabinetLayoutHeader: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "flex-start",
+  gap: 12,
+  marginBottom: 14,
+};
+
+const cabinetStats: React.CSSProperties = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+  justifyContent: "flex-end",
+};
+
+const cabinetBuilderGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "320px minmax(0, 1fr)",
+  gap: 14,
+  alignItems: "start",
+};
+
+const equipmentPalette: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 10,
+  border: "1px solid #374151",
+  borderRadius: 10,
+  background: "#111827",
+  padding: 12,
+  minHeight: 320,
+};
+
+const paletteDropZone: React.CSSProperties = {
+  minHeight: 58,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  border: "1px dashed #334155",
+  borderRadius: 8,
+  background: "#0f172a",
+  fontWeight: 800,
+  textAlign: "center",
+};
+
+const paletteHeader: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 8,
+};
+
+const paletteList: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 8,
+};
+
+const palettePanel: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "38px minmax(0, 1fr) auto",
+  gap: 9,
+  alignItems: "center",
+  border: "1px solid #334155",
+  borderRadius: 8,
+  background: "linear-gradient(180deg, #20272e, #101820)",
+  color: "white",
+  padding: 9,
+  cursor: "grab",
+};
+
+const paletteEmpty: React.CSSProperties = {
+  minHeight: 120,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  border: "1px dashed #334155",
+  borderRadius: 8,
+  color: "#94a3b8",
+  fontWeight: 800,
+};
+
+const streetCabRackPanel: React.CSSProperties = {
+  background: "#111827",
+  border: "1px solid #374151",
+  borderRadius: 10,
+  padding: "1rem",
+  display: "grid",
+  gap: 12,
+};
+
+const rackCabinetHeader: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  alignItems: "flex-start",
+};
+
+const streetCabFaceGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1fr)",
+  gap: 14,
+};
+
+const rackFacePanel: React.CSSProperties = {
+  display: "grid",
+  gap: 8,
+  minWidth: 0,
+};
+
+const rackFaceTitle: React.CSSProperties = {
+  textTransform: "uppercase",
+  color: "#cbd5e1",
+  fontSize: 12,
+  fontWeight: 900,
+  letterSpacing: 0,
+};
+
+const streetCabRackFrame: React.CSSProperties = {
+  border: "1px solid #475569",
+  borderRadius: 8,
+  background: "#020617",
+  padding: "8px 10px",
+  display: "grid",
+  gridTemplateColumns: "46px minmax(0, 1fr)",
+  gap: 2,
+  alignItems: "stretch",
+  boxShadow: "inset 18px 0 0 #0f172a, inset -18px 0 0 #0f172a",
+};
+
+const rackUIndex: React.CSSProperties = {
+  color: "#64748b",
+  fontSize: 11,
+  fontWeight: 900,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  borderRight: "1px solid #1f2937",
+};
+
+const rackEmptySlot: React.CSSProperties = {
+  border: "1px dashed #334155",
+  borderRadius: 4,
+  color: "#334155",
+  fontSize: 11,
+  fontWeight: 800,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: 30,
+};
+
+const rackCoveredSlot: React.CSSProperties = {
+  minHeight: 30,
+  borderRadius: 4,
+  background: "rgba(15, 23, 42, 0.55)",
+};
+
+const cabinetStatPill: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  minHeight: 28,
+  padding: "4px 10px",
+  borderRadius: 999,
+  border: "1px solid #374151",
+  background: "#111827",
+  color: "#cbd5e1",
+  fontWeight: 800,
+};
+
+const cabinetFrame: React.CSSProperties = {
+  position: "relative",
+  padding: "54px 46px 52px",
+  borderRadius: 10,
+  background:
+    "linear-gradient(90deg, #171b20, #333435 4%, #14191f 10%, #0a0f16 50%, #14191f 90%, #333435 96%, #171b20)",
+  boxShadow:
+    "inset 0 0 0 2px rgba(255,255,255,0.08), inset 0 32px 70px rgba(0,0,0,0.6), 0 22px 55px rgba(0,0,0,0.42)",
+};
+
+const cabinetTopRail: React.CSSProperties = {
+  position: "absolute",
+  left: 34,
+  right: 34,
+  top: 14,
+  height: 38,
+  border: "1px solid rgba(255,255,255,0.12)",
+  borderRadius: "8px 8px 2px 2px",
+  background: "linear-gradient(180deg, #4a4b49, #222527)",
+};
+
+const cabinetBottomRail: React.CSSProperties = {
+  position: "absolute",
+  left: 34,
+  right: 34,
+  bottom: 14,
+  height: 36,
+  border: "1px solid rgba(255,255,255,0.12)",
+  borderRadius: "2px 2px 8px 8px",
+  background: "linear-gradient(180deg, #222527, #111315)",
+};
+
+const cabinetInner: React.CSSProperties = {
+  position: "relative",
+  zIndex: 1,
+  display: "grid",
+  gridTemplateColumns: "50px minmax(0, 1fr) 50px",
+  gap: 12,
+  minHeight: 570,
+};
+
+const uRail: React.CSSProperties = {
+  display: "grid",
+  gridTemplateRows: `repeat(${CABINET_U_COUNT}, minmax(0, 1fr))`,
+  padding: "6px 4px",
+  background: "repeating-linear-gradient(180deg, #111827 0 10px, #080d14 10px 20px)",
+  borderLeft: "1px solid rgba(255,255,255,0.12)",
+  borderRight: "1px solid rgba(255,255,255,0.12)",
+  color: "#cbd5e1",
+  fontSize: "0.56rem",
+  textAlign: "center",
+};
+
+const rackStack: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 7,
+  padding: 8,
+  border: "1px solid rgba(148,163,184,0.24)",
+  background: "#070d15",
+  boxShadow: "inset 0 0 36px rgba(0,0,0,0.75)",
+};
+
+const cabinetPanelButton: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "34px minmax(0, 1fr) auto",
+  alignItems: "center",
+  gap: 9,
+  width: "100%",
+  border: "1px solid #27374c",
+  borderRadius: 6,
+  background: "#1f2937",
+  color: "white",
+  padding: "5px 8px",
+  cursor: "pointer",
+  textAlign: "left",
+  overflow: "hidden",
+};
+
+const cabinetPanelIcon: React.CSSProperties = {
+  width: 25,
+  height: 25,
+  borderRadius: 999,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  color: "white",
+  fontWeight: 900,
+  fontSize: "0.78rem",
+};
+
+const cabinetPanelText: React.CSSProperties = {
+  display: "grid",
+  gap: 1,
+  minWidth: 0,
+  lineHeight: 1.08,
+  overflow: "hidden",
+};
+
+const cabinetPanelMeta: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "flex-end",
+  gap: 6,
+  flexWrap: "wrap",
+  fontWeight: 900,
+};
+
+const cabinetRackHeightPill: React.CSSProperties = {
+  minWidth: 34,
+  textAlign: "center",
+  border: "1px solid #43566e",
+  borderRadius: 999,
+  background: "#0f172a",
+  color: "#cbd5e1",
+  fontSize: "0.68rem",
+  fontWeight: 800,
+  padding: "2px 6px",
+};
+
+const cabinetCapacityBadge: React.CSSProperties = {
+  minWidth: 46,
+  textAlign: "center",
+  borderRadius: 6,
+  padding: "2px 7px",
+  color: "white",
+  fontSize: "0.72rem",
+};
+
+const cabinetOccupancyBadge: React.CSSProperties = {
+  minWidth: 46,
+  textAlign: "center",
+  border: "1px solid",
+  borderRadius: 6,
+  padding: "2px 7px",
+  background: "rgba(0,0,0,0.22)",
+  fontSize: "0.72rem",
+};
+
+const cabinetSpareSlot: React.CSSProperties = {
+  minHeight: 48,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  border: "1px dashed #334155",
+  borderRadius: 8,
+  color: "#94a3b8",
+  fontWeight: 800,
+};
 
 const sidebar: React.CSSProperties = {
   padding: 14,

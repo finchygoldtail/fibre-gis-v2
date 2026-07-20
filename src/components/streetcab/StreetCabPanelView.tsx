@@ -243,7 +243,8 @@ export default function StreetCabPanelView({
 }: Props) {
   const isSelected = panel.id === selectedPanelId;
 
-  if (panel.type === "96f-panel") {
+  if (panel.type === "96f-panel" || panel.type === "144f-panel") {
+    const panelCapacity = panel.type === "144f-panel" ? "144F" : "96F";
     return (
       <div
         onClick={() => onSelectPanel(panel.id)}
@@ -254,7 +255,7 @@ export default function StreetCabPanelView({
       >
         <div style={panelHeader}>
           <div style={panelTitle}>{panel.name}</div>
-          <div style={panelSubtitle}>FEEDER / PATCH</div>
+          <div style={panelSubtitle}>{panelCapacity} FEEDER / PATCH</div>
         </div>
 
         <div style={fibrePanelFace}>
