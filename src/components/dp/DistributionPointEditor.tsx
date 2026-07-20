@@ -1356,6 +1356,14 @@ export default function DistributionPointEditor({
   const manualSbParentFibres = uniqueSorted((manualSbRoute?.parentFibres || []) as number[]);
   const manualSbLocalFibres = uniqueSorted((manualSbRoute?.localFibres || []) as number[]);
   const workspaceLocalFibres = uniqueSorted(workspaceSbAllocation?.localFibres || []);
+  const workspaceRequiredSplitterInputs =
+    closureType.includes("AFN") || closureType.includes("SB")
+      ? Math.max(1, Math.ceil(connectedHomes.length / splitterOutputsPerFibre))
+      : workspaceLocalFibres.length;
+  const workspaceSplitterInputFibres = workspaceLocalFibres.slice(
+    0,
+    Math.max(0, workspaceRequiredSplitterInputs),
+  );
   const workspacePassthroughFibres = uniqueSorted(
     workspaceSbAllocation?.passthroughRows?.map((row) => row.fibre) || [],
   );
@@ -1443,7 +1451,7 @@ export default function DistributionPointEditor({
       : hasManualSbRoute && manualRouteTargetsCurrent
         ? manualLocalRouteFibres
         : workspaceLocalFibres.length
-          ? workspaceLocalFibres
+          ? workspaceSplitterInputFibres
         : hasJointMappedFibres
           ? networkSplitterFibres
           : draftRouting.splitterFibres;
