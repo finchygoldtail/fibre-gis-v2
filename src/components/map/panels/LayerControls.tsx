@@ -14,6 +14,8 @@ type Props = {
   setBasemap: React.Dispatch<React.SetStateAction<BasemapType>>;
   roadOverlayVisible: boolean;
   setRoadOverlayVisible: React.Dispatch<React.SetStateAction<boolean>>;
+  mapRotationEnabled: boolean;
+  setMapRotationEnabled: React.Dispatch<React.SetStateAction<boolean>>;
   snapEnabled: boolean;
   setSnapEnabled: React.Dispatch<React.SetStateAction<boolean>>;
   layerCounts?: Record<string, number>;
@@ -39,6 +41,8 @@ export default function LayerControls({
   setBasemap,
   roadOverlayVisible,
   setRoadOverlayVisible,
+  mapRotationEnabled,
+  setMapRotationEnabled,
   snapEnabled,
   setSnapEnabled,
   layerCounts,
@@ -120,6 +124,8 @@ export default function LayerControls({
           setBasemap={setBasemap}
           roadOverlayVisible={roadOverlayVisible}
           setRoadOverlayVisible={setRoadOverlayVisible}
+          mapRotationEnabled={mapRotationEnabled}
+          setMapRotationEnabled={setMapRotationEnabled}
           snapEnabled={snapEnabled}
           setSnapEnabled={setSnapEnabled}
           layerCounts={layerCounts}

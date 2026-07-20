@@ -12,6 +12,8 @@ type Props = {
   setBasemap: React.Dispatch<React.SetStateAction<BasemapType>>;
   roadOverlayVisible: boolean;
   setRoadOverlayVisible: React.Dispatch<React.SetStateAction<boolean>>;
+  mapRotationEnabled: boolean;
+  setMapRotationEnabled: React.Dispatch<React.SetStateAction<boolean>>;
   snapEnabled: boolean;
   setSnapEnabled: React.Dispatch<React.SetStateAction<boolean>>;
   layerCounts?: Record<string, number>;
@@ -298,6 +300,8 @@ export default function LayersPanel({
   setBasemap,
   roadOverlayVisible,
   setRoadOverlayVisible,
+  mapRotationEnabled,
+  setMapRotationEnabled,
   snapEnabled,
   setSnapEnabled,
   layerCounts = {},
@@ -494,6 +498,15 @@ export default function LayersPanel({
             disabled={basemap === "hybrid"}
           />
           <span>Road Overlay {basemap === "hybrid" ? "(included)" : ""}</span>
+        </label>
+
+        <label style={{ ...layerRow, marginTop: 8 }}>
+          <input
+            type="checkbox"
+            checked={mapRotationEnabled}
+            onChange={() => setMapRotationEnabled((v) => !v)}
+          />
+          <span>Map Rotate</span>
         </label>
       </div>
 

@@ -187,6 +187,7 @@ const MAP_AUTOSAVE_IDLE_DELAY_MS = 15_000;
 const MAP_AUTOSAVE_MIN_INTERVAL_MS = 90_000;
 const PENDING_SAVE_PREFIX = "alistra-pending-map-save";
 const DRAWING_DRAFT_PREFIX = "alistra-field-drawing-draft";
+const MAP_ROTATION_STORAGE_KEY = "alistra-map-rotation-enabled";
 
 type MapAutosaveStatus = "idle" | "pending" | "saving" | "saved" | "error";
 
@@ -203,6 +204,16 @@ type FieldDrawingDraftSnapshot = {
   jointType: string;
   jointName: string;
 };
+
+function getInitialMapRotationEnabled(isTouchLayout: boolean): boolean {
+  if (typeof window === "undefined") return true;
+
+  const saved = window.localStorage.getItem(MAP_ROTATION_STORAGE_KEY);
+  if (saved === "true") return true;
+  if (saved === "false") return false;
+
+  return !isTouchLayout;
+}
 
 function getPendingSaveKey(projectId: string | null) {
   return `${PENDING_SAVE_PREFIX}:${projectId || "global"}`;
@@ -737,6 +748,34 @@ function MapRefTracker({ onReady }: { onReady: (map: L.Map | null) => void }) {
   return null;
 }
 
+function MapRotationController({ enabled }: { enabled: boolean }) {
+  const map = useMap();
+
+  useEffect(() => {
+    const rotatableMap = map as L.Map & {
+      touchRotate?: { enable?: () => void; disable?: () => void };
+      rotate?: { enable?: () => void; disable?: () => void };
+    };
+
+    rotatableMap.options.rotate = enabled;
+    rotatableMap.options.touchRotate = enabled;
+
+    if (enabled) {
+      rotatableMap.rotate?.enable?.();
+      rotatableMap.touchRotate?.enable?.();
+      return;
+    }
+
+    rotatableMap.rotate?.disable?.();
+    rotatableMap.touchRotate?.disable?.();
+    if (typeof map.setBearing === "function") {
+      map.setBearing(0);
+    }
+  }, [enabled, map]);
+
+  return null;
+}
+
 const FREE_LEAFLET_TILE_URLS: Record<
   BasemapType,
   { url: string; attribution: string }
@@ -1151,7 +1190,19 @@ export default function JointMapManager({
     permissions,
     isSuperUser,
   });
-  const { isTablet } = useDeviceLayout();
+  const deviceLayout = useDeviceLayout();
+  const { isTablet } = deviceLayout;
+  const [mapRotationEnabled, setMapRotationEnabled] = useState(() =>
+    getInitialMapRotationEnabled(deviceLayout.isTouchLayout)
+  );
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      MAP_ROTATION_STORAGE_KEY,
+      String(mapRotationEnabled)
+    );
+  }, [mapRotationEnabled]);
+
   const isSurveyTabletMode =
     isTablet &&
     !isSuperUser &&
@@ -5470,11 +5521,12 @@ export default function JointMapManager({
           zoomAnimation={false}
           fadeAnimation={false}
           markerZoomAnimation={false}
-          rotate={true}
-          touchRotate={true}
-          rotateControl={true}
+          rotate={mapRotationEnabled}
+          touchRotate={mapRotationEnabled}
+          rotateControl={mapRotationEnabled}
           style={{ height: "100%", width: "100%" }}
         >
+          <MapRotationController enabled={mapRotationEnabled} />
           <FreeLeafletBaseLayer
             basemap={basemap}
             roadOverlayVisible={roadOverlayVisible}
@@ -6186,6 +6238,8 @@ export default function JointMapManager({
         setBasemap={setBasemap}
         roadOverlayVisible={roadOverlayVisible}
         setRoadOverlayVisible={setRoadOverlayVisible}
+        mapRotationEnabled={mapRotationEnabled}
+        setMapRotationEnabled={setMapRotationEnabled}
         snapEnabled={snapEnabled}
         setSnapEnabled={setSnapEnabled}
         layerCounts={layerCounts}
