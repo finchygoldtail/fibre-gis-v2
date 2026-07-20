@@ -195,6 +195,28 @@ function isDistributionPointAsset(asset: any): boolean {
   return ["distribution-point", "dp", "afn", "cbt"].includes(type);
 }
 
+function isSplitterDistributionPointAsset(asset: any): boolean {
+  if (!isDistributionPointAsset(asset)) return false;
+
+  const text = [
+    asset?.closureType,
+    asset?.dpType,
+    asset?.distributionPointType,
+    asset?.jointType,
+    asset?.name,
+    asset?.label,
+    asset?.dpDetails?.closureType,
+    asset?.properties?.closureType,
+    asset?.properties?.dpType,
+    asset?.properties?.jointType,
+    asset?.properties?.dpDetails?.closureType,
+  ]
+    .map((value) => String(value ?? "").toLowerCase())
+    .join(" ");
+
+  return text.includes("afn") || text.includes("sb") || text.includes("splitter");
+}
+
 function isNetworkNodeAsset(asset: any): boolean {
   const type = getAssetType(asset);
 
@@ -1199,6 +1221,8 @@ export function auditAreaAssets(assets: any[] = [], allNetworkAssets: any[] = as
   const disconnected = findDisconnectedAssets(graph);
 
   for (const node of disconnected) {
+    if (isSplitterDistributionPointAsset(node.asset)) continue;
+
     issues.push(
       makeIssue(node.asset, "Disconnected asset", {
         assetId: node.id,
