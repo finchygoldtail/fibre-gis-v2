@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import WorkspaceBoq from "../Project/workspace/WorkspaceBoq";
+import type { SavedMapAsset } from "../map/types";
 
 export type CommercialRegisterValues = {
   boqValue: number;
@@ -27,6 +29,8 @@ type Props = {
   canViewCommercialMoney: boolean;
   canManageCommercialDocuments: boolean;
   currentUserLabel?: string;
+  projectName?: string;
+  projectAssets?: SavedMapAsset[];
   onValuesChange?: (values: CommercialRegisterValues) => void;
 };
 
@@ -51,6 +55,8 @@ const documentTypes = [
   "Final Account",
   "Practical Completion",
 ];
+
+const workspaceBoqDocumentId = "area-boq-workspace";
 
 const panel: React.CSSProperties = {
   marginTop: 14,
@@ -89,6 +95,21 @@ const disabledButton: React.CSSProperties = {
   ...smallButton,
   opacity: 0.5,
   cursor: "not-allowed",
+};
+
+const boqWindowBackdrop: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 5000,
+  background: "rgba(2,6,23,0.78)",
+  padding: 20,
+  overflow: "auto",
+};
+
+const boqWindow: React.CSSProperties = {
+  maxWidth: 1480,
+  margin: "0 auto",
+  boxShadow: "0 24px 80px rgba(0,0,0,0.45)",
 };
 
 const valueGrid: React.CSSProperties = {
@@ -323,12 +344,15 @@ export default function CommercialDocumentRegister({
   canViewCommercialMoney,
   canManageCommercialDocuments,
   currentUserLabel = "Commercial user",
+  projectName,
+  projectAssets = [],
   onValuesChange,
 }: Props) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [documents, setDocuments] = useState<CommercialDocument[]>([]);
   const [documentType, setDocumentType] = useState(documentTypes[0]);
   const [message, setMessage] = useState("");
+  const [boqOpen, setBoqOpen] = useState(false);
 
   const key = useMemo(() => storageKey(areaKey || areaName), [areaKey, areaName]);
   const totals = useMemo(() => mergeValues(documents), [documents]);
@@ -347,6 +371,12 @@ export default function CommercialDocumentRegister({
     onValuesChange?.(totals);
   }, [onValuesChange, totals]);
 
+  useEffect(() => {
+    if (!canViewCommercialMoney && boqOpen) {
+      setBoqOpen(false);
+    }
+  }, [boqOpen, canViewCommercialMoney]);
+
   function save(next: CommercialDocument[]) {
     setDocuments(next);
     try {
@@ -362,18 +392,6 @@ export default function CommercialDocumentRegister({
     const link = document.createElement("a");
     link.href = url;
     link.download = `${cleanKey(areaName)}-commercial-template.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }
-
-  function downloadBoqTemplate() {
-    const blob = new Blob([buildBoqTemplateCsv(areaName)], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${cleanKey(areaName)}-boq-template.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -414,7 +432,32 @@ export default function CommercialDocumentRegister({
     save(documents.filter((document) => document.id !== id));
   }
 
+  function saveWorkspaceBoq(summary: { total: number; enteredLines: number; pricedLines: number }) {
+    if (!canViewCommercialMoney) return;
+    const nextValues: CommercialRegisterValues = {
+      ...emptyValues,
+      boqValue: summary.total,
+      originalContractValue: summary.total,
+      currentContractValue: summary.total,
+      remainingValue: summary.total,
+    };
+    const nextDoc: CommercialDocument = {
+      id: workspaceBoqDocumentId,
+      documentType: "BOQ",
+      fileName: `${areaName} Area BOQ Workspace`,
+      uploadedAt: new Date().toISOString(),
+      uploadedBy: currentUserLabel,
+      status: "Draft",
+      values: nextValues,
+    };
+    save([nextDoc, ...documents.filter((document) => document.id !== workspaceBoqDocumentId)]);
+    setMessage(
+      `Area BOQ saved: ${money(summary.total)} from ${summary.pricedLines.toLocaleString("en-GB")} priced line${summary.pricedLines === 1 ? "" : "s"}.`,
+    );
+  }
+
   return (
+    <>
     <section style={panel}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
         <div>
@@ -427,8 +470,14 @@ export default function CommercialDocumentRegister({
           <button type="button" style={smallButton} onClick={downloadTemplate}>
             Download Commercial Template
           </button>
-          <button type="button" style={smallButton} onClick={downloadBoqTemplate}>
-            Download BOQ Template
+          <button
+            type="button"
+            style={canViewCommercialMoney ? smallButton : disabledButton}
+            disabled={!canViewCommercialMoney}
+            onClick={() => setBoqOpen(true)}
+            title={canViewCommercialMoney ? "Open manager BOQ view" : "Admin or Super User required"}
+          >
+            Open Area BOQ
           </button>
           <button
             type="button"
@@ -519,6 +568,21 @@ export default function CommercialDocumentRegister({
         </div>
       )}
     </section>
+    {boqOpen && canViewCommercialMoney ? (
+      <div style={boqWindowBackdrop}>
+        <div style={boqWindow}>
+          <WorkspaceBoq
+            areaName={areaName}
+            projectName={projectName || areaName}
+            projectAssets={projectAssets}
+            projectArea={{ name: areaName }}
+            onSaveBoq={saveWorkspaceBoq}
+            onClose={() => setBoqOpen(false)}
+          />
+        </div>
+      </div>
+    ) : null}
+    </>
   );
 }
 
