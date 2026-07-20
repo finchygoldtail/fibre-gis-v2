@@ -503,6 +503,32 @@ function feederFibreMatchesEbcl(fibre: FeederPanel["fibres"][number], ebcl: stri
   ]).includes(ebcl);
 }
 
+function isSpareFeederFibre(fibre: FeederPanel["fibres"][number]) {
+  return (
+    !fibre.connectedCableId &&
+    !fibre.connectedSplitterOutputId &&
+    normalisePortStatus(fibre.status) === "spare"
+  );
+}
+
+function visibleFeederFibresForEbcl(panel: FeederPanel, ebcl: string) {
+  if (ebcl === "all") return panel.fibres;
+
+  const matchedFibres = panel.fibres.filter((fibre) =>
+    feederFibreMatchesEbcl(fibre, ebcl),
+  );
+  if (matchedFibres.length === 0) return [];
+
+  const matchedIds = new Set(matchedFibres.map((fibre) => fibre.id));
+  const spareFibres = panel.fibres.filter(
+    (fibre) => !matchedIds.has(fibre.id) && isSpareFeederFibre(fibre),
+  );
+
+  return [...matchedFibres, ...spareFibres].sort(
+    (a, b) => a.fibreNumber - b.fibreNumber,
+  );
+}
+
 function wdmPanelEbcls(panel: WdmPanel): string[] {
   return Array.from(
     new Set(
@@ -622,10 +648,20 @@ export default function ExchangeDesigner({ exchange, onClose, onSave }: Props) {
     return feederPanels
       .map((panel) => ({
         ...panel,
-        fibres: panel.fibres.filter((fibre) => feederFibreMatchesEbcl(fibre, activeEbcl)),
+        fibres: visibleFeederFibresForEbcl(panel, activeEbcl),
       }))
       .filter((panel) => panel.fibres.length > 0);
   }, [activeEbcl, feederPanels]);
+
+  const visibleSpareFeederFibreCount = useMemo(
+    () =>
+      visibleFeederPanels.reduce(
+        (total, panel) =>
+          total + panel.fibres.filter(isSpareFeederFibre).length,
+        0,
+      ),
+    [visibleFeederPanels],
+  );
 
   const visibleWdmPanels = useMemo(() => {
     if (activeEbcl === "all") return wdmPanels;
@@ -1882,7 +1918,12 @@ const handleConvertImportedWorkbook = async () => {
             <section style={ebclSection}>
               <div style={panelTitle}>
                 <span>Feeder Fibres</span>
-                <span style={{ color: "#cbd5e1" }}>{visibleFeederPanels.reduce((total, panel) => total + panel.fibres.length, 0)} fibres</span>
+                <span style={{ color: "#cbd5e1" }}>
+                  {visibleFeederPanels.reduce((total, panel) => total + panel.fibres.length, 0)} fibres
+                  {visibleSpareFeederFibreCount > 0
+                    ? ` / ${visibleSpareFeederFibreCount} spare`
+                    : ""}
+                </span>
               </div>
               {visibleFeederPanels.length === 0 ? (
                 <div style={emptyState}>No feeder fibres found for {activeEbcl}.</div>
@@ -1916,7 +1957,7 @@ const handleConvertImportedWorkbook = async () => {
                               ...(isChainHighlighted ? chainHighlightStyle : {}),
                               ...(isSelected ? selectedFibreStyle : {}),
                             }}
-                            title={`${panel.name} / Fibre ${fibre.fibreNumber}${fibre.connectedSplitterOutputId ? ` / Splitter: ${fibre.connectedSplitterOutputId}` : ""}`}
+                            title={`${panel.name} / Fibre ${fibre.fibreNumber}${isSpareFeederFibre(fibre) ? " / Spare" : ""}${fibre.connectedSplitterOutputId ? ` / Splitter: ${fibre.connectedSplitterOutputId}` : ""}`}
                           >
                             {fibre.fibreNumber}
                             <span style={{ ...fibreConnectedDot, ...statusDot(status) }} />
@@ -2480,6 +2521,8 @@ const handleConvertImportedWorkbook = async () => {
                             ...(isSelected ? selectedFibreStyle : {}),
                           }}
                           title={`Fibre ${fibre.fibreNumber} - ${colour.name}${
+                            isSpareFeederFibre(fibre) ? " - Spare" : ""
+                          }${
                             fibre.connectedSplitterOutputId ? ` - Splitter: ${fibre.connectedSplitterOutputId}` : ""
                           }${fibre.connectedCableId ? ` - Cable: ${fibre.connectedCableId}` : ""}`}
                         >
