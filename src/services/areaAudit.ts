@@ -50,6 +50,27 @@ function getAssetId(asset: any): string {
   return String(asset?.id || asset?.assetId || "unknown");
 }
 
+function normaliseKey(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function getAssetIdentityKeys(asset: any): string[] {
+  return [
+    asset?.id,
+    asset?.assetId,
+    asset?.name,
+    asset?.jointName,
+    asset?.label,
+    asset?.properties?.id,
+    asset?.properties?.assetId,
+    asset?.properties?.name,
+    asset?.properties?.jointName,
+    asset?.properties?.label,
+  ]
+    .map(normaliseKey)
+    .filter(Boolean);
+}
+
 function getAssetName(asset: any): string {
   return String(
     asset?.name ||
@@ -1202,6 +1223,8 @@ export function auditAreaAssets(assets: any[] = [], allNetworkAssets: any[] = as
   );
 
   const assetsById = new Map<string, any>();
+  const dpIdentityKeys = new Set<string>();
+  const dpCanonicalByKey = new Map<string, string>();
   const homesByKey = new Map<string, any>();
 
   for (const asset of validAssets) {
@@ -1209,6 +1232,16 @@ export function auditAreaAssets(assets: any[] = [], allNetworkAssets: any[] = as
     if (id && id !== "unknown") {
       assetsById.set(String(id), asset);
     }
+  }
+
+  for (const dp of dps) {
+    const keys = getAssetIdentityKeys(dp);
+    const canonicalKey = keys[0] || normaliseKey(getAssetId(dp));
+
+    keys.forEach((key) => {
+      dpIdentityKeys.add(key);
+      dpCanonicalByKey.set(key, canonicalKey);
+    });
   }
 
   for (const home of homes) {
@@ -1227,7 +1260,7 @@ export function auditAreaAssets(assets: any[] = [], allNetworkAssets: any[] = as
     const dpId = getDropDpId(drop);
     const homeId = getDropHomeId(drop);
 
-    if (!dpId || !assetsById.has(dpId)) {
+    if (!dpId || !dpIdentityKeys.has(normaliseKey(dpId))) {
       issues.push(
         makeIssue(drop, "Drop references missing DP", {
           assetId: dropId,
@@ -1269,7 +1302,8 @@ export function auditAreaAssets(assets: any[] = [], allNetworkAssets: any[] = as
     const hasDrop = drops.some(
       (drop: any) =>
         keysMatch(getDropHomeId(drop), homeKey) &&
-        getDropDpId(drop) === connectedDpId,
+        dpCanonicalByKey.get(normaliseKey(getDropDpId(drop))) ===
+          dpCanonicalByKey.get(normaliseKey(connectedDpId)),
     );
 
     if (!hasDrop) {
@@ -1281,7 +1315,7 @@ export function auditAreaAssets(assets: any[] = [], allNetworkAssets: any[] = as
       );
     }
 
-    if (!assetsById.has(connectedDpId)) {
+    if (!dpIdentityKeys.has(normaliseKey(connectedDpId))) {
       issues.push(
         makeIssue(home, "Home connected to missing DP", {
           severity: "high",
