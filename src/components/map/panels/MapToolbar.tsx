@@ -425,47 +425,47 @@ export default function MapToolbar({
 
       {searchCard}
 
-      <div style={workspaceDockStyle}>
-        <button
-          type="button"
-          onClick={onOpenAssetPanel}
-          style={workspacePrimaryButtonStyle}
-        >
-          Workspace
-        </button>
-        <button
-          type="button"
-          onClick={onOpenAssetPanel}
-          style={workspaceButtonStyle}
-        >
-          Assets
-        </button>
-        <button
-          type="button"
-          onClick={onToggleLayers}
-          style={workspaceButtonStyle}
-        >
-          {isLayersOpen ? "Hide Layers" : "Layers"}
-        </button>
-        <button
-          type="button"
-          onClick={onOpenAssetPanel}
-          style={workspaceButtonStyle}
-        >
-          Build
-        </button>
-        <span
-          style={{
-            ...workspaceSyncStyle,
-            color: autosaveTone,
-          }}
-          title={autosaveError || autosaveLabel}
-        >
-          {autosaveStatus === "error" ? "Sync issue" : isSavingMap ? "Saving" : "Synced"}
-        </span>
-      </div>
+      <div style={desktopActionRailStyle}>
+        <div style={workspaceDockStyle}>
+          <button
+            type="button"
+            onClick={onOpenAssetPanel}
+            style={workspacePrimaryButtonStyle}
+          >
+            Workspace
+          </button>
+          <button
+            type="button"
+            onClick={onOpenAssetPanel}
+            style={workspaceButtonStyle}
+          >
+            Assets
+          </button>
+          <button
+            type="button"
+            onClick={onToggleLayers}
+            style={workspaceButtonStyle}
+          >
+            {isLayersOpen ? "Hide Layers" : "Layers"}
+          </button>
+          <button
+            type="button"
+            onClick={onOpenAssetPanel}
+            style={workspaceButtonStyle}
+          >
+            Build
+          </button>
+          <span
+            style={{
+              ...workspaceSyncStyle,
+              color: autosaveTone,
+            }}
+            title={autosaveError || autosaveLabel}
+          >
+            {autosaveStatus === "error" ? "Sync issue" : isSavingMap ? "Saving" : "Synced"}
+          </span>
+        </div>
 
-      <div style={topRightActionsStyle}>
         <div style={messageButtonWrapStyle}>
           <button
             type="button"
@@ -551,16 +551,16 @@ const mapTopBarStyle = (isLayersOpen: boolean, isTablet: boolean): React.CSSProp
   position: "absolute",
   top: 0,
   left: 0,
-  right: isLayersOpen ? 286 : 0,
-  zIndex: 1300,
+  right: 0,
+  zIndex: isLayersOpen ? 1050 : 1300,
   height: isTablet ? 64 : 68,
   display: "grid",
   gridTemplateColumns: isTablet
-    ? "150px minmax(170px, 230px) minmax(240px, 1fr) minmax(210px, auto)"
-    : "150px minmax(260px, 322px) minmax(330px, 560px) minmax(390px, auto) minmax(270px, auto)",
+    ? "150px minmax(170px, 230px) minmax(220px, 1fr) minmax(260px, auto)"
+    : "120px minmax(190px, 290px) minmax(220px, 1fr) minmax(0, auto)",
   alignItems: "center",
-  gap: isTablet ? 8 : 12,
-  padding: isTablet ? "7px 14px" : "7px 28px",
+  gap: isLayersOpen ? 8 : isTablet ? 8 : 12,
+  padding: isTablet ? "7px 14px" : isLayersOpen ? "7px 14px" : "7px 24px",
   border: "1px solid rgba(38,50,68,0.9)",
   borderTop: "0",
   borderLeft: "0",
@@ -743,21 +743,32 @@ const emptyResultsStyle: React.CSSProperties = {
 
 const topRightActionsStyle: React.CSSProperties = {
   display: "flex",
-  gap: 22,
+  gap: 14,
   alignItems: "center",
   justifyContent: "flex-end",
   minWidth: 0,
   order: 5,
 };
 
-const workspaceDockStyle: React.CSSProperties = {
+const desktopActionRailStyle: React.CSSProperties = {
   order: 4,
+  minWidth: 0,
   display: "flex",
   alignItems: "center",
-  gap: 20,
+  justifyContent: "flex-end",
+  gap: 16,
+  overflow: "visible",
+  whiteSpace: "nowrap",
+};
+
+const workspaceDockStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 14,
   minWidth: 0,
-  height: 58,
-  padding: "0 20px 0 26px",
+  flex: "0 1 auto",
+  height: 52,
+  padding: "0 14px 0 18px",
   borderRadius: 999,
   background: "#0b111b",
   border: "1px solid rgba(42,58,82,0.86)",
@@ -786,12 +797,14 @@ const workspaceButtonStyle: React.CSSProperties = {
 };
 
 const workspaceSyncStyle: React.CSSProperties = {
-  marginLeft: "auto",
-  paddingLeft: 4,
+  marginLeft: 2,
+  paddingLeft: 8,
   fontSize: 11,
   fontWeight: 900,
   textTransform: "uppercase",
   letterSpacing: 0.5,
+  borderLeft: "1px solid rgba(148,163,184,0.22)",
+  whiteSpace: "nowrap",
 };
 
 const qaModeSwitchStyle: React.CSSProperties = {
