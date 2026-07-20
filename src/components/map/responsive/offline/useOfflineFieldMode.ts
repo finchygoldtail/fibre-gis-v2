@@ -163,6 +163,7 @@ export function useOfflineFieldMode({ projectId, assets, homes }: OfflineFieldMo
       try {
         window.localStorage.setItem(pendingSaveKey, JSON.stringify(snapshot));
         readPendingSaveMeta();
+        window.dispatchEvent(new Event(PENDING_MAP_SAVE_CHANGED_EVENT));
         return true;
       } catch (err) {
         console.error("Failed to store pending map save", err);
@@ -185,6 +186,7 @@ export function useOfflineFieldMode({ projectId, assets, homes }: OfflineFieldMo
     try {
       window.localStorage.removeItem(pendingSaveKey);
       readPendingSaveMeta();
+      window.dispatchEvent(new Event(PENDING_MAP_SAVE_CHANGED_EVENT));
       return true;
     } catch (err) {
       console.error("Failed to clear pending map save", err);

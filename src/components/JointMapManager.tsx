@@ -186,11 +186,66 @@ export type { SavedMapAsset };
 const MAP_AUTOSAVE_IDLE_DELAY_MS = 15_000;
 const MAP_AUTOSAVE_MIN_INTERVAL_MS = 90_000;
 const PENDING_SAVE_PREFIX = "alistra-pending-map-save";
+const DRAWING_DRAFT_PREFIX = "alistra-field-drawing-draft";
 
 type MapAutosaveStatus = "idle" | "pending" | "saving" | "saved" | "error";
 
+type FieldDrawingDraftSnapshot = {
+  id: string;
+  projectId: string | null;
+  mode: "draw-cable" | "draw-area";
+  savedAt: string;
+  cablePoints: LatLngLiteral[];
+  cableSegmentMethods: string[];
+  areaPoints: LatLngLiteral[];
+  installMethod: string;
+  assetType: string;
+  jointType: string;
+  jointName: string;
+};
+
 function getPendingSaveKey(projectId: string | null) {
   return `${PENDING_SAVE_PREFIX}:${projectId || "global"}`;
+}
+
+function getDrawingDraftKey(projectId: string | null) {
+  return `${DRAWING_DRAFT_PREFIX}:${projectId || "global"}`;
+}
+
+function readPendingMapSaveSnapshot(projectId: string | null): { assetCount: number } | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(getPendingSaveKey(projectId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { assetCount?: number; assets?: SavedMapAsset[] };
+    return {
+      assetCount: Number(parsed.assetCount || parsed.assets?.length || 0),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function readDrawingDraftSnapshot(projectId: string | null): FieldDrawingDraftSnapshot | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(getDrawingDraftKey(projectId));
+    return raw ? (JSON.parse(raw) as FieldDrawingDraftSnapshot) : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearDrawingDraftSnapshot(projectId: string | null): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.removeItem(getDrawingDraftKey(projectId));
+  } catch (error) {
+    console.error("Failed to clear field drawing draft", error);
+  }
 }
 
 function storePendingMapSaveSnapshot(
@@ -1182,6 +1237,11 @@ export default function JointMapManager({
   const lastSavedMapSignatureRef = useRef<string | null>(null);
   const lastMapAutosaveStartedAtRef = useRef(0);
   const mapAutosaveInFlightRef = useRef(false);
+  const mapHasUnsavedWorkRef = useRef(false);
+  const fieldDraftRestoreCheckedRef = useRef<string | null>(null);
+  const hasActiveDrawingDraft =
+    (mapMode === "draw-cable" && draftCablePoints.length > 0) ||
+    (mapMode === "draw-area" && draftAreaPoints.length > 0);
 
   const currentMapSaveSignature = useMemo(
     () => getMapAssetsSaveSignature(normalizedSavedJoints),
@@ -1303,6 +1363,33 @@ export default function JointMapManager({
       }
     };
   }, [currentMapSaveSignature, mapAutosaveStatus]);
+
+  useEffect(() => {
+    mapHasUnsavedWorkRef.current =
+      lastSavedMapSignatureRef.current !== null &&
+      currentMapSaveSignature !== lastSavedMapSignatureRef.current;
+  }, [currentMapSaveSignature]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      const pending = readPendingMapSaveSnapshot(activeProjectIdRef.current);
+      const draft = readDrawingDraftSnapshot(activeProjectIdRef.current);
+      const hasPendingSave = Boolean(pending?.assetCount);
+      const hasDraft =
+        Boolean(draft?.mode === "draw-cable" && draft.cablePoints?.length) ||
+        Boolean(draft?.mode === "draw-area" && draft.areaPoints?.length);
+
+      if (!mapHasUnsavedWorkRef.current && !hasPendingSave && !hasDraft) return;
+
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
 
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean;
@@ -1484,6 +1571,103 @@ export default function JointMapManager({
     setSelectedReferenceDuctName,
   ]);
 
+  useEffect(() => {
+    const key = getDrawingDraftKey(activeProjectId);
+    if (fieldDraftRestoreCheckedRef.current === key) return;
+    fieldDraftRestoreCheckedRef.current = key;
+
+    const draft = readDrawingDraftSnapshot(activeProjectId);
+    if (!draft) return;
+
+    const pointCount =
+      draft.mode === "draw-cable"
+        ? draft.cablePoints?.length || 0
+        : draft.areaPoints?.length || 0;
+    if (pointCount === 0) {
+      clearDrawingDraftSnapshot(activeProjectId);
+      return;
+    }
+
+    const savedAt = new Date(draft.savedAt);
+    const savedLabel = Number.isNaN(savedAt.getTime())
+      ? "earlier"
+      : savedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const shouldRestore = window.confirm(
+      `Restore the ${draft.mode === "draw-cable" ? "cable" : "area"} draft saved on this device at ${savedLabel}?\n\nIt has ${pointCount} point${pointCount === 1 ? "" : "s"}.`,
+    );
+
+    if (!shouldRestore) {
+      clearDrawingDraftSnapshot(activeProjectId);
+      return;
+    }
+
+    setEditingAssetId(null);
+    setEditingAreaId(null);
+    setPickedLocation(null);
+    setAssetType(draft.assetType as AssetType);
+    setJointType(draft.jointType);
+    setJointName(draft.jointName);
+    setInstallMethod(draft.installMethod as InstallMethod);
+    setDraftCablePoints(draft.cablePoints || []);
+    setDraftCableSegmentMethods(draft.cableSegmentMethods as any);
+    setDraftAreaPoints(draft.areaPoints || []);
+    setMapMode(draft.mode);
+    setIsPanelOpen(false);
+  }, [
+    activeProjectId,
+    setDraftAreaPoints,
+    setDraftCablePoints,
+    setDraftCableSegmentMethods,
+    setEditingAreaId,
+    setEditingAssetId,
+    setIsPanelOpen,
+    setMapMode,
+    setPickedLocation,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    if (!hasActiveDrawingDraft) {
+      clearDrawingDraftSnapshot(activeProjectId);
+      return;
+    }
+
+    const snapshot: FieldDrawingDraftSnapshot = {
+      id: `draft-${Date.now()}`,
+      projectId: activeProjectId,
+      mode: mapMode === "draw-area" ? "draw-area" : "draw-cable",
+      savedAt: new Date().toISOString(),
+      cablePoints: draftCablePoints,
+      cableSegmentMethods: draftCableSegmentMethods as any,
+      areaPoints: draftAreaPoints,
+      installMethod,
+      assetType,
+      jointType,
+      jointName: currentJointName,
+    };
+
+    try {
+      window.localStorage.setItem(
+        getDrawingDraftKey(activeProjectId),
+        JSON.stringify(snapshot),
+      );
+    } catch (error) {
+      console.error("Failed to store field drawing draft", error);
+    }
+  }, [
+    activeProjectId,
+    assetType,
+    currentJointName,
+    draftAreaPoints,
+    draftCablePoints,
+    draftCableSegmentMethods,
+    hasActiveDrawingDraft,
+    installMethod,
+    jointType,
+    mapMode,
+  ]);
+
   // =====================================================
   // PROJECT AREA / VIEWPORT ASSET VIEW
   // Project scoping, viewport filtering and OR layer visibility are now kept
@@ -1534,6 +1718,39 @@ export default function JointMapManager({
 
   const handleRefreshMapAssets = useCallback(async () => {
     if (!onRefreshMapAssets || isRefreshingMapAssets) return;
+
+    const pendingSave = readPendingMapSaveSnapshot(activeProjectIdRef.current);
+    if (pendingSave?.assetCount) {
+      alert(
+        `Refresh paused. This device has a pending map save with ${pendingSave.assetCount} asset(s).\n\nUse Retry Save or Clear Pending first so local work is not hidden by a refresh.`,
+      );
+      return;
+    }
+
+    const draft = readDrawingDraftSnapshot(activeProjectIdRef.current);
+    const draftPointCount =
+      draft?.mode === "draw-cable"
+        ? draft.cablePoints?.length || 0
+        : draft?.mode === "draw-area"
+          ? draft.areaPoints?.length || 0
+          : 0;
+    if (draftPointCount > 0) {
+      const okToRefresh = window.confirm(
+        `A ${draft?.mode === "draw-cable" ? "cable" : "area"} draft with ${draftPointCount} point${draftPointCount === 1 ? "" : "s"} is stored on this device.\n\nRefresh anyway? You will be asked to restore it if the app reloads.`,
+      );
+      if (!okToRefresh) return;
+    }
+
+    if (mapHasUnsavedWorkRef.current) {
+      const okToSaveFirst = window.confirm(
+        "There are unsaved map changes on this device.\n\nSave them before refreshing?",
+      );
+      if (!okToSaveFirst) return;
+
+      const saved = await saveCurrentMapSnapshot("save-before-refresh-map-assets");
+      if (!saved) return;
+    }
+
     try {
       await onRefreshMapAssets();
     } catch (error) {
