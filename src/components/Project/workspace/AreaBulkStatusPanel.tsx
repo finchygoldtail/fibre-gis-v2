@@ -16,9 +16,10 @@ type Props = {
   onClearDrawingArea?: () => void;
   onBulkUpdateDpStatus?: (args: {
     assetIds: string[];
+    assetRefs?: string[];
     status: BulkDpStatus;
     note: string;
-  }) => void;
+  }) => void | Promise<void>;
 };
 
 const STATUS_OPTIONS: BulkDpStatus[] = [
@@ -152,6 +153,7 @@ export default function AreaBulkStatusPanel({
   const [dpFilter, setDpFilter] = useState<DpTypeFilter>("ALL");
   const [status, setStatus] = useState<BulkDpStatus>("Live");
   const [note, setNote] = useState("");
+  const [isApplying, setIsApplying] = useState(false);
 
   const projectPolygon = useMemo(() => getProjectPolygon(projectArea), [projectArea]);
   const activePolygon = scope === "DRAWN" ? drawnAreaPoints : projectPolygon;
@@ -179,7 +181,9 @@ export default function AreaBulkStatusPanel({
     note.trim().length >= 3 &&
     (scope === "PROJECT" || drawnAreaPoints.length >= 3);
 
-  const apply = () => {
+  const apply = async () => {
+    if (isApplying) return;
+
     if (!canApply) {
       alert("Select an area, preview affected DPs, and enter a manager note before applying.");
       return;
@@ -193,11 +197,21 @@ export default function AreaBulkStatusPanel({
 
     if (!ok) return;
 
-    onBulkUpdateDpStatus?.({
-      assetIds: affectedDps.map((asset) => String(asset.id)),
-      status,
-      note: note.trim(),
-    });
+    try {
+      setIsApplying(true);
+      await onBulkUpdateDpStatus?.({
+        assetIds: affectedDps.map((asset) => String(asset.id || asset.assetId || asset.name || "")),
+        assetRefs: affectedDps.flatMap((asset: any) =>
+          [asset?.id, asset?.assetId, asset?.name, asset?.jointName, asset?.label]
+            .map((value) => String(value ?? "").trim())
+            .filter(Boolean),
+        ),
+        status,
+        note: note.trim(),
+      });
+    } finally {
+      setIsApplying(false);
+    }
   };
 
   return (
@@ -288,8 +302,13 @@ export default function AreaBulkStatusPanel({
             {dpFilter === "ALL" ? "All closure types" : dpFilter}
           </span>
         </div>
-        <button type="button" style={applyButton} onClick={apply}>
-          Apply Status
+        <button
+          type="button"
+          style={{ ...applyButton, opacity: isApplying ? 0.7 : 1 }}
+          onClick={apply}
+          disabled={isApplying}
+        >
+          {isApplying ? "Applying..." : "Apply Status"}
         </button>
       </div>
 

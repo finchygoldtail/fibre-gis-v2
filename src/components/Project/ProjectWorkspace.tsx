@@ -154,9 +154,10 @@ type ProjectWorkspaceProps = {
   onSelectProject?: (projectId: string) => void;
   onBulkUpdateDpStatus?: (args: {
     assetIds: string[];
+    assetRefs?: string[];
     status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
     note: string;
-  }) => void;
+  }) => void | Promise<void>;
   onBulkUpdateCablePiaNoi?: (args: {
     assetIds: string[];
     piaNoiNumber: string;

@@ -3319,11 +3319,17 @@ export default function JointMapManager({
   // =====================================================
   const handleWorkspaceBulkDpStatusUpdate = async (args: {
     assetIds: string[];
+    assetRefs?: string[];
     status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
     note: string;
   }) => {
-    const ids = new Set((args.assetIds || []).map(String));
-    if (!ids.size) {
+    const selectedKeys = new Set(
+      [...(args.assetIds || []), ...(args.assetRefs || [])]
+        .map((value) => String(value ?? "").trim().toLowerCase())
+        .filter(Boolean),
+    );
+
+    if (!selectedKeys.size) {
       alert("No DPs selected for update.");
       return;
     }
@@ -3334,9 +3340,26 @@ export default function JointMapManager({
       return;
     }
 
-    const beforeAssets = (savedJoints ?? []).filter((asset) =>
-      ids.has(String(asset.id || "")),
-    );
+    const beforeAssets = (savedJoints ?? []).filter((asset) => {
+      const assetKeys = [
+        (asset as any).id,
+        (asset as any).assetId,
+        (asset as any).name,
+        (asset as any).jointName,
+        (asset as any).label,
+      ]
+        .map((value) => String(value ?? "").trim().toLowerCase())
+        .filter(Boolean);
+
+      return assetKeys.some((key) => selectedKeys.has(key));
+    });
+
+    if (!beforeAssets.length) {
+      alert(
+        "The workspace preview found DPs, but none matched the saved map records. Refresh the project workspace and try again.",
+      );
+      return;
+    }
 
     const updatedById = new Map<string, SavedMapAsset>();
 
