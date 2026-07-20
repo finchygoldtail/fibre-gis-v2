@@ -1242,7 +1242,6 @@ export function auditAreaAssets(assets: any[] = [], allNetworkAssets: any[] = as
 
   const assetsById = new Map<string, any>();
   const dpIdentityKeys = new Set<string>();
-  const dpCanonicalByKey = new Map<string, string>();
   const homesByKey = new Map<string, any>();
 
   for (const asset of validAssets) {
@@ -1254,11 +1253,9 @@ export function auditAreaAssets(assets: any[] = [], allNetworkAssets: any[] = as
 
   for (const dp of dps) {
     const keys = getAssetIdentityKeys(dp);
-    const canonicalKey = keys[0] || normaliseKey(getAssetId(dp));
 
     keys.forEach((key) => {
       dpIdentityKeys.add(key);
-      dpCanonicalByKey.set(key, canonicalKey);
     });
   }
 
@@ -1309,26 +1306,6 @@ export function auditAreaAssets(assets: any[] = [], allNetworkAssets: any[] = as
   for (const home of homes) {
     const connectedDpId = getConnectedDpId(home);
     if (!connectedDpId) continue;
-
-    const homeKeys = getHomeIdentityKeys(home);
-
-    const hasDrop = drops.some(
-      (drop: any) =>
-        getAliasKeys(getDropHomeId(drop)).some((dropHomeKey) =>
-          homeKeys.includes(dropHomeKey),
-        ) &&
-        dpCanonicalByKey.get(normaliseKey(getDropDpId(drop))) ===
-          dpCanonicalByKey.get(normaliseKey(connectedDpId)),
-    );
-
-    if (!hasDrop) {
-      issues.push(
-        makeIssue(home, "Connected home has no drop cable", {
-          severity: "high",
-          category: "DP / Homes",
-        }),
-      );
-    }
 
     if (!dpIdentityKeys.has(normaliseKey(connectedDpId))) {
       issues.push(
