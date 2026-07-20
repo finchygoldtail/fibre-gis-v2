@@ -12,6 +12,7 @@ import type { DistributionPointDetails, SavedMapAsset } from "../map/types";
 import { buildDpRoutingState, buildNetworkState } from "../../services/network";
 import { getDpCapacityStateColour, getDpCapacitySummary } from "../../services/dpIntelligence";
 import { DEFAULT_DISTRIBUTION_CLOSURE_TYPE } from "../../services/assetNameValidation";
+import { buildSbFibreAllocation } from "../Project/workspace/sbFibreAllocation";
 import CapacityPanel from "./dp/CapacityPanel";
 import RoutePanel from "./dp/RoutePanel";
 import FibreIntakePanel from "./dp/FibreIntakePanel";
@@ -1239,6 +1240,11 @@ export default function DistributionPointEditor({
     [allAssets],
   );
 
+  const workspaceSbAllocation = useMemo(
+    () => buildSbFibreAllocation(asset, allAssets),
+    [asset, allAssets],
+  );
+
   if (!asset) return null;
 
   const details = getDpDetails(asset);
@@ -1349,6 +1355,16 @@ export default function DistributionPointEditor({
   const currentSbName = getAssetTitle(asset);
   const manualSbParentFibres = uniqueSorted((manualSbRoute?.parentFibres || []) as number[]);
   const manualSbLocalFibres = uniqueSorted((manualSbRoute?.localFibres || []) as number[]);
+  const workspaceLocalFibres = uniqueSorted(workspaceSbAllocation?.localFibres || []);
+  const workspacePassthroughFibres = uniqueSorted(
+    workspaceSbAllocation?.passthroughRows?.map((row) => row.fibre) || [],
+  );
+  const workspaceAllocatedUpstreamFibres = uniqueSorted(
+    workspaceSbAllocation?.upstreamRows?.map((row) => row.fibre) || [],
+  );
+  const workspaceSpareFibres = uniqueSorted(
+    workspaceSbAllocation?.spareRows?.map((row) => row.fibre) || [],
+  );
   const isMduSplitterClosure = closureType.includes("MDU_SPLITTER");
   const isMduClosureType = closureType.includes("MDU");
   const storedSplitterFibres = uniqueSorted(
@@ -1426,6 +1442,8 @@ export default function DistributionPointEditor({
       ? storedSplitterFibres
       : hasManualSbRoute && manualRouteTargetsCurrent
         ? manualLocalRouteFibres
+        : workspaceLocalFibres.length
+          ? workspaceLocalFibres
         : hasJointMappedFibres
           ? networkSplitterFibres
           : draftRouting.splitterFibres;
@@ -1446,7 +1464,9 @@ export default function DistributionPointEditor({
   const displayPassthroughFibres = editMode
     ? draftRouting.passthroughFibres
     : hasManualSbRoute
-      ? networkPassthroughFibres
+      ? (networkPassthroughFibres.length ? networkPassthroughFibres : workspacePassthroughFibres)
+      : workspacePassthroughFibres.length
+        ? workspacePassthroughFibres
       : hasJointMappedFibres
         ? networkPassthroughFibres
         : draftRouting.passthroughFibres;
@@ -1592,12 +1612,12 @@ export default function DistributionPointEditor({
               fibre > localMaxFibre && !jointMatchedFibres.includes(fibre),
           )
         : []
-    : [];
+    : workspaceAllocatedUpstreamFibres;
 
   const jointTrueSpareFibres =
     hasJointMappedFibres && highestJointAllocatedFibre !== null
       ? allCableFibres.filter((fibre) => fibre > highestJointAllocatedFibre)
-      : [];
+      : workspaceSpareFibres;
 
   const explicitlyClassifiedFibres = uniqueSorted([
     ...displaySplitterFibres,

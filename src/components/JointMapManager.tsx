@@ -324,6 +324,83 @@ function getMapAssetsSaveSignature(assets: SavedMapAsset[]): string {
     .join("|");
 }
 
+function getAssetIdentityValue(asset: SavedMapAsset | any): string {
+  return String(
+    asset?.id ||
+      asset?.assetId ||
+      asset?.name ||
+      asset?.jointName ||
+      asset?.label ||
+      "",
+  )
+    .trim()
+    .toLowerCase();
+}
+
+function buildVirtualHomeDropAssets(assets: SavedMapAsset[]): SavedMapAsset[] {
+  const byIdentity = new Map<string, SavedMapAsset>();
+  const dropKeys = new Set<string>();
+
+  (assets || []).forEach((asset) => {
+    const identity = getAssetIdentityValue(asset);
+    if (identity) byIdentity.set(identity, asset);
+
+    if (!isDropCable(asset)) return;
+    [
+      (asset as any).homeId,
+      (asset as any).connectedHomeId,
+      (asset as any).toHomeId,
+      (asset as any).toAssetId,
+      (asset as any).uprn,
+      (asset as any).UPRN,
+    ]
+      .map((value) => String(value || "").trim().toLowerCase())
+      .filter(Boolean)
+      .forEach((key) => dropKeys.add(key));
+  });
+
+  return (assets || [])
+    .filter((asset) => asset.assetType === "home")
+    .map((home) => {
+      const assignedDpId = getAssignedDpId(home);
+      if (!assignedDpId) return null;
+
+      const homeKeys = getHomeDropKeys(home)
+        .map((key) => String(key || "").trim().toLowerCase())
+        .filter(Boolean);
+      if (homeKeys.some((key) => dropKeys.has(key))) return null;
+
+      const dp =
+        byIdentity.get(assignedDpId.toLowerCase()) ||
+        (assets || []).find(
+          (asset) =>
+            asset.assetType === "distribution-point" &&
+            getAssetIdentityValue(asset) === assignedDpId.toLowerCase(),
+        ) ||
+        null;
+      if (!dp) return null;
+
+      const drop = createManualDropCable(dp, home);
+      if (!drop) return null;
+
+      return {
+        ...(drop as any),
+        id: `virtual-${drop.id}`,
+        name: `${drop.name || "Drop cable"} (derived)`,
+        derivedVirtualDrop: true,
+        unsavedPreview: true,
+        generationMode: "derived-home-dp-assignment",
+        properties: {
+          ...((drop as any).properties || {}),
+          derivedVirtualDrop: true,
+          unsavedPreview: true,
+          generationMode: "derived-home-dp-assignment",
+        },
+      } as SavedMapAsset;
+    })
+    .filter(Boolean) as SavedMapAsset[];
+}
+
 function isEngineeringDrawingJointAsset(asset: SavedMapAsset): boolean {
   const assetType = String((asset as any).assetType || "").toLowerCase();
   const jointType = String((asset as any).jointType || "").toLowerCase();
@@ -1779,6 +1856,26 @@ export default function JointMapManager({
     visibleLayers,
   });
 
+  const virtualHomeDropAssets = useMemo(
+    () => buildVirtualHomeDropAssets(visibleProjectAssets),
+    [visibleProjectAssets],
+  );
+
+  const visibleProjectAssetsWithVirtualDrops = useMemo(
+    () => [...visibleProjectAssets, ...virtualHomeDropAssets],
+    [visibleProjectAssets, virtualHomeDropAssets],
+  );
+
+  const renderProjectAssetsWithVirtualDrops = useMemo(
+    () => [...renderProjectAssets, ...virtualHomeDropAssets],
+    [renderProjectAssets, virtualHomeDropAssets],
+  );
+
+  const allMapAssetsWithVirtualDrops = useMemo(
+    () => [...allMapAssets, ...virtualHomeDropAssets],
+    [allMapAssets, virtualHomeDropAssets],
+  );
+
   const {
     sharingEnabled: isSharingLocation,
     setSharingEnabled: setIsSharingLocation,
@@ -1850,13 +1947,13 @@ export default function JointMapManager({
   );
 
   const renderProjectAssetsWithExchanges = useMemo(
-    () => [...renderProjectAssets, ...exchangeNetworkAssets],
-    [renderProjectAssets, exchangeNetworkAssets],
+    () => [...renderProjectAssetsWithVirtualDrops, ...exchangeNetworkAssets],
+    [renderProjectAssetsWithVirtualDrops, exchangeNetworkAssets],
   );
 
   const allNetworkAssetsWithExchanges = useMemo(
-    () => [...allMapAssets, ...exchangeNetworkAssets],
-    [allMapAssets, exchangeNetworkAssets],
+    () => [...allMapAssetsWithVirtualDrops, ...exchangeNetworkAssets],
+    [allMapAssetsWithVirtualDrops, exchangeNetworkAssets],
   );
 
   const engineeringDrawingSourceAssets = useMemo(
@@ -2049,7 +2146,7 @@ export default function JointMapManager({
   // =====================================================
   const layerCounts = useLayerCounts({
     visibleProjectAreas,
-    visibleProjectAssets,
+    visibleProjectAssets: visibleProjectAssetsWithVirtualDrops,
     visibleOpenreachAssets,
   });
 
@@ -6670,7 +6767,7 @@ export default function JointMapManager({
         >
           <DistributionPointEditor
             asset={openDistributionPointAsset}
-            allAssets={allMapAssets}
+            allAssets={allMapAssetsWithVirtualDrops}
             onClose={() => {
               setOpenDistributionPointAsset(null);
               if (activeProjectArea && canOpenFullProjectWorkspace) {
