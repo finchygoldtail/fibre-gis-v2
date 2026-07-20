@@ -198,9 +198,9 @@ export default function MapToolbar({
   const messagesPanel = messagesOpen ? (
     <div style={messagesPanelStyle(isMobile)}>
       <div style={messagesPanelHeaderStyle}>
-        <div>
+        <div style={messagesPanelTitleBlockStyle}>
           <strong>Area Messages</strong>
-          <span>{areaName || searchScopeLabel || "Current area"}</span>
+          <span style={messagesPanelAreaStyle}>{areaName || searchScopeLabel || "Current area"}</span>
         </div>
         <button type="button" onClick={() => setMessagesOpen(false)} style={messagesCloseButtonStyle}>×</button>
       </div>
@@ -882,6 +882,8 @@ const messagesPanelStyle = (isMobile = false): React.CSSProperties => ({
   color: "#e5e7eb",
   zIndex: 1800,
   boxShadow: "0 20px 52px rgba(0,0,0,0.45)",
+  boxSizing: "border-box",
+  overflow: "hidden",
 });
 
 const messagesPanelHeaderStyle: React.CSSProperties = {
@@ -889,6 +891,23 @@ const messagesPanelHeaderStyle: React.CSSProperties = {
   justifyContent: "space-between",
   gap: 12,
   alignItems: "flex-start",
+  minWidth: 0,
+};
+
+const messagesPanelTitleBlockStyle: React.CSSProperties = {
+  minWidth: 0,
+  display: "grid",
+  gap: 3,
+  overflow: "hidden",
+};
+
+const messagesPanelAreaStyle: React.CSSProperties = {
+  color: "#cbd5e1",
+  fontSize: 12,
+  fontWeight: 800,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
 };
 
 const messagesCloseButtonStyle: React.CSSProperties = {
@@ -923,6 +942,8 @@ const messageItemStyle = (priority?: string): React.CSSProperties => ({
   borderRadius: 12,
   padding: 10,
   background: priority === "Critical" ? "rgba(127,29,29,0.24)" : priority === "High" ? "rgba(124,45,18,0.2)" : "rgba(15,23,42,0.72)",
+  overflowWrap: "anywhere",
+  wordBreak: "break-word",
 });
 
 const messageItemTopStyle: React.CSSProperties = {
@@ -939,6 +960,9 @@ const emptyMessagesStyle: React.CSSProperties = {
   padding: 14,
   color: "#94a3b8",
   fontSize: 13,
+  lineHeight: 1.35,
+  overflowWrap: "anywhere",
+  wordBreak: "break-word",
 };
 
 const messagesFootnoteStyle: React.CSSProperties = {
