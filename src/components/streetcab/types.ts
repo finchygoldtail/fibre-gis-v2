@@ -78,4 +78,5 @@ export type StreetCabDetails = {
   connections: StreetCabConnection[];
   importMappingRows?: Array<Record<string, unknown>>;
   portAnnotations?: Record<string, string[]>;
+  deadPortKeys?: string[];
 };

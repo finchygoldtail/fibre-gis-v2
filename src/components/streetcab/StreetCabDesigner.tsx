@@ -236,10 +236,36 @@ function countUsedPanelPorts(
 
 function getPanelSpareCount(
   panel: StreetCabPanel,
-  connections: StreetCabConnection[]
+  connections: StreetCabConnection[],
+  deadPortKeys: Set<string> = new Set()
 ): number {
   if (!("ports" in panel)) return 0;
-  return Math.max(0, panel.ports.length - countUsedPanelPorts(panel, connections));
+  const deadCount = panel.ports.filter((port) =>
+    deadPortKeys.has(`${panel.id}:${port.id}`)
+  ).length;
+  return Math.max(
+    0,
+    panel.ports.length - countUsedPanelPorts(panel, connections) - deadCount
+  );
+}
+
+function countDeadPanelPorts(
+  panel: StreetCabPanel,
+  deadPortKeys: Set<string>
+): number {
+  if ("ports" in panel) {
+    return panel.ports.filter((port) =>
+      deadPortKeys.has(`${panel.id}:${port.id}`)
+    ).length;
+  }
+
+  return panel.splitters.reduce((total, splitter) => {
+    const inputDead = deadPortKeys.has(`${panel.id}:${splitter.input.id}`) ? 1 : 0;
+    const outputDead = splitter.outputs.filter((output) =>
+      deadPortKeys.has(`${panel.id}:${output.id}`)
+    ).length;
+    return total + inputDead + outputDead;
+  }, 0);
 }
 
 function addPortAnnotation(
@@ -707,6 +733,7 @@ export default function StreetCabDesigner({
     | (StreetCabDetails & {
         importMappingRows?: ImportMappingRow[];
         portAnnotations?: PortAnnotations;
+        deadPortKeys?: string[];
       })
     | undefined;
 
@@ -735,6 +762,9 @@ export default function StreetCabDesigner({
   const [usedPortKeys, setUsedPortKeys] = useState<Set<string>>(new Set());
   const [portAnnotations, setPortAnnotations] = useState<PortAnnotations>(
     initialStreetCab?.portAnnotations || {}
+  );
+  const [deadPortKeys, setDeadPortKeys] = useState<Set<string>>(
+    new Set(initialStreetCab?.deadPortKeys || [])
   );
 
   const [selectedPanelId, setSelectedPanelId] = useState<string | null>(null);
@@ -808,6 +838,11 @@ export default function StreetCabDesigner({
     if (!selectedPortPanel || !selectedPort || !("ports" in selectedPortPanel)) return null;
     return selectedPortPanel.ports.find((port) => port.id === selectedPort.portId) || null;
   }, [selectedPortPanel, selectedPort]);
+
+  const selectedPortKey = selectedPort
+    ? `${selectedPort.panelId}:${selectedPort.portId}`
+    : "";
+  const selectedPortIsDead = selectedPortKey ? deadPortKeys.has(selectedPortKey) : false;
 
   const canMoveSelectedFibre =
     !!selectedPortPanel &&
@@ -949,6 +984,14 @@ export default function StreetCabDesigner({
         if (!key.startsWith(`${selectedPanelId}:`)) {
           next[key] = value;
         }
+      }
+      return next;
+    });
+
+    setDeadPortKeys((prev) => {
+      const next = new Set(prev);
+      for (const key of Array.from(next)) {
+        if (key.startsWith(`${selectedPanelId}:`)) next.delete(key);
       }
       return next;
     });
@@ -1105,6 +1148,14 @@ export default function StreetCabDesigner({
       return;
     }
 
+    if (
+      deadPortKeys.has(`${start.panelId}:${start.portId}`) ||
+      deadPortKeys.has(`${end.panelId}:${end.portId}`)
+    ) {
+      alert("Dead ports cannot be connected. Restore the port first if it is usable again.");
+      return;
+    }
+
     const newConnection: StreetCabConnection = {
       id: crypto.randomUUID(),
       fromPanelId: start.panelId,
@@ -1146,6 +1197,28 @@ export default function StreetCabDesigner({
           )
       )
     );
+  };
+
+  const handleToggleDeadSelectedPort = () => {
+    if (!selectedPort) return;
+
+    const key = `${selectedPort.panelId}:${selectedPort.portId}`;
+    const isDead = deadPortKeys.has(key);
+
+    if (!isDead && selectedPortConnectionCount > 0) {
+      const ok = window.confirm(
+        "This port has existing connections. Mark it dead and remove those connections?"
+      );
+      if (!ok) return;
+      handleDeleteSelectedPortConnections();
+    }
+
+    setDeadPortKeys((prev) => {
+      const next = new Set(prev);
+      if (isDead) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   };
 
 
@@ -1669,6 +1742,7 @@ export default function StreetCabDesigner({
         connections,
         importMappingRows,
         portAnnotations,
+        deadPortKeys: Array.from(deadPortKeys),
       } as StreetCabDetails,
     };
 
@@ -1895,6 +1969,7 @@ export default function StreetCabDesigner({
               unplacedPanels={unplacedPanels}
               selectedPanelId={selectedPanelId}
               connections={connections}
+              deadPortKeys={deadPortKeys}
               onSelectPanel={setSelectedPanelId}
               onDropPanel={handleDropPanelInCabinet}
               onPlacePanel={handlePlacePanelInCabinet}
@@ -1911,6 +1986,7 @@ export default function StreetCabDesigner({
                   connections={connections}
                   dragStartPort={dragStartPort}
                   portAnnotations={portAnnotations}
+                  deadPortKeys={deadPortKeys}
                   onSelectPanel={setSelectedPanelId}
                   onSelectPort={handleSelectPort}
                   onStartDragConnection={handleStartDragConnection}
@@ -1967,6 +2043,11 @@ export default function StreetCabDesigner({
             <div style={{ ...label, marginTop: 10 }}>Connections</div>
             <div>{selectedPortConnectionCount}</div>
 
+            <div style={{ ...label, marginTop: 10 }}>Port State</div>
+            <div style={selectedPortIsDead ? deadPortStatus : livePortStatus}>
+              {selectedPortIsDead ? "Dead" : "Live"}
+            </div>
+
             <div style={{ ...label, marginTop: 10 }}>Annotations</div>
             <div style={{ fontSize: "0.8rem", color: "#cbd5e1" }}>
               {portAnnotations[`${selectedPort.panelId}:${selectedPort.portId}`]
@@ -2013,8 +2094,15 @@ export default function StreetCabDesigner({
                 Delete Port Connections
               </button>
 
+              <button
+                onClick={handleToggleDeadSelectedPort}
+                style={selectedPortIsDead ? btnPrimary : btnWarning}
+              >
+                {selectedPortIsDead ? "Restore Port" : "Mark Port Dead"}
+              </button>
 
-              {canMoveSelectedFibre ? (
+
+              {canMoveSelectedFibre && !selectedPortIsDead ? (
                 <div style={moveFibreBox}>
                   <div style={label}>Broken fibre move</div>
                   <div style={{ fontSize: "0.78rem", color: "#cbd5e1" }}>
@@ -2141,6 +2229,7 @@ function StreetCabinetLayoutView({
   unplacedPanels,
   selectedPanelId,
   connections,
+  deadPortKeys,
   onSelectPanel,
   onDropPanel,
   onPlacePanel,
@@ -2150,6 +2239,7 @@ function StreetCabinetLayoutView({
   unplacedPanels: StreetCabPanel[];
   selectedPanelId: string | null;
   connections: StreetCabConnection[];
+  deadPortKeys: Set<string>;
   onSelectPanel: (panelId: string) => void;
   onDropPanel: (draggedPanelId: string, targetPanelId: string | null) => void;
   onPlacePanel: (panelId: string, uStart: number) => void;
@@ -2331,7 +2421,8 @@ function StreetCabinetLayoutView({
                 {Array.from(placementByStartU.values()).map(({ panel, heightU, uStart, uEnd }, index) => {
               const panelPortCount = countPanelPorts(panel);
               const usedCount = countUsedPanelPorts(panel, connections);
-              const spareCount = getPanelSpareCount(panel, connections);
+              const spareCount = getPanelSpareCount(panel, connections, deadPortKeys);
+              const deadCount = countDeadPanelPorts(panel, deadPortKeys);
               const occupancy = panelPortCount
                 ? Math.min(100, Math.round((usedCount / panelPortCount) * 100))
                 : 0;
@@ -2381,6 +2472,7 @@ function StreetCabinetLayoutView({
                       Front U{uEnd}
                       {heightU > 1 ? `-U${uStart}` : ""} / {usedCount} used
                       {"ports" in panel ? ` / ${spareCount} spare` : ""}
+                      {deadCount ? ` / ${deadCount} dead` : ""}
                     </span>
                   </span>
                   <span style={cabinetPanelMeta}>
@@ -2390,6 +2482,11 @@ function StreetCabinetLayoutView({
                     {"ports" in panel ? (
                       <span style={{ ...cabinetOccupancyBadge, borderColor: "#94a3b8", color: "#cbd5e1" }}>
                         {spareCount} spare
+                      </span>
+                    ) : null}
+                    {deadCount ? (
+                      <span style={{ ...cabinetOccupancyBadge, borderColor: "#ef4444", color: "#fecaca" }}>
+                        {deadCount} dead
                       </span>
                     ) : null}
                     <span style={{ ...cabinetOccupancyBadge, borderColor: accent, color: accent }}>
@@ -2913,4 +3010,24 @@ const moveFibreBox: React.CSSProperties = {
   border: "1px solid #f59e0b",
   borderRadius: 8,
   padding: 10,
+};
+
+const livePortStatus: React.CSSProperties = {
+  width: "fit-content",
+  borderRadius: 999,
+  background: "rgba(34,197,94,0.18)",
+  color: "#86efac",
+  border: "1px solid rgba(34,197,94,0.42)",
+  padding: "4px 10px",
+  fontWeight: 800,
+};
+
+const deadPortStatus: React.CSSProperties = {
+  width: "fit-content",
+  borderRadius: 999,
+  background: "rgba(239,68,68,0.16)",
+  color: "#fecaca",
+  border: "1px solid rgba(239,68,68,0.52)",
+  padding: "4px 10px",
+  fontWeight: 800,
 };

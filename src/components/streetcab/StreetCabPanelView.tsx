@@ -26,6 +26,7 @@ type Props = {
   connections: StreetCabConnection[];
   dragStartPort: DragStartPort;
   portAnnotations?: PortAnnotations;
+  deadPortKeys?: Set<string>;
   onSelectPanel: (panelId: string) => void;
   onSelectPort: (panelId: string, port: StreetCabPort) => void;
   onStartDragConnection: (panelId: string, port: StreetCabPort) => void;
@@ -157,6 +158,7 @@ function renderPortButton(
     connections: StreetCabConnection[];
     dragStartPort: DragStartPort;
     portAnnotations?: PortAnnotations;
+    deadPortKeys?: Set<string>;
     onSelectPort: (panelId: string, port: StreetCabPort) => void;
     onStartDragConnection: (panelId: string, port: StreetCabPort) => void;
     onDropConnection: (panelId: string, port: StreetCabPort) => void;
@@ -167,6 +169,7 @@ function renderPortButton(
   }
 ) {
   const annotations = getPortAnnotation(panelId, port.id, props.portAnnotations);
+  const dead = props.deadPortKeys?.has(`${panelId}:${port.id}`) ?? false;
   const selected = isPortSelected(panelId, port.id, props.selectedPort);
   const connected = isPortConnected(panelId, port.id, props.connections);
   const highlighted = isPortHighlighted(
@@ -177,7 +180,8 @@ function renderPortButton(
   const dragStart = isDragStart(panelId, port.id, props.dragStartPort);
 
   const className = [
-    connected ? "port-connected" : "",
+    dead ? "port-dead" : "",
+    connected && !dead ? "port-connected" : "",
     highlighted ? "port-chain-highlight" : "",
     selected ? "port-selected" : "",
     dragStart ? "port-connection-source" : "",
@@ -189,13 +193,14 @@ function renderPortButton(
     <div key={port.id} style={{ ...portCell, ...(props.cellStyle || {}) }}>
       <button
         type="button"
-        draggable
+        draggable={!dead}
         onClick={(e) => {
           e.stopPropagation();
           props.onSelectPort(panelId, port);
         }}
         onDragStart={(e) => {
           e.stopPropagation();
+          if (dead) return;
           props.onStartDragConnection(panelId, port);
           e.dataTransfer.effectAllowed = "move";
           e.dataTransfer.setData(
@@ -209,18 +214,20 @@ function renderPortButton(
         }}
         onDragOver={(e) => {
           e.preventDefault();
+          if (dead) return;
           e.dataTransfer.dropEffect = "move";
         }}
         onDrop={(e) => {
           e.preventDefault();
           e.stopPropagation();
+          if (dead) return;
           props.onDropConnection(panelId, port);
         }}
-        title={buildPortTitle(props.title, annotations)}
+        title={buildPortTitle(dead ? `${props.title} (DEAD)` : props.title, annotations)}
         className={className}
-        style={props.style}
+        style={dead ? { ...props.style, ...deadPortOverlay } : props.style}
       >
-        {props.buttonLabel ?? port.number}
+        {dead ? "X" : props.buttonLabel ?? port.number}
       </button>
 
       {renderAnnotationBlock(annotations, selected)}
@@ -236,6 +243,7 @@ export default function StreetCabPanelView({
   connections,
   dragStartPort,
   portAnnotations = {},
+  deadPortKeys = new Set(),
   onSelectPanel,
   onSelectPort,
   onStartDragConnection,
@@ -276,6 +284,7 @@ export default function StreetCabPanelView({
                 connections,
                 dragStartPort,
                 portAnnotations,
+                deadPortKeys,
                 onSelectPort,
                 onStartDragConnection,
                 onDropConnection,
@@ -329,6 +338,7 @@ export default function StreetCabPanelView({
                 connections,
                 dragStartPort,
                 portAnnotations,
+                deadPortKeys,
                 onSelectPort,
                 onStartDragConnection,
                 onDropConnection,
@@ -373,6 +383,7 @@ export default function StreetCabPanelView({
                 connections,
                 dragStartPort,
                 portAnnotations,
+                deadPortKeys,
                 onSelectPort,
                 onStartDragConnection,
                 onDropConnection,
@@ -393,6 +404,7 @@ export default function StreetCabPanelView({
                   connections,
                   dragStartPort,
                   portAnnotations,
+                  deadPortKeys,
                   onSelectPort,
                   onStartDragConnection,
                   onDropConnection,
@@ -416,6 +428,7 @@ export default function StreetCabPanelView({
                   connections,
                   dragStartPort,
                   portAnnotations,
+                  deadPortKeys,
                   onSelectPort,
                   onStartDragConnection,
                   onDropConnection,
@@ -598,6 +611,15 @@ const portBase: React.CSSProperties = {
   cursor: "pointer",
   userSelect: "none",
   transition: "all 0.15s ease",
+};
+
+const deadPortOverlay: React.CSSProperties = {
+  background: "#111827",
+  color: "#fecaca",
+  border: "2px solid #ef4444",
+  boxShadow: "0 0 0 2px rgba(239,68,68,0.24)",
+  cursor: "not-allowed",
+  textDecoration: "line-through",
 };
 
 const annotationWrap: React.CSSProperties = {
