@@ -324,6 +324,23 @@ function getMapAssetsSaveSignature(assets: SavedMapAsset[]): string {
     .join("|");
 }
 
+function sameOperationalData(before: SavedMapAsset | any, after: SavedMapAsset | any): boolean {
+  const pickOperationalFields = (asset: SavedMapAsset | any) => ({
+    status: asset?.status ?? null,
+    buildStatus: asset?.buildStatus ?? null,
+    dpDetails: asset?.dpDetails ?? null,
+    poleDetails: asset?.poleDetails ?? null,
+    chamberDetails: asset?.chamberDetails ?? null,
+    cableType: asset?.cableType ?? null,
+    fibreCount: asset?.fibreCount ?? null,
+    installMethod: asset?.installMethod ?? null,
+    piaNoiNumber: asset?.piaNoiNumber ?? null,
+    properties: asset?.properties ?? null,
+  });
+
+  return JSON.stringify(pickOperationalFields(before)) === JSON.stringify(pickOperationalFields(after));
+}
+
 function getAssetIdentityValue(asset: SavedMapAsset | any): string {
   return String(
     asset?.id ||
