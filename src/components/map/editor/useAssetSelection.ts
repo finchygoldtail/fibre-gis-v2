@@ -10,6 +10,7 @@ import type {
   CableType,
   DistributionPointDetails,
   FibreCount,
+  HomeServiceStatus,
   InstallMethod,
   PoleDetails,
   SavedMapAsset,
@@ -58,6 +59,10 @@ type UseAssetSelectionArgs = {
   setPoleDetails: Setter<PoleDetails>;
   setDpDetails: Setter<DistributionPointDetails>;
   setChamberDetails: Setter<ChamberDetails>;
+  setHomeServiceStatus: Setter<HomeServiceStatus>;
+  setHomeBlockedReason: Setter<string>;
+  setHomeServiceNote: Setter<string>;
+  setHomeRecommendedDpId: Setter<string>;
   setIsPanelOpen: Setter<boolean>;
   setPickedLocation: Setter<LatLngLiteral | null>;
   setDraftCablePoints: Setter<LatLngLiteral[]>;
@@ -88,6 +93,10 @@ export function useAssetSelection({
   setPoleDetails,
   setDpDetails,
   setChamberDetails,
+  setHomeServiceStatus,
+  setHomeBlockedReason,
+  setHomeServiceNote,
+  setHomeRecommendedDpId,
   setIsPanelOpen,
   setPickedLocation,
   setDraftCablePoints,
@@ -142,6 +151,10 @@ export function useAssetSelection({
         buildStatus: getDpOperationalStatus(viewedAsset),
       } as DistributionPointDetails);
       setChamberDetails(viewedAsset.chamberDetails || {});
+      setHomeServiceStatus(viewedAsset.serviceStatus || "serviceable");
+      setHomeBlockedReason(String((viewedAsset as any).blockedReason || ""));
+      setHomeServiceNote(String((viewedAsset as any).serviceNote || ""));
+      setHomeRecommendedDpId(String((viewedAsset as any).recommendedDpId || ""));
 
       // Any Edit Details action should bring the left details panel back into view.
       setIsPanelOpen(true);
@@ -205,6 +218,10 @@ export function useAssetSelection({
       setParentCableId,
       setPickedLocation,
       setPoleDetails,
+      setHomeBlockedReason,
+      setHomeRecommendedDpId,
+      setHomeServiceNote,
+      setHomeServiceStatus,
       setSavedJoints,
       setShowCableModal,
       setShowChamberModal,

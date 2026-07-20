@@ -30,6 +30,10 @@ type MapAssetChunkDoc = {
 type MapAssetsMainDoc = {
   chunkCount?: number;
   assetCount?: number;
+  saveId?: string;
+  saveVersion?: number;
+  updatedAt?: string;
+  updatedByEmail?: string;
 };
 
 type AssetInventory = {
@@ -51,6 +55,22 @@ export type SaveMapAssetsOptions = {
   allowDestructiveSave?: boolean;
   explicitDeletedAssetIds?: string[];
   reason?: string;
+  expectedBaseSaveId?: string | null;
+  expectedBaseSaveVersion?: number | null;
+};
+
+export type MapAssetsSaveMetadata = {
+  assetCount: number;
+  chunkCount: number;
+  saveId: string;
+  saveVersion: number;
+  updatedAt: string;
+  updatedByEmail: string;
+};
+
+export type SaveMapAssetsToFirestoreResult = {
+  assets: any[];
+  saveMetadata: MapAssetsSaveMetadata;
 };
 
 function safeJsonParse<T = any>(value: unknown, fallback: T): T {
@@ -150,6 +170,73 @@ function countAssetInventory(assets: any[]): AssetInventory {
 
 function formatInventory(counts: AssetInventory): string {
   return `total=${counts.total}, cables=${counts.cables}, polygons=${counts.polygons}, joints=${counts.joints}, DPs=${counts.distributionPoints}, homes=${counts.homes}, other=${counts.other}`;
+}
+
+function makeSaveId(): string {
+  return `map-save-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function normalizeSaveMetadata(data: MapAssetsMainDoc | null | undefined): MapAssetsSaveMetadata {
+  return {
+    assetCount: Number(data?.assetCount || 0),
+    chunkCount: Number(data?.chunkCount || 0),
+    saveId: String(data?.saveId || ""),
+    saveVersion: Number(data?.saveVersion || 0),
+    updatedAt: String(data?.updatedAt || ""),
+    updatedByEmail: String(data?.updatedByEmail || ""),
+  };
+}
+
+export async function loadMapAssetsSaveMetadata(): Promise<MapAssetsSaveMetadata> {
+  const mainDocRef = doc(db, ...FIRESTORE_REF_PATH, "mapAssets", "main");
+  const mainSnap = await getDoc(mainDocRef);
+  return normalizeSaveMetadata(
+    mainSnap.exists() ? (mainSnap.data() as MapAssetsMainDoc) : null,
+  );
+}
+
+function buildConcurrentSaveError(
+  current: MapAssetsSaveMetadata,
+  options: SaveMapAssetsOptions,
+): string | null {
+  if (
+    options.expectedBaseSaveVersion === undefined &&
+    options.expectedBaseSaveId === undefined
+  ) {
+    return null;
+  }
+
+  const expectedVersion = Number(options.expectedBaseSaveVersion || 0);
+  const expectedId = String(options.expectedBaseSaveId || "");
+  const versionChanged = current.saveVersion !== expectedVersion;
+  const idChanged = expectedId && current.saveId && current.saveId !== expectedId;
+
+  if (!versionChanged && !idChanged) return null;
+
+  return [
+    "Refusing pending map save because Firestore has newer map data.",
+    `Pending copy was based on save v${expectedVersion || 0}${expectedId ? ` (${expectedId})` : ""}.`,
+    `Current Firestore save is v${current.saveVersion || 0}${current.saveId ? ` (${current.saveId})` : ""}.`,
+    "Refresh and reconcile the local changes before retrying.",
+  ].join(" ");
+}
+
+async function readCurrentMapSaveMetadataForSave(
+  options: SaveMapAssetsOptions,
+): Promise<MapAssetsSaveMetadata> {
+  try {
+    return await loadMapAssetsSaveMetadata();
+  } catch (error) {
+    if (
+      options.expectedBaseSaveVersion !== undefined ||
+      options.expectedBaseSaveId !== undefined
+    ) {
+      throw error;
+    }
+
+    console.warn("Map asset save metadata read failed; continuing without save version.", error);
+    return normalizeSaveMetadata(null);
+  }
 }
 
 function getAssetStableId(asset: any): string {
@@ -449,13 +536,20 @@ export function restoreSavedJointsFromFirebase(value: any[]): SavedJoint[] {
 export async function saveMapAssetsToFirestore(
   nextSavedJoints: SavedJoint[],
   options: SaveMapAssetsOptions = {},
-): Promise<any[]> {
+): Promise<SaveMapAssetsToFirestoreResult> {
   if (!Array.isArray(nextSavedJoints)) {
     throw new Error("Refusing to save map assets: nextSavedJoints is not an array.");
   }
 
   const cleaned = cleanSavedJointsForFirebase(nextSavedJoints);
   const existingAssets = await readCurrentChunkAssets();
+  const currentSaveMetadata = await readCurrentMapSaveMetadataForSave(options);
+  const concurrentSaveError = buildConcurrentSaveError(currentSaveMetadata, options);
+
+  if (concurrentSaveError) {
+    throw new Error(concurrentSaveError);
+  }
+
   const existingInventory = countAssetInventory(existingAssets);
   const nextInventory = countAssetInventory(cleaned);
 
@@ -541,6 +635,16 @@ export async function saveMapAssetsToFirestore(
   }
 
   const now = new Date().toISOString();
+  const nextSaveVersion = currentSaveMetadata.saveVersion + 1;
+  const nextSaveId = makeSaveId();
+  const nextSaveMetadata: MapAssetsSaveMetadata = {
+    assetCount: cleaned.length,
+    chunkCount: chunks.length,
+    saveId: nextSaveId,
+    saveVersion: nextSaveVersion,
+    updatedAt: now,
+    updatedByEmail: auth.currentUser?.email || "unknown",
+  };
 
   try {
     await setDoc(
@@ -551,6 +655,8 @@ export async function saveMapAssetsToFirestore(
         chunkCount: chunks.length,
         safetyGuarded: true,
         lastSaveInventory: nextInventory,
+        saveId: nextSaveId,
+        saveVersion: nextSaveVersion,
         updatedAt: now,
         updatedByUid: auth.currentUser?.uid || "unknown",
         updatedByEmail: auth.currentUser?.email || "unknown",
@@ -607,7 +713,10 @@ export async function saveMapAssetsToFirestore(
     );
   }
 
-  return cleaned;
+  return {
+    assets: cleaned,
+    saveMetadata: nextSaveMetadata,
+  };
 }
 
 /**

@@ -80,6 +80,8 @@ type LayerVisibility = {
   piaFail?: boolean;
 };
 
+type HomeMarkerStatus = "unconnected" | "connected" | "live" | "exception";
+
 type Props = {
   assets: SavedMapAsset[];
   visibleLayers: LayerVisibility;
@@ -463,7 +465,7 @@ function isDropCable(asset: SavedMapAsset): boolean {
 function getHomeConnectionStatus(
   home: SavedMapAsset,
   allAssets: SavedMapAsset[]
-): "unconnected" | "connected" | "live" {
+): Exclude<HomeMarkerStatus, "exception"> {
   const ownStatus = normaliseStatus(
     (home as any).customerStatus ||
       (home as any).homeStatus ||
@@ -499,10 +501,37 @@ function getHomeConnectionStatus(
 const homeLiveIcon = createHomeIcon("#16a34a", "#064e3b", "rgba(22, 163, 74, 0.85)");
 const homeConnectedIcon = createHomeIcon("#f59e0b", "#92400e", "rgba(245, 158, 11, 0.85)");
 const homeUnconnectedIcon = createHomeIcon("#ef4444", "#7f1d1d", "rgba(239, 68, 68, 0.95)");
+const homeExceptionIcon = createHomeIcon("#a855f7", "#581c87", "rgba(168, 85, 247, 0.95)");
 const homeMoveSelectedIcon = createHomeIcon("#38bdf8", "#075985");
 const homePositionMoveIcon = createHomeIcon("#38bdf8", "#075985", "rgba(56, 189, 248, 0.95)");
 
-function getHomeIconForStatus(status: "unconnected" | "connected" | "live") {
+function getHomeServiceStatus(home: SavedMapAsset): string {
+  return normaliseStatus(
+    (home as any).serviceStatus ||
+      (home as any).properties?.serviceStatus ||
+      "",
+  );
+}
+
+function hasHomeServiceException(home: SavedMapAsset): boolean {
+  const status = getHomeServiceStatus(home);
+  return Boolean(status && status !== "serviceable");
+}
+
+function formatHomeServiceStatus(home: SavedMapAsset): string {
+  const status = getHomeServiceStatus(home);
+  if (status === "needsdpmove" || status === "needs_dp_move") return "Needs DP move";
+  if (status === "needssurvey" || status === "needs_survey") return "Needs survey";
+  if (status === "treecutting" || status === "tree_cutting") return "Tree cutting required";
+  if (status === "wayleaveneeded" || status === "wayleave_needed") return "Wayleave needed";
+  if (status === "noaccess" || status === "no_access") return "No access";
+  if (status === "blocked") return "Blocked";
+  if (status === "other") return "Other";
+  return status ? status.replace(/_/g, " ") : "Serviceable";
+}
+
+function getHomeIconForStatus(status: HomeMarkerStatus) {
+  if (status === "exception") return homeExceptionIcon;
   if (status === "live") return homeLiveIcon;
   if (status === "connected") return homeConnectedIcon;
   return homeUnconnectedIcon;
@@ -542,7 +571,7 @@ function getDistributionPoints(allAssets: SavedMapAsset[]): SavedMapAsset[] {
 
 
 type HomeRenderIndexes = {
-  homeStatusById: Map<string, "unconnected" | "connected" | "live">;
+  homeStatusById: Map<string, HomeMarkerStatus>;
   connectedDpByHomeId: Map<string, SavedMapAsset | null>;
 };
 
@@ -599,7 +628,7 @@ function buildHomeRenderIndexes(allAssets: SavedMapAsset[]): HomeRenderIndexes {
     }
   });
 
-  const homeStatusById = new Map<string, "unconnected" | "connected" | "live">();
+  const homeStatusById = new Map<string, HomeMarkerStatus>();
   const connectedDpByHomeId = new Map<string, SavedMapAsset | null>();
 
   allAssets.forEach((asset) => {
@@ -617,11 +646,13 @@ function buildHomeRenderIndexes(allAssets: SavedMapAsset[]): HomeRenderIndexes {
     const dropDpId = connectedDpIdByHomeId.get(asset.id) || "";
     const connectedDpId = manualDpId || dropDpId;
 
-    const status = ownStatus === "live" || liveDropHomeIds.has(asset.id)
-      ? "live"
-      : connectedDpId || metadataConnection === "connected"
-        ? "connected"
-        : "unconnected";
+    const status = hasHomeServiceException(asset)
+      ? "exception"
+      : ownStatus === "live" || liveDropHomeIds.has(asset.id)
+        ? "live"
+        : connectedDpId || metadataConnection === "connected"
+          ? "connected"
+          : "unconnected";
 
     homeStatusById.set(asset.id, status);
     connectedDpByHomeId.set(asset.id, connectedDpId ? dpById.get(connectedDpId) || null : null);
@@ -634,7 +665,7 @@ function getIconForAsset(
   asset: SavedMapAsset,
   allAssets: SavedMapAsset[],
   visibleLayers?: LayerVisibility,
-  cachedHomeStatus?: "unconnected" | "connected" | "live",
+  cachedHomeStatus?: HomeMarkerStatus,
 ) {
   if (asset.assetType === "distribution-point") {
     return createSquareIcon(getDistributionPointColor(asset), "#ffffff");
@@ -1115,11 +1146,28 @@ const icon = asset.id === highlightedAssetId
                 <>
                   {infoRow("Source", asset.source || "OpenStreetMap")}
                   {infoRow("Connection", getHomeConnectionStatus(asset, assets))}
+                  {hasHomeServiceException(asset)
+                    ? infoRow("Service", formatHomeServiceStatus(asset))
+                    : null}
+                  {hasHomeServiceException(asset)
+                    ? infoRow("Reason", (asset as any).blockedReason || (asset as any).properties?.blockedReason)
+                    : null}
+                  {hasHomeServiceException(asset)
+                    ? infoRow("Recommended DP", (asset as any).recommendedDpId || (asset as any).properties?.recommendedDpId)
+                    : null}
                   {infoRow("Mode", connectionMode === "manual" ? "Manual" : "Auto")}
                   {infoRow("Connected DP", connectedDp?.name || ((asset as any).connectedDpId ? "Unknown DP" : "Not connected"))}
                   {moveHomesMode ? infoRow("Move Selection", isSelectedMoveHome ? "Selected" : "Click home to select") : null}
                   {surveyDeleteHomesMode ? infoRow("Survey Delete", isSelectedSurveyDeleteHome ? "Selected for delete" : "Click home to select") : null}
                   {infoRow("OSM ID", asset.osmId)}
+                  {(asset as any).serviceNote || (asset as any).properties?.serviceNote ? (
+                    <div style={sectionStyle}>
+                      <div style={sectionLabelStyle}>Engineer Note</div>
+                      <div style={notesStyle}>
+                        {(asset as any).serviceNote || (asset as any).properties?.serviceNote}
+                      </div>
+                    </div>
+                  ) : null}
 
                   <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
                     <label style={{ fontSize: "0.8rem", fontWeight: 700, color: "#334155" }}>

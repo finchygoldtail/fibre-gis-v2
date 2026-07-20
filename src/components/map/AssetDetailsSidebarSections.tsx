@@ -8,6 +8,7 @@ import PiaQaFields from "./pia/PiaQaFields";
 import type {
   ChamberDetails,
   DistributionPointDetails,
+  HomeServiceStatus,
   PoleDetails,
   SavedMapAsset,
 } from "./types";
@@ -35,9 +36,18 @@ type Props = {
   poleDetails: PoleDetails;
   chamberDetails: ChamberDetails;
   dpDetails: DistributionPointDetails;
+  selectedAsset?: SavedMapAsset | null;
+  homeServiceStatus?: HomeServiceStatus;
+  homeBlockedReason?: string;
+  homeServiceNote?: string;
+  homeRecommendedDpId?: string;
   onChangePoleDetails: (details: PoleDetails) => void;
   onChangeChamberDetails: (details: ChamberDetails) => void;
   onChangeDpDetails: (details: DistributionPointDetails) => void;
+  onChangeHomeServiceStatus?: (status: HomeServiceStatus) => void;
+  onChangeHomeBlockedReason?: (reason: string) => void;
+  onChangeHomeServiceNote?: (note: string) => void;
+  onChangeHomeRecommendedDpId?: (dpId: string) => void;
   onRebuildThroughCableReservations?: (
     result: RebuildThroughCableReservationResult,
   ) => void;
@@ -827,9 +837,18 @@ export default function AssetDetailsSidebarSections({
   poleDetails,
   chamberDetails,
   dpDetails,
+  selectedAsset = null,
+  homeServiceStatus = "serviceable",
+  homeBlockedReason = "",
+  homeServiceNote = "",
+  homeRecommendedDpId = "",
   onChangePoleDetails,
   onChangeChamberDetails,
   onChangeDpDetails,
+  onChangeHomeServiceStatus,
+  onChangeHomeBlockedReason,
+  onChangeHomeServiceNote,
+  onChangeHomeRecommendedDpId,
   onRebuildThroughCableReservations,
   connectedHomes = [],
   availableThroughCables = [],
@@ -1486,6 +1505,81 @@ export default function AssetDetailsSidebarSections({
     updateAfnDetails({
       inputFibres: [...currentInputFibres, fibre].sort((a, b) => a - b),
     });
+  }
+
+  if (assetType === "home") {
+    const selectedRecommendedDp =
+      homeRecommendedDpId ||
+      String((selectedAsset as any)?.recommendedDpId || "");
+    const lastFieldCheckedAt = String(
+      (selectedAsset as any)?.lastFieldCheckedAt || "",
+    );
+
+    return (
+      <div
+        style={{
+          marginTop: 12,
+          paddingTop: 12,
+          borderTop: "1px solid #334155",
+        }}
+      >
+        <div style={{ fontWeight: 800, marginBottom: 8 }}>Home Service Notes</div>
+
+        <div style={labelStyle}>Service Status</div>
+        <select
+          value={homeServiceStatus}
+          onChange={(e) =>
+            onChangeHomeServiceStatus?.(e.target.value as HomeServiceStatus)
+          }
+          style={inputStyle}
+        >
+          <option value="serviceable">Serviceable</option>
+          <option value="blocked">Blocked</option>
+          <option value="needsSurvey">Needs Survey</option>
+          <option value="needsDpMove">Needs DP Move</option>
+          <option value="treeCutting">Tree Cutting Required</option>
+          <option value="wayleaveNeeded">Wayleave Needed</option>
+          <option value="noAccess">No Access</option>
+          <option value="other">Other</option>
+        </select>
+
+        <div style={labelStyle}>Blocked / Exception Reason</div>
+        <input
+          value={homeBlockedReason}
+          onChange={(e) => onChangeHomeBlockedReason?.(e.target.value)}
+          placeholder="Example: tree cutting required"
+          style={inputStyle}
+        />
+
+        <div style={labelStyle}>Recommended DP</div>
+        <select
+          value={selectedRecommendedDp}
+          onChange={(e) => onChangeHomeRecommendedDpId?.(e.target.value)}
+          style={inputStyle}
+        >
+          <option value="">No DP recommendation</option>
+          {allDpOptions.map((dp) => (
+            <option key={dp.id} value={dp.id}>
+              {getDpDisplayName(dp)}
+            </option>
+          ))}
+        </select>
+
+        <div style={labelStyle}>Engineer Note</div>
+        <textarea
+          value={homeServiceNote}
+          onChange={(e) => onChangeHomeServiceNote?.(e.target.value)}
+          placeholder="Example: cannot serve from current DP; move to DP-014 after tree cut."
+          style={{ ...inputStyle, minHeight: 92, resize: "vertical" }}
+        />
+
+        {lastFieldCheckedAt ? (
+          <div style={helpText}>
+            Last field check: {new Date(lastFieldCheckedAt).toLocaleString()}
+          </div>
+        ) : null}
+      </div>
+    );
   }
 
   if (assetType === "pole") {

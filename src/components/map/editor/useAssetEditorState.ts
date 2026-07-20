@@ -3,6 +3,7 @@ import type {
   CableType,
   DistributionPointDetails,
   FibreCount,
+  HomeServiceStatus,
   InstallMethod,
   PoleDetails,
 } from "../types";
@@ -46,6 +47,11 @@ export function useAssetEditorState(
     afnDetails: undefined,
   });
   const [chamberDetails, setChamberDetails] = useState<ChamberDetails>({});
+  const [homeServiceStatus, setHomeServiceStatus] =
+    useState<HomeServiceStatus>("serviceable");
+  const [homeBlockedReason, setHomeBlockedReason] = useState("");
+  const [homeServiceNote, setHomeServiceNote] = useState("");
+  const [homeRecommendedDpId, setHomeRecommendedDpId] = useState("");
 
   const [editingAssetId, setEditingAssetId] = useState<string | null>(null);
   const [editingAreaId, setEditingAreaId] = useState<string | null>(null);
@@ -77,6 +83,14 @@ export function useAssetEditorState(
     setDpDetails,
     chamberDetails,
     setChamberDetails,
+    homeServiceStatus,
+    setHomeServiceStatus,
+    homeBlockedReason,
+    setHomeBlockedReason,
+    homeServiceNote,
+    setHomeServiceNote,
+    homeRecommendedDpId,
+    setHomeRecommendedDpId,
     editingAssetId,
     setEditingAssetId,
     editingAreaId,

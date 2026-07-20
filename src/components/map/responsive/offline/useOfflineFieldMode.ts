@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { SavedMapAsset } from "../../types";
+import type { MapAssetsSaveMetadata } from "../../../../services/mapSaveCoordinator";
 
 type OfflineFieldModeArgs = {
   projectId: string | null;
@@ -23,6 +24,8 @@ export type PendingMapSaveSnapshot = {
   error?: string;
   savedAt: string;
   assetCount: number;
+  baseSaveId?: string | null;
+  baseSaveVersion?: number | null;
   assets: SavedMapAsset[];
 };
 
@@ -149,7 +152,12 @@ export function useOfflineFieldMode({ projectId, assets, homes }: OfflineFieldMo
   }, [cacheKey, readCacheMeta]);
 
   const storePendingMapSave = useCallback(
-    (pendingAssets: SavedMapAsset[], reason: string, error?: unknown) => {
+    (
+      pendingAssets: SavedMapAsset[],
+      reason: string,
+      error?: unknown,
+      baseSaveMetadata?: MapAssetsSaveMetadata | null,
+    ) => {
       const snapshot: PendingMapSaveSnapshot = {
         id: `pending-${Date.now()}`,
         projectId,
@@ -157,6 +165,8 @@ export function useOfflineFieldMode({ projectId, assets, homes }: OfflineFieldMo
         error: error instanceof Error ? error.message : error ? String(error) : "",
         savedAt: new Date().toISOString(),
         assetCount: pendingAssets.length,
+        baseSaveId: baseSaveMetadata?.saveId || null,
+        baseSaveVersion: baseSaveMetadata?.saveVersion ?? null,
         assets: pendingAssets,
       };
 

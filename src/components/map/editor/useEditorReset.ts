@@ -25,6 +25,10 @@ type UseEditorResetArgs = {
   setPoleDetails: Setter<any>;
   setDpDetails: Setter<DistributionPointDetails>;
   setChamberDetails: Setter<any>;
+  setHomeServiceStatus: Setter<any>;
+  setHomeBlockedReason: Setter<string>;
+  setHomeServiceNote: Setter<string>;
+  setHomeRecommendedDpId: Setter<string>;
   setShowCableModal: Setter<boolean>;
   setShowPoleModal: Setter<boolean>;
   setShowDpModal: Setter<boolean>;
@@ -59,6 +63,10 @@ export function useEditorReset(args: UseEditorResetArgs) {
       buildStatus: "Planned",
     } as DistributionPointDetails);
     args.setChamberDetails({});
+    args.setHomeServiceStatus("serviceable");
+    args.setHomeBlockedReason("");
+    args.setHomeServiceNote("");
+    args.setHomeRecommendedDpId("");
     args.setShowCableModal(false);
     args.setShowPoleModal(false);
     args.setShowDpModal(false);

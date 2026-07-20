@@ -48,7 +48,11 @@ import { useOrReferenceAdminTools } from "./map/admin/useOrReferenceAdminTools";
 import ExchangeDesigner from "./exchange/ExchangeDesigner";
 import { formatDistance, getPathDistanceMeters } from "../utils/mapMeasure";
 import { getNextAssetName } from "../utils/mapAssetNames";
-import { saveMapAssetsViaCoordinator } from "../services/mapSaveCoordinator";
+import {
+  loadMapAssetsSaveMetadata,
+  saveMapAssetsViaCoordinator,
+  type MapAssetsSaveMetadata,
+} from "../services/mapSaveCoordinator";
 import MapContextMenu, { type MapContextAction } from "./map/MapContextMenu";
 import LayerControls from "./map/panels/LayerControls";
 import MapToolbar from "./map/panels/MapToolbar";
@@ -264,6 +268,7 @@ function storePendingMapSaveSnapshot(
   assets: SavedMapAsset[],
   reason: string,
   error?: unknown,
+  baseSaveMetadata?: MapAssetsSaveMetadata | null,
 ): boolean {
   if (typeof window === "undefined") return false;
 
@@ -277,6 +282,8 @@ function storePendingMapSaveSnapshot(
         error: error instanceof Error ? error.message : error ? String(error) : "",
         savedAt: new Date().toISOString(),
         assetCount: assets.length,
+        baseSaveId: baseSaveMetadata?.saveId || null,
+        baseSaveVersion: baseSaveMetadata?.saveVersion ?? null,
         assets,
       }),
     );
@@ -1130,6 +1137,14 @@ export default function JointMapManager({
     setDpDetails,
     chamberDetails,
     setChamberDetails,
+    homeServiceStatus,
+    setHomeServiceStatus,
+    homeBlockedReason,
+    setHomeBlockedReason,
+    homeServiceNote,
+    setHomeServiceNote,
+    homeRecommendedDpId,
+    setHomeRecommendedDpId,
     editingAssetId,
     setEditingAssetId,
     editingAreaId,
@@ -1286,6 +1301,7 @@ export default function JointMapManager({
   const [mapAutosaveError, setMapAutosaveError] = useState<string>("");
   const mapAutosaveTimerRef = useRef<number | null>(null);
   const lastSavedMapSignatureRef = useRef<string | null>(null);
+  const lastKnownMapSaveMetadataRef = useRef<MapAssetsSaveMetadata | null>(null);
   const lastMapAutosaveStartedAtRef = useRef(0);
   const mapAutosaveInFlightRef = useRef(false);
   const mapHasUnsavedWorkRef = useRef(false);
@@ -1298,6 +1314,22 @@ export default function JointMapManager({
     () => getMapAssetsSaveSignature(normalizedSavedJoints),
     [normalizedSavedJoints],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    loadMapAssetsSaveMetadata()
+      .then((metadata) => {
+        if (!cancelled) lastKnownMapSaveMetadataRef.current = metadata;
+      })
+      .catch((error) => {
+        console.warn("Could not load map save metadata", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProjectId]);
 
   const saveCurrentMapSnapshot = async (
     reason: string,
@@ -1322,6 +1354,7 @@ export default function JointMapManager({
         source: "joint-map-manager",
       });
 
+      lastKnownMapSaveMetadataRef.current = result.saveMetadata;
       clearPendingMapSaveSnapshot(activeProjectIdRef.current);
       lastSavedMapSignatureRef.current = getMapAssetsSaveSignature(
         normalizedSavedJoints,
@@ -1345,6 +1378,7 @@ export default function JointMapManager({
         normalizedSavedJoints,
         reason,
         err,
+        lastKnownMapSaveMetadataRef.current,
       );
       setMapAutosaveStatus("error");
       setMapAutosaveError(err instanceof Error ? err.message : String(err));
@@ -1889,8 +1923,11 @@ export default function JointMapManager({
       const result = await saveMapAssetsViaCoordinator(pending.assets, {
         reason: `retry-pending:${pending.reason || "map-save"}`,
         source: "joint-map-manager",
+        expectedBaseSaveId: pending.baseSaveId,
+        expectedBaseSaveVersion: pending.baseSaveVersion,
       });
 
+      lastKnownMapSaveMetadataRef.current = result.saveMetadata;
       setSavedJoints(pending.assets);
       offlineFieldMode.clearPendingMapSave();
       lastSavedMapSignatureRef.current = getMapAssetsSaveSignature(pending.assets);
@@ -1907,6 +1944,16 @@ export default function JointMapManager({
         pending.assets,
         pending.reason || "retry-pending-map-save",
         error,
+        pending.baseSaveVersion === undefined && pending.baseSaveId === undefined
+          ? null
+          : {
+              assetCount: pending.assetCount || pending.assets.length,
+              chunkCount: 0,
+              saveId: pending.baseSaveId || "",
+              saveVersion: pending.baseSaveVersion ?? 0,
+              updatedAt: "",
+              updatedByEmail: "",
+            },
       );
       setMapAutosaveStatus("error");
       setMapAutosaveError(error instanceof Error ? error.message : String(error));
@@ -2045,6 +2092,10 @@ export default function JointMapManager({
     setPoleDetails,
     setDpDetails,
     setChamberDetails,
+    setHomeServiceStatus,
+    setHomeBlockedReason,
+    setHomeServiceNote,
+    setHomeRecommendedDpId,
     setShowCableModal,
     setShowPoleModal,
     setShowDpModal,
@@ -2184,6 +2235,10 @@ export default function JointMapManager({
     setPoleDetails,
     setDpDetails,
     setChamberDetails,
+    setHomeServiceStatus,
+    setHomeBlockedReason,
+    setHomeServiceNote,
+    setHomeRecommendedDpId,
     setIsPanelOpen,
     setPickedLocation,
     setDraftCablePoints,
@@ -2383,6 +2438,10 @@ export default function JointMapManager({
       pickedLocation,
       poleDetails,
       dpDetails,
+      homeServiceStatus,
+      homeBlockedReason,
+      homeServiceNote,
+      homeRecommendedDpId,
       projectHomes,
       resetEditor,
       saveMapAssetToState,
@@ -5143,9 +5202,18 @@ export default function JointMapManager({
                 poleDetails={poleDetails}
                 chamberDetails={chamberDetails}
                 dpDetails={dpDetails}
+                selectedAsset={currentEditingAsset}
+                homeServiceStatus={homeServiceStatus}
+                homeBlockedReason={homeBlockedReason}
+                homeServiceNote={homeServiceNote}
+                homeRecommendedDpId={homeRecommendedDpId}
                 onChangePoleDetails={setPoleDetails}
                 onChangeChamberDetails={setChamberDetails}
                 onChangeDpDetails={setDpDetails}
+                onChangeHomeServiceStatus={setHomeServiceStatus}
+                onChangeHomeBlockedReason={setHomeBlockedReason}
+                onChangeHomeServiceNote={setHomeServiceNote}
+                onChangeHomeRecommendedDpId={setHomeRecommendedDpId}
                 onRebuildThroughCableReservations={
                   handleRebuildThroughCableReservations
                 }

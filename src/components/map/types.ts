@@ -41,6 +41,16 @@ export type AssetStatus =
   | "Unserviceable"
   | "Live not ready for service";
 
+export type HomeServiceStatus =
+  | "serviceable"
+  | "blocked"
+  | "needsSurvey"
+  | "needsDpMove"
+  | "wayleaveNeeded"
+  | "treeCutting"
+  | "noAccess"
+  | "other";
+
 export type PoleDetails = {
   poleType?: "new" | "or" | "suggested";
   size?: string;
@@ -188,6 +198,12 @@ export type SavedMapAsset = {
 
   areaLevel?: AreaLevel;
   homeType?: "SDU" | "MDU" | "Flats";
+  serviceStatus?: HomeServiceStatus;
+  serviceNote?: string;
+  blockedReason?: string;
+  recommendedDpId?: string;
+  lastFieldCheckedAt?: string;
+  lastFieldCheckedBy?: string;
   status?: AssetStatus | "";
 
   source?: "manual" | "osm" | "openreach" | string;

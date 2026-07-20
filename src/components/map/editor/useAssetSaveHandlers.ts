@@ -5,6 +5,7 @@ import type {
   CableType,
   DistributionPointDetails,
   FibreCount,
+  HomeServiceStatus,
   InstallMethod,
   PoleDetails,
   SavedMapAsset,
@@ -15,6 +16,7 @@ import { withAssetEditedMetadata } from "../../../services/assetActivityService"
 import { saveMapAssetsViaCoordinator } from "../../../services/mapSaveCoordinator";
 import { saveProjectHomes } from "../projects/projectHomesStorage";
 import { markAssetForLiveSync } from "../persistence/useAssetPersistence";
+import { auth } from "../../../firebase";
 import {
   isDropCable,
   sanitiseCableRouteCoordinates,
@@ -68,6 +70,10 @@ type UseAssetSaveHandlersArgs = {
   pickedLocation: LatLngLiteral | null;
   poleDetails: PoleDetails;
   dpDetails: DistributionPointDetails;
+  homeServiceStatus: HomeServiceStatus;
+  homeBlockedReason: string;
+  homeServiceNote: string;
+  homeRecommendedDpId: string;
   projectHomes: SavedMapAsset[];
   resetEditor: () => void;
   saveMapAssetToState: (
@@ -205,7 +211,11 @@ export function useAssetSaveHandlers({
   parentCableId,
   pickedLocation,
   poleDetails,
-  dpDetails,
+    dpDetails,
+  homeServiceStatus,
+  homeBlockedReason,
+  homeServiceNote,
+  homeRecommendedDpId,
   projectHomes,
   resetEditor,
   saveMapAssetToState,
@@ -218,7 +228,11 @@ export function useAssetSaveHandlers({
   const handleSaveEdits = async (detailOverrides?: SaveDetailOverrides) => {
     if (!editingAssetId) return;
 
-    const beforeAsset = (savedJoints ?? []).find(
+    const beforeAsset =
+      (savedJoints ?? []).find(
+        (asset) => asset.id === editingAssetId,
+      ) ||
+      (projectHomes ?? []).find(
       (asset) => asset.id === editingAssetId,
     );
     const reason = getChangeReasonForCurrentMode(
@@ -229,7 +243,7 @@ export function useAssetSaveHandlers({
 
     const proposedEditedName = jointName.trim() || beforeAsset?.name || "";
     const duplicateEditedAsset = findDuplicateAssetNameInArea({
-      assets: savedJoints,
+      assets: [...(savedJoints ?? []), ...(projectHomes ?? [])],
       name: proposedEditedName,
       currentAssetId: editingAssetId,
       activeAreaName: activeProjectAreaName,
@@ -256,6 +270,96 @@ export function useAssetSaveHandlers({
     const nextDpDetails = detailOverrides?.dpDetails ?? dpDetails;
     const nextChamberDetails =
       detailOverrides?.chamberDetails ?? chamberDetails;
+
+    if (assetType === "home" && beforeAsset) {
+      if (!pickedLocation) return;
+
+      savedAfterAsset = withAssetEditedMetadata(
+        markAssetForLiveSync({
+          ...beforeAsset,
+          name: jointName.trim() || beforeAsset.name,
+          jointType: "Home",
+          notes: notes.trim(),
+          assetType: "home",
+          serviceStatus: homeServiceStatus,
+          blockedReason: homeBlockedReason.trim(),
+          serviceNote: homeServiceNote.trim(),
+          recommendedDpId: homeRecommendedDpId || undefined,
+          lastFieldCheckedAt: new Date().toISOString(),
+          lastFieldCheckedBy: auth.currentUser?.email || "unknown",
+          properties: {
+            ...((beforeAsset as any).properties || {}),
+            serviceStatus: homeServiceStatus,
+            blockedReason: homeBlockedReason.trim(),
+            serviceNote: homeServiceNote.trim(),
+            recommendedDpId: homeRecommendedDpId || undefined,
+          },
+          geometry: {
+            type: "Point",
+            coordinates: [pickedLocation.lat, pickedLocation.lng],
+          },
+        } as SavedMapAsset),
+        "updated",
+        reason,
+      );
+
+      const foundInProjectHomes = (projectHomes ?? []).some(
+        (home) => home.id === editingAssetId,
+      );
+      const foundInSavedJoints = (savedJoints ?? []).some(
+        (asset) => asset.id === editingAssetId,
+      );
+
+      if (foundInProjectHomes) {
+        const updatedProjectHomes = (projectHomes ?? []).map((home) =>
+          home.id === editingAssetId ? (savedAfterAsset as SavedMapAsset) : home,
+        );
+        setProjectHomes(updatedProjectHomes);
+
+        if (activeProjectId) {
+          try {
+            await saveProjectHomes(
+              activeProjectId,
+              stampHomesForActiveArea(updatedProjectHomes),
+              activeProjectAreaName,
+            );
+          } catch (error) {
+            console.error("Home service note save failed", error);
+            alert(
+              "The home note was updated on screen, but saving project homes failed. Check the console before refreshing.",
+            );
+          }
+        }
+      }
+
+      if (foundInSavedJoints || !foundInProjectHomes) {
+        setSavedJoints((prev) =>
+          (prev ?? []).map((asset) =>
+            asset.id === editingAssetId ? (savedAfterAsset as SavedMapAsset) : asset,
+          ),
+        );
+      }
+
+      writeAssetAuditLog({
+        asset: savedAfterAsset,
+        action: "updated",
+        reason,
+        before: beforeAsset,
+        after: savedAfterAsset,
+      });
+
+      recordEngineeringChangeSafely({
+        before: beforeAsset,
+        after: savedAfterAsset,
+        activeProjectId,
+        activeProjectAreaName,
+        reason,
+        source: "home-service-note-save",
+      });
+
+      resetEditor();
+      return;
+    }
 
     setSavedJoints((prev) =>
       prev.map((asset) => {

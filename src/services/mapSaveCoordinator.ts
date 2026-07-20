@@ -1,5 +1,9 @@
 import type { SavedJoint, SavedMapAsset } from "../components/JointMapManager";
-import { saveMapAssetsToFirestore } from "./mapAssetStorage";
+import {
+  loadMapAssetsSaveMetadata,
+  saveMapAssetsToFirestore,
+  type MapAssetsSaveMetadata,
+} from "./mapAssetStorage";
 
 export type MapSaveSource =
   | "joint-map-manager"
@@ -13,6 +17,8 @@ export type CoordinatedMapSaveOptions = {
   source?: MapSaveSource;
   allowDestructiveSave?: boolean;
   explicitDeletedAssetIds?: string[];
+  expectedBaseSaveId?: string | null;
+  expectedBaseSaveVersion?: number | null;
 };
 
 export type CoordinatedMapSaveResult = {
@@ -20,6 +26,7 @@ export type CoordinatedMapSaveResult = {
   assetCount: number;
   reason: string;
   source: MapSaveSource;
+  saveMetadata: MapAssetsSaveMetadata;
 };
 
 /**
@@ -41,16 +48,23 @@ export async function saveMapAssetsViaCoordinator(
     throw new Error("Map save failed: assets must be an array.");
   }
 
-  const savedAssets = (await saveMapAssetsToFirestore(assets, {
+  const result = await saveMapAssetsToFirestore(assets, {
     reason,
     allowDestructiveSave: options.allowDestructiveSave,
     explicitDeletedAssetIds: options.explicitDeletedAssetIds,
-  })) as SavedMapAsset[];
+    expectedBaseSaveId: options.expectedBaseSaveId,
+    expectedBaseSaveVersion: options.expectedBaseSaveVersion,
+  });
+  const savedAssets = result.assets as SavedMapAsset[];
 
   return {
     assets: savedAssets,
     assetCount: savedAssets.length,
     reason,
     source,
+    saveMetadata: result.saveMetadata,
   };
 }
+
+export { loadMapAssetsSaveMetadata };
+export type { MapAssetsSaveMetadata };
