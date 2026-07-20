@@ -349,6 +349,8 @@ export default function AuditCommercialDashboard({
       <CommercialDocumentRegister
         areaKey={areaKey || areaName}
         areaName={areaName}
+        projectName={areaName}
+        projectAssets={projectAssets}
         canViewCommercialMoney={canViewCommercialMoney}
         canManageCommercialDocuments={canViewCommercialMoney}
         currentUserLabel={profile?.displayName || profile?.email || roleLabel}
