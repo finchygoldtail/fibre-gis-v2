@@ -217,6 +217,23 @@ function isSplitterDistributionPointAsset(asset: any): boolean {
   return text.includes("afn") || text.includes("sb") || text.includes("splitter");
 }
 
+function isConnectedHomeAsset(asset: any): boolean {
+  if (!isHomeAsset(asset)) return false;
+
+  return Boolean(
+    asset?.connectedDpId ||
+      asset?.properties?.connectedDpId ||
+      asset?.dpId ||
+      asset?.properties?.dpId ||
+      asset?.parentDpId ||
+      asset?.properties?.parentDpId ||
+      asset?.connectedDP ||
+      asset?.properties?.connectedDP ||
+      asset?.servedByDp ||
+      asset?.properties?.servedByDp,
+  );
+}
+
 function isNetworkNodeAsset(asset: any): boolean {
   const type = getAssetType(asset);
 
@@ -1222,6 +1239,7 @@ export function auditAreaAssets(assets: any[] = [], allNetworkAssets: any[] = as
 
   for (const node of disconnected) {
     if (isSplitterDistributionPointAsset(node.asset)) continue;
+    if (isConnectedHomeAsset(node.asset)) continue;
 
     issues.push(
       makeIssue(node.asset, "Disconnected asset", {
