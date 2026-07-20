@@ -1523,7 +1523,8 @@ export default function ProjectWorkspace({
 
   const needsQaAnalysis =
     workspaceHeavyPassReady &&
-    (activeTab === "qa" ||
+    (activeTab === "overview" ||
+      activeTab === "qa" ||
       activeTab === "reports" ||
       activeOperationPanel === "qa" ||
       activeOperationPanel === "issues" ||
@@ -1861,6 +1862,7 @@ export default function ProjectWorkspace({
       cables: designCableCount,
       designCables: designCableCount,
       dropCables: dropCableCount,
+      issueCount: auditIssues.length,
     };
   }, [
     stats,
@@ -1868,6 +1870,7 @@ export default function ProjectWorkspace({
     dpClosureCount,
     designCableCount,
     dropCableCount,
+    auditIssues.length,
   ]);
 
 

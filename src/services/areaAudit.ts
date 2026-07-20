@@ -329,12 +329,30 @@ function getDropHomeId(drop: any): string {
   ).trim();
 }
 
-function keysMatch(a: string, b: string): boolean {
-  if (!a || !b) return false;
-  if (a === b) return true;
-  if (a === `uprn-${b}`) return true;
-  if (`uprn-${a}` === b) return true;
-  return false;
+function getHomeIdentityKeys(asset: any): string[] {
+  return [
+    asset?.id,
+    asset?.assetId,
+    asset?.homeId,
+    asset?.uprn,
+    asset?.UPRN,
+    asset?.properties?.id,
+    asset?.properties?.assetId,
+    asset?.properties?.homeId,
+    asset?.properties?.uprn,
+    asset?.properties?.UPRN,
+  ]
+    .flatMap(getAliasKeys)
+    .filter(Boolean);
+}
+
+function getAliasKeys(value: unknown): string[] {
+  const raw = String(value ?? "").trim();
+  if (!raw) return [];
+
+  return raw.startsWith("uprn-")
+    ? [raw, raw.replace(/^uprn-/, "")].filter(Boolean)
+    : [raw, `uprn-${raw}`];
 }
 
 function getDpCapacity(dp: any): number {
@@ -1245,14 +1263,9 @@ export function auditAreaAssets(assets: any[] = [], allNetworkAssets: any[] = as
   }
 
   for (const home of homes) {
-    const key = getHomeKey(home);
-    if (!key) continue;
-
-    homesByKey.set(key, home);
-
-    if (!key.startsWith("uprn-")) {
-      homesByKey.set(`uprn-${key}`, home);
-    }
+    getHomeIdentityKeys(home).forEach((homeKey) =>
+      homesByKey.set(homeKey, home),
+    );
   }
 
   for (const drop of drops) {
@@ -1270,7 +1283,7 @@ export function auditAreaAssets(assets: any[] = [], allNetworkAssets: any[] = as
       );
     }
 
-    if (!homeId || !homesByKey.has(homeId)) {
+    if (!homeId || !getAliasKeys(homeId).some((key) => homesByKey.has(key))) {
       issues.push(
         makeIssue(drop, "Drop references missing home", {
           assetId: dropId,
@@ -1297,11 +1310,13 @@ export function auditAreaAssets(assets: any[] = [], allNetworkAssets: any[] = as
     const connectedDpId = getConnectedDpId(home);
     if (!connectedDpId) continue;
 
-    const homeKey = getHomeKey(home);
+    const homeKeys = getHomeIdentityKeys(home);
 
     const hasDrop = drops.some(
       (drop: any) =>
-        keysMatch(getDropHomeId(drop), homeKey) &&
+        getAliasKeys(getDropHomeId(drop)).some((dropHomeKey) =>
+          homeKeys.includes(dropHomeKey),
+        ) &&
         dpCanonicalByKey.get(normaliseKey(getDropDpId(drop))) ===
           dpCanonicalByKey.get(normaliseKey(connectedDpId)),
     );
