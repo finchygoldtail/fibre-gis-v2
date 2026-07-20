@@ -80,6 +80,40 @@ const CHANGE_COLLECTION_NAME = "assetChangeLogs";
 const ACCESS_COLLECTION_NAME = "assetAccessLogs";
 const LOCAL_CHANGE_KEY = "fibre-gis-assetChangeLogs-v2";
 const LOCAL_ACCESS_KEY = "fibre-gis-assetAccessLogs-v1";
+const FIRESTORE_PERMISSION_BACKOFF_MS = 5 * 60 * 1000;
+
+let firestoreReadBlockedUntil = 0;
+let firestoreWriteBlockedUntil = 0;
+
+function getFirebaseErrorCode(error: unknown): string {
+  const code = (error as { code?: unknown })?.code;
+  return typeof code === "string" ? code.toLowerCase() : "";
+}
+
+function isPermissionError(error: unknown): boolean {
+  const code = getFirebaseErrorCode(error);
+  return code.includes("permission-denied") || code.includes("unauthenticated");
+}
+
+function blockFirestoreReads(error: unknown): void {
+  if (isPermissionError(error)) {
+    firestoreReadBlockedUntil = Date.now() + FIRESTORE_PERMISSION_BACKOFF_MS;
+  }
+}
+
+function blockFirestoreWrites(error: unknown): void {
+  if (isPermissionError(error)) {
+    firestoreWriteBlockedUntil = Date.now() + FIRESTORE_PERMISSION_BACKOFF_MS;
+  }
+}
+
+function canAttemptFirestoreRead(): boolean {
+  return Date.now() >= firestoreReadBlockedUntil;
+}
+
+function canAttemptFirestoreWrite(): boolean {
+  return Date.now() >= firestoreWriteBlockedUntil;
+}
 
 function changeLogsCollection() {
   return collection(db, ...BUSINESS_REF_PATH, CHANGE_COLLECTION_NAME);
@@ -94,6 +128,11 @@ export async function createAssetChangeLog(
 ): Promise<AuditLog> {
   const log = buildAuditLog(input);
 
+  if (!canAttemptFirestoreWrite()) {
+    saveLocalLog(LOCAL_CHANGE_KEY, log);
+    return log;
+  }
+
   try {
     const docRef = await addDoc(changeLogsCollection(), {
       ...log,
@@ -101,7 +140,10 @@ export async function createAssetChangeLog(
     });
     return { ...log, id: docRef.id };
   } catch (err) {
-    console.warn("Firestore change log write failed; saved locally.", err);
+    blockFirestoreWrites(err);
+    if (!isPermissionError(err)) {
+      console.warn("Firestore change log write failed; saved locally.", err);
+    }
     saveLocalLog(LOCAL_CHANGE_KEY, log);
     return log;
   }
@@ -117,6 +159,11 @@ export async function createAssetAccessLog(
     comment: "",
   });
 
+  if (!canAttemptFirestoreWrite()) {
+    saveLocalLog(LOCAL_ACCESS_KEY, log);
+    return log;
+  }
+
   try {
     const docRef = await addDoc(accessLogsCollection(), {
       ...log,
@@ -124,7 +171,10 @@ export async function createAssetAccessLog(
     });
     return { ...log, id: docRef.id };
   } catch (err) {
-    console.warn("Firestore access log write failed; saved locally.", err);
+    blockFirestoreWrites(err);
+    if (!isPermissionError(err)) {
+      console.warn("Firestore access log write failed; saved locally.", err);
+    }
     saveLocalLog(LOCAL_ACCESS_KEY, log);
     return log;
   }
@@ -159,15 +209,20 @@ async function loadLogsForAsset(
 ): Promise<AuditLog[]> {
   let firestoreLogs: AuditLog[] = [];
 
-  try {
-    const q = query(collectionFactory(), where("assetId", "==", assetId), limit(maxResults));
-    const snapshot = await getDocs(q);
-    firestoreLogs = snapshot.docs.map((docSnap) => ({
-      id: docSnap.id,
-      ...(docSnap.data() as Omit<AuditLog, "id">),
-    }));
-  } catch (err) {
-    console.warn("Firestore audit read failed; using local fallback.", err);
+  if (canAttemptFirestoreRead()) {
+    try {
+      const q = query(collectionFactory(), where("assetId", "==", assetId), limit(maxResults));
+      const snapshot = await getDocs(q);
+      firestoreLogs = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...(docSnap.data() as Omit<AuditLog, "id">),
+      }));
+    } catch (err) {
+      blockFirestoreReads(err);
+      if (!isPermissionError(err)) {
+        console.warn("Firestore audit read failed; using local fallback.", err);
+      }
+    }
   }
 
   const localLogs = loadLocalLogs(localKey).filter((log) => log.assetId === assetId);
@@ -181,15 +236,20 @@ async function loadAllLogs(
 ): Promise<AuditLog[]> {
   let firestoreLogs: AuditLog[] = [];
 
-  try {
-    const q = query(collectionFactory(), limit(maxResults));
-    const snapshot = await getDocs(q);
-    firestoreLogs = snapshot.docs.map((docSnap) => ({
-      id: docSnap.id,
-      ...(docSnap.data() as Omit<AuditLog, "id">),
-    }));
-  } catch (err) {
-    console.warn("Firestore audit read failed; using local fallback.", err);
+  if (canAttemptFirestoreRead()) {
+    try {
+      const q = query(collectionFactory(), limit(maxResults));
+      const snapshot = await getDocs(q);
+      firestoreLogs = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...(docSnap.data() as Omit<AuditLog, "id">),
+      }));
+    } catch (err) {
+      blockFirestoreReads(err);
+      if (!isPermissionError(err)) {
+        console.warn("Firestore audit read failed; using local fallback.", err);
+      }
+    }
   }
 
   return mergeAndSortLogs([...firestoreLogs, ...loadLocalLogs(localKey)]).slice(0, maxResults);

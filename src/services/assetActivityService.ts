@@ -38,6 +38,28 @@ export type AssetActivityLog = {
 };
 
 const LOCAL_ACTIVITY_KEY = "fibre-gis-asset-activity-local-v1";
+const FIRESTORE_PERMISSION_BACKOFF_MS = 5 * 60 * 1000;
+let firestoreActivityWriteBlockedUntil = 0;
+
+function getFirebaseErrorCode(error: unknown): string {
+  const code = (error as { code?: unknown })?.code;
+  return typeof code === "string" ? code.toLowerCase() : "";
+}
+
+function isPermissionError(error: unknown): boolean {
+  const code = getFirebaseErrorCode(error);
+  return code.includes("permission-denied") || code.includes("unauthenticated");
+}
+
+function canAttemptFirestoreActivityWrite(): boolean {
+  return Date.now() >= firestoreActivityWriteBlockedUntil;
+}
+
+function blockFirestoreActivityWrites(error: unknown): void {
+  if (isPermissionError(error)) {
+    firestoreActivityWriteBlockedUntil = Date.now() + FIRESTORE_PERMISSION_BACKOFF_MS;
+  }
+}
 
 export function getCurrentActivityUser(): AssetActivityUser {
   const user = auth.currentUser;
@@ -216,6 +238,11 @@ export async function createAssetActivityLog(args: {
   details: sanitizeActivityDetails(args.details),
 };
 
+  if (!canAttemptFirestoreActivityWrite()) {
+    writeLocalActivityLog(log);
+    return log;
+  }
+
   try {
     const ref = await addDoc(
       collection(db, "businesses", "fibre-gis-v2", "assetActivityLogs"),
@@ -226,7 +253,10 @@ export async function createAssetActivityLog(args: {
     );
     return { ...log, id: ref.id };
   } catch (err) {
-    console.warn("Firestore activity log failed; saving local fallback", err);
+    blockFirestoreActivityWrites(err);
+    if (!isPermissionError(err)) {
+      console.warn("Firestore activity log failed; saving local fallback", err);
+    }
     writeLocalActivityLog(log);
     return log;
   }
