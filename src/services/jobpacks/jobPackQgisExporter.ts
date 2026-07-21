@@ -204,9 +204,23 @@ function labelFor(asset: JobPackDraftAsset): string {
 }
 
 function toQgisPosition(position: [number, number]): [number, number] {
-  const lat = Number(position[0]);
-  const lng = Number(position[1]);
-  return [lng, lat];
+  const first = Number(position[0]);
+  const second = Number(position[1]);
+
+  // Saved map assets are historically mixed: Leaflet-created assets use
+  // [lat, lng], while imported GeoJSON/PostGIS assets may already be [lng, lat].
+  // QGIS/GeoJSON expects [lng, lat], so only flip pairs that look like UK
+  // latitude-first coordinates.
+  const firstLooksLikeUkLat = first >= 49 && first <= 61;
+  const secondLooksLikeUkLng = second >= -9 && second <= 3;
+  const firstLooksLikeUkLng = first >= -9 && first <= 3;
+  const secondLooksLikeUkLat = second >= 49 && second <= 61;
+
+  if (firstLooksLikeUkLng && secondLooksLikeUkLat) return [first, second];
+  if (firstLooksLikeUkLat && secondLooksLikeUkLng) return [second, first];
+
+  // Fall back to the original app convention.
+  return [second, first];
 }
 
 function toQgisGeometry(geometry: JobPackDraftAsset["geometry"]): JobPackDraftAsset["geometry"] {
