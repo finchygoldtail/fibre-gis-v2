@@ -1396,6 +1396,13 @@ export default function ProjectWorkspace({
     () => workspaceAssets.filter(isOperationalAssetRegisterAsset),
     [workspaceAssets],
   );
+  const operationalWorkspaceAssetKeys = useMemo(() => {
+    const keys = new Set<string>();
+    operationalWorkspaceAssets.forEach((asset) => {
+      getAssetIdentityKeys(asset).forEach((key) => keys.add(key));
+    });
+    return keys;
+  }, [operationalWorkspaceAssets]);
 
   const openreachWorkspaceAssets = useMemo(
     () =>
@@ -1757,9 +1764,9 @@ export default function ProjectWorkspace({
   const networkState = useMemo(
     () =>
       needsNetworkAnalysis
-        ? buildNetworkState(workspaceAssets)
+        ? buildNetworkState(operationalWorkspaceAssets)
         : emptyNetworkState,
-    [emptyNetworkState, needsNetworkAnalysis, workspaceAssets],
+    [emptyNetworkState, needsNetworkAnalysis, operationalWorkspaceAssets],
   );
 
   const networkGraph = networkState.graph;
@@ -1768,6 +1775,14 @@ export default function ProjectWorkspace({
   () =>
     networkState.nodes.filter((node) => {
       const asset: any = node.asset;
+      const assetKeys = getAssetIdentityKeys(asset);
+
+      if (
+        !isOperationalAssetRegisterAsset(asset) ||
+        !assetKeys.some((key) => operationalWorkspaceAssetKeys.has(key))
+      ) {
+        return false;
+      }
 
       // Ignore AFN/SB DPs because they may be fed
       // from a cable outside the current project area.
@@ -1790,7 +1805,7 @@ export default function ProjectWorkspace({
 
       return node.connectedTo.length === 0;
     }),
-  [networkState],
+  [networkState, operationalWorkspaceAssetKeys],
 );
 
   const areaDistributionPoints = useMemo(

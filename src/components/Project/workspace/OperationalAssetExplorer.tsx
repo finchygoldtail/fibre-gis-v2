@@ -5,6 +5,10 @@ import AssetExplorerFilters, {
   type AssetExplorerFiltersState,
 } from "./AssetExplorerFilters";
 import AssetExplorerTable, { type AssetExplorerRow } from "./AssetExplorerTable";
+import {
+  getDpCapacitySummary,
+  getDpConnectedHomeCount,
+} from "../../../services/dpIntelligence";
 
 type Props = {
   projectAssets: SavedMapAsset[];
@@ -190,54 +194,6 @@ function numberList(values: unknown[]): number[] {
   ).sort((a, b) => a - b);
 }
 
-function countHomesForDp(dp: SavedMapAsset, allAssets: SavedMapAsset[]): number {
-  const item = dp as any;
-  const explicit = Number(item.connectedHomes || item.homesConnected || item.homeCount || item.dpDetails?.connectedHomes || item.dpDetails?.connectionsToHomes || 0);
-  if (Number.isFinite(explicit) && explicit > 0) return explicit;
-
-  const keys = [dp.id, item.assetId, item.name, item.jointName, item.label, item.dpId].map(norm).filter(Boolean);
-  const connectedHomes = new Set<string>();
-
-  allAssets.forEach((asset: any) => {
-    const homeText = [asset.assetType, asset.type, asset.homeType, asset.name, asset.label].map(norm).join(" ");
-    const isHome = asset.geometry?.type === "Point" && (asset.uprn || asset.UPRN || homeText.includes("home") || homeText.includes("premise") || homeText.includes("property"));
-    if (!isHome) return;
-
-    const dpRef = norm(asset.connectedDpId || asset.dpId || asset.assignedDpId || asset.properties?.connectedDpId || asset.properties?.dpId);
-    if (!dpRef || !keys.some((key) => key === dpRef || key.includes(dpRef) || dpRef.includes(key))) return;
-    connectedHomes.add(text(asset.uprn || asset.UPRN || asset.homeId || asset.id || asset.name));
-  });
-
-  return connectedHomes.size;
-}
-
-function getCapacity(asset: SavedMapAsset, used: number): number {
-  const item = asset as any;
-  const dpDetails = item.dpDetails || item.properties?.dpDetails || {};
-  const explicit = Number(item.capacity || item.dpCapacity || item.ports || dpDetails.capacity || dpDetails.ports || 0);
-  if (Number.isFinite(explicit) && explicit > 0) return explicit;
-
-  const fibres = numberList([
-    dpDetails.afnDetails?.inputFibres,
-    dpDetails.afnDetails?.splitterFibres,
-    item.afnDetails?.inputFibres,
-    item.splitterFibres,
-  ]);
-
-  const closure = closureType(asset);
-  if ((closure === "AFN" || closure === "MDU_SPLITTER") && fibres.length) return fibres.length * 8;
-  if (closure === "CBT") return Math.max(12, used);
-  return used;
-}
-
-function getRisk(used: number, capacity: number): AssetExplorerRow["risk"] {
-  if (!capacity) return "UNKNOWN";
-  if (used > capacity) return "OVER";
-  if (used === capacity) return "FULL";
-  if ((used / capacity) * 100 >= 80) return "WARN";
-  return "OK";
-}
-
 function getFibreSummary(asset: SavedMapAsset): string {
   const item = asset as any;
   const details = item.dpDetails || item.properties?.dpDetails || {};
@@ -275,8 +231,18 @@ function getLocation(asset: SavedMapAsset): string {
 
 function toRow(asset: SavedMapAsset, allAssets: SavedMapAsset[]): AssetExplorerRow {
   const type = assetType(asset);
-  const used = type === "distribution-point" ? countHomesForDp(asset, allAssets) : 0;
-  const capacity = type === "distribution-point" ? getCapacity(asset, used) : 0;
+  const capacitySummary =
+    type === "distribution-point"
+      ? getDpCapacitySummary(asset, allAssets, {
+          connectedHomeCount: getDpConnectedHomeCount(asset, allAssets),
+        })
+      : null;
+  const used = capacitySummary?.used || 0;
+  const capacity = capacitySummary?.capacity || 0;
+  const risk =
+    capacitySummary?.state === "NO CAPACITY"
+      ? "UNKNOWN"
+      : capacitySummary?.state || "UNKNOWN";
 
   return {
     asset,
@@ -288,7 +254,7 @@ function toRow(asset: SavedMapAsset, allAssets: SavedMapAsset[]): AssetExplorerR
     capacity,
     used,
     free: Math.max(0, capacity - used),
-    risk: type === "distribution-point" ? getRisk(used, capacity) : "UNKNOWN",
+    risk,
     fibreSummary: getFibreSummary(asset),
     location: getLocation(asset),
   };
