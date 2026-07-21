@@ -394,15 +394,6 @@ function getBoundsFromAssets(projectArea: SavedMapAsset | null | undefined, asse
   ];
 }
 
-function assetMatchesJobPackCaptureTarget(asset: SavedMapAsset, target: JobPackMapCaptureTarget): boolean {
-  if (target === "overview") return true;
-  const item = asset as any;
-  const fibreText = String(item.fibreCount || item.properties?.fibreCount || item.name || item.label || "").toUpperCase();
-  if (getLinePoints(asset).length >= 2) return fibreText.includes(target);
-  return true;
-}
-
-
 type WorkspaceHomeStack = {
   id: string;
   assets: SavedMapAsset[];
@@ -1018,18 +1009,18 @@ export default function WorkspaceMap({
   }, [selectedAssetId, viewportBounds, viewportZoom]);
 
   const jobPackCaptureAssets = useMemo(
-    () => jobPackCaptureRequest
-      ? assets.filter((asset) => assetMatchesJobPackCaptureTarget(asset, jobPackCaptureRequest.target))
-      : assets,
-    [assets, jobPackCaptureRequest],
+    () => assets,
+    [assets],
   );
   const bounds = useMemo(() => getBoundsFromAssets(projectArea, assets), [projectArea, assets]);
   const activeBounds = useMemo(
     () => jobPackCaptureRequest
-      ? getBoundsFromAssets(projectArea, jobPackCaptureAssets.filter((asset) => {
-          if (jobPackCaptureRequest.target === "overview") return true;
-          return getLinePoints(asset).length >= 2 && assetMatchesJobPackCaptureTarget(asset, jobPackCaptureRequest.target);
-        }))
+      ? getBoundsFromAssets(
+          projectArea,
+          jobPackCaptureRequest.target === "overview"
+            ? jobPackCaptureAssets
+            : jobPackCaptureAssets.filter((asset) => getLinePoints(asset).length >= 2),
+        )
       : bounds,
     [bounds, jobPackCaptureAssets, jobPackCaptureRequest, projectArea],
   );
@@ -1037,9 +1028,6 @@ export default function WorkspaceMap({
     () =>
       (jobPackCaptureRequest ? jobPackCaptureAssets : assets).filter((asset) => {
         if (!jobPackCaptureRequest && !isLayerVisibleForAsset(asset, visibleLayers)) return false;
-        if (jobPackCaptureRequest && isHomeAssetForWorkspace(asset)) return false;
-        if (jobPackCaptureRequest && isHomeDropCable(asset)) return false;
-        if (jobPackCaptureRequest && getLinePoints(asset).length >= 2 && !assetMatchesJobPackCaptureTarget(asset, jobPackCaptureRequest.target)) return false;
 
         if (isHomeAssetForWorkspace(asset)) {
           const homeStatus = getHomeConnectionStatus(asset, assets, isHomeDropCable);

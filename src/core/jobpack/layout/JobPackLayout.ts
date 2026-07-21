@@ -71,16 +71,25 @@ function dropAndHomeFeatures(features: JobPackMapFeature[]): JobPackMapFeature[]
 
 
 function buildRouteSheetFeatures(allFeatures: JobPackMapFeature[], route: JobPackMapFeature, bounds: ReturnType<typeof expandJobPackBounds>): JobPackMapFeature[] {
+  const routeBucket = fibreBucket(route);
+  const cableContextInsideRouteView = allFeatures.filter((candidate) => {
+    if (candidate.id === route.id) return false;
+    if (candidate.points.length <= 1) return false;
+    if (fibreBucket(candidate) === 'DROP') return jobPackFeatureInsideBounds(candidate, bounds);
+    if (fibreBucket(candidate) === routeBucket) return true;
+    return jobPackFeatureInsideBounds(candidate, bounds);
+  });
+
   const pointAssetsInsideRouteView = allFeatures.filter((candidate) => {
     if (candidate.id === route.id) return false;
     if (candidate.points.length !== 1) return false;
     return jobPackFeatureInsideBounds(candidate, bounds);
   });
 
-  // Route sheets must stay uncluttered: show the selected cable only, then the
-  // related point assets/home dots inside that cable's fitted view. Do not draw
-  // other 96F/48F/12F routes that happen to cross the same crop.
-  return [route, ...pointAssetsInsideRouteView];
+  // Keep the selected route prominent, but include nearby cable context so
+  // sheets do not show CMJs/SBs floating without the feeder/link legs that
+  // explain why those assets are on the page.
+  return [route, ...cableContextInsideRouteView, ...pointAssetsInsideRouteView];
 }
 
 function routeTitle(feature: JobPackMapFeature, index: number): string {
@@ -118,10 +127,11 @@ export function buildProductionJobPackHtml(jobPack: JobPackDocumentModel): strin
   pages.push(renderJobPackOverviewPage({ jobPack, pageNumber: pageNumber++, pageCount, features: allFeatures, bounds: overviewBounds }));
 
   routes.forEach((feature, index) => {
-    const bounds = expandJobPackBounds(boundsForJobPackFeatures([feature]) || overviewBounds, 0.65);
-    const routeSheetFeatures = buildRouteSheetFeatures(allFeatures, feature, bounds);
+    const seedBounds = expandJobPackBounds(boundsForJobPackFeatures([feature]) || overviewBounds, 0.65);
+    const routeSheetFeatures = buildRouteSheetFeatures(allFeatures, feature, seedBounds);
+    const bounds = expandJobPackBounds(boundsForJobPackFeatures(routeSheetFeatures) || seedBounds, 0.16);
     const title = routeTitle(feature, index);
-    contents.push({ pageNumber, title, description: 'Auto-fit route sheet showing only the selected route and related point assets.' });
+    contents.push({ pageNumber, title, description: 'Auto-fit route sheet showing the selected route, related cable context and nearby assets.' });
     pages.push(renderJobPackRoutePage({
       jobPack,
       layout: title,

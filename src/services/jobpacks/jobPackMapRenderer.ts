@@ -178,6 +178,7 @@ function isPointRelatedToSelectedRoutes(asset: JobPackDraftAsset, selectedRoutes
 }
 
 function routeColour(asset: JobPackDraftAsset): string {
+  if (asset.cableType === "Drop") return "#22c55e";
   if (asset.fibreCount === "96F") return "#e60000";
   if (asset.fibreCount === "48F") return "#0ea5e9";
   if (asset.fibreCount === "36F") return "#22c55e";
@@ -368,7 +369,7 @@ function renderJobPackMapSvg(draft: JobPackDraft, assets: JobPackDraftAsset[], t
   const contextRoutes = routeFilter ? drawable.filter((asset) => asset.group === "route" && asset.fibreCount !== routeFilter) : [];
   const nonRouteAssets = drawable.filter((asset) => asset.group !== "route");
   const muted = Boolean(routeFilter);
-  const routePagePointGroups = new Set(["distributionPoint", "streetCab", "joint", "chamber", "pole"]);
+  const routePagePointGroups = new Set(["distributionPoint", "streetCab", "joint", "chamber", "pole", "home"]);
   const seedBounds = routeFilter && selectedRoutes.length
     ? expandBounds(boundsFor(selectedRoutes), 0.28, 0.00008)
     : expandBounds(boundsFor(drawable));
@@ -378,7 +379,7 @@ function renderJobPackMapSvg(draft: JobPackDraft, assets: JobPackDraftAsset[], t
       .filter((asset) => isPointRelatedToSelectedRoutes(asset, selectedRoutes, seedBounds))
     : [];
   const bounds = routeFilter && selectedRoutes.length
-    ? expandBounds(boundsFor([...selectedRoutes, ...relatedRoutePoints]), 0.22, 0.00008)
+    ? expandBounds(boundsFor([...selectedRoutes, ...contextRoutes, ...relatedRoutePoints]), 0.22, 0.00008)
     : seedBounds;
 
   const boundaries = nonRouteAssets.filter((asset) => asset.group === "boundary").map((asset) => renderBoundary(asset, bounds)).join("");
