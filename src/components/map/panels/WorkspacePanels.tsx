@@ -19,6 +19,7 @@ type WorkspacePanelsProps = {
   onOpenQA: () => void;
   onOpenFibreTopology: () => void;
   onOpenJointEditor: (asset: SavedMapAsset) => void;
+  onOpenDistributionPointEditor?: (asset: SavedMapAsset) => void;
   onOpenAudit?: (asset: SavedMapAsset) => void;
   onBulkUpdateDpStatus: (args: {
     assetIds: string[];
@@ -65,6 +66,7 @@ export default function WorkspacePanels({
   onOpenQA,
   onOpenFibreTopology,
   onOpenJointEditor,
+  onOpenDistributionPointEditor,
   onOpenAudit,
   onBulkUpdateDpStatus,
   onBulkUpdateCablePiaNoi,
@@ -118,6 +120,7 @@ export default function WorkspacePanels({
       onOpenQA={onOpenQA}
       onOpenFibreTopology={onOpenFibreTopology}
       onOpenJointEditor={onOpenJointEditor}
+      onOpenDistributionPointEditor={onOpenDistributionPointEditor}
       onOpenAudit={onOpenAudit}
       onBulkUpdateDpStatus={onBulkUpdateDpStatus}
       onBulkUpdateCablePiaNoi={onBulkUpdateCablePiaNoi}

@@ -79,6 +79,7 @@ type WorkspaceMapProps = {
   onManagerAreaPointAdd?: (point: LatLngLiteral) => void;
   onManagerAreaClear?: () => void;
   onAssetSelect?: (asset: SavedMapAsset) => void;
+  onOpenDistributionPointEditor?: (asset: SavedMapAsset) => void;
   onOpenAudit?: (asset: SavedMapAsset) => void;
 };
 
@@ -984,6 +985,7 @@ export default function WorkspaceMap({
   onManagerAreaPointAdd,
   onManagerAreaClear,
   onAssetSelect,
+  onOpenDistributionPointEditor,
   onOpenAudit,
 }: WorkspaceMapProps) {
   const [viewportBounds, setViewportBounds] = useState<WorkspaceBounds | null>(null);
@@ -1375,13 +1377,15 @@ export default function WorkspaceMap({
                       {getAuditButtonLabel(asset)}
                     </button>
                   ) : null}
-                  <button
-                    type="button"
-                    onClick={() => onAssetSelect?.(asset)}
-                    style={workspacePopupSecondaryButton}
-                  >
-                    Inspect
-                  </button>
+                  {isDpLikeAsset(asset) ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpenDistributionPointEditor?.(asset)}
+                      style={workspacePopupSecondaryButton}
+                    >
+                      Open DP
+                    </button>
+                  ) : null}
                 </div>
               </Popup>
             </Marker>

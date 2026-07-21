@@ -4844,6 +4844,10 @@ export default function JointMapManager({
           }
           onOpenJoint(asset);
         }}
+        onOpenDistributionPointEditor={(asset) => {
+          setIsProjectWorkspaceOpen(false);
+          setOpenDistributionPointAsset(asset);
+        }}
         onOpenAudit={(asset) => setAuditFormAsset(asset)}
         onBulkUpdateDpStatus={handleWorkspaceBulkDpStatusUpdate}
         onBulkUpdateCablePiaNoi={handleWorkspaceBulkCablePiaNoiUpdate}

@@ -47,6 +47,7 @@ type AssetIntelligencePanelProps = {
   onZoomAsset?: (asset: SavedMapAsset) => void;
   onSelectAsset?: (asset: SavedMapAsset) => void;
   onOpenJointEditor?: (asset: SavedMapAsset) => void;
+  onOpenDistributionPointEditor?: (asset: SavedMapAsset) => void;
   onUpdateDpStatus?: (args: {
     asset: SavedMapAsset;
     status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
@@ -1068,6 +1069,7 @@ export default function AssetIntelligencePanel({
   onZoomAsset,
   onSelectAsset,
   onOpenJointEditor,
+  onOpenDistributionPointEditor,
   onUpdateDpStatus,
 }: AssetIntelligencePanelProps) {
   const item = asset as any;
@@ -1238,12 +1240,30 @@ export default function AssetIntelligencePanel({
           {isJoint(asset) ? (
             <button type="button" style={operationButton} onClick={() => onOpenJointEditor?.(asset)}>Open Joint</button>
           ) : null}
+          {selectedAssetType.dp ? (
+            <button type="button" style={liveOperationButton} onClick={() => onOpenDistributionPointEditor?.(asset)}>
+              Open DP
+            </button>
+          ) : null}
           {canChangeDpStatus ? (
             <>
               <button type="button" style={liveOperationButton} onClick={() => applyDpStatus("Live")}>Set Live</button>
               <button type="button" style={operationButton} onClick={() => applyDpStatus("BWIP")}>Set BWIP</button>
-              <button type="button" style={warningOperationButton} onClick={() => applyDpStatus("Live not ready for service")}>Set LNRFS</button>
-              <button type="button" style={dangerOperationButton} onClick={() => applyDpStatus("Unserviceable")}>Set Unserviceable</button>
+              <select
+                aria-label="More DP status actions"
+                defaultValue=""
+                style={statusActionSelect}
+                onChange={(event) => {
+                  const nextStatus = event.target.value as OperationalDpStatus | "";
+                  event.currentTarget.value = "";
+                  if (!nextStatus) return;
+                  applyDpStatus(nextStatus);
+                }}
+              >
+                <option value="">More status...</option>
+                <option value="Live not ready for service">Set LNRFS</option>
+                <option value="Unserviceable">Set Unserviceable</option>
+              </select>
             </>
           ) : null}
           <button type="button" style={operationButton} onClick={() => copyText(getAssetCopyText(asset))}>Copy Info</button>
@@ -1856,6 +1876,14 @@ const warningOperationButton: React.CSSProperties = {
   border: "1px solid rgba(251, 191, 36, 0.3)",
   background: "rgba(113, 63, 18, 0.38)",
   color: "#fde68a",
+};
+
+const statusActionSelect: React.CSSProperties = {
+  ...operationButton,
+  border: "1px solid rgba(251, 191, 36, 0.28)",
+  background: "rgba(17, 24, 39, 0.96)",
+  color: "#fde68a",
+  appearance: "auto",
 };
 
 const severityGrid: React.CSSProperties = {

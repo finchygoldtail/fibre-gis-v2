@@ -148,6 +148,7 @@ type ProjectWorkspaceProps = {
   onOpenQA?: () => void;
   onOpenFibreTopology?: () => void;
   onOpenJointEditor?: (asset: SavedMapAsset) => void;
+  onOpenDistributionPointEditor?: (asset: SavedMapAsset) => void;
   onOpenAudit?: (asset: SavedMapAsset) => void;
   onExport?: () => void;
   onUpdateWorkspaceAsset?: (asset: SavedMapAsset) => void;
@@ -1223,6 +1224,7 @@ export default function ProjectWorkspace({
   onOpenQA,
   onOpenFibreTopology,
   onOpenJointEditor,
+  onOpenDistributionPointEditor,
   onOpenAudit,
   onExport,
   onUpdateWorkspaceAsset,
@@ -1516,10 +1518,12 @@ export default function ProjectWorkspace({
   const handleWorkspaceTabChange = (tab: WorkspaceTab) => {
     if (tab === "commercial" && !canViewCommercial) {
       setActiveTab("overview");
+      setSelectedWorkspaceAsset(null);
       clearWorkspaceOperationState();
       return;
     }
     setActiveTab(tab);
+    setSelectedWorkspaceAsset(null);
     clearWorkspaceOperationState();
   };
 
@@ -3294,8 +3298,7 @@ export default function ProjectWorkspace({
     }
 
     if (isWorkspaceDistributionPointAsset(fullSelectedWorkspaceAsset)) {
-      setMobileQuickPanel("dps");
-      setActiveTab("build");
+      onOpenDistributionPointEditor?.(fullSelectedWorkspaceAsset);
       return;
     }
 
@@ -4253,6 +4256,11 @@ export default function ProjectWorkspace({
                     }}
                     showCableDistances
                     visibleLayers={visibleLayers}
+                    onOpenDistributionPointEditor={(asset) => {
+                      setSelectedWorkspaceAsset(asset);
+                      setSearchTerm(getWorkspaceAssetTitle(asset));
+                      onOpenDistributionPointEditor?.(asset);
+                    }}
                     onAssetSelect={(asset) => {
                       const assetType = String(
                         (asset as any).assetType || (asset as any).type || "",
@@ -4532,6 +4540,10 @@ export default function ProjectWorkspace({
                     onSelectAsset={setSelectedWorkspaceAsset}
                     onZoomAsset={setSelectedWorkspaceAsset}
                     onOpenJointEditor={onOpenJointEditor}
+                    onOpenDistributionPointEditor={(asset) => {
+                      setSelectedWorkspaceAsset(asset);
+                      onOpenDistributionPointEditor?.(asset);
+                    }}
                     onUpdateDpStatus={({ asset, status, note }) => {
                       const syncedAsset = syncWorkspaceDpStatus(asset, status);
                       setSelectedWorkspaceAsset(syncedAsset);
