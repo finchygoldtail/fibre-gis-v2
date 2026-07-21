@@ -9,6 +9,7 @@ import {
   uniqueCanonicalHomes,
   clampCanonicalCount,
 } from "./canonicalHomeStatus";
+import { getDpCapacitySummary } from "../../../services/dpIntelligence";
 
 export type LiveHomesDpRow = {
   dp: SavedMapAsset;
@@ -105,27 +106,6 @@ function dpStatus(asset: SavedMapAsset): AssetStatus | "Unknown" {
   if (raw === "Unserviceable") return "Unserviceable";
   if (raw === "Live not ready for service") return "Live not ready for service";
   return raw ? (raw as AssetStatus) : "Unknown";
-}
-
-function dpCapacity(asset: SavedMapAsset, servedHomes: number): number {
-  const item = asset as any;
-  const raw = Number(item.capacity || item.dpCapacity || item.ports || item.dpDetails?.connectionsToHomes || item.dpDetails?.capacity || 0);
-  if (Number.isFinite(raw) && raw > 0) return raw;
-  const closure = closureType(asset);
-  if (closure === "CBT") return 12;
-  if (closure === "AFN" || closure === "MDU_SPLITTER") return Math.max(16, servedHomes);
-  if (closure === "MDU") return Math.max(servedHomes, 0);
-  return Math.max(servedHomes, 0);
-}
-
-
-function getCapacityWarning(capacity: number, capacityUsed: number): { warning: string; risk: "OK" | "WARN" | "FULL" | "OVER" } {
-  if (capacity <= 0) return { warning: "No capacity set", risk: "WARN" };
-  if (capacityUsed > capacity) return { warning: "Over capacity", risk: "OVER" };
-  if (capacityUsed === capacity) return { warning: "Full", risk: "FULL" };
-  const percent = (capacityUsed / capacity) * 100;
-  if (percent >= 80) return { warning: "Near capacity", risk: "WARN" };
-  return { warning: "Capacity OK", risk: "OK" };
 }
 
 function valueMatchesAny(value: unknown, lookup: Set<string>): boolean {
@@ -328,10 +308,12 @@ function buildRows(projectAssets: SavedMapAsset[]): LiveHomesDpRow[] {
     const dpDrops = dropsForDp(dp, drops);
     const status = dpStatus(dp);
     const liveHomes = servedHomes.filter((home) => homeOperationalState(home, projectAssets) !== "unconnected").length;
-    const capacity = dpCapacity(dp, servedHomes.length);
     const capacityUsed = Math.max(servedHomes.length, dpDrops.length);
-    const capacityPercent = capacity > 0 ? (capacityUsed / capacity) * 100 : 0;
-    const capacityState = getCapacityWarning(capacity, capacityUsed);
+    const capacityState = getDpCapacitySummary(dp, projectAssets, {
+      connectedHomeCount: capacityUsed,
+    });
+    const capacity = capacityState.capacity;
+    const capacityPercent = capacityState.percent;
 
     return {
       dp,
@@ -346,7 +328,7 @@ function buildRows(projectAssets: SavedMapAsset[]): LiveHomesDpRow[] {
       capacityUsed,
       capacityPercent,
       capacityWarning: capacityState.warning,
-      operationalRisk: capacityState.risk,
+      operationalRisk: capacityState.state === "NO CAPACITY" ? "WARN" : capacityState.state,
     };
   }).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 }
