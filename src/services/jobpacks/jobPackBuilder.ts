@@ -216,7 +216,22 @@ function toDraftAsset(asset: SavedMapAsset): JobPackDraftAsset {
     group: assetGroup(asset),
     assetType: asset.assetType || anyAsset.type || asset.jointType || "unknown",
     status: asset.status || undefined,
-    fibreCount: normaliseRouteFibreCount(asset.fibreCount || anyAsset.fiberCount || anyAsset.coreCount || anyAsset.size),
+    fibreCount: normaliseRouteFibreCount([
+      asset.fibreCount,
+      anyAsset.fiberCount,
+      anyAsset.coreCount,
+      anyAsset.size,
+      anyAsset.cableSize,
+      anyAsset.properties?.fibreCount,
+      anyAsset.properties?.fiberCount,
+      anyAsset.properties?.coreCount,
+      anyAsset.properties?.size,
+      anyAsset.properties?.cableSize,
+      asset.name,
+      anyAsset.label,
+      asset.cableType,
+      asset.notes,
+    ]),
     installMethod: asset.installMethod,
     cableType: asset.cableType,
     notes: asset.notes,
@@ -226,11 +241,20 @@ function toDraftAsset(asset: SavedMapAsset): JobPackDraftAsset {
 }
 
 function normaliseRouteFibreCount(value: unknown): string | undefined {
-  const raw = String(value ?? "").trim();
+  const raw = Array.isArray(value)
+    ? value.map((item) => String(item ?? "").trim()).filter(Boolean).join(" ")
+    : String(value ?? "").trim();
   if (!raw) return undefined;
-  const match = raw.match(/\b(12|24|36|48|96)\s*f?\b/i);
-  if (!match) return raw;
-  const next = `${match[1]}F`;
+  for (const count of ["96", "48", "36", "24", "12"]) {
+    const match = new RegExp(`(?:^|[^0-9])${count}\\s*(?:f|fibre|fiber|core|c|fulw|fu|ulw)(?:\\b|\\d|_)`, "i").test(raw);
+    if (match) {
+      const next = `${count}F`;
+      return isJobPackRouteFibreCount(next) ? next : raw;
+    }
+  }
+  const standalone = raw.match(/\b(12|24|36|48|96)\b/i);
+  if (!standalone) return raw;
+  const next = `${standalone[1]}F`;
   return isJobPackRouteFibreCount(next) ? next : raw;
 }
 

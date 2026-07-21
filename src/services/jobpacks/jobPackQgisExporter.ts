@@ -40,16 +40,36 @@ function sourceValue(asset: JobPackDraftAsset, keys: string[]): string {
 function routeFibreCount(asset: JobPackDraftAsset): JobPackRouteFibreCount | "" {
   const raw = [
     asset.fibreCount,
-    sourceValue(asset, ["fibreCount", "fiberCount", "coreCount", "size", "cableSize"]),
+    sourceValue(asset, [
+      "fibreCount",
+      "fiberCount",
+      "coreCount",
+      "size",
+      "cableSize",
+      "properties.fibreCount",
+      "properties.fiberCount",
+      "properties.coreCount",
+      "properties.size",
+      "properties.cableSize",
+      "label",
+      "properties.label",
+    ]),
     asset.name,
     asset.cableType,
     asset.notes,
   ]
     .map(text)
     .join(" ");
-  const match = raw.match(/\b(12|24|36|48|96)\s*f?\b/i);
-  if (!match) return "";
-  const count = `${match[1]}F` as JobPackRouteFibreCount;
+  for (const value of ["96", "48", "36", "24", "12"]) {
+    const match = new RegExp(`(?:^|[^0-9])${value}\\s*(?:f|fibre|fiber|core|c|fulw|fu|ulw)(?:\\b|\\d|_)`, "i").test(raw);
+    if (match) {
+      const count = `${value}F` as JobPackRouteFibreCount;
+      return routeCounts.includes(count) ? count : "";
+    }
+  }
+  const standalone = raw.match(/\b(12|24|36|48|96)\b/i);
+  if (!standalone) return "";
+  const count = `${standalone[1]}F` as JobPackRouteFibreCount;
   return routeCounts.includes(count) ? count : "";
 }
 
