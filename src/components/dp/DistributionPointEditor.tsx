@@ -1114,6 +1114,9 @@ export default function DistributionPointEditor({
   const [draftRouting, setDraftRouting] = useState<DraftRouting>(() =>
     buildInitialDraft(incomingAsset),
   );
+  const [editBaselineRouting, setEditBaselineRouting] = useState<DraftRouting>(() =>
+    buildInitialDraft(incomingAsset),
+  );
   const [rangeStartFibre, setRangeStartFibre] = useState("");
   const [rangeEndFibre, setRangeEndFibre] = useState("");
   const [rangeRouteType, setRangeRouteType] = useState<"splitter" | "direct" | "splice" | "passthrough" | "spare">("passthrough");
@@ -1124,7 +1127,9 @@ export default function DistributionPointEditor({
   }, [incomingAsset?.id]);
 
   useEffect(() => {
-    setDraftRouting(buildInitialDraft(asset));
+    const initialDraft = buildInitialDraft(asset);
+    setDraftRouting(initialDraft);
+    setEditBaselineRouting(initialDraft);
     setSelectedFibre(null);
     setSelectedPort(null);
     setActiveFibreView("splitter");
@@ -1411,6 +1416,8 @@ export default function DistributionPointEditor({
     Boolean((details as any)?.afnDetails?.relationshipLed) &&
     Boolean(manualSbRoute) &&
     (manualSbParentFibres.length > 0 || manualSbLocalFibres.length > 0);
+  const trustedStoredSplitterFibres =
+    throughCable || hasManualSbRoute ? storedSplitterFibres : [];
   const manualSbParentName = manualSbRoute?.fromSbName || branchParentName;
   const manualSbChildName = manualSbRoute?.toSbName || currentSbName;
 
@@ -1446,8 +1453,8 @@ export default function DistributionPointEditor({
   // reflect the draft change before Save Routing is pressed.
   const displaySplitterFibres = editMode
     ? draftRouting.splitterFibres
-    : storedSplitterFibres.length
-      ? storedSplitterFibres
+    : trustedStoredSplitterFibres.length
+      ? trustedStoredSplitterFibres
       : hasManualSbRoute && manualRouteTargetsCurrent
         ? manualLocalRouteFibres
         : workspaceLocalFibres.length
@@ -1656,6 +1663,14 @@ export default function DistributionPointEditor({
 
   const passthroughFibres = clampToIncomingCable(rawPassthroughFibres);
   const spareFibres = clampToIncomingCable(rawSpareFibres);
+  const currentVisibleRouting: DraftRouting = {
+    splitterFibres: displaySplitterFibresOnCable,
+    directFibres: displayDirectFibresOnCable,
+    spliceFibres: displaySpliceFibresOnCable,
+    passthroughFibres,
+    spareFibres,
+    hasDownstreamCable: draftRouting.hasDownstreamCable || displayPassthroughFibresOnCable.length > 0,
+  };
 
   const consumedFibreCount = uniqueSorted([
     ...displaySplitterFibresOnCable,
@@ -1693,7 +1708,7 @@ export default function DistributionPointEditor({
     label: `F${fibre}`,
     role: "splitter" as const,
   }));
-  const initialDraft = buildInitialDraft(asset);
+  const initialDraft = editMode ? editBaselineRouting : buildInitialDraft(asset);
   const hasDraftChanges =
     initialDraft.hasDownstreamCable !== draftRouting.hasDownstreamCable ||
     initialDraft.splitterFibres.join(",") !==
@@ -2048,7 +2063,7 @@ export default function DistributionPointEditor({
               </button>
               <button
                 type="button"
-                onClick={() => setDraftRouting(buildInitialDraft(asset))}
+                onClick={() => setDraftRouting(editBaselineRouting)}
                 style={buttonStyle("#991b1b")}
               >
                 Reset Draft
@@ -2057,7 +2072,16 @@ export default function DistributionPointEditor({
           ) : null}
           <button
             type="button"
-            onClick={() => setEditMode((value) => !value)}
+            onClick={() => {
+              if (editMode) {
+                setEditMode(false);
+                return;
+              }
+
+              setDraftRouting(currentVisibleRouting);
+              setEditBaselineRouting(currentVisibleRouting);
+              setEditMode(true);
+            }}
             style={buttonStyle(editMode ? "#1d4ed8" : "#132640")}
           >
             {editMode ? "Editing Routes" : "Edit Routing"}

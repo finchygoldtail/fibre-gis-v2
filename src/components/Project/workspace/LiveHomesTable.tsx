@@ -24,6 +24,14 @@ function statusStyle(status: string): React.CSSProperties {
   return pill;
 }
 
+function displayReference(value: unknown): string {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  if (/^distribution-point-\d+$/i.test(text)) return "";
+  if (/^[a-f0-9-]{16,}$/i.test(text)) return "";
+  return text;
+}
+
 export default function LiveHomesTable({ rows, selectedDpId, onSelectDp, onFocusDp, onOpenDp }: Props) {
   if (!rows.length) {
     return <div style={emptyState}>No DPs match the current live homes filters.</div>;
@@ -54,7 +62,7 @@ export default function LiveHomesTable({ rows, selectedDpId, onSelectDp, onFocus
                   <button type="button" style={nameButton} onClick={() => onSelectDp?.(row.dp.id)}>
                     {row.name}
                   </button>
-                  <div style={subText}>{row.dp.id}</div>
+                  {displayReference(row.dp.id) ? <div style={subText}>{displayReference(row.dp.id)}</div> : null}
                 </td>
                 <td style={td}>{row.closureType}</td>
                 <td style={td}><span style={statusStyle(row.status)}>{row.status}</span></td>

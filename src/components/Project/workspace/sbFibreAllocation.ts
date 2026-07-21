@@ -737,10 +737,7 @@ export function buildSbFibreAllocation(
 ): SbFibreAllocation | null {
   if (!selectedAsset || !isSplitterBoxAsset(selectedAsset)) return null;
 
-  return (
-    buildFromJointMappings(selectedAsset, projectAssets || []) ||
-    buildFallbackFromSbOrder(selectedAsset, projectAssets || [])
-  );
+  return buildFromJointMappings(selectedAsset, projectAssets || []);
 }
 
 export function formatFibreList(fibres: number[]): string {

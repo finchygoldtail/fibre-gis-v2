@@ -598,53 +598,7 @@ function formatWorkspaceFibreRanges(fibres?: number[]): string {
 }
 
 function getDpFibreLabel(asset: SavedMapAsset): string {
-  const details = (asset as any).dpDetails || {};
-  const afnDetails = details.afnDetails || {};
-  const mduDetails = details.mduDetails || {};
-  const explicitLocalFibres = [
-    afnDetails.splitterFibres,
-    afnDetails.directFibres,
-    afnDetails.directOutputFibres,
-    mduDetails.directFibres,
-    mduDetails.splitterFibres,
-  ];
-  const fallbackInputFibres = [
-    afnDetails.inputFibres,
-    mduDetails.inputFibres,
-    (asset as any).allocatedInputFibres,
-  ];
-  const explicitSpliceFibres = [
-    afnDetails.spliceFibres,
-    mduDetails.spliceFibres,
-  ];
-  const localFibres = explicitLocalFibres
-    .flatMap((value) => (Array.isArray(value) ? value : []))
-    .map((value) => Number(value))
-    .filter((value) => Number.isFinite(value) && value > 0);
-  const fallbackFibres = fallbackInputFibres
-    .flatMap((value) => (Array.isArray(value) ? value : []))
-    .map((value) => Number(value))
-    .filter((value) => Number.isFinite(value) && value > 0);
-  const spliceFibres = explicitSpliceFibres
-    .flatMap((value) => (Array.isArray(value) ? value : []))
-    .map((value) => Number(value))
-    .filter((value) => Number.isFinite(value) && value > 0);
-  const sourceFibres = localFibres.length ? localFibres : fallbackFibres;
-  const fibreSets = [
-    sourceFibres,
-    spliceFibres,
-  ];
-  const fibres = Array.from(
-    new Set(
-      fibreSets
-        .flatMap((value) => (Array.isArray(value) ? value : []))
-        .map((value) => Number(value))
-        .filter((value) => Number.isFinite(value) && value > 0),
-    ),
-  );
-  return formatWorkspaceFibreRanges(
-    fibres,
-  );
+  return "";
 }
 
 function isStreetCabAsset(asset: SavedMapAsset): boolean {

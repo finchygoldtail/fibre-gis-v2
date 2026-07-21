@@ -102,6 +102,14 @@ function capacityText(row: AssetExplorerRow): string {
   return `${row.used}/${row.capacity} (${row.free} free)`;
 }
 
+function displayReference(value: unknown): string {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  if (/^distribution-point-\d+$/i.test(text)) return "";
+  if (/^[a-f0-9-]{16,}$/i.test(text)) return "";
+  return text;
+}
+
 function isCableRow(row: AssetExplorerRow): boolean {
   const item = row.asset as any;
   const raw = String(item.assetType || item.type || item.cableType || row.type || "").toLowerCase();
@@ -180,7 +188,7 @@ export default function AssetExplorerTable({
                   ) : null}
                   <td style={td}>
                     <button type="button" style={nameButton} onClick={() => onSelectAsset?.(row.asset)}>{row.name}</button>
-                    <div style={{ color: "#64748b", marginTop: 3 }}>{row.id}</div>
+                    {displayReference(row.id) ? <div style={{ color: "#64748b", marginTop: 3 }}>{displayReference(row.id)}</div> : null}
                   </td>
                   <td style={td}>{row.type}{row.closureType ? <div style={{ color: "#94a3b8" }}>{row.closureType}</div> : null}</td>
                   <td style={td}>{row.status || "Unknown"}</td>
