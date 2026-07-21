@@ -20,6 +20,10 @@ import {
   buildNetworkState,
   isDistributionPointAsset,
 } from "../../services/network";
+import {
+  buildJobPackDraftFromLiveMap,
+  exportQgisJobPackBundle,
+} from "../../services/jobpacks";
 import { getDpIntelligence } from "../../services/dpIntelligence";
 import AuditModal from "../audits/AuditModal";
 import AuditFormEngine from "../audits/AuditFormEngine";
@@ -1434,6 +1438,7 @@ export default function ProjectWorkspace({
     target: JobPackMapCaptureTarget;
     resolve: (imageDataUrl: string) => void;
   } | null>(null);
+  const [isHeaderQgisExporting, setIsHeaderQgisExporting] = useState(false);
   const [activeOperationPanel, setActiveOperationPanel] =
     useState<WorkspaceOperationPanel>("none");
   const [activeIssueSeverity, setActiveIssueSeverity] =
@@ -2752,6 +2757,46 @@ export default function ProjectWorkspace({
     onSelectProject?.(nextProjectId);
   };
 
+  const handleHeaderQgisExport = async () => {
+    if (isHeaderQgisExporting) return;
+
+    const byId = new Map<string, SavedMapAsset>();
+    [projectArea, ...workspaceAssets].forEach((asset) => {
+      if (!asset?.id) return;
+      byId.set(String(asset.id), asset);
+    });
+
+    const assetsForExport = Array.from(byId.values()).filter(
+      (asset) => asset.geometry,
+    );
+
+    if (!assetsForExport.length) {
+      alert("No map assets found for this project export.");
+      return;
+    }
+
+    setIsHeaderQgisExporting(true);
+    try {
+      const draft = buildJobPackDraftFromLiveMap({
+        areaId: activeWorkspaceProjectId || projectArea?.id || projectName,
+        areaName: activeWorkspaceProjectLabel || projectName,
+        revision: "QGIS",
+        assets: assetsForExport,
+      });
+      await exportQgisJobPackBundle(draft);
+    } catch (error) {
+      console.error("QGIS export failed", error);
+      alert(
+        `QGIS export failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      onExport?.();
+    } finally {
+      setIsHeaderQgisExporting(false);
+    }
+  };
+
   const workspaceMapRemountKey = [
     activeWorkspaceProjectId,
     projectArea?.id || "",
@@ -3958,9 +4003,10 @@ export default function ProjectWorkspace({
               <button
                 type="button"
                 style={responsiveHeaderButton}
-                onClick={onExport}
+                onClick={handleHeaderQgisExport}
+                disabled={isHeaderQgisExporting}
               >
-                Export
+                {isHeaderQgisExporting ? "Exporting..." : "Export"}
               </button>
               <button
                 type="button"
