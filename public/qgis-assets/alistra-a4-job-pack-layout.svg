@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="297mm" height="210mm" viewBox="0 0 297 210">
+  <rect x="0" y="0" width="297" height="210" fill="#ffffff" stroke="#0f172a" stroke-width="0.8"/>
+  <rect x="5" y="5" width="287" height="16" fill="#001326"/>
+  <text x="10" y="14" font-family="Arial, Helvetica, sans-serif" font-size="8" font-weight="700" fill="#ffffff">ALISTRA GIS</text>
+  <text x="10" y="19" font-family="Arial, Helvetica, sans-serif" font-size="2.8" font-weight="700" fill="#7dd3fc">ENGINEERING DELIVERY JOB PACK</text>
+  <text x="214" y="12" font-family="Arial, Helvetica, sans-serif" font-size="3.3" font-weight="700" fill="#ffffff">PROJECT</text>
+  <text x="214" y="18" font-family="Arial, Helvetica, sans-serif" font-size="3" font-weight="700" fill="#ffffff">CABLE ROUTE SHEET</text>
+  <rect x="5" y="25" width="225" height="176" fill="none" stroke="#0f172a" stroke-width="0.5"/>
+  <text x="102" y="113" font-family="Arial, Helvetica, sans-serif" font-size="5" font-weight="700" fill="#64748b">MAP FRAME</text>
+  <rect x="234" y="25" width="58" height="176" fill="#ffffff" stroke="#0f172a" stroke-width="0.5"/>
+  <text x="238" y="35" font-family="Arial, Helvetica, sans-serif" font-size="4" font-weight="700" fill="#0f172a">SHEET</text>
+  <line x1="238" y1="38" x2="288" y2="38" stroke="#cbd5e1" stroke-width="0.35"/>
+  <text x="238" y="73" font-family="Arial, Helvetica, sans-serif" font-size="3.4" font-weight="700" fill="#0f172a">BP REVIEW</text>
+  <text x="238" y="80" font-family="Arial, Helvetica, sans-serif" font-size="3" fill="#334155">Draft</text>
+  <text x="238" y="96" font-family="Arial, Helvetica, sans-serif" font-size="3.6" font-weight="700" fill="#0f172a">LEGEND</text>
+  <line x1="238" y1="99" x2="288" y2="99" stroke="#cbd5e1" stroke-width="0.35"/>
+  <g font-family="Arial, Helvetica, sans-serif" font-size="2.8" font-weight="700" fill="#0f172a">
+    <line x1="239" y1="106" x2="250" y2="106" stroke="#2563eb" stroke-width="1.3" stroke-dasharray="4 2"/>
+    <text x="253" y="107">96F route</text>
+    <line x1="239" y1="113" x2="250" y2="113" stroke="#06b6d4" stroke-width="1.1" stroke-dasharray="4 2"/>
+    <text x="253" y="114">48F / 36F</text>
+    <line x1="239" y1="120" x2="250" y2="120" stroke="#f97316" stroke-width="1.0" stroke-dasharray="4 2"/>
+    <text x="253" y="121">12F route</text>
+    <line x1="239" y1="127" x2="250" y2="127" stroke="#22c55e" stroke-width="0.8"/>
+    <text x="253" y="128">Drop cables</text>
+    <circle cx="244" cy="135" r="2" fill="#facc15" stroke="#0f172a" stroke-width="0.4"/>
+    <text x="253" y="136">DP / SB</text>
+    <rect x="242" y="141" width="4" height="4" fill="#fb923c" stroke="#9a3412" stroke-width="0.3"/>
+    <text x="253" y="145">Homes</text>
+  </g>
+  <rect x="238" y="163" width="45" height="26" fill="none" stroke="#cbd5e1" stroke-width="0.35"/>
+  <text x="240" y="171" font-family="Arial, Helvetica, sans-serif" font-size="5" font-weight="700" fill="#0284c7">ALISTRA</text>
+  <text x="240" y="179" font-family="Arial, Helvetica, sans-serif" font-size="7" font-weight="700" fill="#0f172a">GIS</text>
+  <text x="8" y="207" font-family="Arial, Helvetica, sans-serif" font-size="2.4" fill="#475569">Homes plotted without UPRN labels. Routes, drops and fibre allocations to be reviewed before issue.</text>
+</svg>
