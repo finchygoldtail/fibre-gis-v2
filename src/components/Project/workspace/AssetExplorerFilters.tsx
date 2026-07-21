@@ -8,7 +8,6 @@ export type AssetExplorerTypeFilter =
   | "pole"
   | "chamber"
   | "street-cab"
-  | "home"
   | "area"
   | "other";
 
@@ -141,7 +140,6 @@ export default function AssetExplorerFilters({ value, onChange, totalCount, filt
             <option value="pole">Poles</option>
             <option value="chamber">Chambers</option>
             <option value="street-cab">Street cabs</option>
-            <option value="home">Homes</option>
             <option value="area">Areas</option>
             <option value="other">Other</option>
           </select>

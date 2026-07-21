@@ -1,5 +1,7 @@
 import React from "react";
-import OperationalAssetExplorer from "./OperationalAssetExplorer";
+import OperationalAssetExplorer, {
+  isOperationalAssetRegisterAsset,
+} from "./OperationalAssetExplorer";
 import type { SavedMapAsset } from "../../map/types";
 
 type Props = {
@@ -59,6 +61,10 @@ export default function WorkspaceAssets({
   onOpenTrace,
   onBulkUpdateCablePiaNoi,
 }: Props) {
+  const operationalAssets = (projectAssets || []).filter(
+    isOperationalAssetRegisterAsset,
+  );
+
   const openAsset = (asset: SavedMapAsset) => {
     onSelectAsset?.(asset);
   };
@@ -70,7 +76,7 @@ export default function WorkspaceAssets({
           <div>
             <h3 style={title}>Asset Register</h3>
             <div style={{ color: "#94a3b8", fontSize: 13 }}>
-              Operational asset search, risk filtering and quick actions. Counts: {Number(projectAssets?.length || 0).toLocaleString()} total · {Number(stats?.joints || 0).toLocaleString()} joints · {Number(stats?.dps || 0).toLocaleString()} DPs · {Number(stats?.cables || 0).toLocaleString()} cables.
+              Operational asset search, risk filtering and quick actions. Counts: {Number(operationalAssets.length || 0).toLocaleString()} total - {Number(stats?.joints || 0).toLocaleString()} joints - {Number(stats?.dps || 0).toLocaleString()} DPs - {Number(stats?.cables || 0).toLocaleString()} cables.
             </div>
           </div>
           <button type="button" style={button} onClick={onBackToMap}>Back To Map To Add Asset</button>

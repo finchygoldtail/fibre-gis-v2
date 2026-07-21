@@ -14,6 +14,55 @@ function csvEscape(value: string | number | undefined): string {
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
+function text(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function sourceValue(asset: JobPackDraftAsset, keys: string[]): string {
+  const source = asset.sourceAsset as any;
+  for (const key of keys) {
+    const value =
+      source?.[key] ??
+      source?.properties?.[key] ??
+      source?.metadata?.[key] ??
+      source?.dpDetails?.[key] ??
+      source?.properties?.dpDetails?.[key];
+    const clean = text(value);
+    if (clean) return clean;
+  }
+  return "";
+}
+
+function routeFibreCount(asset: JobPackDraftAsset): JobPackRouteFibreCount | "" {
+  const raw = [
+    asset.fibreCount,
+    sourceValue(asset, ["fibreCount", "fiberCount", "coreCount", "size", "cableSize"]),
+    asset.name,
+    asset.cableType,
+    asset.notes,
+  ]
+    .map(text)
+    .join(" ");
+  const match = raw.match(/\b(12|24|36|48|96)\s*f?\b/i);
+  if (!match) return "";
+  const count = `${match[1]}F` as JobPackRouteFibreCount;
+  return routeCounts.includes(count) ? count : "";
+}
+
+function isDropRoute(asset: JobPackDraftAsset): boolean {
+  const raw = [
+    asset.name,
+    asset.assetType,
+    asset.cableType,
+    asset.notes,
+    sourceValue(asset, ["assetSubtype", "asset_subtype", "type", "kind", "generatedBy"]),
+  ]
+    .map(text)
+    .join(" ")
+    .toLowerCase();
+  return raw.includes("drop") || raw.includes("home-drop") || raw.includes("dropcable");
+}
+
 function formatFibres(fibres?: number[]): string {
   if (!fibres?.length) return "";
   const sorted = [...fibres].sort((a, b) => a - b);
@@ -83,6 +132,13 @@ function toQgisGeometry(geometry: JobPackDraftAsset["geometry"]): JobPackDraftAs
 function feature(asset: JobPackDraftAsset, draft: JobPackDraft): GeoJsonFeature {
   const label = labelFor(asset);
   const dpFibres = asset.group === "distributionPoint" ? dpFibreLabel(asset) : "";
+  const routeCount = asset.group === "route" ? routeFibreCount(asset) : "";
+  const cableId = sourceValue(asset, ["cableId", "cableName", "assetId", "id"]);
+  const dpRef = sourceValue(asset, ["dpId", "dpName", "assetId", "name", "label"]);
+  const closureType = sourceValue(asset, ["closureType", "networkArchitecture", "dpType", "distributionPointType"]);
+  const connectedHomes = sourceValue(asset, ["connectedHomes", "homesConnected", "homeCount", "connectionsToHomes"]);
+  const fromRef = sourceValue(asset, ["fromAssetId", "fromId", "aEnd", "upstreamAssetId", "parentCableId"]);
+  const toRef = sourceValue(asset, ["toAssetId", "toId", "bEnd", "downstreamAssetId", "connectedDpId"]);
   return {
     type: "Feature",
     geometry: toQgisGeometry(asset.geometry),
@@ -94,10 +150,16 @@ function feature(asset: JobPackDraftAsset, draft: JobPackDraft): GeoJsonFeature 
       group: asset.group,
       asset_type: asset.assetType,
       status: asset.status || "",
-      fibre_count: asset.fibreCount || "",
+      fibre_count: routeCount || asset.fibreCount || "",
       fibre_numbers: dpFibres,
       install: asset.installMethod || "",
       cable_type: asset.cableType || "",
+      cable_id: cableId,
+      dp_ref: dpRef,
+      closure_type: closureType,
+      connected_homes: connectedHomes,
+      from_ref: fromRef,
+      to_ref: toRef,
       label,
       route_label: asset.group === "route" ? label : "",
       dp_label: asset.group === "distributionPoint" ? label : "",
@@ -640,6 +702,7 @@ export async function createQgisJobPackBundleBlob(draft: JobPackDraft): Promise<
   const assets = draft.assets.filter((asset) => asset.geometry);
   const byGroup = (group: JobPackDraftAsset["group"]) => assets.filter((asset) => asset.group === group);
   const routeAssets = byGroup("route");
+  const nonDropRoutes = routeAssets.filter((asset) => !isDropRoute(asset));
   const files = [
     { path: `${base}/00_READ_ME_FIRST.txt`, content: readme(draft) },
     { path: `${base}/00_Metadata/job-pack.json`, content: qgisMetadata(draft) },
@@ -649,12 +712,12 @@ export async function createQgisJobPackBundleBlob(draft: JobPackDraft): Promise<
     { path: `${base}/01_Layers/chambers.geojson`, content: collection(byGroup("chamber"), draft) },
     { path: `${base}/01_Layers/poles.geojson`, content: collection(byGroup("pole"), draft) },
     { path: `${base}/01_Layers/homes.geojson`, content: collection(byGroup("home"), draft) },
-    { path: `${base}/01_Layers/route_context.geojson`, content: collection(routeAssets, draft) },
+    { path: `${base}/01_Layers/route_context.geojson`, content: collection(nonDropRoutes, draft) },
     ...routeCounts.map((count) => ({
       path: `${base}/01_Layers/routes_${count}.geojson`,
-      content: collection(routeAssets.filter((asset) => asset.fibreCount === count), draft),
+      content: collection(nonDropRoutes.filter((asset) => routeFibreCount(asset) === count), draft),
     })),
-    { path: `${base}/01_Layers/drops.geojson`, content: collection(routeAssets.filter((asset) => /drop/i.test(`${asset.name} ${asset.cableType} ${asset.notes}`)), draft) },
+    { path: `${base}/01_Layers/drops.geojson`, content: collection(routeAssets.filter(isDropRoute), draft) },
     { path: `${base}/02_QGIS_Styles/boundary.qml`, content: polygonStyle("Project Boundary", "150,82,225,45", "150,82,225,255", 0.7) },
     { path: `${base}/02_QGIS_Styles/routes_96F.qml`, content: routeStyle("96F Routes", "37,99,235,255", 0.75, true) },
     { path: `${base}/02_QGIS_Styles/routes_48F.qml`, content: routeStyle("48F Routes", "6,182,212,255", 0.65, true) },

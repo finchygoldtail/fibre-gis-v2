@@ -8,6 +8,7 @@ import WorkspaceMap, {
 import type { OpenreachLayerVisibility } from "../map/layers/OpenreachOverlayLayer";
 import AssetIntelligencePanel from "./AssetIntelligencePanel";
 import WorkspaceTabContent from "./workspace/WorkspaceTabContent";
+import { isOperationalAssetRegisterAsset } from "./workspace/OperationalAssetExplorer";
 import AreaBulkStatusPanel from "./workspace/AreaBulkStatusPanel";
 import LiveHomesControl from "./workspace/LiveHomesControl";
 import type { SavedMapAsset } from "../map/types";
@@ -1387,6 +1388,11 @@ export default function ProjectWorkspace({
     });
   }, [projectAssets, mappingRowsByAssetId, localAssetOverrides]);
 
+  const operationalWorkspaceAssets = useMemo(
+    () => workspaceAssets.filter(isOperationalAssetRegisterAsset),
+    [workspaceAssets],
+  );
+
   const openreachWorkspaceAssets = useMemo(
     () =>
       openreachAssets
@@ -2473,7 +2479,7 @@ export default function ProjectWorkspace({
 
     rows.push(["SECTION", "Asset Totals"]);
     rows.push(["Metric", "Value"]);
-    rows.push(["Total assets", workspaceAssets.length]);
+    rows.push(["Total assets", operationalWorkspaceAssets.length]);
     rows.push(["Joints", displayStats.joints]);
     rows.push(["DPs", displayStats.dps]);
     rows.push(["Street cabs", displayStats.streetCabs]);
@@ -2795,7 +2801,7 @@ export default function ProjectWorkspace({
       disconnectedAssets: rolloutKpis.disconnectedAssets,
       routeLengthMeters: rolloutKpis.routeLengthMeters,
       assetTotals: {
-        totalAssets: workspaceAssets.length,
+        totalAssets: operationalWorkspaceAssets.length,
         joints: displayStats.joints,
         dps: displayStats.dps,
         poles: displayStats.poles,
@@ -2814,7 +2820,7 @@ export default function ProjectWorkspace({
       issueBuckets.medium.length,
       issueBuckets.low.length,
       auditIssues.length,
-      workspaceAssets.length,
+      operationalWorkspaceAssets.length,
       displayStats,
     ],
   );
@@ -3670,7 +3676,7 @@ export default function ProjectWorkspace({
     },
     {
       label: "Assets",
-      helper: `${formatNumber(workspaceAssets.length)} total`,
+      helper: `${formatNumber(operationalWorkspaceAssets.length)} total`,
       active: activeTab === "assets",
       onClick: () => openOperationPanel("projectDetails", "assets"),
     },
@@ -4830,7 +4836,7 @@ export default function ProjectWorkspace({
                       />
                       <InfoRow
                         label="Total Assets"
-                        value={formatNumber(workspaceAssets.length)}
+                        value={formatNumber(operationalWorkspaceAssets.length)}
                       />
                       <InfoRow
                         label="Project Area"
@@ -5416,7 +5422,7 @@ export default function ProjectWorkspace({
                 />
                 <InfoRow
                   label="Assets"
-                  value={formatNumber(workspaceAssets.length)}
+                  value={formatNumber(operationalWorkspaceAssets.length)}
                 />
                 <InfoRow
                   label="Disconnected"

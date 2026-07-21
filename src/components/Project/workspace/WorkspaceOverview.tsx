@@ -1,4 +1,5 @@
 import React from "react";
+import { isOperationalAssetRegisterAsset } from "./OperationalAssetExplorer";
 
 type Props = {
   projectName: string;
@@ -158,6 +159,9 @@ export default function WorkspaceOverview({
   onOpenPanel,
   onOpenTrace,
 }: Props) {
+  const operationalAssets = (projectAssets || []).filter(
+    isOperationalAssetRegisterAsset,
+  );
   const readiness = stats?.operationalReadiness;
   const rollout = stats?.rolloutKpis || {};
   const blockers = Array.isArray(readiness?.blockers) ? readiness.blockers : [];
@@ -237,7 +241,7 @@ export default function WorkspaceOverview({
         <div style={kicker}>Network</div>
         <h3 style={title}>Asset Totals</h3>
         <div style={{ ...tileGrid, marginTop: 10 }}>
-          <Tile label="Total" value={n(projectAssets?.length)} />
+          <Tile label="Total" value={n(operationalAssets.length)} />
           <Tile label="DPs" value={n(stats?.dps)} />
           <Tile label="Cables" value={n(stats?.cables)} />
           <Tile label="Joints" value={n(stats?.joints)} />

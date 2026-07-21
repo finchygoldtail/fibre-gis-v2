@@ -12,10 +12,40 @@ import type {
 const normalize = (value?: string) => (value || "").toLowerCase().replace(/[\s_-]/g, "");
 
 function assetGroup(asset: SavedMapAsset): JobPackAssetGroup {
-  const type = normalize(asset.assetType || asset.jointType);
+  const anyAsset = asset as any;
+  const type = normalize(
+    [
+      asset.assetType,
+      anyAsset.type,
+      asset.jointType,
+      asset.cableType,
+      anyAsset.assetSubtype,
+      anyAsset.asset_subtype,
+      asset.name,
+      anyAsset.label,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
   if (type === "area") return "boundary";
-  if (type === "cable" || type === "piaroute") return "route";
-  if (type === "distributionpoint") return "distributionPoint";
+  if (
+    type.includes("cable") ||
+    type.includes("route") ||
+    type.includes("feeder") ||
+    type.includes("link") ||
+    type.includes("ulw") ||
+    type.includes("fulw") ||
+    asset.geometry?.type === "LineString"
+  )
+    return "route";
+  if (
+    type.includes("distributionpoint") ||
+    type.includes("dp") ||
+    type.includes("sb") ||
+    type.includes("cbt") ||
+    type.includes("afn")
+  )
+    return "distributionPoint";
   if (type === "streetcab") return "streetCab";
   if (type === "joint" || type === "agjoint") return "joint";
   if (type === "chamber") return "chamber";
@@ -49,7 +79,7 @@ function formatFibres(fibres?: number[]): string {
 }
 
 function detailFor(asset: SavedMapAsset): string {
-  if (asset.assetType === "distribution-point") {
+  if (assetGroup(asset) === "distributionPoint") {
     const homes = asset.dpDetails?.connectionsToHomes ?? 0;
     const architecture = asset.dpDetails?.closureType || asset.dpDetails?.networkArchitecture || "DP";
     const fibres = formatFibres(
@@ -60,7 +90,7 @@ function detailFor(asset: SavedMapAsset): string {
     );
     return `${architecture}, ${homes} connected homes${fibres ? `, fibres ${fibres}` : ""}`;
   }
-  if (asset.assetType === "cable" || asset.assetType === "pia-route") {
+  if (assetGroup(asset) === "route") {
     return [asset.fibreCount, asset.installMethod, asset.cableType].filter(Boolean).join(" / ") || "Route";
   }
   if (asset.assetType === "home") return asset.homeType || "Premises";
@@ -70,19 +100,29 @@ function detailFor(asset: SavedMapAsset): string {
 }
 
 function toDraftAsset(asset: SavedMapAsset): JobPackDraftAsset {
+  const anyAsset = asset as any;
   return {
     id: asset.id,
     name: assetName(asset),
     group: assetGroup(asset),
-    assetType: asset.assetType || asset.jointType || "unknown",
+    assetType: asset.assetType || anyAsset.type || asset.jointType || "unknown",
     status: asset.status || undefined,
-    fibreCount: isJobPackRouteFibreCount(asset.fibreCount) ? asset.fibreCount : asset.fibreCount,
+    fibreCount: normaliseRouteFibreCount(asset.fibreCount || anyAsset.fiberCount || anyAsset.coreCount || anyAsset.size),
     installMethod: asset.installMethod,
     cableType: asset.cableType,
     notes: asset.notes,
     geometry: asset.geometry,
     sourceAsset: asset,
   };
+}
+
+function normaliseRouteFibreCount(value: unknown): string | undefined {
+  const raw = String(value ?? "").trim();
+  if (!raw) return undefined;
+  const match = raw.match(/\b(12|24|36|48|96)\s*f?\b/i);
+  if (!match) return raw;
+  const next = `${match[1]}F`;
+  return isJobPackRouteFibreCount(next) ? next : raw;
 }
 
 function scheduleRow(asset: JobPackDraftAsset): JobPackScheduleRow {

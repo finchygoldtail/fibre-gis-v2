@@ -152,6 +152,11 @@ function assetType(asset: SavedMapAsset): string {
   return "other";
 }
 
+export function isOperationalAssetRegisterAsset(asset: SavedMapAsset): boolean {
+  const type = assetType(asset);
+  return type !== "home";
+}
+
 function prettyType(type: string): string {
   if (type === "distribution-point") return "DP / SB";
   if (type === "ag-joint") return "Joint";
@@ -364,8 +369,10 @@ export default function OperationalAssetExplorer({
   const [filters, setFilters] = useState<AssetExplorerFiltersState>(DEFAULT_ASSET_EXPLORER_FILTERS);
   const [selectedBulkCableIds, setSelectedBulkCableIds] = useState<string[]>([]);
 
-    const explorerAssets = useMemo(() => {
+  const explorerAssets = useMemo(() => {
     return (projectAssets || []).filter((asset) => {
+      if (!isOperationalAssetRegisterAsset(asset)) return false;
+
       const item = asset as any;
       const raw = [item.assetType, item.type, item.cableType, item.name, item.label, item.cableId, item.cableName].map(norm).join(" ");
       const isLineOrCable = asset.geometry?.type === "LineString" || raw.includes("cable") || raw.includes("ulw") || raw.includes("fulw") || raw.includes("feeder") || raw.includes("link");
@@ -373,7 +380,7 @@ export default function OperationalAssetExplorer({
     });
   }, [projectAssets]);
 
-  const allRows = useMemo(() => explorerAssets.map((asset) => toRow(asset, explorerAssets)), [explorerAssets]);
+  const allRows = useMemo(() => explorerAssets.map((asset) => toRow(asset, projectAssets || [])), [explorerAssets, projectAssets]);
   const filteredRows = useMemo(() => sortRows(allRows.filter((row) => matchesFilters(row, filters)), filters.sort), [allRows, filters]);
 
   const riskCount = allRows.filter((row) => row.risk === "WARN" || row.risk === "FULL" || row.risk === "OVER").length;
