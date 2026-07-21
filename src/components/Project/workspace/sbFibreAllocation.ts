@@ -272,8 +272,26 @@ function sbTokensForAsset(asset: SavedMapAsset): string[] {
 }
 
 function endpointContainsSelectedSb(endpoint: string, selectedTokens: string[]): boolean {
-  const value = compact(endpoint);
-  return selectedTokens.some((token) => token && value.includes(token));
+  const raw = text(endpoint);
+  const value = compact(raw);
+
+  return selectedTokens.some((token) => {
+    if (!token) return false;
+
+    const sbMatch = token.match(/^sb0*(\d+)$/i);
+    if (sbMatch) {
+      const sbNumber = sbMatch[1];
+      const endpointSb = raw.match(/(?:^|[-_\s])SB[-_\s]*0*(\d+)\b/i);
+      return endpointSb ? endpointSb[1] === sbNumber : false;
+    }
+
+    return (
+      value === token ||
+      value.endsWith(token) ||
+      value.startsWith(`${token}sp`) ||
+      value.startsWith(`${token}splitter`)
+    );
+  });
 }
 
 function endpointLooksLikeLocalSplitter(endpoint: string, selectedTokens: string[]): boolean {
