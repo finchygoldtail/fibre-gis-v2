@@ -80,6 +80,11 @@ type ParentFibreMapping = {
   childAssetName?: string;
 };
 
+type JointPhoto = {
+  url: string;
+  label: string;
+};
+
 type SbToSbFibreRoute = {
   id?: string;
   fromSbId?: string;
@@ -318,6 +323,73 @@ function getAssetTitle(asset: SavedMapAsset | null): string {
 function getDpDetails(asset: SavedMapAsset | null): any {
   const item = asset as any;
   return item?.dpDetails || item?.properties?.dpDetails || {};
+}
+
+function normalisePhotoUrl(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (!value || typeof value !== "object") return "";
+  const photo = value as any;
+  return text(
+    photo.url ||
+      photo.downloadUrl ||
+      photo.downloadURL ||
+      photo.publicUrl ||
+      photo.storageUrl ||
+      photo.fullUrl ||
+      photo.src ||
+      photo.imageUrl ||
+      photo.photoUrl ||
+      photo.previewUrl ||
+      photo.uri ||
+      photo.path,
+  );
+}
+
+function collectPhotoValues(source: unknown): unknown[] {
+  if (!source) return [];
+  return Array.isArray(source) ? source : [source];
+}
+
+function getJointInsidePhotos(asset: SavedMapAsset | null): JointPhoto[] {
+  const item = asset as any;
+  const details = getDpDetails(asset);
+  const sources = [
+    details.image,
+    details.insideImage,
+    details.internalImage,
+    details.jointImage,
+    details.photos,
+    details.photoEvidence,
+    details.images,
+    item?.image,
+    item?.photos,
+    item?.photoEvidence,
+    item?.images,
+    item?.properties?.image,
+    item?.properties?.photos,
+    item?.properties?.photoEvidence,
+    item?.properties?.images,
+    item?.properties?.dpDetails?.image,
+    item?.properties?.dpDetails?.photos,
+    item?.properties?.dpDetails?.photoEvidence,
+    item?.properties?.dpDetails?.images,
+  ];
+
+  const seen = new Set<string>();
+  return sources
+    .flatMap(collectPhotoValues)
+    .map(normalisePhotoUrl)
+    .filter(Boolean)
+    .filter((url) => {
+      if (seen.has(url)) return false;
+      seen.add(url);
+      return true;
+    })
+    .slice(0, 6)
+    .map((url, index) => ({
+      url,
+      label: `Joint inside ${index + 1}`,
+    }));
 }
 
 function getClosureType(asset: SavedMapAsset | null): string {
@@ -1253,6 +1325,7 @@ export default function DistributionPointEditor({
   if (!asset) return null;
 
   const details = getDpDetails(asset);
+  const jointInsidePhotos = getJointInsidePhotos(asset);
   const closureType = getClosureType(asset);
   const status = getOperationalStatus(asset);
   const afnDetails = details.afnDetails || {};
@@ -2654,6 +2727,7 @@ export default function DistributionPointEditor({
                 spliceFibres={displaySpliceFibresOnCable}
                 passthroughFibres={passthroughFibres}
                 spareFibres={spareFibres}
+                jointPhotos={jointInsidePhotos}
                 hasDownstreamCable={draftRouting.hasDownstreamCable}
                 splitterRatio={splitterBlockLabel}
                 routeModeLabel={routeModeLabel}
@@ -3192,6 +3266,7 @@ function FibreSpliceDiagram({
   spliceFibres,
   passthroughFibres,
   spareFibres,
+  jointPhotos,
   hasDownstreamCable,
   splitterRatio,
   routeModeLabel,
@@ -3212,6 +3287,7 @@ function FibreSpliceDiagram({
   spliceFibres: number[];
   passthroughFibres: number[];
   spareFibres: number[];
+  jointPhotos: JointPhoto[];
   hasDownstreamCable: boolean;
   splitterRatio: string;
   routeModeLabel: string;
@@ -3231,7 +3307,6 @@ function FibreSpliceDiagram({
   const localConsumedFibres = uniqueSorted([...directFeedFibres, ...splitterFibres]);
   const spliceDisplayFibres = uniqueSorted(spliceFibres);
   const passDisplayFibres = uniqueSorted(passthroughFibres).slice(0, 8);
-  const spareDisplayFibres = uniqueSorted(spareFibres).slice(0, 4);
   const totalFibreCount = allCableFibres.length;
   const routeTargetText = (fibre: number, index: number) => {
     const mapping = parentFibreMappings.find((row) => row.parentFibre === fibre || row.localFibre === fibre);
@@ -3315,7 +3390,6 @@ function FibreSpliceDiagram({
     { label: "Splitter feeds", value: splitterFibres.length, colour: "#22c55e" },
     { label: "Splice", value: spliceDisplayFibres.length, colour: "#fb923c" },
     { label: "Pass-through", value: passthroughFibres.length, colour: "#38bdf8" },
-    { label: "Spare / EOL", value: spareFibres.length, colour: "#94a3b8" },
   ];
   const directFeedSectionLabel = isMduClosureType
     ? "MDU Flat Feeds"
@@ -3406,7 +3480,7 @@ function FibreSpliceDiagram({
                 {routeModeLabel}
               </div>
               <div style={{ color: "#cbd5e1", fontSize: 13, marginTop: 4 }}>
-                DP-local view of fibre work at this asset. Feeder cable fibres are only shown where they are used, reserved, spliced, or passed through here.
+                DP-local view of fibre work at this asset. Only active direct, splitter, splice, or pass-through fibres are shown here.
               </div>
             </div>
             <div style={{ color: "#94a3b8", fontSize: 12 }}>
@@ -3563,13 +3637,13 @@ function FibreSpliceDiagram({
             </section>
             ) : null}
 
-            <section style={routeCardStyle("rgba(56,189,248,0.30)")}>
+            <section style={{ ...routeCardStyle("rgba(56,189,248,0.30)"), display: passDisplayFibres.length ? undefined : "none" }}>
               <div style={sectionHeaderStyle("#38bdf8")}>
                 <span>Pass-through</span>
                 <span>{passthroughFibres.length} fibre{passthroughFibres.length === 1 ? "" : "s"}</span>
               </div>
               <div style={{ display: "grid", gap: 6 }}>
-                {passDisplayFibres.length ? passDisplayFibres.map((fibre) => {
+                {passDisplayFibres.map((fibre) => {
                   const colour = getFibreColour(fibre);
                   const active = selectedFibre === fibre;
                   return (
@@ -3582,7 +3656,7 @@ function FibreSpliceDiagram({
                       <span style={{ color: "#38bdf8", fontWeight: 900 }}>Continues →</span>
                     </button>
                   );
-                }) : <div style={{ color: "#94a3b8", fontSize: 13 }}>No pass-through fibres currently recorded.</div>}
+                })}
                 {passthroughFibres.length > passDisplayFibres.length ? (
                   <div style={{ color: "#94a3b8", fontSize: 12, paddingLeft: 6 }}>
                     +{passthroughFibres.length - passDisplayFibres.length} more pass-through fibres hidden to keep the diagram readable.
@@ -3591,30 +3665,55 @@ function FibreSpliceDiagram({
               </div>
             </section>
 
-            {spareDisplayFibres.length ? (
-              <section style={routeCardStyle("rgba(148,163,184,0.22)")}>
-                <div style={sectionHeaderStyle("#94a3b8")}>
-                  <span>Spare / EOL sample</span>
-                  <span>{spareFibres.length} fibre{spareFibres.length === 1 ? "" : "s"}</span>
+            <section style={routeCardStyle("rgba(59,130,246,0.22)")}>
+              <div style={sectionHeaderStyle("#38bdf8")}>
+                <span>Inside Joint Photos</span>
+                <span>{jointPhotos.length} photo{jointPhotos.length === 1 ? "" : "s"}</span>
+              </div>
+              {jointPhotos.length ? (
+                <div style={{ display: "grid", gridTemplateColumns: isCompact ? "minmax(0, 1fr)" : "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+                  {jointPhotos.map((photo) => (
+                    <a
+                      key={photo.url}
+                      href={photo.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{
+                        display: "grid",
+                        gap: 7,
+                        color: "#dbeafe",
+                        textDecoration: "none",
+                        background: "rgba(15,23,42,0.72)",
+                        border: "1px solid rgba(96,165,250,0.24)",
+                        borderRadius: 12,
+                        padding: 8,
+                        minWidth: 0,
+                      }}
+                    >
+                      <img
+                        src={photo.url}
+                        alt={photo.label}
+                        style={{
+                          width: "100%",
+                          height: isCompact ? 180 : 210,
+                          objectFit: "cover",
+                          borderRadius: 10,
+                          background: "#020617",
+                          border: "1px solid rgba(148,163,184,0.16)",
+                        }}
+                      />
+                      <span style={{ color: "#bfdbfe", fontSize: 12, fontWeight: 850 }}>
+                        {photo.label}
+                      </span>
+                    </a>
+                  ))}
                 </div>
-                <div style={{ display: "grid", gap: 6 }}>
-                  {spareDisplayFibres.map((fibre) => {
-                    const colour = getFibreColour(fibre);
-                    const active = selectedFibre === fibre;
-                    return (
-                      <button key={`spare-${fibre}`} type="button" onClick={() => onSelectFibre(fibre)} style={{ ...fibreRowStyle(active), gridTemplateColumns: isCompact ? "minmax(0, 1fr)" : "92px minmax(200px, 1fr) 120px" }}>
-                        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={chipStyle(fibre, active)}>{fibre}</span>
-                          <span style={{ color: "#e5e7eb", fontWeight: 800 }}>{colour.name}</span>
-                        </span>
-                        <span style={lineStyle(fibre, "spare")} />
-                        <span style={{ color: "#94a3b8", fontWeight: 900 }}>Spare</span>
-                      </button>
-                    );
-                  })}
+              ) : (
+                <div style={{ color: "#94a3b8", fontSize: 13 }}>
+                  No inside joint photos attached to this DP yet.
                 </div>
-              </section>
-            ) : null}
+              )}
+            </section>
           </div>
         </main>
 
