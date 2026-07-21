@@ -567,6 +567,49 @@ function isDesignCableAsset(asset: SavedMapAsset | null | undefined): boolean {
   return looksLikeCable && !isHomeDropCableAsset(asset);
 }
 
+function isQgisExportableReferenceCable(
+  asset: SavedMapAsset | null | undefined,
+): boolean {
+  if (!asset || asset.geometry?.type !== "LineString") return false;
+  if (isHomeDropCableAsset(asset)) return true;
+
+  const item = asset as any;
+  const text = [
+    item.name,
+    item.label,
+    item.assetType,
+    item.type,
+    item.cableType,
+    item.fibreCount,
+    item.fiberCount,
+    item.coreCount,
+    item.size,
+    item.category,
+    item.kind,
+    item.notes,
+    item.properties?.name,
+    item.properties?.label,
+    item.properties?.assetType,
+    item.properties?.type,
+    item.properties?.cableType,
+    item.properties?.fibreCount,
+    item.properties?.fiberCount,
+    item.properties?.coreCount,
+    item.properties?.size,
+  ]
+    .map((value) => String(value ?? "").toLowerCase())
+    .join(" ");
+
+  const looksLikeNetworkCable =
+    /\b(?:12|24|36|48|96|144|288)\s*f\b/.test(text) ||
+    text.includes("fulw") ||
+    text.includes("ulw") ||
+    text.includes("feeder") ||
+    text.includes("distribution cable");
+
+  return looksLikeNetworkCable;
+}
+
 function isWorkspaceDistributionPointAsset(
   asset: SavedMapAsset | null | undefined,
 ): boolean {
@@ -2780,7 +2823,14 @@ export default function ProjectWorkspace({
     if (isHeaderQgisExporting) return;
 
     const byId = new Map<string, SavedMapAsset>();
-    [projectArea, ...workspaceAssets].forEach((asset) => {
+    const exportableReferenceCables = openreachWorkspaceAssets.filter(
+      isQgisExportableReferenceCable,
+    );
+    [
+      projectArea,
+      ...workspaceAssets,
+      ...exportableReferenceCables,
+    ].forEach((asset) => {
       if (!asset?.id) return;
       byId.set(String(asset.id), asset);
     });
