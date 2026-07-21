@@ -692,9 +692,9 @@ function getCablePiaLabel(asset: SavedMapAsset): string {
   ).trim();
 }
 
-function getWorkspaceCableLabel(asset: SavedMapAsset): string {
+function getWorkspaceCableLabel(asset: SavedMapAsset, showPiaNoiLabel: boolean): string {
   const item = asset as any;
-  const piaLabel = getCablePiaLabel(asset);
+  const piaLabel = showPiaNoiLabel ? getCablePiaLabel(asset) : "";
   const fibreLabel = getCableFibreCountLabel(asset);
   const cableRef = String(item.cableId || item.cableName || item.name || item.label || "").trim();
 
@@ -984,6 +984,7 @@ export default function WorkspaceMap({
   const [isTouchWorkspace, setIsTouchWorkspace] = useState(false);
   const [basemap, setBasemap] = useState<WorkspaceBasemap>("street");
   const [showMapLabels, setShowMapLabels] = useState(true);
+  const [showPiaNoiLabels, setShowPiaNoiLabels] = useState(false);
   const markerRefs = useRef<Map<string, L.Marker>>(new Map());
 
   useEffect(() => {
@@ -1230,7 +1231,7 @@ export default function WorkspaceMap({
           const traceColour = getTraceColour(traceKind);
           const cableState = networkState?.cableStates[asset.id];
           const cableUsageDisplay = getWorkspaceCableUsageDisplay(asset, cableState);
-          const cableLabel = getWorkspaceCableLabel(asset);
+          const cableLabel = getWorkspaceCableLabel(asset, showPiaNoiLabels);
 
           return (
             <React.Fragment key={`workspace-cable-${asset.id}`}>
@@ -1398,6 +1399,13 @@ export default function WorkspaceMap({
           onClick={() => setShowMapLabels((value) => !value)}
         >
           Labels {showMapLabels ? "On" : "Off"}
+        </button>
+        <button
+          type="button"
+          style={showPiaNoiLabels ? basemapButtonActive : basemapButton}
+          onClick={() => setShowPiaNoiLabels((value) => !value)}
+        >
+          PIA Labels {showPiaNoiLabels ? "On" : "Off"}
         </button>
       </div>
 
