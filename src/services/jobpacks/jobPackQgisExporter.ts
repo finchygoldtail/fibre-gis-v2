@@ -7,6 +7,13 @@ type GeoJsonFeature = {
   properties: Record<string, string | number | null>;
 };
 
+type CableRouteIndexRow = {
+  file: string;
+  name: string;
+  fibreCount: JobPackRouteFibreCount;
+  layerName: string;
+};
+
 const routeCounts: JobPackRouteFibreCount[] = ["96F", "48F", "36F", "24F", "12F"];
 
 function csvEscape(value: string | number | undefined): string {
@@ -16,6 +23,15 @@ function csvEscape(value: string | number | undefined): string {
 
 function text(value: unknown): string {
   return String(value ?? "").trim();
+}
+
+function safeFileName(value: string): string {
+  return (
+    value
+      .replace(/[^a-z0-9_-]+/gi, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80) || "cable"
+  );
 }
 
 function sourceValue(asset: JobPackDraftAsset, keys: string[]): string {
@@ -266,6 +282,23 @@ function collection(assets: JobPackDraftAsset[], draft: JobPackDraft): string {
   }, null, 2);
 }
 
+function cableRouteIndex(assets: JobPackDraftAsset[]): CableRouteIndexRow[] {
+  return assets
+    .map((asset, index) => {
+      const fibreCount = routeFibreCount(asset);
+      if (!fibreCount) return null;
+      const name = asset.name || `Cable ${index + 1}`;
+      const file = `${fibreCount}_${String(index + 1).padStart(2, "0")}_${safeFileName(name)}.geojson`;
+      return {
+        file,
+        name,
+        fibreCount,
+        layerName: `routes_${fibreCount}`,
+      };
+    })
+    .filter(Boolean) as CableRouteIndexRow[];
+}
+
 function scheduleCsv(rows: Array<{ asset: string; type: string; detail: string; status: string; reviewNote: string }>): string {
   return [
     ["Asset", "Type", "Detail", "Status", "Review Note"].map(csvEscape).join(","),
@@ -451,6 +484,7 @@ function qgisAutomationScript(draft: JobPackDraft): string {
     "# Alistra GIS automated QGIS job pack setup",
     "# Run inside QGIS: Plugins > Python Console > Open Script > Run Script",
     "",
+    "import json",
     "from pathlib import Path",
     "from qgis.PyQt.QtWidgets import QFileDialog",
     "from qgis.PyQt.QtGui import QFont, QColor",
@@ -496,6 +530,7 @@ function qgisAutomationScript(draft: JobPackDraft): string {
     "",
     "bundle = find_bundle_dir()",
     "layers_dir = bundle / '01_Layers'",
+    "cable_routes_dir = layers_dir / 'Cable_Routes'",
     "styles_dir = bundle / '02_QGIS_Styles'",
     "layout_dir = bundle / '04_QGIS_Layout'",
     "output_dir = bundle / '06_Output'",
@@ -573,8 +608,8 @@ function qgisAutomationScript(draft: JobPackDraft): string {
     "    layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))",
     "    layer.setLabelsEnabled(True)",
     "",
-    "def apply_layer_style(layer):",
-    "    spec = style_for.get(layer.name(), {})",
+    "def apply_layer_style(layer, style_key=None):",
+    "    spec = style_for.get(style_key or layer.name(), {})",
     "    kind = spec.get('kind')",
     "    if kind == 'line':",
     "        symbol = QgsLineSymbol.createSimple({})",
@@ -763,29 +798,44 @@ function qgisAutomationScript(draft: JobPackDraft): string {
     "    ('04', '24F', 'routes_24F'),",
     "    ('05', '12F', 'routes_12F'),",
     "]",
-    "for section_number, fibre_count, route_layer_name in route_pages:",
-    "    route_layer = get_layer(route_layer_name)",
-    "    if not route_layer:",
+    "route_index_path = cable_routes_dir / 'route-index.json'",
+    "route_index = []",
+    "if route_index_path.exists():",
+    "    route_index = json.loads(route_index_path.read_text(encoding='utf-8'))",
+    "section_for_fibre = {fibre_count: section_number for section_number, fibre_count, _ in route_pages}",
+    "route_counts_seen = {}",
+    "for route_entry in route_index:",
+    "    fibre_count = route_entry.get('fibreCount', '')",
+    "    route_layer_name = route_entry.get('layerName', f'routes_{fibre_count}')",
+    "    section_number = section_for_fibre.get(fibre_count, '09')",
+    "    route_counts_seen[fibre_count] = route_counts_seen.get(fibre_count, 0) + 1",
+    "    index = route_counts_seen[fibre_count]",
+    "    cable_name = route_entry.get('name') or f'{fibre_count} cable {index}'",
+    "    route_path = cable_routes_dir / route_entry.get('file', '')",
+    "    if not route_path.exists():",
+    "        print(f'WARNING: Missing cable route layer: {route_path}')",
     "        continue",
-    "    features = list(route_layer.getFeatures())",
-    "    if not features:",
+    "    sheet_layer_name = f'sheet_{fibre_count}_{index:02d}_{safe_file_name(cable_name)}'",
+    "    sheet_layer = QgsVectorLayer(str(route_path), sheet_layer_name, 'ogr')",
+    "    if not sheet_layer.isValid() or sheet_layer.featureCount() == 0:",
+    "        print(f'WARNING: Cable route layer did not load: {route_path}')",
     "        continue",
+    "    apply_layer_style(sheet_layer, route_layer_name)",
+    "    project.addMapLayer(sheet_layer)",
+    "    layers_by_name[sheet_layer.name()] = sheet_layer",
+    "    target_extent = layer_extent_in_project_crs(sheet_layer)",
+    "    if not target_extent or target_extent.isEmpty():",
+    "        target_extent = combined_extent([route_layer_name], extent, 1.4)",
+    "    else:",
+    "        target_extent.grow(max(target_extent.width(), target_extent.height(), 25) * 0.35)",
+    "        target_extent.scale(2.25)",
     "    other_route_names = [name for name in all_route_names if name != route_layer_name]",
-    "    page_layers = context_names + ['drops', route_layer_name] + other_route_names + ['route_context', 'boundary']",
-    "    for index, route_feature in enumerate(features, start=1):",
-    "        route_id = feature_value(route_feature, 'id', str(index)).replace(\"'\", \"''\")",
-    "        cable_name = feature_value(route_feature, 'name', feature_value(route_feature, 'label', f'{fibre_count} cable {index}'))",
-    "        route_layer.setSubsetString(\"\\\"id\\\" = '{}'\".format(route_id))",
-    "        target_extent = feature_extent_in_project_crs(route_layer, route_feature)",
-    "        if not target_extent or target_extent.isEmpty():",
-    "            target_extent = combined_extent([route_layer_name], extent, 1.4)",
-    "        else:",
-    "            target_extent.grow(max(target_extent.width(), target_extent.height(), 25) * 0.35)",
-    "            target_extent.scale(2.25)",
-    "        pdf_name = f'{section_number}_{fibre_count}_{index:02d}_{safe_file_name(cable_name)}.pdf'",
-    "        title = f'{fibre_count} Cable Route\\n{cable_name}'",
-    "        export_sheet(f'{section_number} {fibre_count} {index:02d}', pdf_name, title, page_layers, target_extent)",
-    "    route_layer.setSubsetString('')",
+    "    page_layers = context_names + ['drops', sheet_layer.name()] + other_route_names + ['route_context', 'boundary']",
+    "    pdf_name = f'{section_number}_{fibre_count}_{index:02d}_{safe_file_name(cable_name)}.pdf'",
+    "    title = f'{fibre_count} Cable Route\\n{cable_name}'",
+    "    export_sheet(f'{section_number} {fibre_count} {index:02d}', pdf_name, title, page_layers, target_extent)",
+    "    layers_by_name.pop(sheet_layer.name(), None)",
+    "    project.removeMapLayer(sheet_layer.id())",
     "",
     "project_path = output_dir / 'Alistra_Job_Pack_Project.qgz'",
     "project.write(str(project_path))",
@@ -828,6 +878,8 @@ export async function createQgisJobPackBundleBlob(draft: JobPackDraft): Promise<
   const byGroup = (group: JobPackDraftAsset["group"]) => assets.filter((asset) => asset.group === group);
   const routeAssets = byGroup("route");
   const nonDropRoutes = routeAssets.filter((asset) => !isDropRoute(asset));
+  const routeIndex = cableRouteIndex(nonDropRoutes);
+  const indexedRouteAssets = nonDropRoutes.filter((asset) => routeFibreCount(asset));
   const files = [
     { path: `${base}/00_READ_ME_FIRST.txt`, content: readme(draft) },
     { path: `${base}/00_Metadata/job-pack.json`, content: qgisMetadata(draft) },
@@ -842,6 +894,17 @@ export async function createQgisJobPackBundleBlob(draft: JobPackDraft): Promise<
       path: `${base}/01_Layers/routes_${count}.geojson`,
       content: collection(nonDropRoutes.filter((asset) => routeFibreCount(asset) === count), draft),
     })),
+    {
+      path: `${base}/01_Layers/Cable_Routes/route-index.json`,
+      content: JSON.stringify(routeIndex, null, 2),
+    },
+    ...indexedRouteAssets.map((asset, index) => {
+      const entry = routeIndex[index];
+      return {
+        path: `${base}/01_Layers/Cable_Routes/${entry.file}`,
+        content: collection([asset], draft),
+      };
+    }),
     { path: `${base}/01_Layers/drops.geojson`, content: collection(routeAssets.filter(isDropRoute), draft) },
     { path: `${base}/02_QGIS_Styles/boundary.qml`, content: polygonStyle("Project Boundary", "150,82,225,45", "150,82,225,255", 0.7) },
     { path: `${base}/02_QGIS_Styles/routes_96F.qml`, content: routeStyle("96F Routes", "37,99,235,255", 0.75, true) },
