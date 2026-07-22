@@ -80,7 +80,11 @@ type LayerVisibility = {
   piaFail?: boolean;
 };
 
-type HomeMarkerStatus = "unconnected" | "connected" | "live" | "exception";
+type HomeMarkerStatus =
+  | "unconnected"
+  | "connected"
+  | "live"
+  | "exception";
 
 type Props = {
   assets: SavedMapAsset[];
@@ -122,6 +126,85 @@ function createSquareIcon(background: string, border: string) {
     iconSize: [16, 16],
     iconAnchor: [8, 8],
     popupAnchor: [0, -8],
+  });
+}
+
+function createWifiSignalIcon(fill: string, border = "#111827", glow = "rgba(15, 23, 42, 0.35)") {
+  return L.divIcon({
+    className: "",
+    html: `
+      <div style="
+        width: 24px;
+        height: 24px;
+        display: grid;
+        place-items: center;
+        transform: translateY(-1px);
+        filter: drop-shadow(0 0 8px ${glow});
+      ">
+        <svg
+          width="23"
+          height="23"
+          viewBox="0 0 24 24"
+          xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true"
+        >
+          <path
+            d="M3.25 8.4C8.1 4 15.9 4 20.75 8.4"
+            fill="none"
+            stroke="${border}"
+            stroke-width="4.4"
+            stroke-linecap="round"
+          />
+          <path
+            d="M7 12.1c2.8-2.5 7.2-2.5 10 0"
+            fill="none"
+            stroke="${border}"
+            stroke-width="4.4"
+            stroke-linecap="round"
+          />
+          <path
+            d="M10.1 15.8c1.1-.9 2.7-.9 3.8 0"
+            fill="none"
+            stroke="${border}"
+            stroke-width="4.4"
+            stroke-linecap="round"
+          />
+          <circle cx="12" cy="19.3" r="3.1" fill="${border}" />
+          <path
+            d="M3.25 8.4C8.1 4 15.9 4 20.75 8.4"
+            fill="none"
+            stroke="${fill}"
+            stroke-width="2.7"
+            stroke-linecap="round"
+          />
+          <path
+            d="M7 12.1c2.8-2.5 7.2-2.5 10 0"
+            fill="none"
+            stroke="${fill}"
+            stroke-width="2.7"
+            stroke-linecap="round"
+          />
+          <path
+            d="M10.1 15.8c1.1-.9 2.7-.9 3.8 0"
+            fill="none"
+            stroke="${fill}"
+            stroke-width="2.7"
+            stroke-linecap="round"
+          />
+          <circle
+            cx="12"
+            cy="19.3"
+            r="2"
+            fill="${fill}"
+            stroke="${border}"
+            stroke-width="1.1"
+          />
+        </svg>
+      </div>
+    `,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    popupAnchor: [0, -12],
   });
 }
 
@@ -644,7 +727,11 @@ function buildHomeRenderIndexes(allAssets: SavedMapAsset[]): HomeRenderIndexes {
       (asset as any).customerStatus ||
         (asset as any).homeStatus ||
         (asset as any).status ||
-        (asset as any).buildStatus,
+        (asset as any).buildStatus ||
+        (asset as any).serviceStatus ||
+        (asset as any).properties?.status ||
+        (asset as any).properties?.buildStatus ||
+        (asset as any).properties?.serviceStatus,
     );
 
     const manualDpId = String((asset as any).connectedDpId || "").trim();
@@ -674,7 +761,7 @@ function getIconForAsset(
   cachedHomeStatus?: HomeMarkerStatus,
 ) {
   if (asset.assetType === "distribution-point") {
-    return createSquareIcon(getDistributionPointColor(asset), "#ffffff");
+    return createWifiSignalIcon(getDistributionPointColor(asset), "#ffffff");
   }
   if (asset.assetType === "street-cab") return streetCabIcon;
   if ((asset.assetType === "chamber" || asset.assetType === "pole") && isPiaQaModeEnabled(visibleLayers || {})) {
