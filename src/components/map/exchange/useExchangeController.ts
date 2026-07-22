@@ -29,15 +29,17 @@ function toExchangeMarker(exchange: ExchangeAsset): ExchangeAsset {
   };
 }
 
-export function useExchangeController() {
+export function useExchangeController(businessId?: string) {
   const [savedExchanges, setSavedExchanges] = useState<ExchangeAsset[]>([]);
   const [openExchangeAsset, setOpenExchangeAsset] =
     useState<ExchangeAsset | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    setSavedExchanges([]);
+    setOpenExchangeAsset(null);
 
-    loadExchanges()
+    loadExchanges(businessId)
       .then((loadedExchanges) => {
         if (!cancelled) setSavedExchanges(loadedExchanges);
       })
@@ -48,11 +50,11 @@ export function useExchangeController() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [businessId]);
 
   const handleOpenExchange = async (exchange: ExchangeAsset) => {
     try {
-      const fullExchange = await loadExchange(exchange.id);
+      const fullExchange = await loadExchange(exchange.id, businessId);
       setOpenExchangeAsset(fullExchange ?? exchange);
     } catch (err) {
       console.error("Failed to open exchange", err);
@@ -76,7 +78,7 @@ export function useExchangeController() {
     });
 
     try {
-      await saveExchange(exchange);
+      await saveExchange(exchange, businessId);
       setOpenExchangeAsset(exchange);
     } catch (err) {
       console.error("Failed to save exchange", err);
@@ -94,7 +96,7 @@ export function useExchangeController() {
     }
 
     try {
-      await deleteExchange(exchange.id);
+      await deleteExchange(exchange.id, businessId);
       setSavedExchanges((prev) =>
         prev.filter((item) => item.id !== exchange.id),
       );

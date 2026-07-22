@@ -7,6 +7,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "../../../firebase";
+import { normaliseBusinessId } from "../../../utils/clientAccessControl";
 
 export type ExchangePortStatus = "active" | "spare" | "reserved" | "fault";
 
@@ -151,15 +152,16 @@ export type ExchangeAsset = {
 
 const BUSINESS_ID = "fibre-gis-v2";
 
-const exchangesCollection = collection(
-  db,
-  "businesses",
-  BUSINESS_ID,
-  "exchanges"
-);
+function getBusinessId(businessId?: string): string {
+  return normaliseBusinessId(businessId || BUSINESS_ID);
+}
 
-function exchangeDoc(exchangeId: string) {
-  return doc(db, "businesses", BUSINESS_ID, "exchanges", exchangeId);
+function exchangesCollection(businessId?: string) {
+  return collection(db, "businesses", getBusinessId(businessId), "exchanges");
+}
+
+function exchangeDoc(exchangeId: string, businessId?: string) {
+  return doc(db, "businesses", getBusinessId(businessId), "exchanges", exchangeId);
 }
 
 function stripUndefined<T>(value: T): T {
@@ -173,12 +175,13 @@ function exchangeSummary(exchange: ExchangeAsset): Omit<ExchangeAsset, "olts" | 
 
 function exchangeSubcollectionRef(
   exchangeId: string,
-  subcollectionName: "olts" | "hdSplitterPanels" | "feederPanels" | "wdmPanels" | "ebclPanels" | "testHeads"
+  subcollectionName: "olts" | "hdSplitterPanels" | "feederPanels" | "wdmPanels" | "ebclPanels" | "testHeads",
+  businessId?: string,
 ) {
   return collection(
     db,
     "businesses",
-    BUSINESS_ID,
+    getBusinessId(businessId),
     "exchanges",
     exchangeId,
     subcollectionName
@@ -188,9 +191,10 @@ function exchangeSubcollectionRef(
 async function getSubcollectionDeletes<T extends { id: string }>(
   exchangeId: string,
   subcollectionName: "olts" | "hdSplitterPanels" | "feederPanels" | "wdmPanels" | "ebclPanels" | "testHeads",
-  nextItems: T[]
+  nextItems: T[],
+  businessId?: string,
 ) {
-  const subcollectionRef = exchangeSubcollectionRef(exchangeId, subcollectionName);
+  const subcollectionRef = exchangeSubcollectionRef(exchangeId, subcollectionName, businessId);
   const existingSnap = await getDocs(subcollectionRef);
   const nextIds = new Set(nextItems.map((item) => item.id));
 
@@ -199,8 +203,8 @@ async function getSubcollectionDeletes<T extends { id: string }>(
     .map((docSnap) => docSnap.ref);
 }
 
-export async function loadExchanges(): Promise<ExchangeAsset[]> {
-  const snap = await getDocs(exchangesCollection);
+export async function loadExchanges(businessId?: string): Promise<ExchangeAsset[]> {
+  const snap = await getDocs(exchangesCollection(businessId));
 
   // Map markers only need the root exchange document.
   // Heavy OLT / splitter / feeder data is lazy-loaded when the exchange is opened.
@@ -216,17 +220,18 @@ export async function loadExchanges(): Promise<ExchangeAsset[]> {
   }));
 }
 
-export async function loadExchange(exchangeId: string): Promise<ExchangeAsset | null> {
-  const rootSnap = await getDoc(exchangeDoc(exchangeId));
+export async function loadExchange(exchangeId: string, businessId?: string): Promise<ExchangeAsset | null> {
+  const cleanBusinessId = getBusinessId(businessId);
+  const rootSnap = await getDoc(exchangeDoc(exchangeId, cleanBusinessId));
   if (!rootSnap.exists()) return null;
 
   const [oltsSnap, splitterPanelsSnap, feederPanelsSnap, wdmPanelsSnap, ebclPanelsSnap, testHeadsSnap] = await Promise.all([
-    getDocs(collection(db, "businesses", BUSINESS_ID, "exchanges", exchangeId, "olts")),
-    getDocs(collection(db, "businesses", BUSINESS_ID, "exchanges", exchangeId, "hdSplitterPanels")),
-    getDocs(collection(db, "businesses", BUSINESS_ID, "exchanges", exchangeId, "feederPanels")),
-    getDocs(collection(db, "businesses", BUSINESS_ID, "exchanges", exchangeId, "wdmPanels")),
-    getDocs(collection(db, "businesses", BUSINESS_ID, "exchanges", exchangeId, "ebclPanels")),
-    getDocs(collection(db, "businesses", BUSINESS_ID, "exchanges", exchangeId, "testHeads")),
+    getDocs(collection(db, "businesses", cleanBusinessId, "exchanges", exchangeId, "olts")),
+    getDocs(collection(db, "businesses", cleanBusinessId, "exchanges", exchangeId, "hdSplitterPanels")),
+    getDocs(collection(db, "businesses", cleanBusinessId, "exchanges", exchangeId, "feederPanels")),
+    getDocs(collection(db, "businesses", cleanBusinessId, "exchanges", exchangeId, "wdmPanels")),
+    getDocs(collection(db, "businesses", cleanBusinessId, "exchanges", exchangeId, "ebclPanels")),
+    getDocs(collection(db, "businesses", cleanBusinessId, "exchanges", exchangeId, "testHeads")),
   ]);
 
   return {
@@ -256,7 +261,8 @@ export async function loadExchange(exchangeId: string): Promise<ExchangeAsset | 
   };
 }
 
-export async function saveExchange(exchange: ExchangeAsset) {
+export async function saveExchange(exchange: ExchangeAsset, businessId?: string) {
+  const cleanBusinessId = getBusinessId(businessId);
   const now = Date.now();
   const exchangeWithDates: ExchangeAsset = {
     ...exchange,
@@ -272,12 +278,12 @@ export async function saveExchange(exchange: ExchangeAsset) {
   const testHeads = exchangeWithDates.testHeads ?? [];
 
   const [oltDeletes, splitterDeletes, feederDeletes, wdmDeletes, ebclDeletes, testHeadDeletes] = await Promise.all([
-    getSubcollectionDeletes(exchange.id, "olts", olts),
-    getSubcollectionDeletes(exchange.id, "hdSplitterPanels", hdSplitterPanels),
-    getSubcollectionDeletes(exchange.id, "feederPanels", feederPanels),
-    getSubcollectionDeletes(exchange.id, "wdmPanels", wdmPanels),
-    getSubcollectionDeletes(exchange.id, "ebclPanels", ebclPanels),
-    getSubcollectionDeletes(exchange.id, "testHeads", testHeads),
+    getSubcollectionDeletes(exchange.id, "olts", olts, cleanBusinessId),
+    getSubcollectionDeletes(exchange.id, "hdSplitterPanels", hdSplitterPanels, cleanBusinessId),
+    getSubcollectionDeletes(exchange.id, "feederPanels", feederPanels, cleanBusinessId),
+    getSubcollectionDeletes(exchange.id, "wdmPanels", wdmPanels, cleanBusinessId),
+    getSubcollectionDeletes(exchange.id, "ebclPanels", ebclPanels, cleanBusinessId),
+    getSubcollectionDeletes(exchange.id, "testHeads", testHeads, cleanBusinessId),
   ]);
 
   const totalWrites =
@@ -306,19 +312,19 @@ export async function saveExchange(exchange: ExchangeAsset) {
   const batch = writeBatch(db);
 
   // Root document stays tiny: good for map markers and avoids the 1 MiB document limit.
-  batch.set(exchangeDoc(exchange.id), stripUndefined(exchangeSummary(exchangeWithDates)), { merge: true });
+  batch.set(exchangeDoc(exchange.id, cleanBusinessId), stripUndefined(exchangeSummary(exchangeWithDates)), { merge: true });
 
   [...oltDeletes, ...splitterDeletes, ...feederDeletes, ...wdmDeletes, ...ebclDeletes, ...testHeadDeletes].forEach((docRef) => {
     batch.delete(docRef);
   });
 
   olts.forEach((olt) => {
-    batch.set(doc(exchangeSubcollectionRef(exchange.id, "olts"), olt.id), stripUndefined(olt), { merge: true });
+    batch.set(doc(exchangeSubcollectionRef(exchange.id, "olts", cleanBusinessId), olt.id), stripUndefined(olt), { merge: true });
   });
 
   hdSplitterPanels.forEach((panel) => {
     batch.set(
-      doc(exchangeSubcollectionRef(exchange.id, "hdSplitterPanels"), panel.id),
+      doc(exchangeSubcollectionRef(exchange.id, "hdSplitterPanels", cleanBusinessId), panel.id),
       stripUndefined(panel),
       { merge: true }
     );
@@ -326,7 +332,7 @@ export async function saveExchange(exchange: ExchangeAsset) {
 
   feederPanels.forEach((panel) => {
     batch.set(
-      doc(exchangeSubcollectionRef(exchange.id, "feederPanels"), panel.id),
+      doc(exchangeSubcollectionRef(exchange.id, "feederPanels", cleanBusinessId), panel.id),
       stripUndefined(panel),
       { merge: true }
     );
@@ -334,7 +340,7 @@ export async function saveExchange(exchange: ExchangeAsset) {
 
   wdmPanels.forEach((panel) => {
     batch.set(
-      doc(exchangeSubcollectionRef(exchange.id, "wdmPanels"), panel.id),
+      doc(exchangeSubcollectionRef(exchange.id, "wdmPanels", cleanBusinessId), panel.id),
       stripUndefined(panel),
       { merge: true }
     );
@@ -342,7 +348,7 @@ export async function saveExchange(exchange: ExchangeAsset) {
 
   ebclPanels.forEach((panel) => {
     batch.set(
-      doc(exchangeSubcollectionRef(exchange.id, "ebclPanels"), panel.id),
+      doc(exchangeSubcollectionRef(exchange.id, "ebclPanels", cleanBusinessId), panel.id),
       stripUndefined(panel),
       { merge: true }
     );
@@ -350,7 +356,7 @@ export async function saveExchange(exchange: ExchangeAsset) {
 
   testHeads.forEach((testHead) => {
     batch.set(
-      doc(exchangeSubcollectionRef(exchange.id, "testHeads"), testHead.id),
+      doc(exchangeSubcollectionRef(exchange.id, "testHeads", cleanBusinessId), testHead.id),
       stripUndefined(testHead),
       { merge: true }
     );
@@ -359,21 +365,22 @@ export async function saveExchange(exchange: ExchangeAsset) {
   await batch.commit();
 }
 
-export async function deleteExchange(exchangeId: string) {
+export async function deleteExchange(exchangeId: string, businessId?: string) {
+  const cleanBusinessId = getBusinessId(businessId);
   const [oltsSnap, splitterPanelsSnap, feederPanelsSnap, wdmPanelsSnap, ebclPanelsSnap, testHeadsSnap] = await Promise.all([
-    getDocs(collection(db, "businesses", BUSINESS_ID, "exchanges", exchangeId, "olts")),
-    getDocs(collection(db, "businesses", BUSINESS_ID, "exchanges", exchangeId, "hdSplitterPanels")),
-    getDocs(collection(db, "businesses", BUSINESS_ID, "exchanges", exchangeId, "feederPanels")),
-    getDocs(collection(db, "businesses", BUSINESS_ID, "exchanges", exchangeId, "wdmPanels")),
-    getDocs(collection(db, "businesses", BUSINESS_ID, "exchanges", exchangeId, "ebclPanels")),
-    getDocs(collection(db, "businesses", BUSINESS_ID, "exchanges", exchangeId, "testHeads")),
+    getDocs(collection(db, "businesses", cleanBusinessId, "exchanges", exchangeId, "olts")),
+    getDocs(collection(db, "businesses", cleanBusinessId, "exchanges", exchangeId, "hdSplitterPanels")),
+    getDocs(collection(db, "businesses", cleanBusinessId, "exchanges", exchangeId, "feederPanels")),
+    getDocs(collection(db, "businesses", cleanBusinessId, "exchanges", exchangeId, "wdmPanels")),
+    getDocs(collection(db, "businesses", cleanBusinessId, "exchanges", exchangeId, "ebclPanels")),
+    getDocs(collection(db, "businesses", cleanBusinessId, "exchanges", exchangeId, "testHeads")),
   ]);
 
   const batch = writeBatch(db);
   [...oltsSnap.docs, ...splitterPanelsSnap.docs, ...feederPanelsSnap.docs, ...wdmPanelsSnap.docs, ...ebclPanelsSnap.docs, ...testHeadsSnap.docs].forEach((docSnap) => {
     batch.delete(docSnap.ref);
   });
-  batch.delete(exchangeDoc(exchangeId));
+  batch.delete(exchangeDoc(exchangeId, cleanBusinessId));
 
   await batch.commit();
 }

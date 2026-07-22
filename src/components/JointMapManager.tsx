@@ -1212,7 +1212,7 @@ export default function JointMapManager({
     handleOpenExchange,
     handleSaveExchange,
     handleDeleteExchange,
-  } = useExchangeController();
+  } = useExchangeController(mapBusinessId);
 
   const exchangeNetworkAssets = useMemo(
     () => savedExchanges.map(exchangeToNetworkAsset),
