@@ -47,6 +47,7 @@ export type AppUserProfile = {
   role: UserRole;
   permissions: UserPermissions;
   active: boolean;
+  forcePasswordChange: boolean;
   /**
    * Business/client tenant scope. Admins can span businesses; non-admin users
    * should be scoped to one business/client such as fibre-gis-v2 or a client id.
@@ -202,6 +203,7 @@ function buildFallbackProfileFromUser(user: User): AppUserProfile {
       role: knownRole,
       permissions: ROLE_PERMISSIONS[knownRole],
       active: true,
+      forcePasswordChange: false,
       businessId: DEFAULT_BUSINESS_ID,
       sector: DEFAULT_SECTOR,
       allowedSectors: ["*"],
@@ -216,6 +218,7 @@ function buildFallbackProfileFromUser(user: User): AppUserProfile {
     role: "survey_user",
     permissions: LOCKED_DOWN_PERMISSIONS,
     active: false,
+    forcePasswordChange: false,
     businessId: DEFAULT_BUSINESS_ID,
     sector: DEFAULT_SECTOR,
     allowedSectors: [],
@@ -253,6 +256,7 @@ async function loadFirestoreProfile(user: User): Promise<AppUserProfile> {
       role,
       permissions,
       active: data.active !== false,
+      forcePasswordChange: data.forcePasswordChange === true,
       businessId: normaliseBusinessId(data.businessId),
       sector: normaliseSector(data.sector),
       allowedSectors: normaliseAllowedSectors(

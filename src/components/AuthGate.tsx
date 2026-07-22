@@ -14,15 +14,17 @@
 import React, { useEffect, useState } from "react";
 import {
   onAuthStateChanged,
+  signOut,
   signInWithEmailAndPassword,
   signInWithPopup,
   type User,
 } from "firebase/auth";
+import { httpsCallable } from "firebase/functions";
 
-import { auth, googleProvider } from "../firebase";
+import { auth, functions, googleProvider } from "../firebase";
 
 import { AppModeProvider } from "../context/AppModeContext";
-import { UserRoleProvider } from "../context/UserRoleContext";
+import { UserRoleProvider, useUserRole } from "../context/UserRoleContext";
 import AlistraLanding from "./landing/AlistraLanding";
 
 type Props = {
@@ -89,7 +91,7 @@ export default function AuthGate({ children }: Props) {
     return (
       <UserRoleProvider user={user}>
         <AppModeProvider>
-          {children}
+          <AuthenticatedApp>{children}</AuthenticatedApp>
         </AppModeProvider>
       </UserRoleProvider>
     );
@@ -157,6 +159,110 @@ export default function AuthGate({ children }: Props) {
         </div>
       }
     />
+  );
+}
+
+function AuthenticatedApp({ children }: Props) {
+  const { profile, isLoadingProfile } = useUserRole();
+
+  return (
+    <>
+      {children}
+      {!isLoadingProfile && profile?.forcePasswordChange === true && (
+        <ForcePasswordChangeModal businessId={profile.businessId} />
+      )}
+    </>
+  );
+}
+
+function ForcePasswordChangeModal({ businessId }: { businessId: string }) {
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleChangePassword = async () => {
+    setError("");
+
+    if (newPassword.length < 8) {
+      setError("Use at least 8 characters.");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setError("The passwords do not match.");
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      const changeOwnPassword = httpsCallable<
+        { password: string; businessId: string },
+        { success: boolean }
+      >(functions, "changeOwnPassword");
+
+      await changeOwnPassword({
+        password: newPassword,
+        businessId,
+      });
+
+      window.location.reload();
+    } catch (err: any) {
+      setError(err?.message || "Could not change password.");
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div style={passwordBackdropStyle}>
+      <div style={passwordModalStyle}>
+        <h2 style={loginTitle}>Change password</h2>
+        <p style={loginCopy}>
+          Set a new password before opening Alistra GIS.
+        </p>
+
+        <input
+          style={input}
+          type="password"
+          placeholder="New password"
+          value={newPassword}
+          autoComplete="new-password"
+          onChange={(e) => setNewPassword(e.target.value)}
+        />
+
+        <input
+          style={input}
+          type="password"
+          placeholder="Confirm new password"
+          value={confirmPassword}
+          autoComplete="new-password"
+          onChange={(e) => setConfirmPassword(e.target.value)}
+        />
+
+        <button
+          style={{
+            ...button,
+            opacity: isSaving ? 0.7 : 1,
+            cursor: isSaving ? "not-allowed" : "pointer",
+          }}
+          disabled={isSaving}
+          onClick={handleChangePassword}
+        >
+          {isSaving ? "Updating..." : "Update password"}
+        </button>
+
+        <button
+          style={secondaryButton}
+          disabled={isSaving}
+          onClick={() => void signOut(auth)}
+        >
+          Sign out
+        </button>
+
+        {error && <div style={errorText}>{error}</div>}
+      </div>
+    </div>
   );
 }
 
@@ -233,4 +339,20 @@ const errorText: React.CSSProperties = {
   color: "#fca5a5",
   fontSize: 13,
   marginTop: 10,
+};
+
+const passwordBackdropStyle: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 50000,
+  display: "grid",
+  placeItems: "center",
+  padding: 18,
+  background: "rgba(2, 6, 23, 0.86)",
+  boxSizing: "border-box",
+};
+
+const passwordModalStyle: React.CSSProperties = {
+  ...loginCard,
+  maxWidth: 380,
 };

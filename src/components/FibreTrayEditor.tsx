@@ -68,7 +68,6 @@ import type { SavedMapAsset } from "./map/types";
   Persistence
 ------------------------------------------------------------- */
 const STORAGE_KEY = "fibre-tray-project-v1";
-const FIRESTORE_REF_PATH = ["businesses", "fibre-gis-v2"] as const;
 
 const JOINT_MAPPING_CHUNK_SIZE = 250;
 type MappingChunkDoc = {
@@ -874,7 +873,8 @@ type MeetMeMoveTarget = {
 ------------------------------------------------------------- */
 export const FibreTrayEditor: React.FC = () => {
   const { activeMode, requiresAuditReason } = useAppMode();
-  const { isMaintenanceUser, canSeeFullOperations } = useUserRole();
+  const { profile, isMaintenanceUser, canSeeFullOperations } = useUserRole();
+  const mapBusinessId = profile?.businessId || "fibre-gis-v2";
 
   const [activeView, setActiveView] = useState<
     "editor" | "map" | "network" | "joint-map" | "changes"
@@ -941,7 +941,9 @@ export const FibreTrayEditor: React.FC = () => {
       let assetsToSave = nextSavedJoints;
 
       if (options.mergeWithLatestMapAssets) {
-        const latestAssets = await loadMapAssetsFromFirestore();
+        const latestAssets = await loadMapAssetsFromFirestore({
+          businessId: mapBusinessId,
+        });
         const byId = new Map<string, SavedJoint>();
 
         latestAssets.forEach((asset) => {
@@ -956,12 +958,13 @@ export const FibreTrayEditor: React.FC = () => {
       }
 
       const result = await saveMapAssetsViaCoordinator(assetsToSave, {
+        businessId: mapBusinessId,
         reason: "fibre-tray-editor-immediate-save",
         source: "fibre-tray-editor",
       });
       lastFirebaseJsonRef.current = JSON.stringify(result.assets);
     },
-    [],
+    [mapBusinessId],
   );
 
   const applyLoadedMapAssets = useCallback((restored: SavedJoint[]) => {
@@ -978,13 +981,15 @@ export const FibreTrayEditor: React.FC = () => {
   const refreshMapAssetsFromFirestore = useCallback(async () => {
     setIsRefreshingMapAssets(true);
     try {
-      const restored = await loadMapAssetsFromFirestore();
+      const restored = await loadMapAssetsFromFirestore({
+        businessId: mapBusinessId,
+      });
       applyLoadedMapAssets(restored);
     } finally {
       setIsRefreshingMapAssets(false);
       setFirebaseLoaded(true);
     }
-  }, [applyLoadedMapAssets]);
+  }, [applyLoadedMapAssets, mapBusinessId]);
 
   const selectedMapJoint = selectedJointId
     ? savedJoints.find((j) => j.id === selectedJointId) || null
@@ -1078,13 +1083,15 @@ export const FibreTrayEditor: React.FC = () => {
     Load shared project from Firestore
   ------------------------------------------------------------- */
   useEffect(() => {
-    const ref = doc(db, ...FIRESTORE_REF_PATH, "mapAssets", "main");
+    const ref = doc(db, "businesses", mapBusinessId, "mapAssets", "main");
 
     const unsub = onSnapshot(
       ref,
       async () => {
         try {
-          const restored = await loadMapAssetsFromFirestore();
+          const restored = await loadMapAssetsFromFirestore({
+            businessId: mapBusinessId,
+          });
 
           applyLoadedMapAssets(restored);
         } catch (err) {
@@ -1098,7 +1105,9 @@ export const FibreTrayEditor: React.FC = () => {
 
         // Try one direct load before giving up, useful when rules/listener timing is odd.
         try {
-          const restored = await loadMapAssetsFromFirestore();
+          const restored = await loadMapAssetsFromFirestore({
+            businessId: mapBusinessId,
+          });
           applyLoadedMapAssets(restored);
         } catch (loadErr) {
           console.error("Firestore fallback map asset load failed:", loadErr);
@@ -1109,7 +1118,7 @@ export const FibreTrayEditor: React.FC = () => {
     );
 
     return () => unsub();
-  }, [applyLoadedMapAssets]);
+  }, [applyLoadedMapAssets, mapBusinessId]);
 
   /* -------------------------------------------------------------
     Save shared project to Firestore

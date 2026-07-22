@@ -1173,6 +1173,7 @@ export default function JointMapManager({
 }: Props) {
   const { activeMode, requiresAuditReason } = useAppMode();
   const { profile, permissions, isSuperUser, isAdmin, isMaintenanceUser } = useUserRole();
+  const mapBusinessId = profile?.businessId || "fibre-gis-v2";
   const canManageNetworkDesign = isSuperUser || permissions.build;
   const canUseSurveyTools = canManageNetworkDesign || permissions.survey;
   // =====================================================
@@ -1444,7 +1445,7 @@ export default function JointMapManager({
   useEffect(() => {
     let cancelled = false;
 
-    loadMapAssetsSaveMetadata()
+    loadMapAssetsSaveMetadata({ businessId: mapBusinessId })
       .then((metadata) => {
         if (!cancelled) lastKnownMapSaveMetadataRef.current = metadata;
       })
@@ -1455,7 +1456,7 @@ export default function JointMapManager({
     return () => {
       cancelled = true;
     };
-  }, [activeProjectId]);
+  }, [activeProjectId, mapBusinessId]);
 
   const saveCurrentMapSnapshot = async (
     reason: string,
@@ -1476,6 +1477,7 @@ export default function JointMapManager({
 
     try {
       const result = await saveMapAssetsViaCoordinator(normalizedSavedJoints, {
+        businessId: mapBusinessId,
         reason,
         source: "joint-map-manager",
       });
@@ -2068,6 +2070,7 @@ export default function JointMapManager({
 
     try {
       const result = await saveMapAssetsViaCoordinator(pending.assets, {
+        businessId: mapBusinessId,
         reason: `retry-pending:${pending.reason || "map-save"}`,
         source: "joint-map-manager",
         expectedBaseSaveId: pending.baseSaveId,
@@ -2282,6 +2285,7 @@ export default function JointMapManager({
     resetEditor,
     persistMapAssets: async (assets, options) => {
       await saveMapAssetsViaCoordinator(assets, {
+        businessId: mapBusinessId,
         reason: options.reason,
         source: "admin-tool",
         allowDestructiveSave: true,
@@ -2301,6 +2305,7 @@ export default function JointMapManager({
     setSavedJoints,
     persistMapAssets: async (assets, options) => {
       await saveMapAssetsViaCoordinator(assets, {
+        businessId: mapBusinessId,
         reason: options.reason,
         source: "admin-tool",
         allowDestructiveSave: true,
@@ -3013,6 +3018,7 @@ export default function JointMapManager({
 
       try {
         await saveMapAssetsViaCoordinator(nextSavedJoints, {
+          businessId: mapBusinessId,
           reason: `cable-create:${cableName}`,
           source: "joint-map-manager",
         });
@@ -3484,6 +3490,7 @@ export default function JointMapManager({
 
     try {
       await saveMapAssetsViaCoordinator(nextSavedJoints, {
+        businessId: mapBusinessId,
         reason: `duct-slot-cable-create:${cableName}`,
         source: "joint-map-manager",
       });
@@ -3701,6 +3708,7 @@ export default function JointMapManager({
 
     try {
       await saveMapAssetsViaCoordinator(nextSavedJoints, {
+        businessId: mapBusinessId,
         reason: `bulk-dp-status:${reason}`,
         source: "joint-map-manager",
       });
@@ -3855,6 +3863,7 @@ export default function JointMapManager({
 
     try {
       await saveMapAssetsViaCoordinator(nextSavedJoints, {
+        businessId: mapBusinessId,
         reason: `bulk-pia-noi:${reason}`,
         source: "joint-map-manager",
       });
@@ -4006,6 +4015,7 @@ export default function JointMapManager({
 
     try {
       await saveMapAssetsViaCoordinator(nextSavedJoints, {
+        businessId: mapBusinessId,
         reason: `bulk-joint-dp-install:${reason}`,
         source: "joint-map-manager",
       });
@@ -4121,6 +4131,7 @@ export default function JointMapManager({
 
     try {
       await saveMapAssetsViaCoordinator(nextSavedJoints, {
+        businessId: mapBusinessId,
         reason: `clear-dp-fibre-allocations:${reason}`,
         source: "joint-map-manager",
       });
@@ -4397,6 +4408,7 @@ export default function JointMapManager({
 
     try {
       await saveMapAssetsViaCoordinator(nextSavedJoints, {
+        businessId: mapBusinessId,
         reason: `fas-sb-route-import:${reason}`,
         source: "joint-map-manager",
       });

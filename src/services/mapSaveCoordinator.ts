@@ -13,6 +13,7 @@ export type MapSaveSource =
   | "unknown";
 
 export type CoordinatedMapSaveOptions = {
+  businessId?: string;
   reason?: string;
   source?: MapSaveSource;
   allowDestructiveSave?: boolean;
@@ -49,6 +50,7 @@ export async function saveMapAssetsViaCoordinator(
   }
 
   const result = await saveMapAssetsToFirestore(assets, {
+    businessId: options.businessId,
     reason,
     allowDestructiveSave: options.allowDestructiveSave,
     explicitDeletedAssetIds: options.explicitDeletedAssetIds,

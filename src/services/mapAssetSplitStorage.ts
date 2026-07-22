@@ -32,6 +32,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 import type { SavedMapAsset } from "../components/map/types";
+import { normaliseBusinessId } from "../utils/clientAccessControl";
 
 type SplitBucket =
   | "joints"
@@ -46,6 +47,7 @@ type SplitBucket =
   | "other";
 
 export type SaveSplitMapAssetsOptions = {
+  businessId?: string;
   /**
    * Use only for deliberate admin cleanup. Normal map autosave/mirroring must
    * leave this false so tablet/slow-load partial state cannot wipe buckets.
@@ -74,6 +76,10 @@ const SPLIT_BUCKETS: SplitBucket[] = [
 ];
 
 const chunkId = (index: number) => `chunk_${String(index).padStart(5, "0")}`;
+
+function getBusinessId(value?: string): string {
+  return normaliseBusinessId(value || BUSINESS_ID);
+}
 
 function norm(value: unknown): string {
   return String(value ?? "").toLowerCase().trim();
@@ -312,19 +318,22 @@ function splitIntoChunks(assets: Record<string, any>[]) {
   return chunks;
 }
 
-function bucketChunksCollection(bucket: SplitBucket) {
+function bucketChunksCollection(bucket: SplitBucket, businessId?: string) {
   return collection(
     db,
     "businesses",
-    BUSINESS_ID,
+    getBusinessId(businessId),
     "mapAssets",
     bucket,
     "chunks",
   );
 }
 
-async function getExistingBucketAssetCount(bucket: SplitBucket): Promise<number> {
-  const snapshot = await getDocs(bucketChunksCollection(bucket));
+async function getExistingBucketAssetCount(
+  bucket: SplitBucket,
+  businessId?: string,
+): Promise<number> {
+  const snapshot = await getDocs(bucketChunksCollection(bucket, businessId));
 
   return snapshot.docs.reduce((total, chunkDoc) => {
     const data = chunkDoc.data() as any;
@@ -334,8 +343,11 @@ async function getExistingBucketAssetCount(bucket: SplitBucket): Promise<number>
   }, 0);
 }
 
-async function getExistingBucketAssets(bucket: SplitBucket): Promise<SavedMapAsset[]> {
-  const snapshot = await getDocs(bucketChunksCollection(bucket));
+async function getExistingBucketAssets(
+  bucket: SplitBucket,
+  businessId?: string,
+): Promise<SavedMapAsset[]> {
+  const snapshot = await getDocs(bucketChunksCollection(bucket, businessId));
   const assets: SavedMapAsset[] = [];
 
   snapshot.docs.forEach((chunkDoc) => {
@@ -369,8 +381,12 @@ function isBucketWipeCoveredByExplicitDeletes(
   return missingIds.length > 0 && missingIds.every((id) => deletedIds.has(id));
 }
 
-async function deleteExtraChunks(bucket: SplitBucket, keepCount: number) {
-  const snapshot = await getDocs(bucketChunksCollection(bucket));
+async function deleteExtraChunks(
+  bucket: SplitBucket,
+  keepCount: number,
+  businessId?: string,
+) {
+  const snapshot = await getDocs(bucketChunksCollection(bucket, businessId));
 
   const chunksToDelete = snapshot.docs.filter((chunkDoc) => {
     const match = chunkDoc.id.match(/^chunk_(\d+)$/);
@@ -417,15 +433,17 @@ export async function saveSplitMapAssets(
     byBucket.get(getMapAssetSplitBucket(asset))?.push(asset);
   });
 
+  const businessId = getBusinessId(options.businessId);
+
   for (const bucket of SPLIT_BUCKETS) {
       const bucketAssets = byBucket.get(bucket) ?? [];
       const existingAssets =
         options.explicitDeletedAssetIds?.length && bucketAssets.length === 0
-          ? await getExistingBucketAssets(bucket)
+          ? await getExistingBucketAssets(bucket, businessId)
           : [];
       const existingCount = existingAssets.length
         ? existingAssets.length
-        : await getExistingBucketAssetCount(bucket);
+        : await getExistingBucketAssetCount(bucket, businessId);
       const explicitDeleteCoversBucketWipe =
         bucketAssets.length === 0 &&
         isBucketWipeCoveredByExplicitDeletes(
@@ -470,7 +488,7 @@ export async function saveSplitMapAssets(
       const bucketDocRef = doc(
         db,
         "businesses",
-        BUSINESS_ID,
+        businessId,
         "mapAssets",
         bucket,
       );
@@ -499,7 +517,7 @@ export async function saveSplitMapAssets(
           doc(
             db,
             "businesses",
-            BUSINESS_ID,
+            businessId,
             "mapAssets",
             bucket,
             "chunks",
@@ -516,14 +534,16 @@ export async function saveSplitMapAssets(
         );
       }
 
-      await deleteExtraChunks(bucket, chunks.length);
+      await deleteExtraChunks(bucket, chunks.length, businessId);
   }
 }
 
-export async function loadSplitMapAssets(): Promise<SavedMapAsset[]> {
+export async function loadSplitMapAssets(
+  options: { businessId?: string } = {},
+): Promise<SavedMapAsset[]> {
   const results = await Promise.all(
     SPLIT_BUCKETS.map(async (bucket) => {
-      const chunksRef = bucketChunksCollection(bucket);
+      const chunksRef = bucketChunksCollection(bucket, options.businessId);
 
       const snapshot = await getDocs(query(chunksRef, orderBy("order", "asc")));
       const bucketAssets: SavedMapAsset[] = [];
@@ -531,7 +551,9 @@ export async function loadSplitMapAssets(): Promise<SavedMapAsset[]> {
       snapshot.docs.forEach((chunkDoc) => {
         const data = chunkDoc.data() as any;
         const assets = Array.isArray(data.assets) ? data.assets : [];
-        assets.forEach((asset) => bucketAssets.push(fromFirestoreSafeAsset(asset)));
+        assets.forEach((asset: unknown) =>
+          bucketAssets.push(fromFirestoreSafeAsset(asset)),
+        );
       });
 
       return bucketAssets;

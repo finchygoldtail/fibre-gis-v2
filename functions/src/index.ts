@@ -379,6 +379,7 @@ export const createLoginUser = onCall(
         allowedSectors: ["*"],
         allowedAreas: ["*"],
         active: true,
+        forcePasswordChange: false,
         createdBy: callerUid,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -429,6 +430,7 @@ export const createLoginUser = onCall(
       allowedSectors,
       allowedAreas: role === "admin" ? ["*"] : [],
       active: true,
+      forcePasswordChange: true,
       createdBy: callerUid,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -511,6 +513,7 @@ export const updateLoginUserProfile = onCall(
       allowedSectors,
       allowedAreas,
       active: true,
+      forcePasswordChange: false,
       updatedBy: callerUid,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
@@ -527,5 +530,142 @@ export const updateLoginUserProfile = onCall(
       uid,
       role,
     };
+  },
+);
+
+export const deleteLoginUser = onCall(
+  {
+    region: "europe-west2",
+    cors: true,
+  },
+  async (request) => {
+    const callerUid = request.auth?.uid;
+
+    if (!callerUid) {
+      throw new HttpsError("unauthenticated", "You must be signed in.");
+    }
+
+    const uid = typeof request.data?.uid === "string" ? request.data.uid.trim() : "";
+    const businessId = getCallableBusinessId(request.data?.businessId);
+
+    if (!uid) {
+      throw new HttpsError("invalid-argument", "Missing user id.");
+    }
+
+    if (uid === callerUid) {
+      throw new HttpsError(
+        "failed-precondition",
+        "You cannot remove your own login.",
+      );
+    }
+
+    const firestore = admin.firestore();
+    const { callerEmail } = await assertCanManageUsers(
+      firestore,
+      businessId,
+      callerUid,
+    );
+
+    const [businessUserDoc, rootUserDoc] = await Promise.all([
+      firestore.doc(`businesses/${businessId}/users/${uid}`).get(),
+      firestore.doc(`users/${uid}`).get(),
+    ]);
+    const targetData = businessUserDoc.data() || rootUserDoc.data() || {};
+    const targetRole = normaliseRole(targetData.role);
+    const targetEmail = String(targetData.email || "").trim().toLowerCase();
+
+    if (OWNER_EMAILS.has(targetEmail)) {
+      throw new HttpsError(
+        "permission-denied",
+        "Platform owner accounts cannot be removed here.",
+      );
+    }
+
+    if (targetRole === "admin" && !OWNER_EMAILS.has(callerEmail)) {
+      throw new HttpsError(
+        "permission-denied",
+        "Only platform owners can remove Administrator accounts.",
+      );
+    }
+
+    try {
+      await admin.auth().deleteUser(uid);
+    } catch (err: any) {
+      if (err?.code !== "auth/user-not-found") {
+        console.error("Failed to delete Firebase Auth user", err);
+        throw new HttpsError(
+          "internal",
+          err?.message || "Failed to delete Firebase Auth user.",
+        );
+      }
+    }
+
+    await Promise.all([
+      firestore.doc(`businesses/${businessId}/users/${uid}`).delete(),
+      firestore.doc(`users/${uid}`).delete(),
+    ]);
+
+    return {
+      success: true,
+      uid,
+    };
+  },
+);
+
+export const changeOwnPassword = onCall(
+  {
+    region: "europe-west2",
+    cors: true,
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "You must be signed in.");
+    }
+
+    const password =
+      typeof request.data?.password === "string" ? request.data.password : "";
+
+    if (password.length < 8) {
+      throw new HttpsError(
+        "invalid-argument",
+        "New password must be at least 8 characters.",
+      );
+    }
+
+    const businessId = getCallableBusinessId(request.data?.businessId);
+    const userRecord = await admin.auth().getUser(uid);
+    const email = String(userRecord.email || "").trim().toLowerCase();
+    const patch = {
+      forcePasswordChange: false,
+      passwordChangedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    await admin.auth().updateUser(uid, { password });
+
+    await Promise.all([
+      admin.firestore().doc(`businesses/${businessId}/users/${uid}`).set(
+        {
+          ...patch,
+          uid,
+          email,
+          businessId,
+        },
+        { merge: true },
+      ),
+      admin.firestore().doc(`users/${uid}`).set(
+        {
+          ...patch,
+          uid,
+          email,
+          businessId,
+        },
+        { merge: true },
+      ),
+    ]);
+
+    return { success: true };
   },
 );

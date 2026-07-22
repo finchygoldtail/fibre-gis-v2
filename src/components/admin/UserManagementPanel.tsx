@@ -66,6 +66,7 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [newBusinessId, setNewBusinessId] = useState(BUSINESS_ID);
   const [newRole, setNewRole] = useState<UserRole>("survey_user");
   const [openAreaUserUid, setOpenAreaUserUid] = useState<string | null>(null);
   const [areaSearch, setAreaSearch] = useState("");
@@ -103,6 +104,8 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
               ...ROLE_PERMISSIONS[role],
               ...(data.permissions || {}),
             },
+            active: data.active !== false,
+            forcePasswordChange: data.forcePasswordChange === true,
             businessId: normaliseBusinessId(data.businessId),
             sector: normaliseSector(data.sector),
             allowedSectors: normaliseAllowedSectors(data.allowedSectors, [
@@ -300,11 +303,59 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
     void saveAreaAccess(user, []);
   };
 
+  const handleRemoveUser = async (user: AppUserProfile) => {
+    if (!canManageUsers) {
+      setSaveError("Only Administrators can remove login users.");
+      alert("Only Administrators can remove login users.");
+      return;
+    }
+
+    if (user.uid === profile?.uid) {
+      alert("You cannot remove your own login.");
+      return;
+    }
+
+    const label = user.email || user.name || user.uid;
+    const confirmed = window.confirm(
+      `Remove ${label}?\n\nThis will delete their Firebase Auth login and remove their user profile. They will not be able to sign in.`,
+    );
+
+    if (!confirmed) return;
+
+    setIsSaving(true);
+    setSaveMessage("");
+    setSaveError("");
+
+    try {
+      const deleteLoginUser = httpsCallable<
+        { uid: string; businessId: string },
+        { success: boolean; uid: string }
+      >(functions, "deleteLoginUser");
+
+      await deleteLoginUser({
+        uid: user.uid,
+        businessId: user.businessId,
+      });
+
+      setOpenAreaUserUid((current) => (current === user.uid ? null : current));
+      setSaveMessage(`Removed login for ${label}.`);
+      await loadUsers();
+    } catch (err) {
+      console.error("Failed to remove login user", err);
+      setSaveError(
+        "Remove failed. Check Cloud Function logs or whether this account is protected.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleCreateOrUpdateUser = async () => {
     const uid = newUid.trim();
     const cleanName = newName.trim();
     const cleanEmail = newEmail.trim().toLowerCase();
     const cleanPassword = newPassword.trim();
+    const cleanBusinessId = normaliseBusinessId(newBusinessId);
 
     setSaveMessage("");
     setSaveError("");
@@ -321,7 +372,7 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
           name: cleanName,
           email: cleanEmail,
           role: newRole,
-          businessId: BUSINESS_ID,
+          businessId: cleanBusinessId,
           sector: DEFAULT_SECTOR,
           allowedSectors: newRole === "admin" ? ["*"] : [DEFAULT_SECTOR],
           allowedAreas: newRole === "admin" ? ["*"] : [],
@@ -353,7 +404,7 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
         >(functions, "createLoginUser");
 
         const result = await createLoginUser({
-          businessId: BUSINESS_ID,
+          businessId: cleanBusinessId,
           name: cleanName,
           email: cleanEmail,
           password: cleanPassword,
@@ -367,7 +418,7 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
             name: cleanName,
             email: cleanEmail,
             role: newRole,
-            businessId: BUSINESS_ID,
+            businessId: cleanBusinessId,
             sector: DEFAULT_SECTOR,
             allowedSectors: ["*"],
             allowedAreas: ["*"],
@@ -382,6 +433,7 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
       setNewName("");
       setNewEmail("");
       setNewPassword("");
+      setNewBusinessId(BUSINESS_ID);
       setNewRole("survey_user");
     } catch (err) {
       console.error("Failed to create/update login user", err);
@@ -465,6 +517,14 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
               style={inputStyle}
             />
 
+            <label style={labelStyle}>Company / Business ID</label>
+            <input
+              value={newBusinessId}
+              onChange={(event) => setNewBusinessId(event.target.value)}
+              placeholder="harrell-comms"
+              style={inputStyle}
+            />
+
             <label style={labelStyle}>Role</label>
             <select
               disabled={!canManageUsers || isSaving}
@@ -531,34 +591,52 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
                         <div style={userMetaStyle}>{user.uid}</div>
                       </div>
 
-                      <select
-                        disabled={!canManageUsers || isSaving}
-                        value={user.role}
-                        onChange={(event) =>
-                          void saveUserRole(user.uid, {
-                            name: user.name,
-                            email: user.email,
-                            role: event.target.value as UserRole,
-                            businessId: user.businessId,
-                            sector: user.sector,
-                            allowedSectors:
-                              event.target.value === "admin"
-                                ? ["*"]
-                                : user.allowedSectors,
-                            allowedAreas:
-                              event.target.value === "admin"
-                                ? ["*"]
-                                : user.allowedAreas,
-                          }).catch(() => undefined)
-                        }
-                        style={inputStyle}
-                      >
-                        {roleOptions.map((role) => (
-                          <option key={role} value={role}>
-                            {ROLE_LABELS[role]}
-                          </option>
-                        ))}
-                      </select>
+                      <div style={userActionsStyle}>
+                        <select
+                          disabled={!canManageUsers || isSaving}
+                          value={user.role}
+                          onChange={(event) =>
+                            void saveUserRole(user.uid, {
+                              name: user.name,
+                              email: user.email,
+                              role: event.target.value as UserRole,
+                              businessId: user.businessId,
+                              sector: user.sector,
+                              allowedSectors:
+                                event.target.value === "admin"
+                                  ? ["*"]
+                                  : user.allowedSectors,
+                              allowedAreas:
+                                event.target.value === "admin"
+                                  ? ["*"]
+                                  : user.allowedAreas,
+                            }).catch(() => undefined)
+                          }
+                          style={inputStyle}
+                        >
+                          {roleOptions.map((role) => (
+                            <option key={role} value={role}>
+                              {ROLE_LABELS[role]}
+                            </option>
+                          ))}
+                        </select>
+
+                        <button
+                          type="button"
+                          disabled={isSaving || user.uid === profile?.uid}
+                          onClick={() => void handleRemoveUser(user)}
+                          style={{
+                            ...removeButtonStyle,
+                            opacity: isSaving || user.uid === profile?.uid ? 0.55 : 1,
+                            cursor:
+                              isSaving || user.uid === profile?.uid
+                                ? "not-allowed"
+                                : "pointer",
+                          }}
+                        >
+                          Remove
+                        </button>
+                      </div>
 
                       <button
                         type="button"
@@ -898,6 +976,20 @@ const userMetaStyle: React.CSSProperties = {
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
   maxWidth: "100%",
+};
+
+const userActionsStyle: React.CSSProperties = {
+  display: "grid",
+  gap: 8,
+};
+
+const removeButtonStyle: React.CSSProperties = {
+  border: "1px solid #991b1b",
+  background: "#7f1d1d",
+  color: "#fee2e2",
+  borderRadius: 9,
+  padding: "8px 10px",
+  fontWeight: 900,
 };
 
 const areaToggleButtonStyle: React.CSSProperties = {

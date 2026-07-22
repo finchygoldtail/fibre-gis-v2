@@ -13,6 +13,7 @@ import { db, auth } from "../firebase";
 import { normalizeMapAssets } from "./mapAssetAdapter";
 import { withAreaAssetIndex } from "./areaAssetIndex";
 import { saveSplitMapAssets } from "./mapAssetSplitStorage";
+import { normaliseBusinessId } from "../utils/clientAccessControl";
 
 export const MAP_BUSINESS_ID = "fibre-gis-v2";
 export const MAP_SCHEMA_VERSION = 2;
@@ -47,6 +48,7 @@ type AssetInventory = {
 };
 
 export type SaveMapAssetsOptions = {
+  businessId?: string;
   /**
    * Use only for deliberate admin recovery/deletion workflows.
    * Normal autosave must leave this false so tablet/slow-load partial state
@@ -57,6 +59,10 @@ export type SaveMapAssetsOptions = {
   reason?: string;
   expectedBaseSaveId?: string | null;
   expectedBaseSaveVersion?: number | null;
+};
+
+export type LoadMapAssetsOptions = {
+  businessId?: string;
 };
 
 export type MapAssetsSaveMetadata = {
@@ -72,6 +78,14 @@ export type SaveMapAssetsToFirestoreResult = {
   assets: any[];
   saveMetadata: MapAssetsSaveMetadata;
 };
+
+function getMapBusinessId(businessId?: string): string {
+  return normaliseBusinessId(businessId || MAP_BUSINESS_ID);
+}
+
+function getFirestoreRefPath(businessId?: string): [string, string] {
+  return ["businesses", getMapBusinessId(businessId)];
+}
 
 function safeJsonParse<T = any>(value: unknown, fallback: T): T {
   if (typeof value !== "string") return fallback;
@@ -187,8 +201,10 @@ function normalizeSaveMetadata(data: MapAssetsMainDoc | null | undefined): MapAs
   };
 }
 
-export async function loadMapAssetsSaveMetadata(): Promise<MapAssetsSaveMetadata> {
-  const mainDocRef = doc(db, ...FIRESTORE_REF_PATH, "mapAssets", "main");
+export async function loadMapAssetsSaveMetadata(
+  options: LoadMapAssetsOptions = {},
+): Promise<MapAssetsSaveMetadata> {
+  const mainDocRef = doc(db, ...getFirestoreRefPath(options.businessId), "mapAssets", "main");
   const mainSnap = await getDoc(mainDocRef);
   return normalizeSaveMetadata(
     mainSnap.exists() ? (mainSnap.data() as MapAssetsMainDoc) : null,
@@ -225,7 +241,7 @@ async function readCurrentMapSaveMetadataForSave(
   options: SaveMapAssetsOptions,
 ): Promise<MapAssetsSaveMetadata> {
   try {
-    return await loadMapAssetsSaveMetadata();
+    return await loadMapAssetsSaveMetadata({ businessId: options.businessId });
   } catch (error) {
     if (
       options.expectedBaseSaveVersion !== undefined ||
@@ -310,11 +326,14 @@ function buildDestructiveSaveError(
   return null;
 }
 
-async function readCurrentChunkAssets(): Promise<any[]> {
-  const mainDocRef = doc(db, ...FIRESTORE_REF_PATH, "mapAssets", "main");
+async function readCurrentChunkAssets(
+  options: LoadMapAssetsOptions = {},
+): Promise<any[]> {
+  const refPath = getFirestoreRefPath(options.businessId);
+  const mainDocRef = doc(db, ...refPath, "mapAssets", "main");
   const chunksRef = collection(
     db,
-    ...FIRESTORE_REF_PATH,
+    ...refPath,
     "mapAssets",
     "main",
     "chunks",
@@ -357,7 +376,10 @@ async function readCurrentChunkAssets(): Promise<any[]> {
     .flatMap((chunk) => (Array.isArray(chunk.assets) ? chunk.assets : []));
 }
 
-async function writeMapAssetsSafetyBackup(existingAssets: any[]) {
+async function writeMapAssetsSafetyBackup(
+  existingAssets: any[],
+  options: SaveMapAssetsOptions = {},
+) {
   if (!Array.isArray(existingAssets) || existingAssets.length === 0) return;
 
   const backupId = `map-assets-${Date.now()}`;
@@ -369,7 +391,7 @@ async function writeMapAssetsSafetyBackup(existingAssets: any[]) {
 
   const backupRootRef = doc(
     db,
-    ...FIRESTORE_REF_PATH,
+    ...getFirestoreRefPath(options.businessId),
     "mapAssetBackups",
     backupId,
   );
@@ -390,7 +412,7 @@ async function writeMapAssetsSafetyBackup(existingAssets: any[]) {
     await setDoc(
       doc(
         db,
-        ...FIRESTORE_REF_PATH,
+        ...getFirestoreRefPath(options.businessId),
         "mapAssetBackups",
         backupId,
         "chunks",
@@ -414,7 +436,7 @@ export async function loadMapAssets(
   firestoreDb: Firestore,
   parseSavedJointsFromFirestore: (data: any) => SavedMapAsset[],
 ): Promise<SavedMapAsset[]> {
-  const ref = doc(firestoreDb, "businesses", MAP_BUSINESS_ID);
+  const ref = doc(firestoreDb, "businesses", getMapBusinessId());
   const snap = await getDoc(ref);
 
   if (!snap.exists()) return [];
@@ -542,7 +564,8 @@ export async function saveMapAssetsToFirestore(
   }
 
   const cleaned = cleanSavedJointsForFirebase(nextSavedJoints);
-  const existingAssets = await readCurrentChunkAssets();
+  const refPath = getFirestoreRefPath(options.businessId);
+  const existingAssets = await readCurrentChunkAssets(options);
   const currentSaveMetadata = await readCurrentMapSaveMetadataForSave(options);
   const concurrentSaveError = buildConcurrentSaveError(currentSaveMetadata, options);
 
@@ -576,7 +599,7 @@ export async function saveMapAssetsToFirestore(
 
   const chunksRef = collection(
     db,
-    ...FIRESTORE_REF_PATH,
+    ...refPath,
     "mapAssets",
     "main",
     "chunks",
@@ -598,7 +621,7 @@ export async function saveMapAssetsToFirestore(
 
   if (shouldCreateSafetyBackup) {
     try {
-      await writeMapAssetsSafetyBackup(existingAssets);
+      await writeMapAssetsSafetyBackup(existingAssets, options);
     } catch (err) {
       // Backups are important, but they must never stop the authoritative
       // chunk save. Some deployed rules do not yet include mapAssetBackups.
@@ -648,7 +671,7 @@ export async function saveMapAssetsToFirestore(
 
   try {
     await setDoc(
-      doc(db, ...FIRESTORE_REF_PATH, "mapAssets", "main"),
+      doc(db, ...refPath, "mapAssets", "main"),
       {
         chunked: true,
         assetCount: cleaned.length,
@@ -671,7 +694,7 @@ export async function saveMapAssetsToFirestore(
   // Keep a small root summary for backwards visibility without risking 1MB.
   try {
     await setDoc(
-      doc(db, ...FIRESTORE_REF_PATH),
+      doc(db, ...refPath),
       {
         mapAssetsChunked: true,
         mapAssetsPath: "mapAssets/main/chunks",
@@ -701,6 +724,7 @@ export async function saveMapAssetsToFirestore(
   // =====================================================
   try {
     await saveSplitMapAssets(cleaned as SavedMapAsset[], {
+      businessId: options.businessId,
       reason: options.reason
         ? `${options.reason}:split-mirror-after-main`
         : "split-mirror-after-main",
@@ -723,14 +747,17 @@ export async function saveMapAssetsToFirestore(
  * Chunked load path used by FibreTrayEditor.
  * Loads chunked mapAssets first, then falls back to legacy root savedJoints.
  */
-export async function loadMapAssetsFromFirestore(): Promise<SavedJoint[]> {
-  const chunkAssets = await readCurrentChunkAssets();
+export async function loadMapAssetsFromFirestore(
+  options: LoadMapAssetsOptions = {},
+): Promise<SavedJoint[]> {
+  const refPath = getFirestoreRefPath(options.businessId);
+  const chunkAssets = await readCurrentChunkAssets(options);
 
   if (chunkAssets.length > 0) {
     return restoreSavedJointsFromFirebase(chunkAssets);
   }
 
-  const legacySnap = await getDoc(doc(db, ...FIRESTORE_REF_PATH));
+  const legacySnap = await getDoc(doc(db, ...refPath));
   if (legacySnap.exists()) {
     const data = legacySnap.data();
     if (Array.isArray(data.savedJoints)) {
@@ -752,7 +779,7 @@ export async function createMapAssetsBackup(
   const backupRef = doc(
     firestoreDb,
     "businesses",
-    MAP_BUSINESS_ID,
+    getMapBusinessId(),
     "backups",
     `map-assets-${Date.now()}`,
   );
@@ -782,7 +809,7 @@ export async function saveMapAssets(
     throw new Error("Refusing to save empty map assets array.");
   }
 
-  const ref = doc(firestoreDb, "businesses", MAP_BUSINESS_ID);
+  const ref = doc(firestoreDb, "businesses", getMapBusinessId());
 
   await setDoc(
     ref,
