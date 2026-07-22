@@ -52,8 +52,9 @@ const roleOptions: UserRole[] = [
 ];
 
 export default function UserManagementPanel({ visible, onClose }: Props) {
-  const { profile } = useUserRole();
+  const { profile, activeBusinessId } = useUserRole();
   const canManageUsers = profile?.permissions.manageUsers === true;
+  const currentBusinessId = normaliseBusinessId(activeBusinessId || BUSINESS_ID);
 
   const [users, setUsers] = useState<AppUserProfile[]>([]);
   const [areaOptions, setAreaOptions] = useState<AreaOption[]>([]);
@@ -66,7 +67,7 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [newBusinessId, setNewBusinessId] = useState(BUSINESS_ID);
+  const [newBusinessId, setNewBusinessId] = useState(currentBusinessId);
   const [newRole, setNewRole] = useState<UserRole>("survey_user");
   const [openAreaUserUid, setOpenAreaUserUid] = useState<string | null>(null);
   const [areaSearch, setAreaSearch] = useState("");
@@ -83,7 +84,7 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
       const readUserCollection = async (pathName: "business" | "root") => {
         const usersRef =
           pathName === "business"
-            ? collection(db, "businesses", BUSINESS_ID, "users")
+            ? collection(db, "businesses", currentBusinessId, "users")
             : collection(db, "users");
 
         const snapshot = await getDocs(
@@ -122,6 +123,12 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
         console.warn("Could not load business user profiles", err);
       }
 
+      try {
+        await readUserCollection("root");
+      } catch (err) {
+        console.warn("Could not load root user profiles", err);
+      }
+
       setUsers(
         Array.from(profileDocs.values()).sort((a, b) =>
           (a.email || a.name || a.uid).localeCompare(
@@ -143,7 +150,9 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
     setIsLoadingAreas(true);
 
     try {
-      const assets = await loadMapAssetsFromFirestore();
+      const assets = await loadMapAssetsFromFirestore({
+        businessId: currentBusinessId,
+      });
       const optionsByKey = new Map<string, AreaOption>();
 
       assets.forEach((asset: any) => {
@@ -177,7 +186,12 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
     if (!visible || !canManageUsers) return;
     void loadUsers();
     void loadAreaOptions();
-  }, [visible, canManageUsers]);
+  }, [visible, canManageUsers, currentBusinessId]);
+
+  useEffect(() => {
+    if (!visible) return;
+    setNewBusinessId(currentBusinessId);
+  }, [currentBusinessId, visible]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

@@ -1172,8 +1172,8 @@ export default function JointMapManager({
   onOpenAutoNetwork,
 }: Props) {
   const { activeMode, requiresAuditReason } = useAppMode();
-  const { profile, permissions, isSuperUser, isAdmin, isMaintenanceUser } = useUserRole();
-  const mapBusinessId = profile?.businessId || "fibre-gis-v2";
+  const { profile, activeBusinessId, permissions, isSuperUser, isAdmin, isMaintenanceUser } = useUserRole();
+  const mapBusinessId = activeBusinessId || profile?.businessId || "fibre-gis-v2";
   const canManageNetworkDesign = isSuperUser || permissions.build;
   const canUseSurveyTools = canManageNetworkDesign || permissions.survey;
   // =====================================================

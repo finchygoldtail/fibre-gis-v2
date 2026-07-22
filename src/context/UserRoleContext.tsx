@@ -73,6 +73,8 @@ export type AppUserProfile = {
 type UserRoleContextValue = {
   profile: AppUserProfile | null;
   isLoadingProfile: boolean;
+  activeBusinessId: string;
+  setActiveBusinessId: (businessId: string) => void;
   permissions: UserPermissions;
   isAdmin: boolean;
   isSuperUser: boolean;
@@ -155,6 +157,7 @@ const LOCKED_DOWN_PERMISSIONS: UserPermissions = {
 };
 
 const UserRoleContext = createContext<UserRoleContextValue | null>(null);
+const ACTIVE_BUSINESS_STORAGE_KEY = "alistra-active-business-id";
 
 
 export { canAccessArea, hasUnrestrictedAreaAccess };
@@ -279,6 +282,7 @@ export function UserRoleProvider({
 }) {
   const [profile, setProfile] = useState<AppUserProfile | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
+  const [activeBusinessId, setActiveBusinessIdState] = useState(DEFAULT_BUSINESS_ID);
 
   useEffect(() => {
     let cancelled = false;
@@ -316,11 +320,43 @@ export function UserRoleProvider({
   }, [user]);
 
   const permissions = profile?.permissions ?? LOCKED_DOWN_PERMISSIONS;
+  const canSwitchBusiness =
+    profile?.role === "admin" || permissions.manageUsers === true;
+  const profileBusinessId = normaliseBusinessId(profile?.businessId);
+
+  useEffect(() => {
+    if (!profile) {
+      setActiveBusinessIdState(DEFAULT_BUSINESS_ID);
+      return;
+    }
+
+    if (!canSwitchBusiness) {
+      setActiveBusinessIdState(profileBusinessId);
+      return;
+    }
+
+    const stored =
+      typeof window !== "undefined"
+        ? window.localStorage.getItem(ACTIVE_BUSINESS_STORAGE_KEY)
+        : "";
+    setActiveBusinessIdState(normaliseBusinessId(stored || profileBusinessId));
+  }, [canSwitchBusiness, profile, profileBusinessId]);
+
+  const setActiveBusinessId = (businessId: string) => {
+    const nextBusinessId = normaliseBusinessId(businessId);
+    setActiveBusinessIdState(nextBusinessId);
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(ACTIVE_BUSINESS_STORAGE_KEY, nextBusinessId);
+    }
+  };
 
   const value = useMemo(
     () => ({
       profile,
       isLoadingProfile,
+      activeBusinessId,
+      setActiveBusinessId,
       permissions,
       isAdmin: profile?.role === "admin",
       isSuperUser: profile?.role === "super_user",
@@ -328,7 +364,7 @@ export function UserRoleProvider({
       isBuildUser: profile?.role === "build_user",
       isSurveyUser: profile?.role === "survey_user",
     }),
-    [profile, isLoadingProfile, permissions],
+    [activeBusinessId, profile, isLoadingProfile, permissions],
   );
 
   return (

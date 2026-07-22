@@ -1,22 +1,85 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { signOut } from "firebase/auth";
-import { auth } from "../firebase";
+import { collection, getDocs } from "firebase/firestore";
+import { auth, db } from "../firebase";
 import { ROLE_LABELS, useUserRole } from "../context/UserRoleContext";
 import UserManagementPanel from "./admin/UserManagementPanel";
+import { DEFAULT_BUSINESS_ID, normaliseBusinessId } from "../utils/clientAccessControl";
 
 type Props = {
   variant?: "topbar" | "sidebar";
 };
 
 export default function UserMenu({ variant = "topbar" }: Props) {
-  const { profile, isLoadingProfile } = useUserRole();
+  const {
+    profile,
+    isLoadingProfile,
+    activeBusinessId,
+    setActiveBusinessId,
+    permissions,
+  } = useUserRole();
   const [open, setOpen] = useState(false);
   const [showUserManagement, setShowUserManagement] = useState(false);
+  const [businessOptions, setBusinessOptions] = useState<string[]>([]);
+  const [customBusinessId, setCustomBusinessId] = useState("");
 
   const displayName = profile?.name || profile?.email || "User";
   const roleLabel = profile ? ROLE_LABELS[profile.role] : "Loading role";
   const canManageUsers = profile?.role === "admin";
+  const canSwitchBusiness =
+    profile?.role === "admin" || permissions.manageUsers === true;
+  const businessChoices = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          DEFAULT_BUSINESS_ID,
+          profile?.businessId || "",
+          activeBusinessId,
+          ...businessOptions,
+        ].map(normaliseBusinessId).filter(Boolean)),
+      ).sort((a, b) => a.localeCompare(b)),
+    [activeBusinessId, businessOptions, profile?.businessId],
+  );
+
+  useEffect(() => {
+    if (!canSwitchBusiness) return;
+
+    let cancelled = false;
+
+    const loadBusinessOptions = async () => {
+      const ids = new Set<string>([DEFAULT_BUSINESS_ID, activeBusinessId]);
+
+      try {
+        const usersSnapshot = await getDocs(collection(db, "users"));
+        usersSnapshot.docs.forEach((item) => {
+          const businessId = normaliseBusinessId(item.data().businessId);
+          if (businessId) ids.add(businessId);
+        });
+      } catch (error) {
+        console.warn("Could not load user business ids", error);
+      }
+
+      try {
+        const businessesSnapshot = await getDocs(collection(db, "businesses"));
+        businessesSnapshot.docs.forEach((item) => {
+          ids.add(normaliseBusinessId(item.id));
+        });
+      } catch (error) {
+        console.warn("Could not load businesses", error);
+      }
+
+      if (!cancelled) {
+        setBusinessOptions(Array.from(ids));
+      }
+    };
+
+    void loadBusinessOptions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeBusinessId, canSwitchBusiness]);
 
   const userManagementPanel =
     typeof document !== "undefined"
@@ -48,6 +111,17 @@ export default function UserMenu({ variant = "topbar" }: Props) {
             {isLoadingProfile ? "Loading..." : roleLabel}
           </div>
         </div>
+
+        {canSwitchBusiness && (
+          <BusinessSwitcher
+            activeBusinessId={activeBusinessId}
+            businessChoices={businessChoices}
+            customBusinessId={customBusinessId}
+            setCustomBusinessId={setCustomBusinessId}
+            onSwitch={setActiveBusinessId}
+            compact={false}
+          />
+        )}
 
         {canManageUsers && (
           <button
@@ -120,6 +194,17 @@ export default function UserMenu({ variant = "topbar" }: Props) {
               </div>
             </div>
 
+            {canSwitchBusiness && (
+              <BusinessSwitcher
+                activeBusinessId={activeBusinessId}
+                businessChoices={businessChoices}
+                customBusinessId={customBusinessId}
+                setCustomBusinessId={setCustomBusinessId}
+                onSwitch={setActiveBusinessId}
+                compact
+              />
+            )}
+
             {canManageUsers && (
               <button
                 type="button"
@@ -150,6 +235,68 @@ export default function UserMenu({ variant = "topbar" }: Props) {
 
       {userManagementPanel}
     </>
+  );
+}
+
+function BusinessSwitcher({
+  activeBusinessId,
+  businessChoices,
+  customBusinessId,
+  setCustomBusinessId,
+  onSwitch,
+  compact,
+}: {
+  activeBusinessId: string;
+  businessChoices: string[];
+  customBusinessId: string;
+  setCustomBusinessId: (value: string) => void;
+  onSwitch: (businessId: string) => void;
+  compact: boolean;
+}) {
+  const applyCustomBusiness = () => {
+    const clean = normaliseBusinessId(customBusinessId);
+    if (!clean) return;
+    onSwitch(clean);
+    setCustomBusinessId("");
+  };
+
+  return (
+    <div style={businessSwitcherStyle}>
+      <label style={businessSwitcherLabelStyle}>Active company</label>
+      <select
+        value={activeBusinessId}
+        onChange={(event) => onSwitch(event.target.value)}
+        style={businessSelectStyle}
+      >
+        {businessChoices.map((businessId) => (
+          <option key={businessId} value={businessId}>
+            {businessId}
+          </option>
+        ))}
+      </select>
+
+      <div style={businessCustomRowStyle(compact)}>
+        <input
+          value={customBusinessId}
+          onChange={(event) => setCustomBusinessId(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              applyCustomBusiness();
+            }
+          }}
+          placeholder="harrellicomms"
+          style={businessCustomInputStyle}
+        />
+        <button
+          type="button"
+          onClick={applyCustomBusiness}
+          style={businessApplyButtonStyle}
+        >
+          Switch
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -242,6 +389,60 @@ const roleBoxStyle: React.CSSProperties = {
   borderRadius: 10,
   background: "#1f2937",
   border: "1px solid #374151",
+};
+
+const businessSwitcherStyle: React.CSSProperties = {
+  marginTop: 10,
+  padding: 10,
+  borderRadius: 10,
+  background: "#0f172a",
+  border: "1px solid #334155",
+};
+
+const businessSwitcherLabelStyle: React.CSSProperties = {
+  display: "block",
+  color: "#bfdbfe",
+  fontSize: 11,
+  fontWeight: 900,
+  marginBottom: 6,
+};
+
+const businessSelectStyle: React.CSSProperties = {
+  width: "100%",
+  boxSizing: "border-box",
+  border: "1px solid #4b5563",
+  background: "#111827",
+  color: "white",
+  borderRadius: 9,
+  padding: "8px 9px",
+  fontWeight: 800,
+};
+
+const businessCustomRowStyle = (compact: boolean): React.CSSProperties => ({
+  display: "grid",
+  gridTemplateColumns: compact ? "minmax(0, 1fr) 72px" : "minmax(0, 1fr) 80px",
+  gap: 6,
+  marginTop: 8,
+});
+
+const businessCustomInputStyle: React.CSSProperties = {
+  minWidth: 0,
+  border: "1px solid #4b5563",
+  background: "#111827",
+  color: "white",
+  borderRadius: 9,
+  padding: "8px 9px",
+  fontWeight: 800,
+};
+
+const businessApplyButtonStyle: React.CSSProperties = {
+  border: "1px solid #2563eb",
+  background: "#1d4ed8",
+  color: "white",
+  borderRadius: 9,
+  padding: "8px 9px",
+  cursor: "pointer",
+  fontWeight: 900,
 };
 
 const sidebarButtonStyle: React.CSSProperties = {

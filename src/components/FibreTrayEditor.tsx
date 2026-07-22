@@ -873,8 +873,8 @@ type MeetMeMoveTarget = {
 ------------------------------------------------------------- */
 export const FibreTrayEditor: React.FC = () => {
   const { activeMode, requiresAuditReason } = useAppMode();
-  const { profile, isMaintenanceUser, canSeeFullOperations } = useUserRole();
-  const mapBusinessId = profile?.businessId || "fibre-gis-v2";
+  const { activeBusinessId, isMaintenanceUser, canSeeFullOperations } = useUserRole();
+  const mapBusinessId = activeBusinessId || "fibre-gis-v2";
 
   const [activeView, setActiveView] = useState<
     "editor" | "map" | "network" | "joint-map" | "changes"
