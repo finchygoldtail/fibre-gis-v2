@@ -478,6 +478,49 @@ function getDpDetails(asset: any): any {
   return asset?.dpDetails || asset?.properties?.dpDetails || {};
 }
 
+function normaliseStatus(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/-/g, "_");
+}
+
+function getDpOperationalStatus(asset: any): string {
+  const details = getDpDetails(asset);
+
+  return normaliseStatus(
+    details?.buildStatus ||
+      asset?.buildStatus ||
+      asset?.status ||
+      asset?.dpStatus ||
+      asset?.serviceStatus ||
+      asset?.properties?.dpDetails?.buildStatus ||
+      asset?.properties?.buildStatus ||
+      asset?.properties?.status ||
+      asset?.properties?.dpStatus ||
+      asset?.properties?.serviceStatus,
+  );
+}
+
+function getAssetComment(asset: any): string {
+  return String(
+    asset?.blockedReason ||
+      asset?.blockReason ||
+      asset?.serviceNote ||
+      asset?.notes ||
+      asset?.comment ||
+      asset?.description ||
+      asset?.properties?.blockedReason ||
+      asset?.properties?.blockReason ||
+      asset?.properties?.serviceNote ||
+      asset?.properties?.notes ||
+      asset?.properties?.comment ||
+      asset?.properties?.description ||
+      "",
+  ).trim();
+}
+
 function getDpClosureType(asset: any): DistributionArchitecture {
   const details = getDpDetails(asset);
   return normaliseArchitecture(
@@ -1362,6 +1405,32 @@ export function auditAreaAssets(assets: any[] = [], allNetworkAssets: any[] = as
   for (const dp of dps) {
     const dpId = getAssetId(dp);
     const capacity = getDpCapacity(dp);
+    const dpStatus = getDpOperationalStatus(dp);
+    const dpComment = getAssetComment(dp);
+
+    if (dpStatus === "unserviceable") {
+      issues.push(
+        makeIssue(
+          dp,
+          "DP is unserviceable. Change to Blocked with a comment if this is an accepted exception.",
+          {
+            assetId: dpId,
+            severity: "medium",
+            category: "DP / Homes",
+          },
+        ),
+      );
+    }
+
+    if (dpStatus === "blocked" && !dpComment) {
+      issues.push(
+        makeIssue(dp, "Blocked DP needs a comment explaining the exception.", {
+          assetId: dpId,
+          severity: "medium",
+          category: "DP / Homes",
+        }),
+      );
+    }
 
     const usedPorts = homes.filter(
       (home: any) => getConnectedDpId(home) === dpId,
