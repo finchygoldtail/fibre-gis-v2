@@ -81,6 +81,14 @@ export function useLayerCounts({
       return hasLineGeometry(asset) || text.includes("cable");
     };
 
+    const isDuct = (asset: SavedMapAsset) => {
+      const item = asset as any;
+      return (
+        norm(item.assetType) === "duct" ||
+        norm(item.jointType) === "duct"
+      );
+    };
+
     const isDrop = (asset: SavedMapAsset) => {
       const item = asset as any;
       const text = textForAsset(asset);
@@ -311,7 +319,8 @@ export function useLayerCounts({
       return status === "unconnected" || hasCanonicalHomeServiceException(home);
     });
 
-    const designCables = visibleProjectAssets.filter((asset) => isLineCable(asset) && !isDrop(asset));
+    const designDucts = visibleProjectAssets.filter(isDuct);
+    const designCables = visibleProjectAssets.filter((asset) => isLineCable(asset) && !isDuct(asset) && !isDrop(asset));
     const dropCables = visibleProjectAssets.filter(isDrop);
     const projectAreaAssets = visibleProjectAreas.filter(isProjectAreaAsset);
     const openreachDucts = visibleOpenreachAssets.filter((asset) => asset.geometry?.type === "LineString");
@@ -360,6 +369,7 @@ export function useLayerCounts({
       homesUnconnected: unconnectedHomes.length,
       homesLive: liveHomes.length,
       homesNotLive: notLiveHomes.length,
+      ducts: designDucts.length,
       cables: designCables.length,
       feeders: designCables.filter((asset) => textForAsset(asset).includes("feeder")).length,
       links: designCables.filter((asset) => textForAsset(asset).includes("link")).length,

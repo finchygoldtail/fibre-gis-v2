@@ -103,7 +103,6 @@ const layerGroups: LayerGroup[] = [
     title: "Cables / UG Routes",
     options: [
       { label: "All Cables / UG Routes", key: "cables" },
-      { label: "Ducts", key: "ducts" },
       { label: "Feeders", key: "feeders" },
       { label: "Links", key: "links" },
       { label: "Drop Cables / UG Routes", key: "dropCables" },
@@ -112,6 +111,13 @@ const layerGroups: LayerGroup[] = [
       { label: "36 ULW", key: "ulw36" },
       { label: "24 ULW", key: "ulw24" },
       { label: "12 ULW", key: "ulw12" },
+    ],
+  },
+  {
+    id: "ducts",
+    title: "Ducts",
+    options: [
+      { label: "All Ducts", key: "ducts" },
       { label: "OR Ducts", key: "orDucts" },
       { label: "Suggested Ducts", key: "suggestedDucts" },
     ],
@@ -325,7 +331,7 @@ export default function LayersPanel({
   const displayedLayerGroups =
     qaMode === "piaQa"
       ? layerGroups.filter((group) =>
-          ["poles", "chambers", "cables", "piaQa", "measurements"].includes(
+          ["poles", "chambers", "ducts", "cables", "piaQa", "measurements"].includes(
             group.id,
           ),
         )
@@ -386,7 +392,6 @@ export default function LayersPanel({
         return {
           ...prev,
           cables: next,
-          ducts: next,
           feeders: next,
           links: next,
           dropCables: next,
@@ -395,6 +400,13 @@ export default function LayersPanel({
           ulw36: next,
           ulw24: next,
           ulw12: next,
+        };
+      }
+
+      if (key === "ducts") {
+        return {
+          ...prev,
+          ducts: next,
           orDucts: next,
           suggestedDucts: next,
         };

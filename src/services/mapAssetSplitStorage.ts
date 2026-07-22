@@ -7,6 +7,7 @@
 //     businesses/fibre-gis-v2/mapAssets/main/chunks/chunk_00000
 // - It writes a safer parallel structure:
 //     businesses/fibre-gis-v2/mapAssets/cables/chunks/chunk_00000
+//     businesses/fibre-gis-v2/mapAssets/ducts/chunks/chunk_00000
 //     businesses/fibre-gis-v2/mapAssets/polygons/chunks/chunk_00000
 //     businesses/fibre-gis-v2/mapAssets/streetCabs/chunks/chunk_00000
 //     etc.
@@ -35,6 +36,7 @@ import type { SavedMapAsset } from "../components/map/types";
 type SplitBucket =
   | "joints"
   | "cables"
+  | "ducts"
   | "polygons"
   | "streetCabs"
   | "poles"
@@ -61,6 +63,7 @@ const MIN_BUCKET_ASSETS_FOR_DROP_GUARD = 3;
 const SPLIT_BUCKETS: SplitBucket[] = [
   "joints",
   "cables",
+  "ducts",
   "polygons",
   "streetCabs",
   "poles",
@@ -86,6 +89,10 @@ export function getMapAssetSplitBucket(asset: SavedMapAsset): SplitBucket {
   const jointType = norm(item.jointType);
   const geometryType = assetGeometryType(item);
   const name = norm(item.name);
+
+  if (assetType === "duct" || jointType === "duct") {
+    return "ducts";
+  }
 
   if (
     assetType === "cable" ||
