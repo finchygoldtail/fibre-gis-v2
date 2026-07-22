@@ -4,7 +4,9 @@ import LiveHomesTable from "./LiveHomesTable";
 import {
   buildCanonicalHomeSummary,
   getCanonicalHomeConnectionStatus,
+  hasCanonicalHomeServiceException,
   isCanonicalHomeAsset,
+  isCanonicalHomeLive,
   isCanonicalHomeDropCable,
   uniqueCanonicalHomes,
   clampCanonicalCount,
@@ -265,6 +267,12 @@ function homeOperationalState(
   return getCanonicalHomeConnectionStatus(home, allAssets);
 }
 
+function isHomeLiveForService(home: SavedMapAsset, allAssets: SavedMapAsset[]): boolean {
+  return isCanonicalHomeLive({
+    status: homeOperationalState(home, allAssets),
+    serviceBlocked: hasCanonicalHomeServiceException(home),
+  });
+}
 
 function canonicalWorkspaceHomeTotals(projectAssets: SavedMapAsset[]) {
   const summary = buildCanonicalHomeSummary(projectAssets);
@@ -307,7 +315,9 @@ function buildRows(projectAssets: SavedMapAsset[]): LiveHomesDpRow[] {
     const servedHomes = uniqueHomes(homesForDp(dp, homes, drops));
     const dpDrops = dropsForDp(dp, drops);
     const status = dpStatus(dp);
-    const liveHomes = servedHomes.filter((home) => homeOperationalState(home, projectAssets) !== "unconnected").length;
+    const liveHomes = servedHomes.filter((home) =>
+      isHomeLiveForService(home, projectAssets),
+    ).length;
     const capacityUsed = Math.max(servedHomes.length, dpDrops.length);
     const capacityState = getDpCapacitySummary(dp, projectAssets, {
       connectedHomeCount: capacityUsed,

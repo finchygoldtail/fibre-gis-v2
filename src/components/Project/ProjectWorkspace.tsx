@@ -1922,8 +1922,9 @@ export default function ProjectWorkspace({
   const displayStats = useMemo(() => {
     const homesPassed = canonicalHomeSummary.homesPassed;
     const homesConnected = canonicalHomeSummary.homesConnected;
+    const homesLive = canonicalHomeSummary.homesLive;
     const rfsPercent = homesPassed
-      ? Math.round((homesConnected / homesPassed) * 100)
+      ? Math.round((homesLive / homesPassed) * 100)
       : 0;
 
     return {
@@ -2049,7 +2050,7 @@ export default function ProjectWorkspace({
   const rolloutKpis = useMemo(() => {
     const dpAssets = workspaceAssets.filter(isWorkspaceDistributionPointAsset);
     const homesPassed = canonicalHomeSummary.homesPassed;
-    const homesLive = canonicalHomeSummary.homesConnected;
+    const homesLive = canonicalHomeSummary.homesLive;
 
     const dpStatusCounts = dpAssets.reduce(
       (counts, asset) => {
@@ -2227,7 +2228,7 @@ export default function ProjectWorkspace({
   const homesLiveAssets = useMemo(
     () =>
       canonicalHomeSummary.records
-        .filter((record) => record.status !== "unconnected")
+        .filter((record) => record.status !== "unconnected" && !record.serviceBlocked)
         .map((record) => record.home),
     [canonicalHomeSummary],
   );
@@ -2235,7 +2236,7 @@ export default function ProjectWorkspace({
   const homesNotLiveAssets = useMemo(
     () =>
       canonicalHomeSummary.records
-        .filter((record) => record.status === "unconnected")
+        .filter((record) => record.status === "unconnected" || record.serviceBlocked)
         .map((record) => record.home),
     [canonicalHomeSummary],
   );

@@ -115,6 +115,67 @@ const permissionsByRole: Record<AppRole, {
 
 const LIVE_LOCATION_COLLECTION = "liveUserLocations";
 
+const getCallerAccess = async (
+  firestore: admin.firestore.Firestore,
+  businessId: string,
+  callerUid: string,
+) => {
+  const callerRecord = await admin.auth().getUser(callerUid);
+  const callerEmail = String(callerRecord.email || "").trim().toLowerCase();
+
+  const [callerDoc, rootCallerDoc, businessUsersSnapshot] = await Promise.all([
+    firestore.doc(`businesses/${businessId}/users/${callerUid}`).get(),
+    firestore.doc(`users/${callerUid}`).get(),
+    firestore.collection(`businesses/${businessId}/users`).limit(1).get(),
+  ]);
+
+  const callerRole = normaliseRole(callerDoc.data()?.role);
+  const rootCallerRole = normaliseRole(rootCallerDoc.data()?.role);
+  const hasBusinessProfile = callerDoc.exists;
+  const hasRootProfile = rootCallerDoc.exists;
+
+  const isFirestoreSuperUser =
+    (hasBusinessProfile && (callerRole === "admin" || callerRole === "super_user")) ||
+    (hasRootProfile && (rootCallerRole === "admin" || rootCallerRole === "super_user"));
+
+  const isBootstrapOwner =
+    OWNER_EMAILS.has(callerEmail) &&
+    (businessUsersSnapshot.empty || !hasBusinessProfile || !hasRootProfile);
+
+  return {
+    callerRecord,
+    callerEmail,
+    isFirestoreSuperUser,
+    isBootstrapOwner,
+  };
+};
+
+const assertCanManageUsers = async (
+  firestore: admin.firestore.Firestore,
+  businessId: string,
+  callerUid: string,
+) => {
+  const access = await getCallerAccess(firestore, businessId, callerUid);
+
+  if (!access.isFirestoreSuperUser && !access.isBootstrapOwner) {
+    throw new HttpsError(
+      "permission-denied",
+      "Only Super Users can manage logins.",
+    );
+  }
+
+  return access;
+};
+
+const assertCanAssignRole = (callerEmail: string, role: AppRole) => {
+  if (role === "admin" && !OWNER_EMAILS.has(callerEmail)) {
+    throw new HttpsError(
+      "permission-denied",
+      "Only platform owners can assign Administrator access.",
+    );
+  }
+};
+
 const cleanPathPart = (value: unknown, fallback: string): string => {
   const cleaned = String(value || fallback).trim().replace(/\//g, "-");
   return cleaned || fallback;
@@ -302,34 +363,9 @@ export const createLoginUser = onCall(
     }
 
     const firestore = admin.firestore();
-    const callerRecord = await admin.auth().getUser(callerUid);
-    const callerEmail = String(callerRecord.email || "").trim().toLowerCase();
-
-    const [callerDoc, rootCallerDoc, businessUsersSnapshot] = await Promise.all([
-      firestore.doc(`businesses/${businessId}/users/${callerUid}`).get(),
-      firestore.doc(`users/${callerUid}`).get(),
-      firestore.collection(`businesses/${businessId}/users`).limit(1).get(),
-    ]);
-
-    const callerRole = normaliseRole(callerDoc.data()?.role);
-    const rootCallerRole = normaliseRole(rootCallerDoc.data()?.role);
-    const hasBusinessProfile = callerDoc.exists;
-    const hasRootProfile = rootCallerDoc.exists;
-
-    const isFirestoreSuperUser =
-      (hasBusinessProfile && (callerRole === "admin" || callerRole === "super_user")) ||
-      (hasRootProfile && (rootCallerRole === "admin" || rootCallerRole === "super_user"));
-
-    const isBootstrapOwner =
-      OWNER_EMAILS.has(callerEmail) &&
-      (businessUsersSnapshot.empty || !hasBusinessProfile || !hasRootProfile);
-
-    if (!isFirestoreSuperUser && !isBootstrapOwner) {
-      throw new HttpsError(
-        "permission-denied",
-        "Only Super Users can create logins.",
-      );
-    }
+    const { callerRecord, callerEmail, isFirestoreSuperUser, isBootstrapOwner } =
+      await assertCanManageUsers(firestore, businessId, callerUid);
+    assertCanAssignRole(callerEmail, role);
 
     if (isBootstrapOwner && !isFirestoreSuperUser) {
       const ownerPayload = {
@@ -409,6 +445,86 @@ export const createLoginUser = onCall(
       success: true,
       uid: userRecord.uid,
       email,
+      role,
+    };
+  },
+);
+
+export const updateLoginUserProfile = onCall(
+  {
+    region: "europe-west2",
+    cors: true,
+  },
+  async (request) => {
+    const callerUid = request.auth?.uid;
+
+    if (!callerUid) {
+      throw new HttpsError("unauthenticated", "You must be signed in.");
+    }
+
+    const uid = typeof request.data?.uid === "string" ? request.data.uid.trim() : "";
+    const name = typeof request.data?.name === "string" ? request.data.name.trim() : "";
+    const email =
+      typeof request.data?.email === "string"
+        ? request.data.email.trim().toLowerCase()
+        : "";
+    const businessId = getCallableBusinessId(request.data?.businessId);
+    const role = normaliseRole(request.data?.role);
+    const sector = normaliseSector(request.data?.sector);
+    const allowedSectors =
+      role === "admin"
+        ? ["*"]
+        : normaliseAllowedSectors(request.data?.allowedSectors);
+    const allowedAreas =
+      role === "admin" || role === "super_user"
+        ? ["*"]
+        : Array.isArray(request.data?.allowedAreas)
+          ? Array.from(
+              new Set(
+                request.data.allowedAreas
+                  .map((item: unknown) => String(item || "").trim())
+                  .filter(Boolean),
+              ),
+            )
+          : [];
+
+    if (!uid) {
+      throw new HttpsError("invalid-argument", "Missing user id.");
+    }
+
+    const firestore = admin.firestore();
+    const { callerEmail } = await assertCanManageUsers(
+      firestore,
+      businessId,
+      callerUid,
+    );
+    assertCanAssignRole(callerEmail, role);
+
+    const payload = {
+      uid,
+      name,
+      email,
+      role,
+      permissions: permissionsByRole[role],
+      businessId,
+      sector,
+      allowedSectors,
+      allowedAreas,
+      active: true,
+      updatedBy: callerUid,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    await Promise.all([
+      firestore.doc(`businesses/${businessId}/users/${uid}`).set(payload, {
+        merge: true,
+      }),
+      firestore.doc(`users/${uid}`).set(payload, { merge: true }),
+    ]);
+
+    return {
+      success: true,
+      uid,
       role,
     };
   },

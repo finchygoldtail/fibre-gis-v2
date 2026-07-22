@@ -1,0 +1,80 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function rootProfile(uid) {
+      return get(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function businessProfile(businessId, uid) {
+      return get(/databases/$(database)/documents/businesses/$(businessId)/users/$(uid));
+    }
+
+    function isActive(profile) {
+      return profile.data.active != false;
+    }
+
+    function isPrivilegedRole(role) {
+      return role in ['admin', 'super_user'];
+    }
+
+    function isRootPrivileged() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && isActive(rootProfile(request.auth.uid))
+        && isPrivilegedRole(rootProfile(request.auth.uid).data.role);
+    }
+
+    function isBusinessPrivileged(businessId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/businesses/$(businessId)/users/$(request.auth.uid))
+        && isActive(businessProfile(businessId, request.auth.uid))
+        && isPrivilegedRole(businessProfile(businessId, request.auth.uid).data.role);
+    }
+
+    function isKnownBusinessUser(businessId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/businesses/$(businessId)/users/$(request.auth.uid))
+        && isActive(businessProfile(businessId, request.auth.uid));
+    }
+
+    match /users/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || isRootPrivileged());
+      allow list: if isRootPrivileged();
+      allow create, update, delete: if false;
+    }
+
+    match /businesses/{businessId} {
+      allow read, write: if isKnownBusinessUser(businessId) || isRootPrivileged();
+
+      match /users/{uid} {
+        allow get: if signedIn()
+          && (request.auth.uid == uid || isBusinessPrivileged(businessId) || isRootPrivileged());
+        allow list: if isBusinessPrivileged(businessId) || isRootPrivileged();
+        allow create, update, delete: if false;
+      }
+
+      match /{collectionId}/{docId} {
+        allow read, write: if collectionId != 'users'
+          && (isKnownBusinessUser(businessId) || isRootPrivileged());
+      }
+
+      match /{collectionId}/{docId}/{document=**} {
+        allow read, write: if collectionId != 'users'
+          && (isKnownBusinessUser(businessId) || isRootPrivileged());
+      }
+    }
+
+    match /{collectionId}/{docId} {
+      allow read, write: if collectionId != 'users' && isRootPrivileged();
+    }
+
+    match /{collectionId}/{docId}/{document=**} {
+      allow read, write: if collectionId != 'users' && isRootPrivileged();
+    }
+  }
+}

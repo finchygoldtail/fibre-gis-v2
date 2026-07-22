@@ -1,12 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   collection,
-  doc,
   getDocs,
   orderBy,
   query,
-  serverTimestamp,
-  setDoc,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "../../firebase";
@@ -56,7 +53,7 @@ const roleOptions: UserRole[] = [
 
 export default function UserManagementPanel({ visible, onClose }: Props) {
   const { profile } = useUserRole();
-  const canManageUsers = profile?.role === "admin";
+  const canManageUsers = profile?.permissions.manageUsers === true;
 
   const [users, setUsers] = useState<AppUserProfile[]>([]);
   const [areaOptions, setAreaOptions] = useState<AreaOption[]>([]);
@@ -235,7 +232,6 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
           ? ["*"]
           : normaliseAllowedSectors(patch.allowedSectors, [DEFAULT_SECTOR]),
       allowedAreas,
-      updatedAt: serverTimestamp(),
     };
 
     setIsSaving(true);
@@ -243,27 +239,12 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
     setSaveError("");
 
     try {
-      const writes = await Promise.allSettled([
-        setDoc(doc(db, "businesses", BUSINESS_ID, "users", cleanUid), payload, {
-          merge: true,
-        }),
-        setDoc(doc(db, "users", cleanUid), payload, { merge: true }),
-      ]);
+      const updateLoginUserProfile = httpsCallable<
+        typeof payload,
+        { success: boolean; uid: string }
+      >(functions, "updateLoginUserProfile");
 
-      const successfulWrites = writes.filter(
-        (item) => item.status === "fulfilled",
-      );
-
-      if (successfulWrites.length === 0) {
-        const firstError = writes.find(
-          (item): item is PromiseRejectedResult => item.status === "rejected",
-        );
-        throw firstError?.reason || new Error("No Firestore writes succeeded");
-      }
-
-      if (writes.some((item) => item.status === "rejected")) {
-        console.warn("One user-profile path could not be written", writes);
-      }
+      await updateLoginUserProfile(payload);
 
       setSaveMessage(`Saved permissions for ${cleanEmail || cleanUid}.`);
       await loadUsers();

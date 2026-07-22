@@ -13,6 +13,7 @@ export type CanonicalHomeRecord = {
   key: string;
   home: SavedMapAsset;
   status: CanonicalHomeStatus;
+  serviceBlocked: boolean;
   linkedDrop?: SavedMapAsset;
   splitterBox?: string;
   connectedDpId?: string;
@@ -211,6 +212,28 @@ function normaliseHomeStatus(value: unknown): string {
   return text(value).toLowerCase().replace(/\s+/g, "_").replace(/-/g, "_");
 }
 
+function getHomeServiceExceptionStatus(home: SavedMapAsset): string {
+  const item = home as any;
+  return normaliseHomeStatus(
+    item.serviceStatus ||
+      item.properties?.serviceStatus ||
+      "",
+  );
+}
+
+export function hasCanonicalHomeServiceException(home: SavedMapAsset): boolean {
+  const item = home as any;
+  const serviceStatus = getHomeServiceExceptionStatus(home);
+  return Boolean(
+    (serviceStatus && serviceStatus !== "serviceable") ||
+      text(item.blockedReason || item.properties?.blockedReason),
+  );
+}
+
+export function isCanonicalHomeLive(record: Pick<CanonicalHomeRecord, "status" | "serviceBlocked">): boolean {
+  return record.status !== "unconnected" && !record.serviceBlocked;
+}
+
 export function dropLinksToCanonicalHome(drop: SavedMapAsset, home: SavedMapAsset): boolean {
   if (!isCanonicalHomeDropCable(drop)) return false;
   const homeKeys = new Set(getCanonicalAssetKeys(home));
@@ -274,10 +297,12 @@ export function buildCanonicalHomeSummary(assets: SavedMapAsset[]): CanonicalHom
     const item = home as any;
     const linkedDrop = assets.find((asset) => dropLinksToCanonicalHome(asset, home));
     const status = getCanonicalHomeConnectionStatus(home, assets);
+    const serviceBlocked = hasCanonicalHomeServiceException(home);
     return {
       key: getCanonicalHomeKey(home),
       home,
       status,
+      serviceBlocked,
       linkedDrop,
       splitterBox: text(item.splitterBox || item.splitter_box || item.sbId || item.assignedSplitterBox),
       connectedDpId: text(
@@ -293,12 +318,11 @@ export function buildCanonicalHomeSummary(assets: SavedMapAsset[]): CanonicalHom
     };
   });
 
-  // In the workspace, RFS / live-home progress means the premise is
-  // connected to the network. Some imports store this as status=CONNECTED
-  // rather than status=Live, so all non-unconnected homes must be counted
-  // consistently as live/connected for KPI purposes.
+  // In the workspace, connected and live are related but not identical:
+  // a premise can have a valid DP/drop connection while still being blocked
+  // from service by a field exception such as tree cutting, wayleave or no access.
   const homesConnected = records.filter((record) => record.status !== "unconnected").length;
-  const homesLive = homesConnected;
+  const homesLive = records.filter(isCanonicalHomeLive).length;
 
   return {
     homes,
@@ -306,7 +330,7 @@ export function buildCanonicalHomeSummary(assets: SavedMapAsset[]): CanonicalHom
     homesPassed: homes.length,
     homesConnected,
     homesLive,
-    homesNotLive: Math.max(homes.length - homesConnected, 0),
+    homesNotLive: Math.max(homes.length - homesLive, 0),
     drops,
   };
 }

@@ -122,7 +122,7 @@ export function useProjectWorkspaceStats({
       homesPassed: canonicalHomeSummary.homesPassed,
       homesConnected: canonicalHomeSummary.homesConnected,
       rfsPercent: canonicalHomeSummary.homesPassed
-        ? Math.round((canonicalHomeSummary.homesConnected / canonicalHomeSummary.homesPassed) * 100)
+        ? Math.round((canonicalHomeSummary.homesLive / canonicalHomeSummary.homesPassed) * 100)
         : 0,
       issueCount,
       topologyLinks,

@@ -46,6 +46,7 @@ export type AppUserProfile = {
   email: string;
   role: UserRole;
   permissions: UserPermissions;
+  active: boolean;
   /**
    * Business/client tenant scope. Admins can span businesses; non-admin users
    * should be scoped to one business/client such as fibre-gis-v2 or a client id.
@@ -101,7 +102,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, UserPermissions> = {
     survey: true,
     build: true,
     maintenance: true,
-    manageUsers: false,
+    manageUsers: true,
   },
 
   maintenance_user: {
@@ -142,11 +143,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, UserPermissions> = {
 
 const ROLE_BY_EMAIL: Record<string, UserRole> = {
   "alistairlgrantham@gmail.com": "super_user",
-  "benedict.almond@brsk.co.uk": "super_user",
-  "adam.whittaker@brsk.co.uk": "super_user",
-  "james.oliver@brsk.co.uk": "super_user",
   "alistair.grantham@brsk.co.uk": "super_user",
-  "ben.almond@brsk.co.uk": "super_user",
 };
 
 const LOCKED_DOWN_PERMISSIONS: UserPermissions = {
@@ -204,6 +201,7 @@ function buildFallbackProfileFromUser(user: User): AppUserProfile {
       email,
       role: knownRole,
       permissions: ROLE_PERMISSIONS[knownRole],
+      active: true,
       businessId: DEFAULT_BUSINESS_ID,
       sector: DEFAULT_SECTOR,
       allowedSectors: ["*"],
@@ -217,6 +215,7 @@ function buildFallbackProfileFromUser(user: User): AppUserProfile {
     email,
     role: "survey_user",
     permissions: LOCKED_DOWN_PERMISSIONS,
+    active: false,
     businessId: DEFAULT_BUSINESS_ID,
     sector: DEFAULT_SECTOR,
     allowedSectors: [],
@@ -253,6 +252,7 @@ async function loadFirestoreProfile(user: User): Promise<AppUserProfile> {
           : fallbackProfile.email,
       role,
       permissions,
+      active: data.active !== false,
       businessId: normaliseBusinessId(data.businessId),
       sector: normaliseSector(data.sector),
       allowedSectors: normaliseAllowedSectors(
