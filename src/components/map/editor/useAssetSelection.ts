@@ -9,6 +9,7 @@ import type {
   AssetType,
   CableType,
   DistributionPointDetails,
+  DuctUse,
   FibreCount,
   HomeServiceStatus,
   InstallMethod,
@@ -54,6 +55,9 @@ type UseAssetSelectionArgs = {
   setCableType: Setter<CableType>;
   setFibreCount: Setter<FibreCount>;
   setInstallMethod: Setter<InstallMethod>;
+  setDuctCount: Setter<number>;
+  setDuctDiameterMm: Setter<number>;
+  setDuctUse: Setter<DuctUse>;
   setParentCableId: Setter<string | undefined>;
   setAllocatedInputFibres: Setter<number[]>;
   setPoleDetails: Setter<PoleDetails>;
@@ -88,6 +92,9 @@ export function useAssetSelection({
   setCableType,
   setFibreCount,
   setInstallMethod,
+  setDuctCount,
+  setDuctDiameterMm,
+  setDuctUse,
   setParentCableId,
   setAllocatedInputFibres,
   setPoleDetails,
@@ -136,6 +143,9 @@ export function useAssetSelection({
       setCableType(viewedAsset.cableType || "Feeder Cable");
       setFibreCount(viewedAsset.fibreCount || "12F");
       setInstallMethod(viewedAsset.installMethod || "Underground");
+      setDuctCount(Number((viewedAsset as any).ductCount || 4));
+      setDuctDiameterMm(Number((viewedAsset as any).ductDiameterMm || 96));
+      setDuctUse(((viewedAsset as any).ductUse || "Main route") as DuctUse);
       setParentCableId((viewedAsset as any).parentCableId);
       setAllocatedInputFibres(
         ((viewedAsset as any).allocatedInputFibres || []) as number[],
@@ -210,6 +220,9 @@ export function useAssetSelection({
       setEditingAssetId,
       setFibreCount,
       setInstallMethod,
+      setDuctCount,
+      setDuctDiameterMm,
+      setDuctUse,
       setIsPanelOpen,
       setJointName,
       setJointType,

@@ -39,10 +39,18 @@ type Props = {
   endpointAssetOptions?: SavedMapAsset[];
   onDeleteAsset: (id: string) => void;
   onEditAsset: (asset: SavedMapAsset) => void;
+  onAttachCableToDuct?: (
+    duct: SavedMapAsset,
+    ductNumber?: number,
+    subDuctDiameterMm?: number,
+    subDuctCount?: number,
+  ) => void;
   onUpdateAsset?: (asset: SavedMapAsset) => void;
   canEditCables?: boolean;
   canDeleteCables?: boolean;
 };
+
+const SUB_DUCT_DIAMETER_OPTIONS_MM = [12, 14, 16, 18, 20, 22, 24, 25];
 
 function formatCableLength(length: number): string {
   if (length < 1000) return `${length.toFixed(1)} m`;
@@ -144,6 +152,7 @@ function getDropCableDistanceColour(lengthMeters: number): string {
 }
 
 function getCableColor(asset: SavedMapAsset, lengthMeters = 0): string {
+  if (isDuctAsset(asset)) return "#7c3aed";
   if (isDropCableAsset(asset)) return getDropCableDistanceColour(lengthMeters);
 
   const fibreCount = getCableFibreCount(asset);
@@ -234,6 +243,7 @@ function getDashArray(
   endAsset?: SavedMapAsset | null
 ): string | undefined {
   // UG always stays solid, even if another field has confusing wording.
+  if (isDuctAsset(asset)) return undefined;
   if (isUndergroundInstall(asset)) return undefined;
 
   // All drops are dashed because they are house tails / OH-style tails on the map.
@@ -1055,6 +1065,7 @@ export default function CableLinesLayer({
   endpointAssetOptions,
   onDeleteAsset,
   onEditAsset,
+  onAttachCableToDuct,
   onUpdateAsset,
   canEditCables = true,
   canDeleteCables = true,
@@ -1065,6 +1076,10 @@ export default function CableLinesLayer({
   const [selectedCableId, setSelectedCableId] = useState<string | null>(null);
   const [editingCableId, setEditingCableId] = useState<string | null>(null);
   const [hoveredCableId, setHoveredCableId] = useState<string | null>(null);
+  const [selectedSubDuctDiameterByDuctId, setSelectedSubDuctDiameterByDuctId] =
+    useState<Record<string, number>>({});
+  const [selectedSubDuctCountByDuctId, setSelectedSubDuctCountByDuctId] =
+    useState<Record<string, number>>({});
   const [mappingRowsByAssetId, setMappingRowsByAssetId] = useState<MappingRowsByAssetId>({});
   const [mapViewBounds, setMapViewBounds] = useState(() => map.getBounds());
   const [mapViewZoom, setMapViewZoom] = useState(() => map.getZoom());
@@ -1190,6 +1205,7 @@ export default function CableLinesLayer({
 
   const hasAnyIndividualCableLayerOn =
     isLayerOn("feeders") ||
+    isLayerOn("ducts") ||
     isLayerOn("links") ||
     isLayerOn("dropCables") ||
     isLayerOn("ulw96") ||
@@ -1202,9 +1218,10 @@ export default function CableLinesLayer({
     () =>
       assets.filter((asset) => {
         if (isOpenreachReferenceAsset(asset)) return false;
+        const isDuct = isDuctAsset(asset);
 
         if (
-          asset.assetType !== "cable" ||
+          (!isDuct && asset.assetType !== "cable") ||
           asset.geometry?.type !== "LineString" ||
           !Array.isArray(asset.geometry.coordinates)
         ) {
@@ -1213,6 +1230,8 @@ export default function CableLinesLayer({
 
         const points = asset.geometry.coordinates as [number, number][];
         if (!isLineStringInsideRenderBounds(points, renderBounds)) return false;
+
+        if (isDuct) return !cableDrawingMode && isLayerOn("ducts");
 
         if (cableDrawingMode) return isEngineeringDrawingTrunkCable(asset);
 
@@ -1317,12 +1336,35 @@ export default function CableLinesLayer({
             : [];
 
         const length = getTuplePathDistanceMeters(points);
+        const isDuct = isDuctAsset(asset);
+        const parentDuct =
+          !isDuct && (asset as any).ductId
+            ? networkAnalysisAssets.find(
+                (candidate) => candidate.id === (asset as any).ductId && isDuctAsset(candidate),
+              ) || null
+            : null;
+        const linkedCableIds = Array.isArray((asset as any).linkedCableIds)
+          ? ((asset as any).linkedCableIds as string[])
+          : [];
+        const selectedSubDuctDiameter =
+          selectedSubDuctDiameterByDuctId[asset.id] ??
+          Number((asset as any).defaultSubDuctDiameterMm || 12);
+        const selectedSubDuctCount = Math.max(
+          1,
+          Math.min(12, Math.round(Number(selectedSubDuctCountByDuctId[asset.id] || 1))),
+        );
         const isHovered = hoveredCableId === asset.id;
         const isSelected = selectedCableId === asset.id;
         const isEditing = editingCableId === asset.id;
-        const shouldCalculateCableDetails = isSelected || isEditing;
+        const shouldCalculateCableDetails = !isDuct && (isSelected || isEditing);
         const baseColor = getCableColor(asset, length);
         const cableColor = isSelected ? "#f59e0b" : baseColor;
+        const ductLinePositions = isDuct
+          ? getDuctParallelLinePositions(asset, points, map)
+          : [];
+        const displayPoints = parentDuct
+          ? getDuctSlotCablePositions(parentDuct, asset, points, map)
+          : points;
         const routeEditHandleIndexes = isEditing ? getRouteEditHandleIndexes(points) : [];
         const routeEditInsertSegmentIndexes = isEditing
           ? new Set(getRouteEditInsertSegmentIndexes(points, routeEditHandleIndexes))
@@ -1454,19 +1496,37 @@ export default function CableLinesLayer({
                   );
                 })
               : null}
+            {isDuct
+              ? ductLinePositions.map((positions, index) => (
+                  <Polyline
+                    key={`${asset.id}-duct-line-${index}`}
+                    renderer={cableCanvasRenderer}
+                    positions={positions}
+                    interactive={false}
+                    pathOptions={{
+                      color: cableColor,
+                      weight: isSelected ? 4 : isHovered || isEditing ? 3.5 : 3,
+                      opacity: isSelected || isHovered || isEditing ? 1 : 0.95,
+                      dashArray: undefined,
+                    }}
+                  />
+                ))
+              : null}
             <Polyline
               renderer={cableCanvasRenderer}
-              positions={points}
+              positions={displayPoints}
               pathOptions={{
                 color: cableColor,
-                weight: isSelected ? 9 : isHovered || isEditing ? 7 : 4,
-                opacity: rendersMixedInstallSegments
+                weight: isDuct ? 18 : isSelected ? 9 : isHovered || isEditing ? 7 : 4,
+                opacity: isDuct
+                  ? 0.01
+                  : rendersMixedInstallSegments
                   ? 0.02
                   : isSelected || isHovered || isEditing
                     ? 1
                     : 0.85,
-                dashArray: getDashArray(asset),
-                className: isSelected ? "selected-cable-glow" : "",
+                dashArray: isDuct ? undefined : getDashArray(asset),
+                className: isSelected && !isDuct ? "selected-cable-glow" : "",
               }}
               eventHandlers={{
                 click: (e) => {
@@ -1483,16 +1543,107 @@ export default function CableLinesLayer({
               <Popup>
                 <div style={{ minWidth: 240 }}>
                   <div style={{ fontWeight: 700, fontSize: "1rem" }}>
-                    {asset.name || "Unnamed Cable"}
+                    {isDuct
+                      ? getDuctBundleTitle(asset)
+                      : asset.name || "Unnamed Cable"}
                   </div>
 
-                  <div style={{ marginTop: 6 }}>
-                    <b>Size:</b> {asset.fibreCount || "N/A"}
-                  </div>
+                  {isDuct ? (
+                    <>
+                      <div style={{ marginTop: 6 }}>
+                        <b>Spec:</b> {getDuctLabel(asset)}
+                      </div>
 
-                  <div>
-                    <b>Type:</b> {asset.cableType || "Cable"}
-                  </div>
+                      <div>
+                        <b>Use:</b> {(asset as any).ductUse || "Main route"}
+                      </div>
+
+                      <div>
+                        <b>Linked cables:</b> {linkedCableIds.length}
+                      </div>
+
+                      <div style={{ marginTop: 6 }}>
+                        <b>Ducts:</b> {getDuctNumberLabels(asset).join(", ")}
+                      </div>
+
+                      {onAttachCableToDuct ? (
+                        <div style={{ marginTop: 8, display: "grid", gap: 4 }}>
+                          <label style={{ display: "grid", gap: 3, fontSize: 12, fontWeight: 700 }}>
+                            Sub duct size
+                            <select
+                              value={selectedSubDuctDiameter}
+                              onChange={(event) =>
+                                setSelectedSubDuctDiameterByDuctId((prev) => ({
+                                  ...prev,
+                                  [asset.id]: Number(event.target.value),
+                                }))
+                              }
+                            >
+                              {SUB_DUCT_DIAMETER_OPTIONS_MM.map((diameter) => (
+                                <option key={diameter} value={diameter}>
+                                  {diameter}mm
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label style={{ display: "grid", gap: 3, fontSize: 12, fontWeight: 700 }}>
+                            Quantity
+                            <input
+                              type="number"
+                              min={1}
+                              max={12}
+                              value={selectedSubDuctCount}
+                              onChange={(event) =>
+                                setSelectedSubDuctCountByDuctId((prev) => ({
+                                  ...prev,
+                                  [asset.id]: Number(event.target.value),
+                                }))
+                              }
+                            />
+                          </label>
+
+                          {getDuctNumberLabels(asset).map((label) => {
+                            const ductNumber = Number(label.replace(/\D/g, ""));
+                            return (
+                              <button
+                                key={`${asset.id}-${label}`}
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  onAttachCableToDuct(
+                                    asset,
+                                    ductNumber,
+                                    selectedSubDuctDiameter,
+                                    selectedSubDuctCount,
+                                  );
+                                }}
+                              >
+                                Add {selectedSubDuctCount} x {selectedSubDuctDiameter}mm to {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <div style={{ marginTop: 6 }}>
+                      <b>Size:</b> {asset.fibreCount || "N/A"}
+                    </div>
+                  )}
+
+                  {!isDuct ? (
+                    <div>
+                      <b>Type:</b> {asset.cableType || "Cable"}
+                    </div>
+                  ) : null}
+
+                  {!isDuct && (asset as any).subDuctDiameterMm ? (
+                    <div>
+                      <b>Sub duct:</b> {(asset as any).subDuctDiameterMm}mm
+                      {(asset as any).ductNumber ? ` in Duct ${(asset as any).ductNumber}` : ""}
+                    </div>
+                  ) : null}
 
                   <div>
                     <b>Install:</b> {asset.installMethod || "Underground"}
@@ -1502,16 +1653,20 @@ export default function CableLinesLayer({
                     <b>Length:</b> {formatCableLength(length)}
                   </div>
 
-                  <div>
-                    <b>Used fibres:</b> {usedFibres} /{" "}
-                    {asset.fibreCount || "N/A"}
-                  </div>
+                  {!isDuct ? (
+                    <div>
+                      <b>Used fibres:</b> {usedFibres} /{" "}
+                      {asset.fibreCount || "N/A"}
+                    </div>
+                  ) : null}
 
-                  <div>
-                    <b>Fibre numbers:</b> {usedFibreRangeLabel}
-                  </div>
+                  {!isDuct ? (
+                    <div>
+                      <b>Fibre numbers:</b> {usedFibreRangeLabel}
+                    </div>
+                  ) : null}
 
-                  {routeGroupUsage.breakdown.length > 1 ? (
+                  {!isDuct && routeGroupUsage.breakdown.length > 1 ? (
                     <div style={{ marginTop: 6, fontSize: 12 }}>
                       <b>Route breakdown:</b>
                       <div style={{ marginTop: 2 }}>
@@ -1525,11 +1680,13 @@ export default function CableLinesLayer({
                     </div>
                   ) : null}
 
+                  {!isDuct ? (
                   <div style={{ marginTop: 4, color: "#64748b", fontSize: 12 }}>
                     <b>Network state:</b> {networkStateSource}
                   </div>
+                  ) : null}
 
-                  {capacityWarning ? (
+                  {!isDuct && capacityWarning ? (
                     <div style={{ marginTop: 4, color: cableState?.warnings?.length ? "#dc2626" : "#475569", fontSize: 12 }}>
                       {capacityWarning}
                     </div>
@@ -1543,6 +1700,7 @@ export default function CableLinesLayer({
                     <b>To:</b> {getAssetDisplayName(endAsset)}
                   </div>
 
+                  {!isDuct ? (
                   <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #e5e7eb" }}>
                     <div style={{ fontWeight: 700, marginBottom: 4 }}>Connections</div>
                     <label style={{ display: "block", fontSize: 12, fontWeight: 700, marginBottom: 2 }}>
@@ -1577,6 +1735,7 @@ export default function CableLinesLayer({
                       ))}
                     </select>
                   </div>
+                  ) : null}
 
                   {asset.notes ? (
                     <div style={{ marginTop: 8 }}>{asset.notes}</div>
@@ -1640,8 +1799,7 @@ export default function CableLinesLayer({
 
               {!cableDrawingMode ? (
               <Tooltip sticky>
-                {asset.name || "Cable"} · {asset.fibreCount || "N/A"} ·{" "}
-                {formatCableLength(length)}
+                {isDuct ? getDuctBundleTitle(asset) : asset.name || "Cable"} - {isDuct ? getDuctLabel(asset) : asset.fibreCount || "N/A"} - {formatCableLength(length)}
               </Tooltip>
               ) : null}
             </Polyline>
@@ -1654,12 +1812,16 @@ export default function CableLinesLayer({
                 {!isTablet ? <div style={mobileSheetHandleStyle} /> : null}
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                   <div style={{ minWidth: 0 }}>
-                    <div style={mobileSheetKickerStyle}>Cable asset</div>
+                    <div style={mobileSheetKickerStyle}>{isDuct ? "Duct asset" : "Cable asset"}</div>
                     <div style={mobileSheetTitleStyle}>
-                      {asset.name || "Unnamed Cable"}
+                      {isDuct ? getDuctBundleTitle(asset) : asset.name || "Unnamed Cable"}
                     </div>
                     <div style={mobileSheetMetaStyle}>
-                      {asset.cableType || "Cable"} · {asset.fibreCount || "N/A"} · {formatCableLength(length)}
+                      {isDuct
+                        ? getDuctLabel(asset)
+                        : (asset as any).subDuctDiameterMm
+                          ? `${(asset as any).subDuctDiameterMm}mm sub duct`
+                          : asset.cableType || "Cable"} - {isDuct ? (asset as any).ductUse || "Main route" : asset.fibreCount || "N/A"} - {formatCableLength(length)}
                     </div>
                   </div>
 
@@ -1681,16 +1843,83 @@ export default function CableLinesLayer({
                   <strong>{getCableInstallSummary(asset)}</strong>
                 </div>
 
-                <div style={mobileCableSummaryStyle}>
-                  <span>Used fibres</span>
-                  <strong>{usedFibres} / {asset.fibreCount || "N/A"}</strong>
-                </div>
+                {isDuct ? (
+                  <div style={mobileCableSummaryStyle}>
+                    <span>Linked cables</span>
+                    <strong>{linkedCableIds.length}</strong>
+                  </div>
+                ) : (
+                  <div style={mobileCableSummaryStyle}>
+                    <span>Used fibres</span>
+                    <strong>{usedFibres} / {asset.fibreCount || "N/A"}</strong>
+                  </div>
+                )}
 
-                {capacityWarning ? (
+                {!isDuct && capacityWarning ? (
                   <div style={mobileCableWarningStyle}>{capacityWarning}</div>
                 ) : null}
 
+                {isDuct && onAttachCableToDuct ? (
+                  <div style={mobileSubDuctControlStyle}>
+                    <label>
+                      <span>Size</span>
+                      <select
+                        value={selectedSubDuctDiameter}
+                        onChange={(event) =>
+                          setSelectedSubDuctDiameterByDuctId((prev) => ({
+                            ...prev,
+                            [asset.id]: Number(event.target.value),
+                          }))
+                        }
+                      >
+                        {SUB_DUCT_DIAMETER_OPTIONS_MM.map((diameter) => (
+                          <option key={diameter} value={diameter}>
+                            {diameter}mm
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Qty</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={12}
+                        value={selectedSubDuctCount}
+                        onChange={(event) =>
+                          setSelectedSubDuctCountByDuctId((prev) => ({
+                            ...prev,
+                            [asset.id]: Number(event.target.value),
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                ) : null}
+
                 <div style={mobileCableButtonGridStyle}>
+                  {isDuct && onAttachCableToDuct ? (
+                    getDuctNumberLabels(asset).map((label) => {
+                      const ductNumber = Number(label.replace(/\D/g, ""));
+                      return (
+                        <button
+                          key={`${asset.id}-mobile-${label}`}
+                          type="button"
+                          style={mobilePrimaryButtonStyle}
+                          onClick={() =>
+                            onAttachCableToDuct(
+                              asset,
+                              ductNumber,
+                              selectedSubDuctDiameter,
+                              selectedSubDuctCount,
+                            )
+                          }
+                        >
+                          {label}
+                        </button>
+                      );
+                    })
+                  ) : null}
                   <button type="button" style={mobilePrimaryButtonStyle} onClick={() => onEditAsset(asset)}>
                     View / Edit
                   </button>
@@ -1809,6 +2038,96 @@ export default function CableLinesLayer({
   );
 }
 
+function isDuctAsset(asset: SavedMapAsset): boolean {
+  return String((asset as any).assetType || "").toLowerCase() === "duct";
+}
+
+function getDuctLabel(asset: SavedMapAsset): string {
+  const count = Math.max(1, Math.round(Number((asset as any).ductCount || 1)));
+  const diameter = Math.max(1, Math.round(Number((asset as any).ductDiameterMm || 96)));
+  return `${count} x ${diameter}mm`;
+}
+
+function getDuctCount(asset: SavedMapAsset): number {
+  return Math.max(1, Math.min(12, Math.round(Number((asset as any).ductCount || 1))));
+}
+
+function getDuctStartNumber(asset: SavedMapAsset): number {
+  const storedStart = Number((asset as any).ductStartNumber);
+  if (Number.isFinite(storedStart) && storedStart > 0) return Math.round(storedStart);
+
+  const match = String(asset.name || "").trim().match(/^duct\s+(\d+)/i);
+  return match ? Number(match[1]) : 1;
+}
+
+function getDuctNumberLabels(asset: SavedMapAsset): string[] {
+  const start = getDuctStartNumber(asset);
+  return Array.from({ length: getDuctCount(asset) }, (_, index) => `Duct ${start + index}`);
+}
+
+function getDuctBundleTitle(asset: SavedMapAsset): string {
+  const labels = getDuctNumberLabels(asset);
+  if (labels.length === 1) return labels[0];
+  return `${labels[0]}-${labels[labels.length - 1].replace("Duct ", "")}`;
+}
+
+function getDuctLineOffsets(asset: SavedMapAsset): number[] {
+  const count = getDuctCount(asset);
+  const spacingPx = 5;
+  const middle = (count - 1) / 2;
+  return Array.from({ length: count }, (_, index) => (index - middle) * spacingPx);
+}
+
+function getOffsetRoutePoints(
+  points: [number, number][],
+  map: L.Map,
+  offsetPx: number,
+): [number, number][] {
+  if (!offsetPx || points.length < 2) return points;
+
+  return points.map((point, index) => {
+    const previous = points[Math.max(0, index - 1)];
+    const next = points[Math.min(points.length - 1, index + 1)];
+    const previousLayerPoint = map.latLngToLayerPoint(L.latLng(previous[0], previous[1]));
+    const nextLayerPoint = map.latLngToLayerPoint(L.latLng(next[0], next[1]));
+    const currentLayerPoint = map.latLngToLayerPoint(L.latLng(point[0], point[1]));
+    const dx = nextLayerPoint.x - previousLayerPoint.x;
+    const dy = nextLayerPoint.y - previousLayerPoint.y;
+    const length = Math.sqrt(dx * dx + dy * dy) || 1;
+    const offsetLayerPoint = L.point(
+      currentLayerPoint.x + (-dy / length) * offsetPx,
+      currentLayerPoint.y + (dx / length) * offsetPx,
+    );
+    const offsetLatLng = map.layerPointToLatLng(offsetLayerPoint);
+    return [offsetLatLng.lat, offsetLatLng.lng];
+  });
+}
+
+function getDuctParallelLinePositions(
+  asset: SavedMapAsset,
+  points: [number, number][],
+  map: L.Map,
+): [number, number][][] {
+  return getDuctLineOffsets(asset).map((offsetPx) =>
+    getOffsetRoutePoints(points, map, offsetPx),
+  );
+}
+
+function getDuctSlotCablePositions(
+  duct: SavedMapAsset,
+  cable: SavedMapAsset,
+  points: [number, number][],
+  map: L.Map,
+): [number, number][] {
+  const ductNumber = Number((cable as any).ductNumber || (cable as any).ductSlotNumber);
+  if (!Number.isFinite(ductNumber)) return points;
+
+  const startNumber = getDuctStartNumber(duct);
+  const index = Math.max(0, Math.min(getDuctCount(duct) - 1, Math.round(ductNumber) - startNumber));
+  const offset = getDuctLineOffsets(duct)[index] || 0;
+  return getOffsetRoutePoints(points, map, offset);
+}
+
 const mobileCableSheetStyle: React.CSSProperties = {
   position: "absolute",
   left: 10,
@@ -1912,6 +2231,19 @@ const mobileCableButtonGridStyle: React.CSSProperties = {
   marginTop: 12,
 };
 
+const mobileSubDuctControlStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 8,
+  marginTop: 12,
+  padding: "9px 10px",
+  borderRadius: 12,
+  background: "rgba(30,41,59,0.78)",
+  border: "1px solid rgba(148,163,184,0.22)",
+  color: "#cbd5e1",
+  fontSize: 12,
+};
+
 const mobilePrimaryButtonStyle: React.CSSProperties = {
   minHeight: 44,
   borderRadius: 14,
@@ -1933,3 +2265,4 @@ const mobileDangerButtonStyle: React.CSSProperties = {
   border: "1px solid rgba(248,113,113,0.55)",
   background: "#991b1b",
 };
+

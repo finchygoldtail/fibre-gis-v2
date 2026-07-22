@@ -9,6 +9,7 @@ export type AssetType =
   | "home"
   | "area"
   | "pia-route"
+  | "duct"
   | "cable";
 export type CableType =
   | "Feeder Cable"
@@ -32,6 +33,7 @@ export type FibreCount =
 
 export type InstallMethod = "OH" | "Underground";
 export type CableSegmentInstallMethod = "OH" | "Underground";
+export type DuctUse = "Main route" | "Road crossing" | "Rider" | "Lead-in" | "Other";
 
 export type AreaLevel = "L0" | "L1" | "L2" | "L3";
 
@@ -186,6 +188,12 @@ export type SavedMapAsset = {
   installMethod?: InstallMethod;
   cableSegmentInstallMethods?: CableSegmentInstallMethod[];
   usedFibres?: number;
+  ductCount?: number;
+  ductDiameterMm?: number;
+  ductUse?: DuctUse;
+  ductStartNumber?: number;
+  linkedCableIds?: string[];
+  subDuctDiameterMm?: number;
 
   // Branch / jump-off cable fibre reservation from a parent spine cable.
   parentCableId?: string;

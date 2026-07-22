@@ -6,6 +6,7 @@ import type {
   AssetType,
   CableType,
   CableSegmentInstallMethod,
+  DuctUse,
   FibreCount,
   InstallMethod,
   SavedMapAsset,
@@ -34,6 +35,9 @@ type UseCableWorkflowArgs = {
   setCableType: React.Dispatch<React.SetStateAction<CableType>>;
   setFibreCount: React.Dispatch<React.SetStateAction<FibreCount>>;
   setInstallMethod: React.Dispatch<React.SetStateAction<InstallMethod>>;
+  setDuctCount: React.Dispatch<React.SetStateAction<number>>;
+  setDuctDiameterMm: React.Dispatch<React.SetStateAction<number>>;
+  setDuctUse: React.Dispatch<React.SetStateAction<DuctUse>>;
   setParentCableId: React.Dispatch<React.SetStateAction<string | undefined>>;
   setAllocatedInputFibres: React.Dispatch<React.SetStateAction<number[]>>;
   setPickedLocation: React.Dispatch<React.SetStateAction<LatLngLiteral | null>>;
@@ -57,6 +61,25 @@ function normaliseSegmentInstallMethod(
   return text === "oh" || text.includes("overhead") ? "OH" : "Underground";
 }
 
+function getDuctCount(asset: SavedMapAsset): number {
+  return Math.max(1, Math.round(Number((asset as any).ductCount || 1)));
+}
+
+function getNextDuctStartNumber(savedAssets: SavedMapAsset[]): number {
+  return (
+    savedAssets
+      .filter((asset) => asset.assetType === "duct")
+      .reduce((total, asset) => total + getDuctCount(asset), 0) + 1
+  );
+}
+
+function formatDuctBundleName(startNumber: number, count: number): string {
+  const safeCount = Math.max(1, Math.round(Number(count) || 1));
+  return safeCount === 1
+    ? `Duct ${startNumber}`
+    : `Duct ${startNumber}-${startNumber + safeCount - 1}`;
+}
+
 export function useCableWorkflow({
   jointName,
   savedJoints,
@@ -71,6 +94,9 @@ export function useCableWorkflow({
   setCableType,
   setFibreCount,
   setInstallMethod,
+  setDuctCount,
+  setDuctDiameterMm,
+  setDuctUse,
   setParentCableId,
   setAllocatedInputFibres,
   setPickedLocation,
@@ -102,6 +128,9 @@ export function useCableWorkflow({
     setCableType("Feeder Cable");
     setFibreCount("12F");
     setInstallMethod("Underground");
+    setDuctCount(4);
+    setDuctDiameterMm(96);
+    setDuctUse("Main route");
     setParentCableId(undefined);
     setAllocatedInputFibres([]);
     setPickedLocation(null);
@@ -111,6 +140,33 @@ export function useCableWorkflow({
     setSelectedReferenceDuctId(null);
     setSelectedReferenceDuctName("");
     setMapMode("pick");
+    setShowCableModal(false);
+    setIsPanelOpen(true);
+  };
+
+  const openDuctModalForNew = () => {
+    const ductStartNumber = getNextDuctStartNumber(savedJoints);
+    setEditingAssetId(null);
+    setAssetType("duct");
+    setJointType("Duct");
+    setJointName(formatDuctBundleName(ductStartNumber, 4));
+    setNotes("");
+    setCablePiaNoiNumber("");
+    setCableType("Feeder Cable");
+    setFibreCount("12F");
+    setInstallMethod("Underground");
+    setDuctCount(4);
+    setDuctDiameterMm(96);
+    setDuctUse("Main route");
+    setParentCableId(undefined);
+    setAllocatedInputFibres([]);
+    setPickedLocation(null);
+    setDraftAreaPoints([]);
+    setDraftCablePoints([]);
+    setDraftCableSegmentMethods([]);
+    setSelectedReferenceDuctId(null);
+    setSelectedReferenceDuctName("");
+    setMapMode("draw-cable");
     setShowCableModal(false);
     setIsPanelOpen(true);
   };
@@ -197,6 +253,7 @@ export function useCableWorkflow({
 
   return {
     openCableModalForNew,
+    openDuctModalForNew,
     startCableDrawing,
     handleUndoCablePoint,
     handleClearCable,

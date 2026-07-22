@@ -12,6 +12,7 @@ export type LayerVisibility = {
   ohDpJoints: boolean;
   ugDpJoints: boolean;
   chambers: boolean;
+  ducts: boolean;
   cables: boolean;
   dropCables: boolean;
   areas: boolean;
@@ -76,6 +77,7 @@ export const DEFAULT_VISIBLE_LAYERS: LayerVisibility = {
   ohDpJoints: true,
   ugDpJoints: true,
   chambers: false,
+  ducts: true,
   cables: false,
   dropCables: false,
   areas: false,

@@ -103,6 +103,7 @@ const layerGroups: LayerGroup[] = [
     title: "Cables / UG Routes",
     options: [
       { label: "All Cables / UG Routes", key: "cables" },
+      { label: "Ducts", key: "ducts" },
       { label: "Feeders", key: "feeders" },
       { label: "Links", key: "links" },
       { label: "Drop Cables / UG Routes", key: "dropCables" },
@@ -385,6 +386,7 @@ export default function LayersPanel({
         return {
           ...prev,
           cables: next,
+          ducts: next,
           feeders: next,
           links: next,
           dropCables: next,

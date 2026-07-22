@@ -17,6 +17,7 @@ export type MapContextAction =
   | "chamber"
   | "street-cab"
   | "exchange"
+  | "duct"
   | "cable"
   | "area"
   | "measure"
@@ -157,6 +158,7 @@ export default function MapContextMenu({
 
         {openSubmenu === "draw" && (
           <Submenu top={34}>
+            <MenuRow label="Create Duct" onClick={() => select("duct")} />
             <MenuRow label="Create Cable" onClick={() => select("cable")} />
             <MenuRow label="Create Polygon / Area" onClick={() => select("area")} />
           </Submenu>

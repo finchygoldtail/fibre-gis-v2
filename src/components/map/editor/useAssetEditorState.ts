@@ -2,6 +2,7 @@ import { useState } from "react";
 import type {
   CableType,
   DistributionPointDetails,
+  DuctUse,
   FibreCount,
   HomeServiceStatus,
   InstallMethod,
@@ -32,6 +33,9 @@ export function useAssetEditorState(
   const [fibreCount, setFibreCount] = useState<FibreCount>("12F");
   const [installMethod, setInstallMethod] =
     useState<InstallMethod>("Underground");
+  const [ductCount, setDuctCount] = useState(4);
+  const [ductDiameterMm, setDuctDiameterMm] = useState(96);
+  const [ductUse, setDuctUse] = useState<DuctUse>("Main route");
   const [parentCableId, setParentCableId] = useState<string | undefined>(
     undefined,
   );
@@ -73,6 +77,12 @@ export function useAssetEditorState(
     setFibreCount,
     installMethod,
     setInstallMethod,
+    ductCount,
+    setDuctCount,
+    ductDiameterMm,
+    setDuctDiameterMm,
+    ductUse,
+    setDuctUse,
     parentCableId,
     setParentCableId,
     allocatedInputFibres,

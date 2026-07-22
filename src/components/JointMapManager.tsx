@@ -170,6 +170,7 @@ import type {
   AssetType,
   CableType,
   DistributionPointDetails,
+  DuctUse,
   FibreCount,
   InstallMethod,
   PoleDetails,
@@ -416,6 +417,30 @@ function buildVirtualHomeDropAssets(assets: SavedMapAsset[]): SavedMapAsset[] {
       } as SavedMapAsset;
     })
     .filter(Boolean) as SavedMapAsset[];
+}
+
+function getDuctCountForNumbering(asset: SavedMapAsset): number {
+  return Math.max(1, Math.round(Number((asset as any).ductCount || 1)));
+}
+
+function getNextDuctStartNumber(savedAssets: SavedMapAsset[]): number {
+  return (
+    savedAssets
+      .filter((asset) => asset.assetType === "duct")
+      .reduce((total, asset) => total + getDuctCountForNumbering(asset), 0) + 1
+  );
+}
+
+function getDuctStartNumberFromName(name: string): number | null {
+  const match = name.trim().match(/^duct\s+(\d+)/i);
+  return match ? Number(match[1]) : null;
+}
+
+function formatDuctBundleName(startNumber: number, count: number): string {
+  const safeCount = Math.max(1, Math.round(Number(count) || 1));
+  return safeCount === 1
+    ? `Duct ${startNumber}`
+    : `Duct ${startNumber}-${startNumber + safeCount - 1}`;
 }
 
 function isEngineeringDrawingJointAsset(asset: SavedMapAsset): boolean {
@@ -1221,6 +1246,12 @@ export default function JointMapManager({
     setFibreCount,
     installMethod,
     setInstallMethod,
+    ductCount,
+    setDuctCount,
+    ductDiameterMm,
+    setDuctDiameterMm,
+    ductUse,
+    setDuctUse,
     parentCableId,
     setParentCableId,
     allocatedInputFibres,
@@ -1292,6 +1323,7 @@ export default function JointMapManager({
   const [mainMapQaMode, setMainMapQaMode] = useState<MainMapQaMode>("qa");
   const [assetSearchQuery, setAssetSearchQuery] = useState("");
   const [isAssetSearchFocused, setIsAssetSearchFocused] = useState(false);
+  const [selectedDuctForCableId, setSelectedDuctForCableId] = useState<string | null>(null);
 
   const roleMobileMode = useRoleMobileMode({
     isMobile,
@@ -2202,6 +2234,9 @@ export default function JointMapManager({
     setCableType,
     setFibreCount,
     setInstallMethod,
+    setDuctCount,
+    setDuctDiameterMm,
+    setDuctUse,
     setParentCableId,
     setAllocatedInputFibres,
     setPoleDetails,
@@ -2292,6 +2327,7 @@ export default function JointMapManager({
   // =====================================================
   const {
     openCableModalForNew,
+    openDuctModalForNew,
     startCableDrawing,
     handleUndoCablePoint,
     handleClearCable,
@@ -2313,6 +2349,9 @@ export default function JointMapManager({
     setCableType,
     setFibreCount,
     setInstallMethod,
+    setDuctCount,
+    setDuctDiameterMm,
+    setDuctUse,
     setParentCableId,
     setAllocatedInputFibres,
     setPickedLocation,
@@ -2345,6 +2384,9 @@ export default function JointMapManager({
     setCableType,
     setFibreCount,
     setInstallMethod,
+    setDuctCount,
+    setDuctDiameterMm,
+    setDuctUse,
     setParentCableId,
     setAllocatedInputFibres,
     setPoleDetails,
@@ -2553,6 +2595,9 @@ export default function JointMapManager({
       pickedLocation,
       poleDetails,
       dpDetails,
+      ductCount,
+      ductDiameterMm,
+      ductUse,
       homeServiceStatus,
       homeBlockedReason,
       homeServiceNote,
@@ -2662,7 +2707,57 @@ export default function JointMapManager({
 
   const handleFinishCable = async () => {
     if (draftCablePoints.length < 2) {
-      alert("Add at least two cable points.");
+      alert(`Add at least two ${assetType === "duct" ? "duct" : "cable"} points.`);
+      return;
+    }
+
+    if (assetType === "duct") {
+      const savedDuctCount = Math.max(1, Math.round(Number(ductCount) || 1));
+      const ductStartNumber =
+        getDuctStartNumberFromName(jointName) ||
+        getNextDuctStartNumber(savedJoints);
+      const shouldUseGeneratedDuctName =
+        !jointName.trim() || /^duct\s+\d+(?:-\d+)?$/i.test(jointName.trim());
+      const ductName = shouldUseGeneratedDuctName
+        ? formatDuctBundleName(ductStartNumber, savedDuctCount)
+        : jointName.trim();
+      const reason = getChangeReasonForCurrentMode("created", ductName);
+      if (!reason) return;
+
+      const routedCoordinates = sanitiseCableRouteCoordinates(draftCablePoints);
+      const ductRecord = markAssetForLiveSync(
+        withAreaAssetIndex(
+          {
+            id: crypto.randomUUID(),
+            name: ductName,
+            assetType: "duct",
+            jointType: "Duct",
+            notes: notes.trim(),
+            ductCount: savedDuctCount,
+            ductDiameterMm: Math.max(1, Math.round(Number(ductDiameterMm) || 96)),
+            ductUse,
+            ductStartNumber,
+            installMethod: "Underground",
+            linkedCableIds: [],
+            geometry: {
+              type: "LineString",
+              coordinates: routedCoordinates,
+            },
+          } as SavedMapAsset,
+          activeProjectId,
+          activeProjectAreaName,
+        ),
+        true,
+      );
+
+      const savedDuctRecord = saveMapAssetToState(ductRecord, { isNew: true });
+      writeAssetAuditLog({
+        asset: savedDuctRecord,
+        action: "created",
+        reason,
+        after: savedDuctRecord,
+      });
+      resetEditor();
       return;
     }
 
@@ -2749,6 +2844,10 @@ export default function JointMapManager({
           : undefined,
         referenceDuctName: ductTracePoints
           ? selectedReferenceDuctName || undefined
+          : undefined,
+        ductId: selectedDuctForCableId || undefined,
+        ductName: selectedDuctForCableId
+          ? savedJoints.find((asset) => asset.id === selectedDuctForCableId)?.name
           : undefined,
         geometry: {
           type: "LineString",
@@ -2856,6 +2955,24 @@ export default function JointMapManager({
       );
 
       const updatedExistingAssets = (savedJoints ?? []).map((asset) => {
+        if (selectedDuctForCableId && asset.id === selectedDuctForCableId) {
+          const linkedCableIds = Array.from(
+            new Set([
+              ...(((asset as any).linkedCableIds || []) as string[]),
+              markedCableRecord.id,
+            ]),
+          );
+
+          return markAssetForLiveSync(
+            {
+              ...asset,
+              linkedCableIds,
+              linkedCableCount: linkedCableIds.length,
+            } as SavedMapAsset,
+            true,
+          );
+        }
+
         if (asset.assetType !== "home") return asset;
 
         const update = dropHomeConnections.get(getHomeConnectionKey(asset));
@@ -2974,8 +3091,11 @@ export default function JointMapManager({
         alert(
           `Cable saved. Auto-connected ${autoDrops.length} nearby homes to the fed DP/AFN within 68m.`,
         );
+      } else if (selectedDuctForCableId) {
+        alert("Cable saved and linked to the selected duct.");
       }
 
+      setSelectedDuctForCableId(null);
       resetEditor();
     } finally {
       setIsRoutingCable(false);
@@ -3097,6 +3217,12 @@ export default function JointMapManager({
 
     if (type === "cable") {
       openCableModalForNew();
+      handleCloseContextMenu();
+      return;
+    }
+
+    if (type === "duct") {
+      openDuctModalForNew();
       handleCloseContextMenu();
       return;
     }
@@ -3245,6 +3371,153 @@ export default function JointMapManager({
     }
 
     openCableModalForNew();
+  };
+
+  const handleAttachCableToDuct = async (
+    duct: SavedMapAsset,
+    ductNumber?: number,
+    subDuctDiameterMm = 12,
+    subDuctCount = 1,
+  ) => {
+    if (!canManageNetworkDesign) {
+      alert("This account is view-only for cable drawing.");
+      return;
+    }
+
+    if (duct.geometry?.type !== "LineString" || duct.geometry.coordinates.length < 2) {
+      alert("This duct does not have enough route points to add a cable.");
+      return;
+    }
+
+    const safeSubDuctDiameterMm = Math.max(1, Math.round(Number(subDuctDiameterMm) || 12));
+    const safeSubDuctCount = Math.max(1, Math.min(12, Math.round(Number(subDuctCount) || 1)));
+    const cableName = `${safeSubDuctCount} x ${safeSubDuctDiameterMm}mm sub duct${ductNumber ? ` in Duct ${ductNumber}` : ""}`;
+    const reason = getChangeReasonForCurrentMode("created", cableName);
+    if (!reason) return;
+
+    const routedCoordinates = sanitiseCableRouteCoordinates(duct.geometry.coordinates);
+    const endpointAssets = findCableEndpointAssets(
+      allNetworkAssetsWithExchanges,
+      routedCoordinates.map(([lat, lng]) => ({ lat, lng })),
+      25,
+    );
+
+    const cableRecords = Array.from({ length: safeSubDuctCount }, (_, index) =>
+      markAssetForLiveSync(
+        withAreaAssetIndex(
+          {
+          id: crypto.randomUUID(),
+          name:
+            safeSubDuctCount === 1
+              ? `${safeSubDuctDiameterMm}mm sub duct${ductNumber ? ` - Duct ${ductNumber}` : ""}`
+              : `${safeSubDuctDiameterMm}mm sub duct ${index + 1}/${safeSubDuctCount}${ductNumber ? ` - Duct ${ductNumber}` : ""}`,
+          assetType: "cable",
+          jointType: "Cable",
+          notes: `Sub duct installed in ${duct.name || "selected duct"}${ductNumber ? ` / Duct ${ductNumber}` : ""}`,
+          cableType: "Sub duct" as any,
+          fibreCount,
+          installMethod: "Underground",
+          cableSegmentInstallMethods: Array.from(
+            { length: Math.max(0, routedCoordinates.length - 1) },
+            () => "Underground",
+          ),
+          parentCableId,
+          allocatedInputFibres,
+          ductId: duct.id,
+          ductName: duct.name,
+          ductNumber,
+          ductSlotNumber: ductNumber,
+          subDuctDiameterMm: safeSubDuctDiameterMm,
+          subDuctSequence: index + 1,
+          subDuctCount: safeSubDuctCount,
+          subDuctGroupName: cableName,
+          fromAssetId: endpointAssets.fromAssetId,
+          toAssetId: endpointAssets.toAssetId,
+          startAssetId: endpointAssets.fromAssetId,
+          endAssetId: endpointAssets.toAssetId,
+          fromAssetType: (endpointAssets.fromAsset as any)?.assetType,
+          toAssetType: (endpointAssets.toAsset as any)?.assetType,
+          fromAssetName: (endpointAssets.fromAsset as any)?.name,
+          toAssetName: (endpointAssets.toAsset as any)?.name,
+          routeMode: "selected-duct-slot",
+          geometry: {
+            type: "LineString",
+            coordinates: routedCoordinates,
+          },
+          } as SavedMapAsset,
+          activeProjectId,
+          activeProjectAreaName,
+        ),
+        true,
+      ),
+    );
+
+    const nextSavedJoints = (savedJoints ?? [])
+      .map((asset) => {
+        if (asset.id !== duct.id) return asset;
+
+        const linkedCableIds = Array.from(
+          new Set([
+            ...(((asset as any).linkedCableIds || []) as string[]),
+            ...cableRecords.map((record) => record.id),
+          ]),
+        );
+
+        return markAssetForLiveSync(
+          {
+            ...asset,
+            linkedCableIds,
+            linkedCableCount: linkedCableIds.length,
+          } as SavedMapAsset,
+          true,
+        );
+      })
+      .concat(cableRecords);
+
+    setSavedJoints(nextSavedJoints);
+    cableRecords.forEach((cableRecord) => writeAssetAuditLog({
+      asset: cableRecord,
+      action: "created",
+      reason,
+      after: cableRecord,
+    }));
+
+    try {
+      await saveMapAssetsViaCoordinator(nextSavedJoints, {
+        reason: `duct-slot-cable-create:${cableName}`,
+        source: "joint-map-manager",
+      });
+      clearPendingMapSaveSnapshot(activeProjectIdRef.current);
+      lastSavedMapSignatureRef.current = getMapAssetsSaveSignature(nextSavedJoints);
+      setLastMapAutosaveAt(
+        new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      );
+      setMapAutosaveStatus("saved");
+      setMapAutosaveError("");
+      alert(
+        `${safeSubDuctCount} x ${safeSubDuctDiameterMm}mm sub duct${safeSubDuctCount === 1 ? "" : "s"} added to ${
+          ductNumber ? `Duct ${ductNumber}` : duct.name || "duct"
+        }.`,
+      );
+    } catch (error) {
+      console.error("Duct slot cable save failed", error);
+      storePendingMapSaveSnapshot(
+        activeProjectIdRef.current,
+        nextSavedJoints,
+        `duct-slot-cable-create:${cableName}`,
+        error,
+      );
+      setMapAutosaveStatus("error");
+      setMapAutosaveError(error instanceof Error ? error.message : String(error));
+      alert(
+        `Cable is on this screen, but it did not save to Firestore.\n\nA pending save has been stored on this device. Retry it before refreshing another device.\n\nError: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   };
 
   const handleMobileCloseCableDrawing = () => {
@@ -5170,11 +5443,16 @@ export default function JointMapManager({
                 <option value="chamber">Chamber</option>
                 <option value="home">Home</option>
                 <option value="area">Polygon Area</option>
+                <option value="duct">Duct</option>
                 <option value="cable">Cable</option>
               </select>
 
               <div style={{ ...label, marginTop: 10 }}>
-                {assetType === "cable" ? "Cable Name" : "Name"}
+                {assetType === "cable"
+                  ? "Cable Name"
+                  : assetType === "duct"
+                    ? "Duct Name"
+                    : "Name"}
               </div>
               <input
                 value={jointName}
@@ -5182,6 +5460,67 @@ export default function JointMapManager({
                 style={input}
                 placeholder="Asset name"
               />
+
+              {assetType === "duct" ? (
+                <>
+                  <div style={{ ...label, marginTop: 10 }}>Duct Preset</div>
+                  <select
+                    value={`${ductCount}x${ductDiameterMm}`}
+                    onChange={(e) => {
+                      const [count, diameter] = e.target.value.split("x").map(Number);
+                      setDuctCount(count);
+                      setDuctDiameterMm(diameter);
+                    }}
+                    style={input}
+                  >
+                    <option value="1x96">1 x 96mm</option>
+                    <option value="2x96">2 x 96mm</option>
+                    <option value="4x96">4 x 96mm</option>
+                    <option value="1x54">1 x 54mm</option>
+                    <option value="2x54">2 x 54mm</option>
+                    <option value="4x54">4 x 54mm</option>
+                    <option value="1x50">1 x 50mm</option>
+                    <option value="2x50">2 x 50mm</option>
+                    <option value="4x50">4 x 50mm</option>
+                  </select>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <div>
+                      <div style={{ ...label, marginTop: 10 }}>Ducts</div>
+                      <input
+                        type="number"
+                        min={1}
+                        value={ductCount}
+                        onChange={(e) => setDuctCount(Number(e.target.value))}
+                        style={input}
+                      />
+                    </div>
+                    <div>
+                      <div style={{ ...label, marginTop: 10 }}>Diameter mm</div>
+                      <input
+                        type="number"
+                        min={1}
+                        value={ductDiameterMm}
+                        onChange={(e) => setDuctDiameterMm(Number(e.target.value))}
+                        style={input}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ ...label, marginTop: 10 }}>Duct Use</div>
+                  <select
+                    value={ductUse}
+                    onChange={(e) => setDuctUse(e.target.value as DuctUse)}
+                    style={input}
+                  >
+                    <option>Main route</option>
+                    <option>Road crossing</option>
+                    <option>Rider</option>
+                    <option>Lead-in</option>
+                    <option>Other</option>
+                  </select>
+                </>
+              ) : null}
 
               {assetType === "cable" ? (
                 <>
@@ -5485,6 +5824,9 @@ export default function JointMapManager({
                     <button onClick={openCableModalForNew} style={btnSecondary}>
                       Prepare Cable
                     </button>
+                    <button onClick={openDuctModalForNew} style={btnSecondary}>
+                      Prepare Duct
+                    </button>
                     <button
                       onClick={() => {
                         setAssetType("area");
@@ -5615,7 +5957,13 @@ export default function JointMapManager({
                   }}
                 >
                   <div style={label}>
-                    {editingAssetId ? "Edit Cable Route" : "Cable Drawing"}
+                    {assetType === "duct"
+                      ? editingAssetId
+                        ? "Edit Duct Route"
+                        : "Duct Drawing"
+                      : editingAssetId
+                        ? "Edit Cable Route"
+                        : "Cable Drawing"}
                   </div>
                   <div style={{ color: "#9ca3af" }}>
                     Click the map to add points. Drag points to move them. Click
@@ -5654,7 +6002,7 @@ export default function JointMapManager({
                       </button>
                     </div>
                     <div style={{ marginTop: 6, color: "#9ca3af", fontSize: 12 }}>
-                      Change this before placing the next point to transition on the same cable.
+                      Change this before placing the next point to transition on the same route.
                     </div>
                   </div>
                   <div
@@ -5685,7 +6033,13 @@ export default function JointMapManager({
                         style={btnPrimary}
                         disabled={draftCablePoints.length < 2 || isRoutingCable}
                       >
-                        {isRoutingCable ? "Routing Cable..." : "Finish Cable"}
+                        {isRoutingCable
+                          ? assetType === "duct"
+                            ? "Saving Duct..."
+                            : "Routing Cable..."
+                          : assetType === "duct"
+                            ? "Finish Duct"
+                            : "Finish Cable"}
                       </button>
                     ) : (
                       <button
@@ -6110,6 +6464,7 @@ export default function JointMapManager({
             canDeleteCables={isAdmin}
             onDeleteAsset={handleAdminDeleteAsset}
             onEditAsset={handleEditAsset}
+            onAttachCableToDuct={handleAttachCableToDuct}
             onUpdateAsset={(asset) => {
               saveMapAssetToState(asset, {
                 isNew: false,
@@ -6251,7 +6606,7 @@ export default function JointMapManager({
                   ],
                 ]}
                 pathOptions={{
-                  color: "#38bdf8",
+                  color: assetType === "duct" ? "#a855f7" : "#38bdf8",
                   weight: 5,
                   dashArray: "8, 8",
                   opacity: 0.85,
@@ -6278,26 +6633,11 @@ export default function JointMapManager({
               }}
             >
               <Popup>
-                <b>Cable Point {index + 1}</b>
+                <b>{assetType === "duct" ? "Duct" : "Cable"} Point {index + 1}</b>
                 <br />
-                Drag this marker to adjust the cable.
+                Drag this marker to adjust the {assetType === "duct" ? "duct" : "cable"}.
                 <br />
                 {point.lat.toFixed(5)}, {point.lng.toFixed(5)}
-                <br />
-                <button
-                  onClick={() => handleDeleteCablePoint(index)}
-                  style={{
-                    marginTop: 8,
-                    background: "#dc2626",
-                    color: "white",
-                    border: "none",
-                    padding: "6px 10px",
-                    borderRadius: 6,
-                    cursor: "pointer",
-                  }}
-                >
-                  Delete this point
-                </button>
               </Popup>
             </Marker>
           ))}
@@ -6315,7 +6655,9 @@ export default function JointMapManager({
                   ]}
                   pathOptions={{
                     color:
-                      cableType === "ULW Cable"
+                      assetType === "duct"
+                        ? "#a855f7"
+                        : cableType === "ULW Cable"
                         ? "#22c55e"
                         : cableType === "Link Cable"
                           ? "#3b82f6"

@@ -26,6 +26,11 @@ export function getAssetTypeLabel(asset: SavedMapAsset | null | undefined): stri
 
   if (item.assetType === "street-cab") return "Street Cab";
   if (item.assetType === "distribution-point") return "Distribution Point";
+  if (item.assetType === "duct") {
+    const count = Number(item.ductCount || 1);
+    const diameter = Number(item.ductDiameterMm || 96);
+    return `${Number.isFinite(count) ? count : 1} x ${Number.isFinite(diameter) ? diameter : 96}mm Duct`;
+  }
   if (item.assetType === "cable") return String(item.cableType || "Cable");
 
   return titleCase(String(item.assetType || item.type || item.jointType || item.homeType || "asset"));
@@ -46,6 +51,10 @@ export function getAssetSearchText(asset: SavedMapAsset | null | undefined): str
     item.type,
     item.jointType,
     item.cableType,
+    item.ductCount,
+    item.ductDiameterMm,
+    item.ductUse,
+    ...(Array.isArray(item.linkedCableIds) ? item.linkedCableIds : []),
     item.address,
     item.properties?.address,
     item.uprn,

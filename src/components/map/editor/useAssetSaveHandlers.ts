@@ -4,6 +4,7 @@ import type {
   AssetType,
   CableType,
   DistributionPointDetails,
+  DuctUse,
   FibreCount,
   HomeServiceStatus,
   InstallMethod,
@@ -70,6 +71,9 @@ type UseAssetSaveHandlersArgs = {
   pickedLocation: LatLngLiteral | null;
   poleDetails: PoleDetails;
   dpDetails: DistributionPointDetails;
+  ductCount: number;
+  ductDiameterMm: number;
+  ductUse: DuctUse;
   homeServiceStatus: HomeServiceStatus;
   homeBlockedReason: string;
   homeServiceNote: string;
@@ -211,7 +215,10 @@ export function useAssetSaveHandlers({
   parentCableId,
   pickedLocation,
   poleDetails,
-    dpDetails,
+  dpDetails,
+  ductCount,
+  ductDiameterMm,
+  ductUse,
   homeServiceStatus,
   homeBlockedReason,
   homeServiceNote,
@@ -262,7 +269,7 @@ export function useAssetSaveHandlers({
 
     let savedAfterAsset: SavedMapAsset | null = null;
     const editedCableCoordinates =
-      assetType === "cable" && draftCablePoints.length >= 2
+      (assetType === "cable" || assetType === "duct") && draftCablePoints.length >= 2
         ? sanitiseCableRouteCoordinates(draftCablePoints)
         : null;
 
@@ -419,19 +426,30 @@ export function useAssetSaveHandlers({
           return savedAfterAsset;
         }
 
+        const isDuctAsset = assetType === "duct" || asset.assetType === "duct";
         savedAfterAsset = withAssetEditedMetadata(
           markAssetForLiveSync({
             ...asset,
             name: jointName.trim() || asset.name,
-            jointType: "Cable",
+            jointType: isDuctAsset ? "Duct" : "Cable",
             notes: notes.trim(),
             piaNoiNumber: cablePiaNoiNumber.trim(),
-            assetType: "cable",
-            cableType,
-            fibreCount,
-            installMethod,
-            parentCableId,
-            allocatedInputFibres,
+            assetType: isDuctAsset ? "duct" : "cable",
+            ...(isDuctAsset
+              ? {
+                  ductCount: Math.max(1, Math.round(Number(ductCount) || 1)),
+                  ductDiameterMm: Math.max(1, Math.round(Number(ductDiameterMm) || 96)),
+                  ductUse,
+                  ductStartNumber: (asset as any).ductStartNumber,
+                  installMethod: "Underground" as InstallMethod,
+                }
+              : {
+                  cableType,
+                  fibreCount,
+                  installMethod,
+                  parentCableId,
+                  allocatedInputFibres,
+                }),
             routeMode: (asset as any).routeMode,
             geometry: {
               type: "LineString",
@@ -496,8 +514,8 @@ export function useAssetSaveHandlers({
       return;
     }
 
-    if (assetType === "cable") {
-      alert("Use Add Cable and Start Drawing for cables.");
+    if (assetType === "cable" || assetType === "duct") {
+      alert("Use the drawing workflow for cables and ducts.");
       return;
     }
 

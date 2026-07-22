@@ -3,6 +3,7 @@ export type NamedAssetType =
   | "street-cab"
   | "pole"
   | "distribution-point"
+  | "duct"
   | "cable";
 
 export function getAssetLabel(assetType: NamedAssetType): string {
@@ -15,6 +16,8 @@ export function getAssetLabel(assetType: NamedAssetType): string {
       return "Pole";
     case "distribution-point":
       return "Distribution Point";
+    case "duct":
+      return "Duct";
     case "cable":
       return "Cable";
     default:
