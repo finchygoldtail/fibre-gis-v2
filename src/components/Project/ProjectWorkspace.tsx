@@ -41,7 +41,10 @@ import UserMenu from "../UserMenu";
 import { useUserRole } from "../../context/UserRoleContext";
 import AreaOperationsCentre from "../operations/AreaOperationsCentre";
 import EngineeringDeliveryWorkspace from "../delivery/EngineeringDeliveryWorkspace";
-import { buildCanonicalHomeSummary } from "./workspace/canonicalHomeStatus";
+import {
+  buildCanonicalHomeSummary,
+  hasCanonicalHomeServiceException,
+} from "./workspace/canonicalHomeStatus";
 import PiaOperationsDashboard from "../map/pia/PiaOperationsDashboard";
 import {
   buildPiaAcceptanceStats,
@@ -222,6 +225,7 @@ const defaultWorkspaceLayers: WorkspaceLayerVisibility = {
   homesConnected: true,
   homesUnconnected: true,
   homesLive: true,
+  homesNotLive: true,
   other: false,
 };
 
@@ -242,6 +246,7 @@ const workspaceLayerOptions: {
   { key: "homesConnected", label: "Connected Homes" },
   { key: "homesUnconnected", label: "Unconnected Homes" },
   { key: "homesLive", label: "Live Homes" },
+  { key: "homesNotLive", label: "Not Live Homes" },
   { key: "other", label: "Other Assets" },
 ];
 
@@ -3120,6 +3125,10 @@ export default function ProjectWorkspace({
       (asset) =>
         getWorkspaceHomeConnectionStatus(asset, workspaceAssets) === "live",
     );
+    const notLiveHomes = canonicalHomes.filter((asset) => {
+      const status = getWorkspaceHomeConnectionStatus(asset, workspaceAssets);
+      return status === "unconnected" || hasCanonicalHomeServiceException(asset);
+    });
 
     const areaAssets = workspaceAssets.filter(
       (asset) =>
@@ -3184,6 +3193,7 @@ export default function ProjectWorkspace({
       homesConnected: connectedHomes.length,
       homesUnconnected: unconnectedHomes.length,
       homesLive: liveHomes.length,
+      homesNotLive: notLiveHomes.length,
       other: Math.max(
         0,
         workspaceAssets.length -

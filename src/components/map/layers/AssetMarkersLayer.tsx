@@ -54,9 +54,9 @@ type LayerVisibility = {
   homesConnected?: boolean;
   homesUnconnected?: boolean;
   homesLive?: boolean;
+  homesNotLive?: boolean;
   homesSdu?: boolean;
   homesMdu?: boolean;
-  homesFlats?: boolean;
   newPoles?: boolean;
   orPoles?: boolean;
   suggestedPoles?: boolean;
@@ -269,7 +269,7 @@ function jointSubtypeVisible(asset: SavedMapAsset, layers: any): boolean {
   return true;
 }
 
-function getHomeLayerType(asset: SavedMapAsset): "sdu" | "mdu" | "flats" {
+function getHomeLayerType(asset: SavedMapAsset): "sdu" | "mdu" {
   const raw = String(
     (asset as any).homeType ||
       (asset as any).propertyType ||
@@ -281,8 +281,15 @@ function getHomeLayerType(asset: SavedMapAsset): "sdu" | "mdu" | "flats" {
       ""
   ).toLowerCase();
 
-  if (raw.includes("flat") || raw.includes("apartment")) return "flats";
-  if (raw.includes("mdu") || raw.includes("multi") || raw.includes("residential")) return "mdu";
+  if (
+    raw.includes("flat") ||
+    raw.includes("apartment") ||
+    raw.includes("mdu") ||
+    raw.includes("multi") ||
+    raw.includes("residential")
+  ) {
+    return "mdu";
+  }
   return "sdu";
 }
 
@@ -435,7 +442,6 @@ function isVisible(asset: SavedMapAsset, visibleLayers: LayerVisibility): boolea
 
       const homeType = getHomeLayerType(asset);
       if (homeType === "mdu") return layers.homesMdu !== false;
-      if (homeType === "flats") return layers.homesFlats !== false;
       return layers.homesSdu !== false;
     }
 
@@ -869,18 +875,19 @@ React.useEffect(() => {
       return isEngineeringCableDrawTargetAsset(asset);
     }
 
-    // Handle homes separately so SDU/MDU/Flats filters don't accidentally hide them
+    // Handle homes separately so SDU/MDU filters don't accidentally hide them.
     if (asset.assetType === "home") {
       if (!homesEnabled) return false;
 
       const homeStatus = homeStatusById.get(asset.id) || "unconnected";
+      const homeNotLive = homeStatus === "unconnected" || homeStatus === "exception";
       if (homeStatus === "live" && layers.homesLive === false) return false;
       if (homeStatus === "connected" && layers.homesConnected === false) return false;
       if (homeStatus === "unconnected" && layers.homesUnconnected === false) return false;
+      if (homeNotLive && layers.homesNotLive === false) return false;
 
       const homeType = getHomeLayerType(asset);
       if (homeType === "mdu" && layers.homesMdu === false) return false;
-      if (homeType === "flats" && layers.homesFlats === false) return false;
       if (homeType === "sdu" && layers.homesSdu === false) return false;
 
       // keep homes visible when zoomed in

@@ -93,9 +93,9 @@ const layerGroups: LayerGroup[] = [
       { label: "Connected Homes", key: "homesConnected" },
       { label: "Unconnected Homes", key: "homesUnconnected" },
       { label: "Live Homes", key: "homesLive" },
+      { label: "Not Live Homes", key: "homesNotLive" },
       { label: "SDU", key: "homesSdu" },
       { label: "MDU", key: "homesMdu" },
-      { label: "Flats", key: "homesFlats" },
     ],
   },
   {
@@ -375,9 +375,9 @@ export default function LayersPanel({
           homesConnected: next,
           homesUnconnected: next,
           homesLive: next,
+          homesNotLive: next,
           homesSdu: next,
           homesMdu: next,
-          homesFlats: next,
         };
       }
 

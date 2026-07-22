@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { SavedMapAsset } from "../types";
+import { hasCanonicalHomeServiceException } from "../../Project/workspace/canonicalHomeStatus";
 
 type AreaLevel = "L0" | "L1" | "L2" | "L3";
 
@@ -305,6 +306,10 @@ export function useLayerCounts({
     const connectedHomes = canonicalHomes.filter((home) => getHomeStatusForLayer(home) === "connected");
     const unconnectedHomes = canonicalHomes.filter((home) => getHomeStatusForLayer(home) === "unconnected");
     const liveHomes = canonicalHomes.filter((home) => getHomeStatusForLayer(home) === "live");
+    const notLiveHomes = canonicalHomes.filter((home) => {
+      const status = getHomeStatusForLayer(home);
+      return status === "unconnected" || hasCanonicalHomeServiceException(home);
+    });
 
     const designCables = visibleProjectAssets.filter((asset) => isLineCable(asset) && !isDrop(asset));
     const dropCables = visibleProjectAssets.filter(isDrop);
@@ -354,6 +359,7 @@ export function useLayerCounts({
       homesConnected: connectedHomes.length,
       homesUnconnected: unconnectedHomes.length,
       homesLive: liveHomes.length,
+      homesNotLive: notLiveHomes.length,
       cables: designCables.length,
       feeders: designCables.filter((asset) => textForAsset(asset).includes("feeder")).length,
       links: designCables.filter((asset) => textForAsset(asset).includes("link")).length,

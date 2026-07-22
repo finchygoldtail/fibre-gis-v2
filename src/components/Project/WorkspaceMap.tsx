@@ -31,6 +31,7 @@ import OpenreachOverlayLayer, { type OpenreachLayerVisibility } from "../map/lay
 import type { NetworkState } from "../../services/network";
 import { getDpIntelligence, isDpLikeAsset } from "../../services/dpIntelligence";
 import { getHomeConnectionStatus } from "../../services/homeIntelligence";
+import { hasCanonicalHomeServiceException } from "./workspace/canonicalHomeStatus";
 
 // =====================================================
 // TYPES
@@ -50,6 +51,7 @@ export type WorkspaceLayerVisibility = {
   homesConnected: boolean;
   homesUnconnected: boolean;
   homesLive: boolean;
+  homesNotLive: boolean;
   other: boolean;
 };
 
@@ -961,6 +963,7 @@ export default function WorkspaceMap({
   homesConnected: true,
   homesUnconnected: true,
   homesLive: true,
+  homesNotLive: true,
 
   other: false,
 
@@ -1032,9 +1035,13 @@ export default function WorkspaceMap({
 
         if (isHomeAssetForWorkspace(asset)) {
           const homeStatus = getHomeConnectionStatus(asset, assets, isHomeDropCable);
+          const homeNotLive =
+            homeStatus === "unconnected" ||
+            hasCanonicalHomeServiceException(asset);
           if (homeStatus === "live" && visibleLayers.homesLive === false) return false;
           if (homeStatus === "connected" && visibleLayers.homesConnected === false) return false;
           if (homeStatus === "unconnected" && visibleLayers.homesUnconnected === false) return false;
+          if (homeNotLive && visibleLayers.homesNotLive === false) return false;
         }
 
         if (jobPackCaptureRequest) return true;

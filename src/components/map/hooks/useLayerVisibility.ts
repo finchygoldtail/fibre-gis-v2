@@ -22,6 +22,7 @@ export type LayerVisibility = {
   homesConnected: boolean;
   homesUnconnected: boolean;
   homesLive: boolean;
+  homesNotLive: boolean;
   l0: boolean;
   l1: boolean;
   l2: boolean;
@@ -40,7 +41,6 @@ export type LayerVisibility = {
   fw10: boolean;
   homesSdu: boolean;
   homesMdu: boolean;
-  homesFlats: boolean;
   feeders: boolean;
   links: boolean;
   ulw96: boolean;
@@ -86,6 +86,7 @@ export const DEFAULT_VISIBLE_LAYERS: LayerVisibility = {
   homesConnected: true,
   homesUnconnected: true,
   homesLive: true,
+  homesNotLive: true,
   l0: false,
   l1: false,
   l2: false,
@@ -104,7 +105,6 @@ export const DEFAULT_VISIBLE_LAYERS: LayerVisibility = {
   fw10: false,
   homesSdu: false,
   homesMdu: false,
-  homesFlats: false,
   feeders: false,
   links: false,
   ulw96: false,
