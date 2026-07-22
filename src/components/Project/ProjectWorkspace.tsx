@@ -563,6 +563,17 @@ function isHomeDropCableAsset(
   );
 }
 
+function hasDrawableLineRoute(asset: SavedMapAsset | null | undefined): boolean {
+  if (!asset) return false;
+  const item = asset as any;
+  const coordinates =
+    asset.geometry?.type === "LineString"
+      ? asset.geometry.coordinates
+      : item.coordinates || item.route || item.path || item.points || item.properties?.coordinates;
+
+  return Array.isArray(coordinates) && coordinates.length >= 2;
+}
+
 function isDesignCableAsset(asset: SavedMapAsset | null | undefined): boolean {
   if (!asset) return false;
   const item = asset as any;
@@ -1915,7 +1926,7 @@ export default function ProjectWorkspace({
   );
 
   const dropCableCount = useMemo(
-    () => workspaceAssets.filter(isHomeDropCableAsset).length,
+    () => workspaceAssets.filter((asset) => isHomeDropCableAsset(asset) && hasDrawableLineRoute(asset)).length,
     [workspaceAssets],
   );
 

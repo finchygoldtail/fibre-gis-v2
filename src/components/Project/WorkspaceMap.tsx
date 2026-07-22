@@ -354,10 +354,28 @@ function getPoint(asset: SavedMapAsset | null | undefined): LatLngLiteral | null
 }
 
 function getLinePoints(asset: SavedMapAsset | null | undefined): LatLngLiteral[] {
-  if (!asset || asset.geometry?.type !== "LineString") return [];
+  if (!asset) return [];
 
-  return ((asset.geometry.coordinates || []) as any[])
-    .map(([lat, lng]) => ({ lat: Number(lat), lng: Number(lng) }))
+  const item = asset as any;
+  const coordinates =
+    asset.geometry?.type === "LineString"
+      ? asset.geometry.coordinates
+      : item.coordinates || item.route || item.path || item.points || item.properties?.coordinates;
+
+  if (!Array.isArray(coordinates)) return [];
+
+  return (coordinates as any[])
+    .map((coordinate) => {
+      if (Array.isArray(coordinate)) {
+        const [lat, lng] = coordinate;
+        return { lat: Number(lat), lng: Number(lng) };
+      }
+
+      return {
+        lat: Number(coordinate?.lat ?? coordinate?.latitude),
+        lng: Number(coordinate?.lng ?? coordinate?.lon ?? coordinate?.longitude),
+      };
+    })
     .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
 }
 
@@ -849,7 +867,7 @@ function isLayerVisibleForAsset(asset: SavedMapAsset, visibleLayers: WorkspaceLa
 
 const WORKSPACE_VIEWPORT_PADDING_DEGREES = 0.0025;
 const WORKSPACE_MIN_ZOOM_HOMES = 17;
-const WORKSPACE_MIN_ZOOM_DROPS = 18;
+const WORKSPACE_MIN_ZOOM_DROPS = WORKSPACE_MIN_ZOOM_HOMES;
 const WORKSPACE_MIN_ZOOM_CABLES = 14;
 const WORKSPACE_MIN_ZOOM_OR_ROUTES = 15;
 const WORKSPACE_MIN_ZOOM_OR_POINTS = 16;
@@ -1202,10 +1220,10 @@ export default function WorkspaceMap({
               <Polyline
                 positions={points.map((point) => [point.lat, point.lng] as [number, number])}
                 pathOptions={{
-                  color: selectedAssetId === asset.id ? "#facc15" : traceColour || "#22c55e",
-                  weight: selectedAssetId === asset.id || traceKind ? 6 : 3,
-                  opacity: selectedAssetId === asset.id || traceKind ? 1 : 0.62,
-                  dashArray: "4, 7",
+                  color: selectedAssetId === asset.id ? "#facc15" : traceColour || "#10b981",
+                  weight: selectedAssetId === asset.id || traceKind ? 7 : 5,
+                  opacity: selectedAssetId === asset.id || traceKind ? 1 : 0.9,
+                  dashArray: "6, 7",
                 }}
                 eventHandlers={{ click: (event) => selectWorkspaceAsset(asset, onAssetSelect, event) }}
               >
