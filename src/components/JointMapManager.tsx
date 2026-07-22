@@ -1694,6 +1694,7 @@ export default function JointMapManager({
   const measuredDistance = useMemo(() => {
     return getPathDistanceMeters(measurePoints);
   }, [measurePoints]);
+  const shouldShowMeasurements = visibleLayers.measurements || mapMode === "measure";
 
   const draftCableDistance = useMemo(() => {
     return getPathDistanceMeters(draftCablePoints);
@@ -2984,6 +2985,20 @@ export default function JointMapManager({
   const handleClearMeasurement = () => {
     setMeasurePoints([]);
     setMapMode("pick");
+  };
+
+  const handleStartMeasurement = () => {
+    setMapMode("measure");
+    setVisibleLayers((prev) => ({ ...prev, measurements: true }));
+  };
+
+  const handleMeasureAssetPoint = (asset: SavedMapAsset) => {
+    const coordinates = asset.geometry?.coordinates;
+    if (!Array.isArray(coordinates) || coordinates.length < 2) return;
+    const [lat, lng] = coordinates;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    setMeasurePoints((prev) => [...prev, { lat, lng }]);
   };
 
   const handleDriveToLocation = (point: LatLngLiteral) => {
@@ -5807,7 +5822,9 @@ export default function JointMapManager({
             visibleLayers={visibleLayers}
             highlightedAssetId={highlightedSearchAssetId}
             cableDrawingMode={mapMode === "draw-cable"}
+            measurementMode={mapMode === "measure"}
             onCablePointAsset={handleCableAssetPoint}
+            onMeasurePointAsset={handleMeasureAssetPoint}
             onOpenAsset={(asset) => {
               const routedType = String(
                 (asset as any).assetType || (asset as any).type || "",
@@ -6107,7 +6124,7 @@ export default function JointMapManager({
             </Marker>
           )}
 
-          {visibleLayers.measurements &&
+          {shouldShowMeasurements &&
             measurePoints.map((point, index) => (
               <Marker
                 key={`measure-${index}`}
@@ -6122,7 +6139,7 @@ export default function JointMapManager({
               </Marker>
             ))}
 
-          {visibleLayers.measurements && measurePoints.length >= 2 && (
+          {shouldShowMeasurements && measurePoints.length >= 2 && (
             <Polyline
               positions={measurePoints.map(
                 (p) => [p.lat, p.lng] as [number, number],
@@ -6131,7 +6148,7 @@ export default function JointMapManager({
             />
           )}
 
-          {visibleLayers.measurements &&
+          {shouldShowMeasurements &&
             measurePoints.length >= 2 &&
             measurePoints.slice(1).map((point, index) => {
               const previous = measurePoints[index];
@@ -6151,7 +6168,7 @@ export default function JointMapManager({
               );
             })}
 
-          {visibleLayers.measurements && measurePoints.length >= 2 && (
+          {shouldShowMeasurements && measurePoints.length >= 2 && (
             <Marker
               key="measure-total-label"
               position={[
@@ -6456,7 +6473,7 @@ export default function JointMapManager({
         measurementPointCount={measurePoints.length}
         isMeasuring={mapMode === "measure"}
         isDrivingToLocation={mapMode === "drive-to-location"}
-        onStartMeasurement={() => setMapMode("measure")}
+        onStartMeasurement={handleStartMeasurement}
         onStopMeasurement={() => setMapMode("pick")}
         onUndoMeasurementPoint={handleUndoMeasurementPoint}
         onClearMeasurements={handleClearMeasurement}

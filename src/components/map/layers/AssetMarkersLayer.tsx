@@ -91,7 +91,9 @@ type Props = {
   visibleLayers: LayerVisibility;
   highlightedAssetId?: string | null;
   cableDrawingMode?: boolean;
+  measurementMode?: boolean;
   onCablePointAsset?: (asset: SavedMapAsset) => void;
+  onMeasurePointAsset?: (asset: SavedMapAsset) => void;
   onOpenAsset: (asset: SavedMapAsset) => void;
   onOpenAudit?: (asset: SavedMapAsset) => void;
   onDeleteAsset: (id: string) => void;
@@ -848,7 +850,9 @@ export default function AssetMarkersLayer({
   visibleLayers,
   highlightedAssetId,
   cableDrawingMode = false,
+  measurementMode = false,
   onCablePointAsset,
+  onMeasurePointAsset,
   onOpenAsset,
   onOpenAudit,
   onDeleteAsset,
@@ -1112,13 +1116,19 @@ const icon = asset.id === highlightedAssetId
             onMoveAsset?.(asset.id, position.lat, position.lng);
           },
           click: (event) => {
-  if (cableDrawingMode) {
-    event.originalEvent?.stopPropagation();
-    if (asset.assetType !== "home" && asset.assetType !== "area") {
-      onCablePointAsset?.(asset);
-    }
-    return;
-  }
+            if (measurementMode) {
+              event.originalEvent?.stopPropagation();
+              onMeasurePointAsset?.(asset);
+              return;
+            }
+
+            if (cableDrawingMode) {
+              event.originalEvent?.stopPropagation();
+              if (asset.assetType !== "home" && asset.assetType !== "area") {
+                onCablePointAsset?.(asset);
+              }
+              return;
+            }
 
   if (surveyDeleteHomesMode) {
     if (asset.assetType === "home") {
