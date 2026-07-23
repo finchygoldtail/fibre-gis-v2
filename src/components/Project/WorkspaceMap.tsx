@@ -415,6 +415,19 @@ function getBoundsFromAssets(projectArea: SavedMapAsset | null | undefined, asse
   ];
 }
 
+function getBoundsFromProjectArea(projectArea: SavedMapAsset | null | undefined): WorkspaceBounds | null {
+  const points = getPolygonRings(projectArea).flat();
+  if (!points.length) return null;
+
+  const lats = points.map((point) => point.lat);
+  const lngs = points.map((point) => point.lng);
+
+  return [
+    [Math.min(...lats), Math.min(...lngs)],
+    [Math.max(...lats), Math.max(...lngs)],
+  ];
+}
+
 type WorkspaceHomeStack = {
   id: string;
   assets: SavedMapAsset[];
@@ -904,7 +917,7 @@ function assetInWorkspaceViewport(asset: SavedMapAsset, bounds: WorkspaceBounds 
 }
 
 function shouldRenderWorkspaceAssetAtZoom(asset: SavedMapAsset, zoom: number): boolean {
-  const type = getAssetType(asset);
+  if (isDuctAsset(asset)) return true;
   if (isHomeDropCable(asset)) return zoom >= WORKSPACE_MIN_ZOOM_DROPS;
   if (isHomeAssetForWorkspace(asset)) return zoom >= WORKSPACE_MIN_ZOOM_HOMES;
   if (getLinePoints(asset).length >= 2) return zoom >= WORKSPACE_MIN_ZOOM_CABLES;
@@ -1040,7 +1053,9 @@ export default function WorkspaceMap({
     () => assets,
     [assets],
   );
-  const bounds = useMemo(() => getBoundsFromAssets(projectArea, assets), [projectArea, assets]);
+  const projectAreaBounds = useMemo(() => getBoundsFromProjectArea(projectArea), [projectArea]);
+  const assetBounds = useMemo(() => getBoundsFromAssets(projectArea, assets), [projectArea, assets]);
+  const bounds = projectAreaBounds || assetBounds;
   const activeBounds = useMemo(
     () => jobPackCaptureRequest
       ? getBoundsFromAssets(
@@ -1107,7 +1122,8 @@ export default function WorkspaceMap({
     [pointAssets, stackedHomeIds],
   );
   const cableAssets = useMemo(() => visibleAssets.filter((asset) => getLinePoints(asset).length >= 2), [visibleAssets]);
-  const designCableAssets = useMemo(() => cableAssets.filter((asset) => !isHomeDropCable(asset)), [cableAssets]);
+  const ductAssets = useMemo(() => cableAssets.filter(isDuctAsset), [cableAssets]);
+  const designCableAssets = useMemo(() => cableAssets.filter((asset) => !isHomeDropCable(asset) && !isDuctAsset(asset)), [cableAssets]);
   const dropCableAssets = useMemo(() => cableAssets.filter(isHomeDropCable), [cableAssets]);
   const areaAssets = useMemo(
     () => visibleAssets.filter((asset) => getPolygonRings(asset).length > 0 && asset.id !== projectArea?.id),
@@ -1212,6 +1228,51 @@ export default function WorkspaceMap({
           visibleLayers={openreachLayers}
           onSelectReferenceAsset={(asset) => selectWorkspaceAsset(asset, onAssetSelect)}
         />
+
+        {ductAssets.map((asset) => {
+          const points = getLinePoints(asset);
+          const labelPlacement = getLineLabelPlacement(points);
+
+          return (
+            <React.Fragment key={`workspace-duct-${asset.id}`}>
+              <Polyline
+                positions={points.map((point) => [point.lat, point.lng] as [number, number])}
+                pathOptions={{
+                  color: "#ffffff",
+                  weight: selectedAssetId === asset.id ? 26 : 20,
+                  opacity: 0.01,
+                  interactive: true,
+                }}
+                eventHandlers={{ click: (event) => selectWorkspaceAsset(asset, onAssetSelect, event) }}
+              />
+              <Polyline
+                positions={points.map((point) => [point.lat, point.lng] as [number, number])}
+                pathOptions={{
+                  color: selectedAssetId === asset.id ? "#facc15" : "#f59e0b",
+                  weight: selectedAssetId === asset.id ? 8 : 5,
+                  opacity: 0.95,
+                }}
+                eventHandlers={{ click: (event) => selectWorkspaceAsset(asset, onAssetSelect, event) }}
+              >
+                <Tooltip sticky>
+                  {getAssetName(asset)} - duct - {formatDistance(getPathDistanceMeters(points))}
+                </Tooltip>
+              </Polyline>
+              {showMapLabels && labelPlacement && viewportZoom >= 10 && (
+                <Marker
+                  position={[labelPlacement.point.lat, labelPlacement.point.lng]}
+                  interactive={false}
+                  icon={L.divIcon({
+                    className: "alistra-workspace-duct-label",
+                    html: `<div style="transform:translate(-50%,-50%) rotate(${labelPlacement.angle.toFixed(1)}deg);transform-origin:center;background:rgba(120,53,15,0.9);color:#fffbeb;border:1px solid rgba(251,191,36,0.8);border-radius:999px;padding:3px 7px;font-size:11px;font-weight:900;white-space:nowrap;box-shadow:0 3px 8px rgba(0,0,0,0.28);">DUCT</div>`,
+                    iconSize: [1, 1],
+                    iconAnchor: [0, 0],
+                  })}
+                />
+              )}
+            </React.Fragment>
+          );
+        })}
 
         {dropCableAssets.map((asset) => {
           const points = getLinePoints(asset);
