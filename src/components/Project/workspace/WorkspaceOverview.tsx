@@ -305,7 +305,7 @@ export default function WorkspaceOverview({
             QA Navigator
           </button>
           <button type="button" style={button} onClick={() => onOpenPanel?.("none", "reports")}>
-            Templates
+            Downloads
           </button>
         </div>
       </section>

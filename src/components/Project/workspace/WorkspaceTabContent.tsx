@@ -60,6 +60,7 @@ type Props = {
     permitEndDate?: string;
     note: string;
   }) => void | Promise<void>;
+  onUpdateWorkspaceAsset?: (asset: any) => void;
   onClearDpFibreAllocations?: () => void;
   onApplyAddressSheetAssignments?: (request: any) => void | Promise<void>;
   onApplySbRouteAssignments?: (request: any) => void | Promise<void>;

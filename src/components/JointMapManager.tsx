@@ -3349,7 +3349,11 @@ export default function JointMapManager({
           : `Area ${(savedJoints ?? []).filter((asset) => asset.assetType === "area").length + 1}`,
       );
       setAreaLevel("L0");
-      setAreaWorkType(isPermitZone ? "data-centre" : "pia");
+      setAreaWorkType(
+        isPermitZone || isHarrellicommsBusiness(mapBusinessId)
+          ? "data-centre"
+          : "pia",
+      );
       setPermitDetails({
         status: "draft",
         source: "street-manager",
@@ -3478,7 +3482,7 @@ export default function JointMapManager({
       `Area ${(savedJoints ?? []).filter((asset) => asset.assetType === "area").length + 1}`,
     );
     setAreaLevel("L0");
-    setAreaWorkType("pia");
+    setAreaWorkType(isHarrellicommsBusiness(mapBusinessId) ? "data-centre" : "pia");
     setPickedLocation(null);
     setDraftCablePoints([]);
     setDraftCableSegmentMethods([]);
@@ -6057,14 +6061,25 @@ export default function JointMapManager({
                     </>
                   ) : isHarrellicommsBusiness(mapBusinessId) ? (
                     <>
-                      <div style={{ ...label, marginTop: 10 }}>Area Work Type</div>
+                      <div style={{ ...label, marginTop: 10 }}>
+                        {isHarrellicommsBusiness(mapBusinessId) ? "Harrellicomms Route Type" : "Area Work Type"}
+                      </div>
                       <select
                         value={areaWorkType}
                         onChange={(e) => setAreaWorkType(e.target.value as AreaWorkType)}
                         style={input}
                       >
-                        <option value="pia">PIA Work</option>
-                        <option value="data-centre">Data Centre / Backhaul</option>
+                        {isHarrellicommsBusiness(mapBusinessId) ? (
+                          <>
+                            <option value="data-centre">Data Centre / Backhaul</option>
+                            <option value="pia">PIA Work</option>
+                          </>
+                        ) : (
+                          <>
+                            <option value="pia">PIA Work</option>
+                            <option value="data-centre">Data Centre / Backhaul</option>
+                          </>
+                        )}
                       </select>
                     </>
                   ) : null}

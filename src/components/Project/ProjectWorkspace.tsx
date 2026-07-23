@@ -4869,6 +4869,7 @@ export default function ProjectWorkspace({
                       onBulkUpdateJointInstallMethod={onBulkUpdateJointInstallMethod}
                       onBulkUpdateWorkStatus={onBulkUpdateWorkStatus}
                       onRecordDailyProgress={onRecordDailyProgress}
+                      onUpdateWorkspaceAsset={onUpdateWorkspaceAsset}
                       onClearDpFibreAllocations={
                         handleClearAreaDpFibreAllocations
                       }

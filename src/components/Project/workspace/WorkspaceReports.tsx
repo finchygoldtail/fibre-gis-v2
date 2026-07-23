@@ -23,6 +23,7 @@ type Props = {
   stats?: any;
   isBackhaulWorkspace?: boolean;
   onSelectAsset?: (asset: SavedMapAsset) => void;
+  onUpdateWorkspaceAsset?: (asset: SavedMapAsset) => void;
 };
 
 const panel: React.CSSProperties = {
@@ -98,7 +99,7 @@ const rowStyle: React.CSSProperties = {
 
 const permitRowStyle: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "minmax(150px, 1.3fr) 130px 120px 120px minmax(150px, 1fr) 88px",
+  gridTemplateColumns: "minmax(150px, 1.3fr) 130px 120px 120px minmax(150px, 1fr) 210px",
   gap: 10,
   alignItems: "center",
   padding: "9px 10px",
@@ -144,6 +145,10 @@ function daysUntil(endDate?: string): number | null {
   return Math.ceil((end.getTime() - Date.now()) / 86400000);
 }
 
+function getTodayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function getPermitState(asset: SavedMapAsset) {
   const permit = getPermitDetails(asset);
   const status = String(permit.status || "").toLowerCase();
@@ -171,6 +176,7 @@ export default function WorkspaceReports({
   stats,
   isBackhaulWorkspace = false,
   onSelectAsset,
+  onUpdateWorkspaceAsset,
 }: Props) {
   const summary = React.useMemo(
     () => ({
@@ -207,6 +213,59 @@ export default function WorkspaceReports({
           return aDays - bDays;
         }),
     [projectAssets],
+  );
+  const updatePermitAsset = React.useCallback(
+    (asset: SavedMapAsset, updates: Record<string, any>) => {
+      if (!onUpdateWorkspaceAsset) return;
+      const item = asset as any;
+      const previousPermit = getPermitDetails(asset);
+      const nextPermit = {
+        ...previousPermit,
+        ...updates,
+        source: previousPermit.source || "street-manager",
+      };
+      onUpdateWorkspaceAsset({
+        ...item,
+        permitDetails: nextPermit,
+        properties: {
+          ...(item.properties || {}),
+          permitDetails: nextPermit,
+        },
+      } as SavedMapAsset);
+    },
+    [onUpdateWorkspaceAsset],
+  );
+
+  const extendPermitAsset = React.useCallback(
+    (asset: SavedMapAsset) => {
+      const current = getPermitDetails(asset);
+      const nextEndDate = window.prompt(
+        "Enter the new permit end date as YYYY-MM-DD.",
+        current.endDate || getTodayIsoDate(),
+      );
+      if (!nextEndDate) return;
+      if (Number.isNaN(new Date(`${nextEndDate}T23:59:59`).getTime())) {
+        alert("Enter a valid end date in YYYY-MM-DD format.");
+        return;
+      }
+      updatePermitAsset(asset, {
+        endDate: nextEndDate,
+        status: current.status === "closed" ? "in-progress" : current.status || "applied",
+      });
+    },
+    [updatePermitAsset],
+  );
+
+  const closePermitAsset = React.useCallback(
+    (asset: SavedMapAsset) => {
+      const confirmed = window.confirm("Close this permit zone now?");
+      if (!confirmed) return;
+      updatePermitAsset(asset, {
+        status: "closed",
+        endDate: getTodayIsoDate(),
+      });
+    },
+    [updatePermitAsset],
   );
 
   return (
@@ -255,7 +314,18 @@ export default function WorkspaceReports({
         <h3 style={title}>Permit dashboard</h3>
         <div style={tileGrid}>
           <Tile label="Permit zones" value={n(permitZones.length)} />
-          <Tile label="Closing soon" value={n(permitZones.filter((item) => item.state.label === "Closing soon").length)} />
+          <Tile
+            label="Closing soon"
+            value={n(
+              permitZones.filter(
+                (item) =>
+                  item.state.label !== "Closed" &&
+                  item.state.daysLeft !== null &&
+                  item.state.daysLeft >= 0 &&
+                  item.state.daysLeft <= 5,
+              ).length,
+            )}
+          />
           <Tile label="Expires today" value={n(permitZones.filter((item) => item.state.label === "Expires today").length)} />
           <Tile label="Expired" value={n(permitZones.filter((item) => item.state.label === "Expired").length)} />
         </div>
@@ -266,7 +336,7 @@ export default function WorkspaceReports({
             <span>Start</span>
             <span>End</span>
             <span>Status</span>
-            <span>Map</span>
+            <span>Actions</span>
           </div>
           {permitZones.length ? (
             permitZones.map(({ asset, permit, state }) => (
@@ -276,9 +346,27 @@ export default function WorkspaceReports({
                 <span>{permit.startDate || "-"}</span>
                 <span>{permit.endDate || "-"}</span>
                 <span style={{ color: state.colour, fontWeight: 900 }}>{state.label}</span>
-                <button type="button" style={smallButton} onClick={() => onSelectAsset?.(asset)} disabled={!onSelectAsset}>
-                  View
-                </button>
+                <span style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <button type="button" style={smallButton} onClick={() => onSelectAsset?.(asset)} disabled={!onSelectAsset}>
+                    View
+                  </button>
+                  <button
+                    type="button"
+                    style={smallButton}
+                    onClick={() => extendPermitAsset(asset)}
+                    disabled={!onUpdateWorkspaceAsset}
+                  >
+                    Extend
+                  </button>
+                  <button
+                    type="button"
+                    style={{ ...smallButton, borderColor: "rgba(248,113,113,0.42)", background: "#3f1218" }}
+                    onClick={() => closePermitAsset(asset)}
+                    disabled={!onUpdateWorkspaceAsset}
+                  >
+                    Close
+                  </button>
+                </span>
               </div>
             ))
           ) : (
@@ -310,7 +398,7 @@ export default function WorkspaceReports({
       </section>
 
       <section style={panel}>
-        <h3 style={title}>Templates</h3>
+        <h3 style={title}>Download packs</h3>
         <div style={grid}>
           {!isBackhaulWorkspace ? (
             <button type="button" style={button} onClick={() => void downloadAddressSheetTemplate()}>

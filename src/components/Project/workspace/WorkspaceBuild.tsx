@@ -4,7 +4,13 @@ import AddressSheetImportPanel from "./AddressSheetImportPanel";
 import FasSbRouteImportPanel from "./FasSbRouteImportPanel";
 import type { DailyProgressTeam, SavedMapAsset } from "../../map/types";
 import type { WorkStatus } from "../../map/types";
-import { getAssetTypeLabel, getAssetWorkStatus, getTodayIsoDate } from "./workspaceOperations";
+import {
+  dailyProgressRangeOverlaps,
+  getAssetTypeLabel,
+  getAssetWorkStatus,
+  getDailyProgressHistory,
+  getTodayIsoDate,
+} from "./workspaceOperations";
 
 type ManagerPoint = { lat: number; lng: number };
 type JointInstallFilter = "ALL" | "AG_JOINTS" | "DPS" | "LMJ" | "CMJ" | "MMJ" | "MIDJ";
@@ -422,6 +428,28 @@ export default function WorkspaceBuild({
     () => dailyProgressAssets.filter((asset: any) => selectedDailyAssetIds.has(String(asset.id || ""))),
     [dailyProgressAssets, selectedDailyAssetIds],
   );
+  const dailyRoutePreview = React.useMemo(() => {
+    const routeTeam = dailyTeam === "civils" || dailyTeam === "cabling";
+    const startMeter = Math.max(0, Number(dailyStartMeter || 0));
+    const endMeter = Math.max(0, Number(dailyEndMeter || 0));
+
+    return selectedDailyProgressAssets.map((asset: SavedMapAsset) => {
+      const entries = getDailyProgressHistory(asset).filter((entry) => {
+        if (entry.team !== dailyTeam) return false;
+        if (!routeTeam) return true;
+        return typeof entry.startMeter === "number" && typeof entry.endMeter === "number";
+      });
+      const overlaps =
+        routeTeam && endMeter > startMeter
+          ? entries.filter((entry) =>
+              dailyProgressRangeOverlaps(entry, dailyTeam, null, startMeter, endMeter),
+            )
+          : [];
+
+      return { asset, entries, overlaps };
+    });
+  }, [dailyEndMeter, dailyStartMeter, dailyTeam, selectedDailyProgressAssets]);
+  const dailyProgressRangeHasOverlap = dailyRoutePreview.some((item) => item.overlaps.length > 0);
   const installMethodAssetIds = React.useMemo(
     () => installMethodAssets.map((asset: any) => String(asset.id || "")),
     [installMethodAssets],
@@ -532,6 +560,10 @@ export default function WorkspaceBuild({
     const spliceCount = Math.max(0, Math.round(Number(dailySpliceCount || 0)));
     if (routeTeam && endMeter <= startMeter) {
       alert("Enter a To metre that is greater than the From metre.");
+      return;
+    }
+    if (routeTeam && dailyProgressRangeHasOverlap) {
+      alert("That metre range overlaps existing daily production on one or more selected assets.");
       return;
     }
     if (!routeTeam && !spliceCount) {
@@ -977,6 +1009,74 @@ export default function WorkspaceBuild({
               </label>
             </>
           ) : null}
+        </div>
+
+        <div style={{ ...cablePreviewBox, marginBottom: 12 }}>
+          <div style={{ color: "#e5e7eb", fontWeight: 900, marginBottom: 8 }}>
+            Existing progress ranges
+          </div>
+          {!selectedDailyProgressAssets.length ? (
+            <div style={{ color: "#94a3b8", fontSize: 12 }}>
+              Select a duct, cable or splice asset to see what has already been logged.
+            </div>
+          ) : dailyRoutePreview.every((item) => !item.entries.length) ? (
+            <div style={{ color: "#94a3b8", fontSize: 12 }}>
+              No previous production is logged against the selected asset{selectedDailyProgressAssets.length === 1 ? "" : "s"}.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 8 }}>
+              {dailyRoutePreview.map(({ asset, entries, overlaps }) => {
+                if (!entries.length) return null;
+                return (
+                  <div
+                    key={String(asset.id)}
+                    style={{
+                      border: overlaps.length
+                        ? "1px solid rgba(248,113,113,0.45)"
+                        : "1px solid rgba(148,163,184,0.12)",
+                      background: overlaps.length ? "rgba(127,29,29,0.24)" : "#0f1b2d",
+                      borderRadius: 9,
+                      padding: 10,
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                      <strong style={{ color: "#f8fafc" }}>{asset.name || asset.label || asset.id}</strong>
+                      {overlaps.length ? (
+                        <span style={{ color: "#fecaca", fontWeight: 900 }}>
+                          Overlaps selected range
+                        </span>
+                      ) : null}
+                    </div>
+                    <div style={{ display: "grid", gap: 5, marginTop: 8 }}>
+                      {entries.slice(0, 8).map((entry: any, index) => {
+                        const from = typeof entry.startMeter === "number" ? Math.min(entry.startMeter, entry.endMeter).toFixed(0) : "";
+                        const to = typeof entry.endMeter === "number" ? Math.max(entry.startMeter, entry.endMeter).toFixed(0) : "";
+                        const output = dailyTeam === "splicing"
+                          ? `${Number(entry.spliceCount || 0).toLocaleString()} splice${Number(entry.spliceCount || 0) === 1 ? "" : "s"}`
+                          : `${from}m to ${to}m`;
+                        return (
+                          <div
+                            key={`${entry.id || index}`}
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "90px minmax(90px, 130px) minmax(120px, 1fr)",
+                              gap: 8,
+                              color: "#cbd5e1",
+                              fontSize: 12,
+                            }}
+                          >
+                            <span>{entry.date || "-"}</span>
+                            <span style={{ color: "#93c5fd", fontWeight: 850 }}>{output}</span>
+                            <span>{entry.issueNote || entry.progressNote || entry.note || entry.crewName || "-"}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div style={cablePreviewBox}>
