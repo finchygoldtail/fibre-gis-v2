@@ -321,7 +321,7 @@ export default function WorkspaceBuild({
   const blockers = Array.isArray(readiness?.blockers) ? readiness.blockers : [];
   const nextActions = Array.isArray(readiness?.nextActions) ? readiness.nextActions : [];
   const hiddenBackhaulTools = React.useMemo(
-    () => new Set<BuildToolKey>(["fas", "address", "homes", "joints", "pia", "reset"]),
+    () => new Set<BuildToolKey>(["fas", "address", "homes", "joints", "reset"]),
     [],
   );
 
@@ -687,7 +687,6 @@ export default function WorkspaceBuild({
           label="Bulk PIA NOI"
           description="Apply one PIA NOI number to project design cables."
           active={activeTool === "pia"}
-          hidden={isBackhaulWorkspace}
           tone="good"
           onClick={() => setActiveTool((value) => value === "pia" ? null : "pia")}
         />

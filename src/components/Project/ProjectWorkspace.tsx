@@ -282,8 +282,6 @@ const workspaceLayerOptions: {
 ];
 
 const HARRELLICOMMS_BACKHAUL_HIDDEN_TABS = new Set<WorkspaceTab>([
-  "pia",
-  "commercial",
   "delivery",
 ]);
 
