@@ -7,6 +7,7 @@ type Props = {
   stats: any;
   projectAssets: any[];
   projectArea?: any;
+  isBackhaulWorkspace?: boolean;
   auditIssues?: any[];
   disconnectedAssets?: any[];
   networkGraph?: any;
@@ -156,6 +157,7 @@ export default function WorkspaceOverview({
   status,
   stats,
   projectAssets,
+  isBackhaulWorkspace = false,
   onOpenPanel,
   onOpenTrace,
 }: Props) {
@@ -195,24 +197,41 @@ export default function WorkspaceOverview({
         </div>
 
         <div style={tileGrid}>
-          <Tile label="RFS" value={pct(rollout.rfsPercent ?? stats?.rfsPercent)} tone="good" />
-          <Tile
-            label="Build"
-            value={pct(rollout.buildCompletionPercent)}
-            tone={Number(rollout.buildCompletionPercent || 0) >= 95 ? "good" : "warn"}
-          />
-          <Tile
-            label="Readiness"
-            value={pct(readiness?.score)}
-            tone={blockers.length ? "bad" : "good"}
-          />
-          <Tile label="Homes Live" value={`${n(rollout.homesLive ?? stats?.homesConnected)} / ${n(rollout.homesPassed ?? stats?.homesPassed)}`} tone="good" />
-          <Tile label="DPs Live" value={`${n(rollout.dpLive)} / ${n(rollout.dpTotal ?? stats?.dps)}`} tone="good" />
-          <Tile label="QA Issues" value={n(issueCount)} tone={issueCount ? "bad" : "good"} />
-          <Tile label="Duct Metres" value={n(Math.round(production.ductMeters || 0))} />
-          <Tile label="Cable Metres" value={n(Math.round(production.cableMeters || 0))} />
-          <Tile label="Closeout Ready" value={`${n(closeout.closeoutReady)} / ${n(closeout.assetCount)}`} tone={Number(closeout.assetCount || 0) === Number(closeout.closeoutReady || 0) ? "good" : "warn"} />
-          <Tile label="Blocked Assets" value={n(production.blockedAssets || closeout.blockers)} tone={Number(production.blockedAssets || closeout.blockers || 0) ? "bad" : "good"} />
+          {isBackhaulWorkspace ? (
+            <>
+              <Tile
+                label="Build"
+                value={pct(rollout.buildCompletionPercent)}
+                tone={Number(rollout.buildCompletionPercent || 0) >= 95 ? "good" : "warn"}
+              />
+              <Tile label="QA Issues" value={n(issueCount)} tone={issueCount ? "bad" : "good"} />
+              <Tile label="Duct Metres" value={n(Math.round(production.ductMeters || 0))} />
+              <Tile label="Cable Metres" value={n(Math.round(production.cableMeters || 0))} />
+              <Tile label="Closeout Ready" value={`${n(closeout.closeoutReady)} / ${n(closeout.assetCount)}`} tone={Number(closeout.assetCount || 0) === Number(closeout.closeoutReady || 0) ? "good" : "warn"} />
+              <Tile label="Blocked Assets" value={n(production.blockedAssets || closeout.blockers)} tone={Number(production.blockedAssets || closeout.blockers || 0) ? "bad" : "good"} />
+            </>
+          ) : (
+            <>
+              <Tile label="RFS" value={pct(rollout.rfsPercent ?? stats?.rfsPercent)} tone="good" />
+              <Tile
+                label="Build"
+                value={pct(rollout.buildCompletionPercent)}
+                tone={Number(rollout.buildCompletionPercent || 0) >= 95 ? "good" : "warn"}
+              />
+              <Tile
+                label="Readiness"
+                value={pct(readiness?.score)}
+                tone={blockers.length ? "bad" : "good"}
+              />
+              <Tile label="Homes Live" value={`${n(rollout.homesLive ?? stats?.homesConnected)} / ${n(rollout.homesPassed ?? stats?.homesPassed)}`} tone="good" />
+              <Tile label="DPs Live" value={`${n(rollout.dpLive)} / ${n(rollout.dpTotal ?? stats?.dps)}`} tone="good" />
+              <Tile label="QA Issues" value={n(issueCount)} tone={issueCount ? "bad" : "good"} />
+              <Tile label="Duct Metres" value={n(Math.round(production.ductMeters || 0))} />
+              <Tile label="Cable Metres" value={n(Math.round(production.cableMeters || 0))} />
+              <Tile label="Closeout Ready" value={`${n(closeout.closeoutReady)} / ${n(closeout.assetCount)}`} tone={Number(closeout.assetCount || 0) === Number(closeout.closeoutReady || 0) ? "good" : "warn"} />
+              <Tile label="Blocked Assets" value={n(production.blockedAssets || closeout.blockers)} tone={Number(production.blockedAssets || closeout.blockers || 0) ? "bad" : "good"} />
+            </>
+          )}
         </div>
       </section>
 
@@ -221,8 +240,12 @@ export default function WorkspaceOverview({
         <h3 style={title}>Scope</h3>
         <div style={{ marginTop: 10 }}>
           <Row label="Status" value={status || phaseLabel} />
-          <Row label="Readiness" value={readiness?.state || "Build"} />
-          <Row label="Homes" value={`${n(stats?.homesConnected)} / ${n(stats?.homesPassed)}`} />
+          {!isBackhaulWorkspace ? (
+            <>
+              <Row label="Readiness" value={readiness?.state || "Build"} />
+              <Row label="Homes" value={`${n(stats?.homesConnected)} / ${n(stats?.homesPassed)}`} />
+            </>
+          ) : null}
           <Row label="Route Length" value={`${n(stats?.routeLengthMeters)} m`} />
           <Row label="Sub-duct Metres" value={`${n(Math.round(production.subDuctMeters || 0))} m`} />
           <Row label="Missing Photos" value={n(closeout.missingPhotos)} />

@@ -3998,7 +3998,11 @@ export default function ProjectWorkspace({
       action: "View Readiness",
       onClick: () => openOperationPanel("rfsBreakdown", "build"),
     },
-  ].filter((item) => canViewCommercial || item.label !== "Commercial");
+  ].filter(
+    (item) =>
+      (canViewCommercial || item.label !== "Commercial") &&
+      (!isHarrellicommsBackhaulWorkspace || item.label !== "RFS"),
+  );
 
   const shouldShowOperationPanel =
     activeOperationPanel !== "none" &&
@@ -4182,56 +4186,105 @@ export default function ProjectWorkspace({
             </div>
 
             <div style={responsiveTopMetrics}>
-              <StatCard
-                label="RFS"
-                value={`${rolloutKpis.rfsPercent}%`}
-                tone={rfsTone}
-              />
-              <StatCard
-                label="Build Complete"
-                value={`${rolloutKpis.buildCompletionPercent}%`}
-                tone={
-                  rolloutKpis.buildCompletionPercent >= 80
-                    ? "good"
-                    : rolloutKpis.buildCompletionPercent >= 50
-                      ? "warn"
-                      : "bad"
-                }
-              />
-              <StatCard
-                label="Readiness"
-                value={`${operationalReadiness.score}%`}
-                tone={readinessTone(operationalReadiness.state)}
-              />
-              <StatCard
-                label="Homes Live"
-                value={formatNumber(rolloutKpis.homesLive)}
-                tone="good"
-                active={activeOperationPanel === "homesLive"}
-                title="Click to show live homes"
-                onClick={() => openKpiDrilldown("homesLive", "build")}
-              />
-              <StatCard
-                label="DPs Live"
-                value={`${formatNumber(rolloutKpis.dpLive)} / ${formatNumber(rolloutKpis.dpTotal)}`}
-                tone={
-                  rolloutKpis.dpTotal > 0 &&
-                  rolloutKpis.dpLive === rolloutKpis.dpTotal
-                    ? "good"
-                    : "warn"
-                }
-              />
-              <StatCard
-                label="QA Issues"
-                value={formatNumber(rolloutKpis.qaIssues)}
-                tone={rolloutKpis.qaIssues > 0 ? "bad" : "good"}
-                active={
-                  activeOperationPanel === "qa" ||
-                  activeOperationPanel === "issues"
-                }
-                title="Click to open QA issues"
-                onClick={() => openKpiDrilldown("qa", "qa")}
-              />
+              {isHarrellicommsBackhaulWorkspace ? (
+                <>
+                  <StatCard
+                    label="Build Complete"
+                    value={`${rolloutKpis.buildCompletionPercent}%`}
+                    tone={
+                      rolloutKpis.buildCompletionPercent >= 80
+                        ? "good"
+                        : rolloutKpis.buildCompletionPercent >= 50
+                          ? "warn"
+                          : "bad"
+                    }
+                  />
+                  <StatCard
+                    label="Readiness"
+                    value={`${operationalReadiness.score}%`}
+                    tone={readinessTone(operationalReadiness.state)}
+                  />
+                  <StatCard
+                    label="QA Issues"
+                    value={formatNumber(rolloutKpis.qaIssues)}
+                    tone={rolloutKpis.qaIssues > 0 ? "bad" : "good"}
+                    active={
+                      activeOperationPanel === "qa" ||
+                      activeOperationPanel === "issues"
+                    }
+                    title="Click to open QA issues"
+                    onClick={() => openKpiDrilldown("qa", "qa")}
+                  />
+                  <StatCard
+                    label="Duct Metres"
+                    value={formatNumber(Math.round(Number(workspaceDisplayStats.production?.ductMeters || 0)))}
+                    tone="default"
+                  />
+                  <StatCard
+                    label="Cable Metres"
+                    value={formatNumber(Math.round(Number(workspaceDisplayStats.production?.cableMeters || 0)))}
+                    tone="default"
+                  />
+                  <StatCard
+                    label="Blocked Assets"
+                    value={formatNumber(Number(workspaceDisplayStats.production?.blockedAssets || workspaceDisplayStats.closeout?.blockers || 0))}
+                    tone={Number(workspaceDisplayStats.production?.blockedAssets || workspaceDisplayStats.closeout?.blockers || 0) ? "bad" : "good"}
+                  />
+                </>
+              ) : (
+                <>
+                  <StatCard
+                    label="RFS"
+                    value={`${rolloutKpis.rfsPercent}%`}
+                    tone={rfsTone}
+                  />
+                  <StatCard
+                    label="Build Complete"
+                    value={`${rolloutKpis.buildCompletionPercent}%`}
+                    tone={
+                      rolloutKpis.buildCompletionPercent >= 80
+                        ? "good"
+                        : rolloutKpis.buildCompletionPercent >= 50
+                          ? "warn"
+                          : "bad"
+                    }
+                  />
+                  <StatCard
+                    label="Readiness"
+                    value={`${operationalReadiness.score}%`}
+                    tone={readinessTone(operationalReadiness.state)}
+                  />
+                  <StatCard
+                    label="Homes Live"
+                    value={formatNumber(rolloutKpis.homesLive)}
+                    tone="good"
+                    active={activeOperationPanel === "homesLive"}
+                    title="Click to show live homes"
+                    onClick={() => openKpiDrilldown("homesLive", "build")}
+                  />
+                  <StatCard
+                    label="DPs Live"
+                    value={`${formatNumber(rolloutKpis.dpLive)} / ${formatNumber(rolloutKpis.dpTotal)}`}
+                    tone={
+                      rolloutKpis.dpTotal > 0 &&
+                      rolloutKpis.dpLive === rolloutKpis.dpTotal
+                        ? "good"
+                        : "warn"
+                    }
+                  />
+                  <StatCard
+                    label="QA Issues"
+                    value={formatNumber(rolloutKpis.qaIssues)}
+                    tone={rolloutKpis.qaIssues > 0 ? "bad" : "good"}
+                    active={
+                      activeOperationPanel === "qa" ||
+                      activeOperationPanel === "issues"
+                    }
+                    title="Click to open QA issues"
+                    onClick={() => openKpiDrilldown("qa", "qa")}
+                  />
+                </>
+              )}
             </div>
 
             <div style={responsiveHeaderActions}>
