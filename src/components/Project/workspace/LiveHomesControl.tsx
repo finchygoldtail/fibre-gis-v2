@@ -486,12 +486,12 @@ export default function LiveHomesControl({ projectAssets, stats, onSelectAsset, 
 }
 
 function Metric({ label, value, good = false, warn = false }: { label: string; value: React.ReactNode; good?: boolean; warn?: boolean }) {
-  return <div style={metricCard}><span>{label}</span><strong style={{ color: good ? "#4ade80" : warn ? "#fbbf24" : "#f8fafc" }}>{value}</strong></div>;
+  return <div style={metricCard}><span>{label}</span><strong style={{ color: good ? "#4ade80" : warn ? "#fbbf24" : "#1f2933" }}>{value}</strong></div>;
 }
 
 const widePanel: React.CSSProperties = {
-  background: "#0f1b2d",
-  border: "1px solid rgba(96,165,250,0.28)",
+  background: "transparent",
+  border: "1px solid #d8d2c8",
   borderRadius: 12,
   padding: 16,
   gridColumn: "1 / -1",
@@ -501,14 +501,16 @@ const widePanel: React.CSSProperties = {
   gap: 13,
 };
 const headerRow: React.CSSProperties = { display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start" };
-const kicker: React.CSSProperties = { color: "#93c5fd", fontSize: 11, fontWeight: 900, letterSpacing: 0.5 };
-const title: React.CSSProperties = { margin: "4px 0 2px", fontSize: 18, color: "#e5e7eb" };
-const muted: React.CSSProperties = { margin: 0, color: "#94a3b8", fontSize: 12 };
+const kicker: React.CSSProperties = { color: "#2563eb", fontSize: 11, fontWeight: 900, letterSpacing: 0.5 };
+const title: React.CSSProperties = { margin: "4px 0 2px", fontSize: 18, color: "#1f2933" };
+const muted: React.CSSProperties = { margin: 0, color: "#64748b", fontSize: 12 };
 const metricGrid: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(8, minmax(95px, 1fr))", gap: 9 };
-const metricCard: React.CSSProperties = { background: "#0b1424", border: "1px solid rgba(148,163,184,0.14)", borderRadius: 10, padding: 11, display: "grid", gap: 5, color: "#94a3b8", fontSize: 11 };
+const metricCard: React.CSSProperties = { background: "#ffffff", border: "1px solid #ddd8cf", borderRadius: 10, padding: 11, display: "grid", gap: 5, color: "#64748b", fontSize: 11 };
 const filterGrid: React.CSSProperties = { display: "grid", gridTemplateColumns: "minmax(220px, 1fr) 180px 180px", gap: 9 };
-const input: React.CSSProperties = { background: "#081225", color: "#e5e7eb", border: "1px solid #334155", borderRadius: 9, padding: "10px 11px", outline: "none" };
+const input: React.CSSProperties = { background: "#ffffff", color: "#1f2933", border: "1px solid #d8d2c8", borderRadius: 9, padding: "10px 11px", outline: "none" };
 const select: React.CSSProperties = { ...input };
-const selectedCard: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr auto auto", gap: 14, alignItems: "center", background: "rgba(15,23,42,0.84)", border: "1px solid rgba(148,163,184,0.16)", borderRadius: 12, padding: 12, color: "#e5e7eb" };
-const selectedStats: React.CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap", color: "#cbd5e1", fontSize: 12 };
-const button: React.CSSProperties = { border: "1px solid rgba(96,165,250,0.28)", background: "#10203a", color: "#e5e7eb", borderRadius: 8, padding: "8px 10px", fontWeight: 850, cursor: "pointer" };
+const selectedCard: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr auto auto", gap: 14, alignItems: "center", background: "#ffffff", border: "1px solid #ddd8cf", borderRadius: 12, padding: 12, color: "#1f2933" };
+const selectedStats: React.CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap", color: "#64748b", fontSize: 12 };
+const button: React.CSSProperties = { border: "1px solid #d8d2c8", background: "#ffffff", color: "#1f2933", borderRadius: 8, padding: "8px 10px", fontWeight: 850, cursor: "pointer" };
+
+

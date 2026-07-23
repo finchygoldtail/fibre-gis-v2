@@ -28,8 +28,8 @@ type Props = {
 
 const panel: React.CSSProperties = {
   gridColumn: "1 / -1",
-  background: "#0f1b2d",
-  border: "1px solid rgba(148, 163, 184, 0.18)",
+  background: "transparent",
+  border: "1px solid #ddd8cf",
   borderRadius: 10,
   padding: 16,
 };
@@ -38,7 +38,7 @@ const title: React.CSSProperties = {
   margin: "0 0 12px",
   fontSize: 15,
   fontWeight: 900,
-  color: "#e5e7eb",
+  color: "#1f2933",
 };
 
 const grid: React.CSSProperties = {
@@ -48,9 +48,9 @@ const grid: React.CSSProperties = {
 };
 
 const button: React.CSSProperties = {
-  border: "1px solid rgba(96,165,250,0.28)",
-  background: "#10203a",
-  color: "#f8fafc",
+  border: "1px solid #d8d2c8",
+  background: "#ffffff",
+  color: "#1f2933",
   borderRadius: 8,
   padding: "12px 14px",
   fontWeight: 850,
@@ -66,8 +66,8 @@ const tileGrid: React.CSSProperties = {
 };
 
 const tile: React.CSSProperties = {
-  background: "#0b1424",
-  border: "1px solid rgba(148,163,184,0.14)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 10,
   padding: 12,
 };
@@ -79,8 +79,8 @@ const listPanel: React.CSSProperties = {
 };
 
 const tableWrap: React.CSSProperties = {
-  background: "#0b1424",
-  border: "1px solid rgba(148,163,184,0.14)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 10,
   maxHeight: 360,
   overflow: "auto",
@@ -92,8 +92,8 @@ const rowStyle: React.CSSProperties = {
   gap: 10,
   alignItems: "center",
   padding: "9px 10px",
-  borderBottom: "1px solid rgba(148,163,184,0.10)",
-  color: "#cbd5e1",
+  borderBottom: "1px solid #e2ded7",
+  color: "#64748b",
   fontSize: 12,
 };
 
@@ -103,8 +103,8 @@ const permitRowStyle: React.CSSProperties = {
   gap: 10,
   alignItems: "center",
   padding: "9px 10px",
-  borderBottom: "1px solid rgba(148,163,184,0.10)",
-  color: "#cbd5e1",
+  borderBottom: "1px solid #e2ded7",
+  color: "#64748b",
   fontSize: 12,
 };
 
@@ -123,8 +123,8 @@ function n(value: any): string {
 function Tile({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div style={tile}>
-      <div style={{ color: "#94a3b8", fontSize: 12, fontWeight: 800 }}>{label}</div>
-      <div style={{ color: "#f8fafc", fontSize: 24, fontWeight: 950, marginTop: 6 }}>{value}</div>
+      <div style={{ color: "#64748b", fontSize: 12, fontWeight: 800 }}>{label}</div>
+      <div style={{ color: "#1f2933", fontSize: 24, fontWeight: 950, marginTop: 6 }}>{value}</div>
     </div>
   );
 }
@@ -154,7 +154,7 @@ function getPermitState(asset: SavedMapAsset) {
   const status = String(permit.status || "").toLowerCase();
   const daysLeft = daysUntil(permit.endDate);
 
-  if (status === "closed") return { label: "Closed", colour: "#94a3b8", daysLeft };
+  if (status === "closed") return { label: "Closed", colour: "#64748b", daysLeft };
   if (daysLeft !== null && daysLeft < 0) return { label: "Expired", colour: "#f87171", daysLeft };
   if (daysLeft === 0) return { label: "Expires today", colour: "#ef4444", daysLeft };
   if (daysLeft !== null && daysLeft <= 2) return { label: "Closing soon", colour: "#fb923c", daysLeft };
@@ -279,7 +279,7 @@ export default function WorkspaceReports({
           <Tile label="Blocked assets" value={n(production.blockedAssets || closeout.blockers)} />
         </div>
         <div style={tableWrap}>
-          <div style={{ ...rowStyle, color: "#93c5fd", fontWeight: 900, position: "sticky", top: 0, background: "#0b1424", zIndex: 1 }}>
+          <div style={{ ...rowStyle, color: "#2563eb", fontWeight: 900, position: "sticky", top: 0, background: "#ffffff", zIndex: 1 }}>
             <span>Date</span>
             <span>Asset</span>
             <span>Team</span>
@@ -292,7 +292,7 @@ export default function WorkspaceReports({
             productionEntries.map(({ asset, entry }: any, index) => (
               <div key={`${asset.id}-${entry.id || index}`} style={rowStyle}>
                 <span>{entry.date || "No date"}</span>
-                <span style={{ color: "#f8fafc", fontWeight: 800 }}>{getAssetDisplayName(asset)}</span>
+                <span style={{ color: "#1f2933", fontWeight: 800 }}>{getAssetDisplayName(asset)}</span>
                 <span>{String(entry.team || "").toUpperCase()}</span>
                 <span>{getEntryMeters(entry)}</span>
                 <span>{entry.crewName || "-"}</span>
@@ -303,7 +303,7 @@ export default function WorkspaceReports({
               </div>
             ))
           ) : (
-            <div style={{ padding: 12, color: "#94a3b8", fontSize: 13 }}>
+            <div style={{ padding: 12, color: "#64748b", fontSize: 13 }}>
               No daily production has been logged for this workspace yet.
             </div>
           )}
@@ -330,7 +330,7 @@ export default function WorkspaceReports({
           <Tile label="Expired" value={n(permitZones.filter((item) => item.state.label === "Expired").length)} />
         </div>
         <div style={tableWrap}>
-          <div style={{ ...permitRowStyle, color: "#93c5fd", fontWeight: 900, position: "sticky", top: 0, background: "#0b1424", zIndex: 1 }}>
+          <div style={{ ...permitRowStyle, color: "#2563eb", fontWeight: 900, position: "sticky", top: 0, background: "#ffffff", zIndex: 1 }}>
             <span>Zone</span>
             <span>Permit</span>
             <span>Start</span>
@@ -341,7 +341,7 @@ export default function WorkspaceReports({
           {permitZones.length ? (
             permitZones.map(({ asset, permit, state }) => (
               <div key={asset.id} style={permitRowStyle}>
-                <span style={{ color: "#f8fafc", fontWeight: 850 }}>{getAssetDisplayName(asset)}</span>
+                <span style={{ color: "#1f2933", fontWeight: 850 }}>{getAssetDisplayName(asset)}</span>
                 <span>{permit.permitNumber || "Not loaded"}</span>
                 <span>{permit.startDate || "-"}</span>
                 <span>{permit.endDate || "-"}</span>
@@ -360,7 +360,7 @@ export default function WorkspaceReports({
                   </button>
                   <button
                     type="button"
-                    style={{ ...smallButton, borderColor: "rgba(248,113,113,0.42)", background: "#3f1218" }}
+                    style={{ ...smallButton, borderColor: "rgba(248,113,113,0.42)", background: "#dc2626", color: "#ffffff" }}
                     onClick={() => closePermitAsset(asset)}
                     disabled={!onUpdateWorkspaceAsset}
                   >
@@ -370,7 +370,7 @@ export default function WorkspaceReports({
               </div>
             ))
           ) : (
-            <div style={{ padding: 12, color: "#94a3b8", fontSize: 13 }}>
+            <div style={{ padding: 12, color: "#64748b", fontSize: 13 }}>
               No permit zones have been created in this workspace yet.
             </div>
           )}
@@ -434,3 +434,5 @@ export default function WorkspaceReports({
     </>
   );
 }
+
+

@@ -23,15 +23,18 @@ const shell: React.CSSProperties = {
   gridColumn: "1 / -1",
   display: "grid",
   gridTemplateColumns: "minmax(360px, 1.1fr) minmax(360px, 0.9fr)",
-  gap: 12,
+  gap: 24,
   alignItems: "stretch",
+  padding: "24px 28px 32px",
+  background: "#f6f4ef",
+  color: "#1f2933",
 };
 
 const panel: React.CSSProperties = {
-  background: "linear-gradient(180deg, #0f1b2d 0%, #0b1626 100%)",
-  border: "1px solid rgba(148, 163, 184, 0.18)",
-  borderRadius: 12,
-  padding: 16,
+  background: "transparent",
+  border: "none",
+  borderRadius: 0,
+  padding: 0,
   minHeight: 0,
 };
 
@@ -40,14 +43,14 @@ const wide: React.CSSProperties = { ...panel, gridColumn: "1 / -1" };
 const title: React.CSSProperties = {
   margin: 0,
   fontSize: 15,
-  fontWeight: 950,
-  color: "#f8fafc",
+  fontWeight: 800,
+  color: "#1f2933",
 };
 
 const kicker: React.CSSProperties = {
-  color: "#38bdf8",
+  color: "#64748b",
   fontSize: 10,
-  fontWeight: 950,
+  fontWeight: 800,
   letterSpacing: "0.08em",
   textTransform: "uppercase",
   marginBottom: 6,
@@ -57,39 +60,43 @@ const row: React.CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
   gap: 14,
-  padding: "9px 0",
-  borderBottom: "1px solid rgba(148,163,184,0.12)",
-  color: "#cbd5e1",
+  padding: "12px 0",
+  borderBottom: "1px solid #ddd8cf",
+  color: "#475569",
 };
 
 const tileGrid: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-  gap: 10,
+  gap: 0,
+  borderTop: "1px solid #ddd8cf",
+  borderBottom: "1px solid #ddd8cf",
 };
 
 const tile: React.CSSProperties = {
-  background: "#0b1424",
-  border: "1px solid rgba(148,163,184,0.14)",
-  borderRadius: 10,
-  padding: 12,
-  minHeight: 78,
+  background: "transparent",
+  border: "none",
+  borderRight: "1px solid #ddd8cf",
+  borderRadius: 0,
+  padding: "14px 16px",
+  minHeight: 72,
 };
 
 const button: React.CSSProperties = {
-  border: "1px solid rgba(148,163,184,0.22)",
-  background: "#111827",
-  color: "#f8fafc",
-  borderRadius: 8,
-  padding: "10px 12px",
-  fontWeight: 850,
+  border: "1px solid #d8d2c8",
+  background: "#ffffff",
+  color: "#1f2933",
+  borderRadius: 7,
+  padding: "8px 11px",
+  fontWeight: 750,
   cursor: "pointer",
 };
 
 const primaryButton: React.CSSProperties = {
   ...button,
-  background: "#1d4ed8",
-  borderColor: "rgba(147, 197, 253, 0.45)",
+  background: "#2563eb",
+  borderColor: "#2563eb",
+  color: "#ffffff",
 };
 
 const readinessBadge: React.CSSProperties = {
@@ -99,9 +106,9 @@ const readinessBadge: React.CSSProperties = {
   padding: "5px 9px",
   fontSize: 12,
   fontWeight: 900,
-  border: "1px solid rgba(96,165,250,0.35)",
-  color: "#93c5fd",
-  background: "rgba(37,99,235,0.12)",
+  border: "1px solid #d8d2c8",
+  color: "#475569",
+  background: "#ffffff",
 };
 
 function n(value: any): string {
@@ -117,7 +124,7 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div style={row}>
       <span>{label}</span>
-      <strong style={{ color: "#f8fafc", textAlign: "right" }}>{value}</strong>
+      <strong style={{ color: "#1f2933", textAlign: "right" }}>{value}</strong>
     </div>
   );
 }
@@ -135,17 +142,17 @@ function Tile({
     tone === "good"
       ? "#4ade80"
       : tone === "warn"
-        ? "#fbbf24"
+        ? "#d97706"
         : tone === "bad"
-          ? "#fb7185"
-          : "#f8fafc";
+          ? "#dc2626"
+          : "#1f2933";
 
   return (
     <div style={tile}>
-      <div style={{ color: "#94a3b8", fontSize: 12, fontWeight: 800 }}>
+      <div style={{ color: "#64748b", fontSize: 12, fontWeight: 700 }}>
         {label}
       </div>
-      <div style={{ marginTop: 8, fontSize: 25, fontWeight: 950, color: colour }}>
+      <div style={{ marginTop: 8, fontSize: 25, fontWeight: 650, color: colour }}>
         {value}
       </div>
     </div>
@@ -189,7 +196,7 @@ export default function WorkspaceOverview({
         >
           <div>
             <h3 style={{ ...title, fontSize: 20 }}>{projectName}</h3>
-            <div style={{ color: "#9ca3af", marginTop: 5, fontSize: 13 }}>
+            <div style={{ color: "#64748b", marginTop: 5, fontSize: 13 }}>
               {stats?.deliveryPhaseDescription || "Operational project workspace"}
             </div>
           </div>
@@ -256,11 +263,10 @@ export default function WorkspaceOverview({
           <div
             style={{
               marginTop: 12,
-              color: "#cbd5e1",
-              background: "rgba(15, 23, 42, 0.72)",
-              border: "1px solid rgba(148,163,184,0.14)",
-              borderRadius: 10,
-              padding: 10,
+              color: "#475569",
+              background: "transparent",
+              borderTop: "1px solid #ddd8cf",
+              padding: "10px 0 0",
               fontSize: 12,
             }}
           >
@@ -312,3 +318,5 @@ export default function WorkspaceOverview({
     </div>
   );
 }
+
+

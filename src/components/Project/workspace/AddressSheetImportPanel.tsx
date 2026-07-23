@@ -22,8 +22,8 @@ type Props = {
 };
 
 const panel: React.CSSProperties = {
-  background: "#0f1b2d",
-  border: "1px solid rgba(148, 163, 184, 0.18)",
+  background: "transparent",
+  border: "1px solid #ddd8cf",
   borderRadius: 10,
   padding: 16,
   minHeight: 190,
@@ -34,13 +34,13 @@ const title: React.CSSProperties = {
   margin: "0 0 12px",
   fontSize: 15,
   fontWeight: 900,
-  color: "#e5e7eb",
+  color: "#1f2933",
 };
 
 const button: React.CSSProperties = {
-  border: "1px solid rgba(148,163,184,0.22)",
-  background: "#111827",
-  color: "#f8fafc",
+  border: "1px solid #ddd8cf",
+  background: "#ffffff",
+  color: "#1f2933",
   borderRadius: 8,
   padding: "9px 11px",
   fontWeight: 800,
@@ -48,8 +48,8 @@ const button: React.CSSProperties = {
 };
 
 const tile: React.CSSProperties = {
-  background: "#0b1424",
-  border: "1px solid rgba(148,163,184,0.14)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 10,
   padding: 12,
 };
@@ -58,14 +58,14 @@ const th: React.CSSProperties = {
   textAlign: "left",
   padding: "8px 10px",
   color: "#93a4bd",
-  borderBottom: "1px solid rgba(148,163,184,0.14)",
+  borderBottom: "1px solid #ddd8cf",
   fontSize: 12,
 };
 
 const td: React.CSSProperties = {
   padding: "8px 10px",
   color: "#dbeafe",
-  borderBottom: "1px solid rgba(148,163,184,0.1)",
+  borderBottom: "1px solid #e2ded7",
   fontSize: 12,
   verticalAlign: "top",
 };
@@ -182,7 +182,7 @@ export default function AddressSheetImportPanel({ projectAssets, onSelectAsset, 
   return (
     <section style={panel}>
       <h3 style={title}>Address Sheet → SB / Home Matcher</h3>
-      <p style={{ color: "#cbd5e1", marginTop: 0 }}>
+      <p style={{ color: "#64748b", marginTop: 0 }}>
         Upload the address sheet to match UPRNs to map homes and group them by splitter box.
         Pole/chamber references are ignored for this workflow; SBs can be created at the centre of their matched homes and drops generated from SB to home.
       </p>
@@ -219,8 +219,8 @@ export default function AddressSheetImportPanel({ projectAssets, onSelectAsset, 
         ) : null}
       </div>
 
-      {loading ? <div style={{ color: "#93c5fd" }}>Reading address sheet…</div> : null}
-      {error ? <div style={{ color: "#fecaca", marginBottom: 10 }}>{error}</div> : null}
+      {loading ? <div style={{ color: "#2563eb" }}>Reading address sheet…</div> : null}
+      {error ? <div style={{ color: "#dc2626", marginBottom: 10 }}>{error}</div> : null}
 
       {report ? (
         <>
@@ -236,7 +236,7 @@ export default function AddressSheetImportPanel({ projectAssets, onSelectAsset, 
             <Metric label="Pole/chamber matched" value={`${n(report.stats.matchedPoleChambers)} / ${n(report.stats.rows)}`} />
           </div>
 
-          <div style={{ overflowX: "auto", border: "1px solid rgba(148,163,184,0.14)", borderRadius: 10, marginBottom: 12 }}>
+          <div style={{ overflowX: "auto", border: "1px solid #ddd8cf", borderRadius: 10, marginBottom: 12 }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
@@ -260,7 +260,7 @@ export default function AddressSheetImportPanel({ projectAssets, onSelectAsset, 
           </div>
 
           {showRows ? (
-            <div style={{ overflowX: "auto", maxHeight: 420, border: "1px solid rgba(148,163,184,0.14)", borderRadius: 10 }}>
+            <div style={{ overflowX: "auto", maxHeight: 420, border: "1px solid #ddd8cf", borderRadius: 10 }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
@@ -278,7 +278,7 @@ export default function AddressSheetImportPanel({ projectAssets, onSelectAsset, 
                       <td style={td}>{row.rowNumber}</td>
                       <td style={td}>
                         <div>{row.uprn || "No UPRN"}</div>
-                        <div style={{ color: "#94a3b8" }}>{row.address}</div>
+                        <div style={{ color: "#64748b" }}>{row.address}</div>
                       </td>
                       <td style={td}>{row.splitterBox}</td>
                       <td style={td}>{row.poleChamber}</td>
@@ -305,7 +305,7 @@ export default function AddressSheetImportPanel({ projectAssets, onSelectAsset, 
                 </tbody>
               </table>
               {report.rows.length > 250 ? (
-                <div style={{ padding: 10, color: "#94a3b8" }}>Showing first 250 rows. Export the CSV for the full report.</div>
+                <div style={{ padding: 10, color: "#64748b" }}>Showing first 250 rows. Export the CSV for the full report.</div>
               ) : null}
             </div>
           ) : null}
@@ -318,8 +318,10 @@ export default function AddressSheetImportPanel({ projectAssets, onSelectAsset, 
 function Metric({ label, value, danger = false }: { label: string; value: React.ReactNode; danger?: boolean }) {
   return (
     <div style={tile}>
-      <div style={{ color: "#94a3b8", fontSize: 12 }}>{label}</div>
-      <div style={{ marginTop: 6, fontSize: 20, fontWeight: 900, color: danger ? "#fb7185" : "#f8fafc" }}>{value}</div>
+      <div style={{ color: "#64748b", fontSize: 12 }}>{label}</div>
+      <div style={{ marginTop: 6, fontSize: 20, fontWeight: 900, color: danger ? "#fb7185" : "#1f2933" }}>{value}</div>
     </div>
   );
 }
+
+

@@ -168,8 +168,8 @@ function cleanRateCardItems(items: AreaBoqRateCardItem[]): AreaBoqRateCardItem[]
 
 const panel: React.CSSProperties = {
   gridColumn: "1 / -1",
-  background: "#0f1b2d",
-  border: "1px solid rgba(148, 163, 184, 0.18)",
+  background: "transparent",
+  border: "1px solid #ddd8cf",
   borderRadius: 10,
   padding: 16,
 };
@@ -178,11 +178,11 @@ const title: React.CSSProperties = {
   margin: 0,
   fontSize: 15,
   fontWeight: 900,
-  color: "#e5e7eb",
+  color: "#1f2933",
 };
 
 const hint: React.CSSProperties = {
-  color: "#94a3b8",
+  color: "#64748b",
   fontSize: 12,
   lineHeight: 1.45,
   marginTop: 5,
@@ -190,8 +190,8 @@ const hint: React.CSSProperties = {
 
 const button: React.CSSProperties = {
   border: "1px solid rgba(96,165,250,0.32)",
-  background: "#10203a",
-  color: "#f8fafc",
+  background: "#ffffff",
+  color: "#1f2933",
   borderRadius: 8,
   padding: "9px 11px",
   fontWeight: 850,
@@ -200,8 +200,8 @@ const button: React.CSSProperties = {
 
 const mutedButton: React.CSSProperties = {
   ...button,
-  borderColor: "rgba(148,163,184,0.22)",
-  background: "#111827",
+  borderColor: "#ddd8cf",
+  background: "#ffffff",
 };
 
 const summaryGrid: React.CSSProperties = {
@@ -212,8 +212,8 @@ const summaryGrid: React.CSSProperties = {
 };
 
 const summaryCard: React.CSSProperties = {
-  background: "#0b1424",
-  border: "1px solid rgba(148,163,184,0.14)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 10,
   padding: 11,
 };
@@ -225,26 +225,26 @@ const table: React.CSSProperties = {
 };
 
 const th: React.CSSProperties = {
-  color: "#93c5fd",
+  color: "#2563eb",
   textAlign: "left",
   padding: "8px 7px",
-  borderBottom: "1px solid rgba(148,163,184,0.18)",
+  borderBottom: "1px solid #ddd8cf",
   fontWeight: 900,
   whiteSpace: "nowrap",
 };
 
 const td: React.CSSProperties = {
-  color: "#e5e7eb",
+  color: "#1f2933",
   padding: "7px",
-  borderBottom: "1px solid rgba(148,163,184,0.08)",
+  borderBottom: "1px solid #eee9e1",
   verticalAlign: "top",
 };
 
 const input: React.CSSProperties = {
   width: 96,
-  background: "#020817",
-  color: "#f8fafc",
-  border: "1px solid rgba(148,163,184,0.22)",
+  background: "#ffffff",
+  color: "#1f2933",
+  border: "1px solid #ddd8cf",
   borderRadius: 7,
   padding: "6px 8px",
   fontSize: 12,
@@ -253,7 +253,7 @@ const input: React.CSSProperties = {
 
 const importPanel: React.CSSProperties = {
   marginTop: 14,
-  background: "#0b1424",
+  background: "#ffffff",
   border: "1px solid rgba(96,165,250,0.22)",
   borderRadius: 10,
   padding: 12,
@@ -263,9 +263,9 @@ const textarea: React.CSSProperties = {
   width: "100%",
   minHeight: 130,
   marginTop: 10,
-  background: "#020817",
-  color: "#e5e7eb",
-  border: "1px solid rgba(148,163,184,0.22)",
+  background: "#ffffff",
+  color: "#1f2933",
+  border: "1px solid #ddd8cf",
   borderRadius: 8,
   padding: 10,
   fontSize: 12,
@@ -557,10 +557,10 @@ export default function WorkspaceBoq({
                       style={input}
                     />
                   </td>
-                  <td style={{ ...td, textAlign: "right", fontWeight: 900, color: lineTotal ? "#bbf7d0" : "#e5e7eb" }}>
+                  <td style={{ ...td, textAlign: "right", fontWeight: 900, color: lineTotal ? "#bbf7d0" : "#1f2933" }}>
                     {money(lineTotal)}
                   </td>
-                  <td style={{ ...td, color: "#94a3b8", minWidth: 220 }}>{line.notes}</td>
+                  <td style={{ ...td, color: "#64748b", minWidth: 220 }}>{line.notes}</td>
                 </tr>
               );
             })}
@@ -574,8 +574,10 @@ export default function WorkspaceBoq({
 function SummaryCard({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div style={summaryCard}>
-      <div style={{ color: "#94a3b8", fontSize: 11, fontWeight: 850 }}>{label}</div>
-      <div style={{ color: "#f8fafc", fontSize: 21, fontWeight: 950, marginTop: 5 }}>{value}</div>
+      <div style={{ color: "#64748b", fontSize: 11, fontWeight: 850 }}>{label}</div>
+      <div style={{ color: "#1f2933", fontSize: 21, fontWeight: 950, marginTop: 5 }}>{value}</div>
     </div>
   );
 }
+
+

@@ -224,9 +224,9 @@ export default function AreaBulkStatusPanel({
           </p>
         </div>
         <div style={countCard}>
-          <span style={{ color: "#94a3b8", fontSize: 11 }}>Preview</span>
+          <span style={{ color: "#64748b", fontSize: 11 }}>Preview</span>
           <strong>{affectedDps.length}</strong>
-          <span style={{ color: "#cbd5e1", fontSize: 11 }}>DPs affected</span>
+          <span style={{ color: "#64748b", fontSize: 11 }}>DPs affected</span>
         </div>
       </div>
 
@@ -266,7 +266,7 @@ export default function AreaBulkStatusPanel({
         <div style={drawBox}>
           <div>
             <strong>Drawn area</strong>
-            <div style={{ color: "#cbd5e1", fontSize: 12 }}>
+            <div style={{ color: "#64748b", fontSize: 12 }}>
               Click the workspace map to place polygon points. Three or more points are needed.
             </div>
           </div>
@@ -298,7 +298,7 @@ export default function AreaBulkStatusPanel({
       <div style={previewHeader}>
         <div>
           <strong>Affected DPs</strong>
-          <span style={{ color: "#94a3b8", fontSize: 12, marginLeft: 8 }}>
+          <span style={{ color: "#64748b", fontSize: 12, marginLeft: 8 }}>
             {dpFilter === "ALL" ? "All closure types" : dpFilter}
           </span>
         </div>
@@ -326,7 +326,7 @@ export default function AreaBulkStatusPanel({
               <div key={String(asset.id)} style={previewRow}>
                 <div>
                   <strong>{assetTitle(asset)}</strong>
-                  <div style={{ color: "#94a3b8", fontSize: 12 }}>{closure}</div>
+                  <div style={{ color: "#64748b", fontSize: 12 }}>{closure}</div>
                 </div>
                 <span style={statusBadgeStyle(currentStatus)}>{currentStatus}</span>
               </div>
@@ -342,7 +342,7 @@ const panel: React.CSSProperties = {
   gridColumn: "1 / -1",
   width: "100%",
   boxSizing: "border-box",
-  background: "#0f1b2d",
+  background: "transparent",
   border: "1px solid rgba(96, 165, 250, 0.28)",
   borderRadius: 12,
   padding: 16,
@@ -360,19 +360,19 @@ const title: React.CSSProperties = {
   margin: "0 0 6px",
   fontSize: 18,
   fontWeight: 950,
-  color: "#e5e7eb",
+  color: "#1f2933",
 };
 
 const subtitle: React.CSSProperties = {
   margin: 0,
-  color: "#cbd5e1",
+  color: "#64748b",
   fontSize: 13,
 };
 
 const countCard: React.CSSProperties = {
   minWidth: 110,
-  background: "#020617",
-  border: "1px solid rgba(148, 163, 184, 0.18)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 12,
   padding: 12,
   display: "grid",
@@ -390,15 +390,15 @@ const controlsGrid: React.CSSProperties = {
 const label: React.CSSProperties = {
   display: "grid",
   gap: 6,
-  color: "#cbd5e1",
+  color: "#64748b",
   fontSize: 12,
   fontWeight: 800,
 };
 
 const select: React.CSSProperties = {
-  background: "#020617",
-  color: "#e5e7eb",
-  border: "1px solid #334155",
+  background: "#ffffff",
+  color: "#1f2933",
+  border: "1px solid #d8d2c8",
   borderRadius: 9,
   padding: "10px 11px",
   outline: "none",
@@ -406,9 +406,9 @@ const select: React.CSSProperties = {
 
 const textarea: React.CSSProperties = {
   minHeight: 76,
-  background: "#020617",
-  color: "#e5e7eb",
-  border: "1px solid #334155",
+  background: "#ffffff",
+  color: "#1f2933",
+  border: "1px solid #d8d2c8",
   borderRadius: 9,
   padding: 11,
   resize: "vertical",
@@ -420,14 +420,14 @@ const drawBox: React.CSSProperties = {
   marginTop: 12,
   display: "grid",
   gap: 8,
-  background: "rgba(2, 6, 23, 0.56)",
+  background: "#ffffff",
   border: "1px dashed rgba(96, 165, 250, 0.5)",
   borderRadius: 12,
   padding: 12,
 };
 
 const drawMeta: React.CSSProperties = {
-  color: "#cbd5e1",
+  color: "#64748b",
   fontSize: 12,
 };
 
@@ -452,25 +452,25 @@ const previewRow: React.CSSProperties = {
   justifyContent: "space-between",
   gap: 12,
   alignItems: "center",
-  background: "#111827",
-  border: "1px solid rgba(148, 163, 184, 0.14)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 10,
   padding: "9px 11px",
-  color: "#e5e7eb",
+  color: "#1f2933",
 };
 
 const empty: React.CSSProperties = {
-  background: "#111827",
-  border: "1px solid rgba(148, 163, 184, 0.14)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 10,
   padding: 14,
-  color: "#cbd5e1",
+  color: "#64748b",
 };
 
 const button: React.CSSProperties = {
-  border: "1px solid rgba(148,163,184,0.22)",
-  background: "#111827",
-  color: "#f8fafc",
+  border: "1px solid #ddd8cf",
+  background: "#ffffff",
+  color: "#1f2933",
   borderRadius: 8,
   padding: "9px 11px",
   fontWeight: 800,
@@ -486,8 +486,8 @@ const applyButton: React.CSSProperties = {
 const neutralPill: React.CSSProperties = {
   borderRadius: 999,
   padding: "5px 9px",
-  background: "#334155",
-  color: "#e5e7eb",
+  background: "#1f2933",
+  color: "#1f2933",
   fontSize: 11,
   fontWeight: 900,
 };
@@ -495,7 +495,7 @@ const neutralPill: React.CSSProperties = {
 const livePill: React.CSSProperties = {
   ...neutralPill,
   background: "rgba(34,197,94,0.18)",
-  color: "#86efac",
+  color: "#15803d",
 };
 
 const bwipPill: React.CSSProperties = {
@@ -507,5 +507,7 @@ const bwipPill: React.CSSProperties = {
 const badPill: React.CSSProperties = {
   ...neutralPill,
   background: "rgba(248,113,113,0.18)",
-  color: "#fecaca",
+  color: "#dc2626",
 };
+
+

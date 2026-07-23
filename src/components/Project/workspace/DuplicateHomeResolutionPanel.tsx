@@ -28,8 +28,8 @@ type Props = {
 };
 
 const panel: React.CSSProperties = {
-  background: "#0f1b2d",
-  border: "1px solid rgba(148, 163, 184, 0.18)",
+  background: "transparent",
+  border: "1px solid #ddd8cf",
   borderRadius: 10,
   padding: 16,
   minHeight: 190,
@@ -40,11 +40,11 @@ const title: React.CSSProperties = {
   margin: "0 0 12px",
   fontSize: 15,
   fontWeight: 900,
-  color: "#e5e7eb",
+  color: "#1f2933",
 };
 
 const muted: React.CSSProperties = {
-  color: "#94a3b8",
+  color: "#64748b",
   fontSize: 12,
   lineHeight: 1.45,
 };
@@ -57,15 +57,15 @@ const statGrid: React.CSSProperties = {
 };
 
 const statTile: React.CSSProperties = {
-  background: "#0b1424",
-  border: "1px solid rgba(148,163,184,0.14)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 10,
   padding: 12,
 };
 
 const groupBox: React.CSSProperties = {
-  background: "#0b1424",
-  border: "1px solid rgba(148,163,184,0.16)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 10,
   padding: 12,
   marginTop: 10,
@@ -77,15 +77,15 @@ const candidateRow: React.CSSProperties = {
   gap: 8,
   alignItems: "center",
   padding: "8px 0",
-  borderBottom: "1px solid rgba(148,163,184,0.10)",
-  color: "#cbd5e1",
+  borderBottom: "1px solid #e2ded7",
+  color: "#64748b",
   fontSize: 12,
 };
 
 const button: React.CSSProperties = {
-  border: "1px solid rgba(148,163,184,0.22)",
-  background: "#111827",
-  color: "#f8fafc",
+  border: "1px solid #ddd8cf",
+  background: "#ffffff",
+  color: "#1f2933",
   borderRadius: 8,
   padding: "8px 10px",
   fontWeight: 800,
@@ -94,7 +94,7 @@ const button: React.CSSProperties = {
 
 const dangerButton: React.CSSProperties = {
   ...button,
-  background: "#7f1d1d",
+  background: "#dc2626",
   borderColor: "rgba(248,113,113,0.45)",
 };
 
@@ -105,22 +105,22 @@ const keepPill: React.CSSProperties = {
   padding: "4px 8px",
   fontSize: 11,
   fontWeight: 900,
-  color: "#86efac",
+  color: "#15803d",
   background: "rgba(34,197,94,0.16)",
   border: "1px solid rgba(34,197,94,0.35)",
 };
 
 const removePill: React.CSSProperties = {
   ...keepPill,
-  color: "#fecaca",
+  color: "#dc2626",
   background: "rgba(239,68,68,0.16)",
   border: "1px solid rgba(239,68,68,0.35)",
 };
 
 
 const compactPanel: React.CSSProperties = {
-  background: "#0f1b2d",
-  border: "1px solid rgba(148, 163, 184, 0.18)",
+  background: "transparent",
+  border: "1px solid #ddd8cf",
   borderRadius: 10,
   padding: 12,
   gridColumn: "span 2",
@@ -134,7 +134,7 @@ const compactButton: React.CSSProperties = {
   alignItems: "center",
   gap: 12,
   padding: "12px 14px",
-  background: "#111827",
+  background: "#ffffff",
 };
 
 
@@ -213,14 +213,14 @@ export default function DuplicateHomeResolutionPanel({
       <section style={compactPanel}>
         <button type="button" style={compactButton} onClick={() => setIsOpen(true)}>
           <span>
-            <strong style={{ color: "#e5e7eb" }}>Duplicate Home Resolution</strong>
-            <span style={{ display: "block", marginTop: 4, color: "#94a3b8", fontSize: 12 }}>
+            <strong style={{ color: "#1f2933" }}>Duplicate Home Resolution</strong>
+            <span style={{ display: "block", marginTop: 4, color: "#64748b", fontSize: 12 }}>
               {summary.duplicateGroups > 0
                 ? `${n(summary.duplicateGroups)} group${summary.duplicateGroups === 1 ? "" : "s"} · ${n(summary.duplicateAssets)} duplicate asset${summary.duplicateAssets === 1 ? "" : "s"} found`
                 : "No duplicate home groups found"}
             </span>
           </span>
-          <span style={{ color: "#93c5fd", fontWeight: 900 }}>Open</span>
+          <span style={{ color: "#2563eb", fontWeight: 900 }}>Open</span>
         </button>
       </section>
     );
@@ -244,7 +244,7 @@ export default function DuplicateHomeResolutionPanel({
 
       {!summary.groups.length ? (
         <div style={groupBox}>
-          <strong style={{ color: "#86efac" }}>No duplicate home groups found in this workspace area.</strong>
+          <strong style={{ color: "#15803d" }}>No duplicate home groups found in this workspace area.</strong>
           <div style={muted}>This only checks the assets currently scoped to the selected polygon.</div>
         </div>
       ) : null}
@@ -256,7 +256,7 @@ export default function DuplicateHomeResolutionPanel({
           <div key={group.id} style={groupBox}>
             <button
               type="button"
-              style={{ ...button, width: "100%", textAlign: "left", background: isOpen ? "#1e3a5f" : "#111827" }}
+              style={{ ...button, width: "100%", textAlign: "left", background: isOpen ? "#ffffff" : "#ffffff" }}
               onClick={() => setExpandedGroupId(isOpen ? null : group.id)}
             >
               {group.reason} — {group.warning}
@@ -264,7 +264,7 @@ export default function DuplicateHomeResolutionPanel({
 
             {isOpen ? (
               <div style={{ marginTop: 10 }}>
-                <div style={{ ...candidateRow, color: "#93c5fd", fontWeight: 900 }}>
+                <div style={{ ...candidateRow, color: "#2563eb", fontWeight: 900 }}>
                   <span>Home</span><span>Decision</span><span>Status</span><span>Drop</span><span>Actions</span>
                 </div>
                 {group.candidates.map((candidate) => {
@@ -280,7 +280,7 @@ export default function DuplicateHomeResolutionPanel({
                             onChange={() => setCanonicalByGroup((prev) => ({ ...prev, [group.id]: candidate.id }))}
                           />
                           <span>
-                            <strong style={{ color: "#f8fafc" }}>{candidateTitle(candidate.asset)}</strong>
+                            <strong style={{ color: "#1f2933" }}>{candidateTitle(candidate.asset)}</strong>
                             <div style={muted}>{candidate.uprn || candidate.id}</div>
                             {candidate.connectedDpId ? <div style={muted}>DP: {candidate.connectedDpId}</div> : null}
                           </span>
@@ -311,3 +311,5 @@ export default function DuplicateHomeResolutionPanel({
     </section>
   );
 }
+
+

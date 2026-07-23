@@ -85,12 +85,12 @@ type Props = {
   onApplySbRouteAssignments?: (request: any) => void | Promise<void>;
 };
 
-const panel: React.CSSProperties = { background: "#0f1b2d", border: "1px solid rgba(148, 163, 184, 0.18)", borderRadius: 10, padding: 16, minHeight: 190 };
+const panel: React.CSSProperties = { background: "transparent", border: "1px solid #ddd8cf", borderRadius: 10, padding: 16, minHeight: 190 };
 const wide: React.CSSProperties = { ...panel, gridColumn: "span 2" };
-const title: React.CSSProperties = { margin: "0 0 12px", fontSize: 15, fontWeight: 900, color: "#e5e7eb" };
-const tile: React.CSSProperties = { background: "#0b1424", border: "1px solid rgba(148,163,184,0.14)", borderRadius: 10, padding: 12 };
-const button: React.CSSProperties = { border: "1px solid rgba(148,163,184,0.22)", background: "#111827", color: "#f8fafc", borderRadius: 8, padding: "10px 12px", fontWeight: 800, cursor: "pointer" };
-const readinessBox: React.CSSProperties = { background: "#0b1424", border: "1px solid rgba(96,165,250,0.28)", borderRadius: 10, padding: 12, color: "#cbd5e1" };
+const title: React.CSSProperties = { margin: "0 0 12px", fontSize: 15, fontWeight: 900, color: "#1f2933" };
+const tile: React.CSSProperties = { background: "#ffffff", border: "1px solid #ddd8cf", borderRadius: 10, padding: 12 };
+const button: React.CSSProperties = { border: "1px solid #ddd8cf", background: "#ffffff", color: "#1f2933", borderRadius: 8, padding: "10px 12px", fontWeight: 800, cursor: "pointer" };
+const readinessBox: React.CSSProperties = { background: "#ffffff", border: "1px solid #d8d2c8", borderRadius: 10, padding: 12, color: "#64748b" };
 
 const getInstallAssetText = (asset: any) =>
   [
@@ -176,9 +176,9 @@ const formGrid: React.CSSProperties = {
 const inputStyle: React.CSSProperties = {
   width: "100%",
   boxSizing: "border-box",
-  border: "1px solid rgba(148,163,184,0.24)",
-  background: "#020617",
-  color: "#f8fafc",
+  border: "1px solid #d8d2c8",
+  background: "#ffffff",
+  color: "#1f2933",
   borderRadius: 9,
   padding: "10px 11px",
   outline: "none",
@@ -187,14 +187,14 @@ const inputStyle: React.CSSProperties = {
 const labelStyle: React.CSSProperties = {
   display: "grid",
   gap: 6,
-  color: "#94a3b8",
+  color: "#64748b",
   fontSize: 12,
   fontWeight: 800,
 };
 
 const cablePreviewBox: React.CSSProperties = {
-  background: "#0b1424",
-  border: "1px solid rgba(148,163,184,0.14)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 10,
   padding: 12,
   maxHeight: 220,
@@ -207,7 +207,7 @@ function n(value: any): string {
 }
 
 function Tile({ label, value }: { label: string; value: React.ReactNode }) {
-  return <div style={tile}><div style={{ color: "#94a3b8", fontSize: 12 }}>{label}</div><div style={{ marginTop: 6, fontSize: 24, fontWeight: 900 }}>{value}</div></div>;
+  return <div style={tile}><div style={{ color: "#64748b", fontSize: 12 }}>{label}</div><div style={{ marginTop: 6, fontSize: 24, fontWeight: 900 }}>{value}</div></div>;
 }
 
 type BuildToolKey =
@@ -265,15 +265,15 @@ function ToolButton({
         minHeight: 86,
         border: active
           ? `1px solid ${activeBorder}`
-          : "1px solid rgba(148,163,184,0.16)",
-        background: active ? "#102548" : "#0b1424",
+          : "1px solid #ddd8cf",
+        background: active ? "#eff6ff" : "#ffffff",
         boxShadow: active ? "0 0 0 1px rgba(96,165,250,0.16) inset" : "none",
       }}
     >
-      <div style={{ color: "#f8fafc", fontWeight: 900, fontSize: 15 }}>
+      <div style={{ color: "#1f2933", fontWeight: 900, fontSize: 15 }}>
         {label}
       </div>
-      <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 7, lineHeight: 1.35 }}>
+      <div style={{ color: "#64748b", fontSize: 12, marginTop: 7, lineHeight: 1.35 }}>
         {description}
       </div>
     </button>
@@ -675,7 +675,7 @@ export default function WorkspaceBuild({
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", marginBottom: 12 }}>
         <div>
           <h3 style={title}>Build Operations</h3>
-          <p style={{ color: "#94a3b8", margin: 0, fontSize: 13 }}>
+          <p style={{ color: "#64748b", margin: 0, fontSize: 13 }}>
             Pick one build tool below. DP status and live home checks now live in the side Focus panel.
           </p>
         </div>
@@ -803,7 +803,7 @@ export default function WorkspaceBuild({
 
         <section style={wide}>
           <h3 style={title}>Stacked Home Tools</h3>
-          <p style={{ color: "#cbd5e1", marginTop: 0 }}>
+          <p style={{ color: "#64748b", marginTop: 0 }}>
             Automatically spreads homes stacked within 1.75m. No homes are deleted,
             UPRNs are preserved and the current project homes are saved back to the area.
           </p>
@@ -811,7 +811,7 @@ export default function WorkspaceBuild({
             type="button"
             style={{
               ...button,
-              background: "#065f46",
+              background: "#15803d",
               borderColor: "rgba(52,211,153,0.35)",
             }}
             onClick={onAutoSpreadStackedHomes}
@@ -819,7 +819,7 @@ export default function WorkspaceBuild({
           >
             Auto Spread All Stacked Homes
           </button>
-          <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 8 }}>
+          <div style={{ color: "#64748b", fontSize: 12, marginTop: 8 }}>
             Keeps the first home in each stack in place and moves the others into a small
             2.5m circle so they can be selected and connected individually.
           </div>
@@ -830,7 +830,7 @@ export default function WorkspaceBuild({
     {activeTool === "pia" ? (
       <section style={wide}>
         <h3 style={title}>Bulk Cable PIA NOI</h3>
-        <p style={{ color: "#cbd5e1", marginTop: 0 }}>
+        <p style={{ color: "#64748b", marginTop: 0 }}>
           Apply the same PIA NOI number to multiple project design cables. Drop cables are ignored.
           Use the filter to target a cable group such as 96FULW, 48FULW, FULW01 or AG1.
         </p>
@@ -874,7 +874,7 @@ export default function WorkspaceBuild({
         </div>
 
         <div style={cablePreviewBox}>
-          <div style={{ color: "#e5e7eb", fontWeight: 900, marginBottom: 8 }}>
+          <div style={{ color: "#1f2933", fontWeight: 900, marginBottom: 8 }}>
             Preview Matched Cables
           </div>
           {filteredPiaCables.length ? (
@@ -886,20 +886,20 @@ export default function WorkspaceBuild({
                     display: "flex",
                     justifyContent: "space-between",
                     gap: 10,
-                    borderBottom: "1px solid rgba(148,163,184,0.10)",
+                    borderBottom: "1px solid #e2ded7",
                     paddingBottom: 6,
-                    color: "#cbd5e1",
+                    color: "#64748b",
                     fontSize: 12,
                   }}
                 >
                   <span>{asset.name || asset.cableId || asset.label || asset.id}</span>
-                  <span style={{ color: "#94a3b8" }}>
+                  <span style={{ color: "#64748b" }}>
                     Current: {asset.piaNoiNumber || asset.properties?.piaNoiNumber || "None"}
                   </span>
                 </div>
               ))}
               {filteredPiaCables.length > 40 ? (
-                <div style={{ color: "#94a3b8", fontSize: 12 }}>
+                <div style={{ color: "#64748b", fontSize: 12 }}>
                   Showing first 40 of {n(filteredPiaCables.length)} matched cables.
                 </div>
               ) : null}
@@ -915,7 +915,7 @@ export default function WorkspaceBuild({
           type="button"
           style={{
             ...button,
-            background: "#14532d",
+            background: "#15803d",
             borderColor: "rgba(74,222,128,0.42)",
             marginTop: 12,
             cursor:
@@ -938,7 +938,7 @@ export default function WorkspaceBuild({
         >
           Apply PIA NOI To {n(filteredPiaCables.length)} Cable{filteredPiaCables.length === 1 ? "" : "s"}
         </button>
-        <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 8 }}>
+        <div style={{ color: "#64748b", fontSize: 12, marginTop: 8 }}>
           This updates piaNoiNumber on the cable and inside properties.piaNoiNumber so older panels can read it.
         </div>
       </section>
@@ -947,7 +947,7 @@ export default function WorkspaceBuild({
     {activeTool === "daily" ? (
       <section style={wide}>
         <h3 style={title}>Daily Production</h3>
-        <p style={{ color: "#cbd5e1", marginTop: 0 }}>
+        <p style={{ color: "#64748b", marginTop: 0 }}>
           {isBackhaulWorkspace
             ? "Record what was completed today. Civils and cabling use metres on duct/cable routes; splicing uses splice counts on joints, chambers or data centres."
             : "Record what was completed today. Civils and cabling use metres on duct/cable routes; splicing uses splice counts on joints, DPs or chambers."}
@@ -1028,15 +1028,15 @@ export default function WorkspaceBuild({
         </div>
 
         <div style={{ ...cablePreviewBox, marginBottom: 12 }}>
-          <div style={{ color: "#e5e7eb", fontWeight: 900, marginBottom: 8 }}>
+          <div style={{ color: "#1f2933", fontWeight: 900, marginBottom: 8 }}>
             Existing progress ranges
           </div>
           {!selectedDailyProgressAssets.length ? (
-            <div style={{ color: "#94a3b8", fontSize: 12 }}>
+            <div style={{ color: "#64748b", fontSize: 12 }}>
               Select a duct, cable or splice asset to see what has already been logged.
             </div>
           ) : dailyRoutePreview.every((item) => !item.entries.length) ? (
-            <div style={{ color: "#94a3b8", fontSize: 12 }}>
+            <div style={{ color: "#64748b", fontSize: 12 }}>
               No previous production is logged against the selected asset{selectedDailyProgressAssets.length === 1 ? "" : "s"}.
             </div>
           ) : (
@@ -1049,16 +1049,16 @@ export default function WorkspaceBuild({
                     style={{
                       border: overlaps.length
                         ? "1px solid rgba(248,113,113,0.45)"
-                        : "1px solid rgba(148,163,184,0.12)",
-                      background: overlaps.length ? "rgba(127,29,29,0.24)" : "#0f1b2d",
+                        : "1px solid #ddd8cf",
+                      background: overlaps.length ? "rgba(127,29,29,0.24)" : "transparent",
                       borderRadius: 9,
                       padding: 10,
                     }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                      <strong style={{ color: "#f8fafc" }}>{asset.name || asset.label || asset.id}</strong>
+                      <strong style={{ color: "#1f2933" }}>{asset.name || asset.label || asset.id}</strong>
                       {overlaps.length ? (
-                        <span style={{ color: "#fecaca", fontWeight: 900 }}>
+                        <span style={{ color: "#dc2626", fontWeight: 900 }}>
                           Overlaps selected range
                         </span>
                       ) : null}
@@ -1077,12 +1077,12 @@ export default function WorkspaceBuild({
                               display: "grid",
                               gridTemplateColumns: "90px minmax(90px, 130px) minmax(120px, 1fr)",
                               gap: 8,
-                              color: "#cbd5e1",
+                              color: "#64748b",
                               fontSize: 12,
                             }}
                           >
                             <span>{entry.date || "-"}</span>
-                            <span style={{ color: "#93c5fd", fontWeight: 850 }}>{output}</span>
+                            <span style={{ color: "#2563eb", fontWeight: 850 }}>{output}</span>
                             <span>{entry.issueNote || entry.progressNote || entry.note || entry.crewName || "-"}</span>
                           </div>
                         );
@@ -1097,7 +1097,7 @@ export default function WorkspaceBuild({
 
         <div style={cablePreviewBox}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 8 }}>
-            <div style={{ color: "#e5e7eb", fontWeight: 900 }}>Select Map Assets</div>
+            <div style={{ color: "#1f2933", fontWeight: 900 }}>Select Map Assets</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button type="button" onClick={() => setSelectedDailyAssetIds(new Set(dailyProgressAssetIds))} style={{ ...button, padding: "6px 9px", fontSize: 12 }}>
                 Select All
@@ -1111,15 +1111,15 @@ export default function WorkspaceBuild({
             const assetId = String(asset.id || "");
             const selected = selectedDailyAssetIds.has(assetId);
             return (
-              <label key={assetId} style={{ display: "grid", gridTemplateColumns: "22px minmax(160px, 1fr) auto", alignItems: "center", gap: 10, borderBottom: "1px solid rgba(148,163,184,0.10)", padding: "4px 0 7px", color: selected ? "#f8fafc" : "#cbd5e1", fontSize: 12, cursor: "pointer" }}>
+              <label key={assetId} style={{ display: "grid", gridTemplateColumns: "22px minmax(160px, 1fr) auto", alignItems: "center", gap: 10, borderBottom: "1px solid #e2ded7", padding: "4px 0 7px", color: selected ? "#1f2933" : "#64748b", fontSize: 12, cursor: "pointer" }}>
                 <input type="checkbox" checked={selected} onChange={() => toggleDailyAssetSelection(assetId)} />
                 <span style={{ fontWeight: selected ? 850 : 600 }}>{asset.name || asset.label || asset.id}</span>
-                <span style={{ color: "#94a3b8" }}>{getAssetTypeLabel(asset)}</span>
+                <span style={{ color: "#64748b" }}>{getAssetTypeLabel(asset)}</span>
               </label>
             );
           })}
           {dailyProgressAssets.length > 180 ? (
-            <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 8 }}>
+            <div style={{ color: "#64748b", fontSize: 12, marginTop: 8 }}>
               Showing first 180 of {n(dailyProgressAssets.length)} matching assets.
             </div>
           ) : null}
@@ -1127,7 +1127,7 @@ export default function WorkspaceBuild({
 
         <button
           type="button"
-          style={{ ...button, background: "#14532d", borderColor: "rgba(74,222,128,0.42)", marginTop: 12 }}
+          style={{ ...button, background: "#15803d", borderColor: "rgba(74,222,128,0.42)", marginTop: 12 }}
           onClick={applyDailyProgress}
           disabled={!onRecordDailyProgress || !selectedDailyProgressAssets.length || !dailyNote.trim()}
         >
@@ -1139,7 +1139,7 @@ export default function WorkspaceBuild({
     {activeTool === "status" ? (
       <section style={wide}>
         <h3 style={title}>Production Status</h3>
-        <p style={{ color: "#cbd5e1", marginTop: 0 }}>
+        <p style={{ color: "#64748b", marginTop: 0 }}>
           {isBackhaulWorkspace
             ? "Update build state for ducts, cables, joints, chambers, poles and data centres. This feeds the overview, blockers and closeout exports."
             : "Update build state for ducts, cables, DPs, chambers, poles, cabinets and joints. This feeds the overview, blockers and closeout exports."}
@@ -1188,7 +1188,7 @@ export default function WorkspaceBuild({
 
         <div style={cablePreviewBox}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 8 }}>
-            <div style={{ color: "#e5e7eb", fontWeight: 900 }}>Select Assets</div>
+            <div style={{ color: "#1f2933", fontWeight: 900 }}>Select Assets</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button type="button" onClick={() => setSelectedWorkAssetIds(new Set(workStatusAssetIds))} style={{ ...button, padding: "6px 9px", fontSize: 12 }}>
                 Select All
@@ -1202,16 +1202,16 @@ export default function WorkspaceBuild({
             const assetId = String(asset.id || "");
             const selected = selectedWorkAssetIds.has(assetId);
             return (
-              <label key={assetId} style={{ display: "grid", gridTemplateColumns: "22px minmax(160px, 1fr) auto auto", alignItems: "center", gap: 10, borderBottom: "1px solid rgba(148,163,184,0.10)", padding: "4px 0 7px", color: selected ? "#f8fafc" : "#cbd5e1", fontSize: 12, cursor: "pointer" }}>
+              <label key={assetId} style={{ display: "grid", gridTemplateColumns: "22px minmax(160px, 1fr) auto auto", alignItems: "center", gap: 10, borderBottom: "1px solid #e2ded7", padding: "4px 0 7px", color: selected ? "#1f2933" : "#64748b", fontSize: 12, cursor: "pointer" }}>
                 <input type="checkbox" checked={selected} onChange={() => toggleWorkAssetSelection(assetId)} />
                 <span style={{ fontWeight: selected ? 850 : 600 }}>{asset.name || asset.label || asset.id}</span>
-                <span style={{ color: "#94a3b8" }}>{getAssetTypeLabel(asset)}</span>
-                <span style={{ color: "#94a3b8" }}>{getAssetWorkStatus(asset)}</span>
+                <span style={{ color: "#64748b" }}>{getAssetTypeLabel(asset)}</span>
+                <span style={{ color: "#64748b" }}>{getAssetWorkStatus(asset)}</span>
               </label>
             );
           })}
           {workStatusAssets.length > 160 ? (
-            <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 8 }}>
+            <div style={{ color: "#64748b", fontSize: 12, marginTop: 8 }}>
               Showing first 160 of {n(workStatusAssets.length)} assets. Use the type filter to narrow the list before applying.
             </div>
           ) : null}
@@ -1219,7 +1219,7 @@ export default function WorkspaceBuild({
 
         <button
           type="button"
-          style={{ ...button, background: "#14532d", borderColor: "rgba(74,222,128,0.42)", marginTop: 12 }}
+          style={{ ...button, background: "#15803d", borderColor: "rgba(74,222,128,0.42)", marginTop: 12 }}
           onClick={applyBulkWorkStatus}
           disabled={!onBulkUpdateWorkStatus || !selectedWorkStatusAssets.length || !workStatusNote.trim()}
         >
@@ -1231,7 +1231,7 @@ export default function WorkspaceBuild({
     {activeTool === "joints" ? (
       <section style={wide}>
         <h3 style={title}>Bulk Joint / DP Install Method</h3>
-        <p style={{ color: "#cbd5e1", marginTop: 0 }}>
+        <p style={{ color: "#64748b", marginTop: 0 }}>
           Mark existing AG joints and SBs/DPs as Underground or Overhead. Assets already set to the selected method are hidden from this change list.
         </p>
 
@@ -1284,7 +1284,7 @@ export default function WorkspaceBuild({
 
         <div style={cablePreviewBox}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 8 }}>
-            <div style={{ color: "#e5e7eb", fontWeight: 900 }}>
+            <div style={{ color: "#1f2933", fontWeight: 900 }}>
               Select Joints / DPs To Change
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1309,9 +1309,9 @@ export default function WorkspaceBuild({
                       gridTemplateColumns: "22px minmax(160px, 1fr) auto",
                       alignItems: "center",
                       gap: 10,
-                      borderBottom: "1px solid rgba(148,163,184,0.10)",
+                      borderBottom: "1px solid #e2ded7",
                       padding: "4px 0 7px",
-                      color: selected ? "#f8fafc" : "#cbd5e1",
+                      color: selected ? "#1f2933" : "#64748b",
                       fontSize: 12,
                       cursor: "pointer",
                     }}
@@ -1324,20 +1324,20 @@ export default function WorkspaceBuild({
                     <span style={{ fontWeight: selected ? 850 : 600 }}>
                       {asset.name || asset.label || asset.id}
                     </span>
-                    <span style={{ color: "#94a3b8" }}>
+                    <span style={{ color: "#64748b" }}>
                       Current: {getInstallMethodLabel(asset)}
                     </span>
                   </label>
                 );
               })}
               {installMethodAssets.length > 120 ? (
-                <div style={{ color: "#94a3b8", fontSize: 12 }}>
+                <div style={{ color: "#64748b", fontSize: 12 }}>
                   Showing first 120 of {n(installMethodAssets.length)} matched assets. Use the filter to narrow the list before selecting.
                 </div>
               ) : null}
             </div>
           ) : (
-            <div style={{ color: "#86efac", fontSize: 12 }}>
+            <div style={{ color: "#15803d", fontSize: 12 }}>
               No joints or DPs need changing to {jointInstallMethod} with this filter.
             </div>
           )}
@@ -1365,7 +1365,7 @@ export default function WorkspaceBuild({
             {bulkJointInstallDisabledReason}
           </div>
         ) : (
-          <div style={{ color: "#86efac", fontSize: 12, marginTop: 8 }}>
+          <div style={{ color: "#15803d", fontSize: 12, marginTop: 8 }}>
             Ready to update {n(selectedInstallMethodAssets.length)} selected asset{selectedInstallMethodAssets.length === 1 ? "" : "s"}.
           </div>
         )}
@@ -1375,7 +1375,7 @@ export default function WorkspaceBuild({
     {activeTool === "reset" ? (
       <section style={wide}>
         <h3 style={title}>DP Fibre Allocation Reset</h3>
-        <p style={{ color: "#cbd5e1", marginTop: 0 }}>
+        <p style={{ color: "#64748b", marginTop: 0 }}>
           Clears only fibre allocation/routing state from every DP in this selected polygon.
           DP names, closure types, homes, notes, photos, statuses and selected through-cables are kept.
         </p>
@@ -1387,7 +1387,7 @@ export default function WorkspaceBuild({
           type="button"
           style={{
             ...button,
-            background: "#7f1d1d",
+            background: "#dc2626",
             borderColor: "rgba(248,113,113,0.42)",
           }}
           onClick={onClearDpFibreAllocations}
@@ -1395,7 +1395,7 @@ export default function WorkspaceBuild({
         >
           Clear DP Fibre Allocations In Area
         </button>
-        <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 8 }}>
+        <div style={{ color: "#64748b", fontSize: 12, marginTop: 8 }}>
           Use this before Rebuild Chain when old manual fibre allocations need wiping clean across the fibrehood.
         </div>
       </section>
@@ -1404,7 +1404,7 @@ export default function WorkspaceBuild({
     {activeTool === "actions" ? (
       <section style={wide}>
         <h3 style={title}>Build Actions</h3>
-        <p style={{ color: "#cbd5e1" }}>
+        <p style={{ color: "#64748b" }}>
           Asset creation still lives on the main map so the existing right-click creation,
           snapping, cable drawing and save logic stays protected.
         </p>
@@ -1417,7 +1417,7 @@ export default function WorkspaceBuild({
           </div>
         ) : null}
         <div style={readinessBox}>
-          <strong style={{ color: "#93c5fd" }}>Next actions</strong>
+          <strong style={{ color: "#2563eb" }}>Next actions</strong>
           <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
             {nextActions.map((action: string) => <li key={action}>{action}</li>)}
           </ul>
@@ -1427,3 +1427,6 @@ export default function WorkspaceBuild({
     ) : null}
   </>;
 }
+
+
+

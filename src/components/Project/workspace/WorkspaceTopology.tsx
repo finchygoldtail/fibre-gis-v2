@@ -17,13 +17,13 @@ type Props = {
   onBackToMap?: () => void;
 };
 
-const panel: React.CSSProperties = { background: "#0f1b2d", border: "1px solid rgba(148, 163, 184, 0.18)", borderRadius: 10, padding: 16, minHeight: 190 };
+const panel: React.CSSProperties = { background: "transparent", border: "1px solid #ddd8cf", borderRadius: 10, padding: 16, minHeight: 190 };
 const wide: React.CSSProperties = { ...panel, gridColumn: "span 2" };
-const title: React.CSSProperties = { margin: "0 0 12px", fontSize: 15, fontWeight: 900, color: "#e5e7eb" };
-const row: React.CSSProperties = { display: "flex", justifyContent: "space-between", gap: 12, padding: "9px 0", borderBottom: "1px solid rgba(148,163,184,0.12)", color: "#cbd5e1" };
+const title: React.CSSProperties = { margin: "0 0 12px", fontSize: 15, fontWeight: 900, color: "#1f2933" };
+const row: React.CSSProperties = { display: "flex", justifyContent: "space-between", gap: 12, padding: "9px 0", borderBottom: "1px solid #ddd8cf", color: "#64748b" };
 const grid: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 };
-const tile: React.CSSProperties = { background: "#0b1424", border: "1px solid rgba(148,163,184,0.14)", borderRadius: 10, padding: 12 };
-const button: React.CSSProperties = { border: "1px solid rgba(148,163,184,0.22)", background: "#111827", color: "#f8fafc", borderRadius: 8, padding: "10px 12px", fontWeight: 800, cursor: "pointer" };
+const tile: React.CSSProperties = { background: "#ffffff", border: "1px solid #ddd8cf", borderRadius: 10, padding: 12 };
+const button: React.CSSProperties = { border: "1px solid #ddd8cf", background: "#ffffff", color: "#1f2933", borderRadius: 8, padding: "10px 12px", fontWeight: 800, cursor: "pointer" };
 
 function n(value: any): string {
   const num = Number(value ?? 0);
@@ -31,11 +31,11 @@ function n(value: any): string {
 }
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
-  return <div style={row}><span>{label}</span><strong style={{ color: "#f8fafc" }}>{value}</strong></div>;
+  return <div style={row}><span>{label}</span><strong style={{ color: "#1f2933" }}>{value}</strong></div>;
 }
 
 function Tile({ label, value }: { label: string; value: React.ReactNode }) {
-  return <div style={tile}><div style={{ color: "#94a3b8", fontSize: 12 }}>{label}</div><div style={{ marginTop: 6, fontSize: 24, fontWeight: 900 }}>{value}</div></div>;
+  return <div style={tile}><div style={{ color: "#64748b", fontSize: 12 }}>{label}</div><div style={{ marginTop: 6, fontSize: 24, fontWeight: 900 }}>{value}</div></div>;
 }
 
 export default function WorkspaceTopology({ stats, networkGraph, disconnectedAssets = [], onOpenFibreTopology, onOpenTrace, onOpenPanel }: Props) {
@@ -67,7 +67,7 @@ export default function WorkspaceTopology({ stats, networkGraph, disconnectedAss
         <Tile label="3. Trace" value="Path" />
         <Tile label="4. Resolve" value="Issue" />
       </div>
-      <p style={{ color: "#cbd5e1", marginTop: 12 }}>
+      <p style={{ color: "#64748b", marginTop: 12 }}>
         Select a cable, joint, DP, pole, chamber or street cabinet on the map, then open Trace to inspect upstream and downstream relationships.
       </p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -77,3 +77,5 @@ export default function WorkspaceTopology({ stats, networkGraph, disconnectedAss
     </section>
   </>;
 }
+
+

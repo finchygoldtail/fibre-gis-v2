@@ -17,13 +17,13 @@ type Props = {
   onBackToMap?: () => void;
 };
 
-const panel: React.CSSProperties = { background: "#0f1b2d", border: "1px solid rgba(148, 163, 184, 0.18)", borderRadius: 10, padding: 16, minHeight: 190 };
+const panel: React.CSSProperties = { background: "transparent", border: "1px solid #ddd8cf", borderRadius: 10, padding: 16, minHeight: 190 };
 const wide: React.CSSProperties = { ...panel, gridColumn: "span 2" };
-const title: React.CSSProperties = { margin: "0 0 12px", fontSize: 15, fontWeight: 900, color: "#e5e7eb" };
-const row: React.CSSProperties = { display: "flex", justifyContent: "space-between", gap: 12, padding: "9px 0", borderBottom: "1px solid rgba(148,163,184,0.12)", color: "#cbd5e1" };
+const title: React.CSSProperties = { margin: "0 0 12px", fontSize: 15, fontWeight: 900, color: "#1f2933" };
+const row: React.CSSProperties = { display: "flex", justifyContent: "space-between", gap: 12, padding: "9px 0", borderBottom: "1px solid #ddd8cf", color: "#64748b" };
 const grid: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 };
-const tile: React.CSSProperties = { background: "#0b1424", border: "1px solid rgba(148,163,184,0.14)", borderRadius: 10, padding: 12 };
-const button: React.CSSProperties = { border: "1px solid rgba(148,163,184,0.22)", background: "#111827", color: "#f8fafc", borderRadius: 8, padding: "10px 12px", fontWeight: 800, cursor: "pointer" };
+const tile: React.CSSProperties = { background: "#ffffff", border: "1px solid #ddd8cf", borderRadius: 10, padding: 12 };
+const button: React.CSSProperties = { border: "1px solid #ddd8cf", background: "#ffffff", color: "#1f2933", borderRadius: 8, padding: "10px 12px", fontWeight: 800, cursor: "pointer" };
 
 function n(value: any): string {
   const num = Number(value ?? 0);
@@ -31,7 +31,7 @@ function n(value: any): string {
 }
 
 function Tile({ label, value }: { label: string; value: React.ReactNode }) {
-  return <div style={tile}><div style={{ color: "#94a3b8", fontSize: 12 }}>{label}</div><div style={{ marginTop: 6, fontSize: 24, fontWeight: 900 }}>{value}</div></div>;
+  return <div style={tile}><div style={{ color: "#64748b", fontSize: 12 }}>{label}</div><div style={{ marginTop: 6, fontSize: 24, fontWeight: 900 }}>{value}</div></div>;
 }
 
 function getAssetName(asset: any): string {
@@ -78,21 +78,21 @@ export default function WorkspaceMaintenance({ auditIssues = [], stats, projectA
 
     <section style={wide}>
       <h3 style={title}>Workspace Activity Feed</h3>
-      <p style={{ color: "#94a3b8", fontSize: 12, marginTop: -4 }}>
+      <p style={{ color: "#64748b", fontSize: 12, marginTop: -4 }}>
         Read-only operational feed. Audited activity logging can be enabled from the maintenance workflow.
       </p>
 
       {rows.length ? rows.map((item, index) => (
         <div key={`${item.title}-${index}`} style={row}>
           <span>
-            <strong style={{ color: "#e5e7eb" }}>{item.title}</strong>
+            <strong style={{ color: "#1f2933" }}>{item.title}</strong>
             <br />
-            <small style={{ color: "#94a3b8" }}>{item.detail}</small>
+            <small style={{ color: "#64748b" }}>{item.detail}</small>
           </span>
           <strong>{item.tone}</strong>
         </div>
       )) : (
-        <div style={{ color: "#94a3b8", background: "#0b1424", border: "1px solid rgba(148,163,184,0.14)", borderRadius: 10, padding: 12 }}>
+        <div style={{ color: "#64748b", background: "#ffffff", border: "1px solid #ddd8cf", borderRadius: 10, padding: 12 }}>
           No maintenance activity to show yet.
         </div>
       )}
@@ -103,3 +103,5 @@ export default function WorkspaceMaintenance({ auditIssues = [], stats, projectA
     </section>
   </>;
 }
+
+

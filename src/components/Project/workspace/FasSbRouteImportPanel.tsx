@@ -25,7 +25,7 @@ type Props = {
 };
 
 const panel: React.CSSProperties = {
-  background: "#0f1b2d",
+  background: "transparent",
   border: "1px solid rgba(56,189,248,0.28)",
   borderRadius: 10,
   padding: 16,
@@ -33,10 +33,10 @@ const panel: React.CSSProperties = {
   gridColumn: "span 2",
 };
 
-const title: React.CSSProperties = { margin: "0 0 12px", fontSize: 15, fontWeight: 900, color: "#e5e7eb" };
-const muted: React.CSSProperties = { color: "#94a3b8", fontSize: 12, lineHeight: 1.45 };
-const button: React.CSSProperties = { border: "1px solid rgba(14,165,233,0.35)", background: "#0284c7", color: "#f8fafc", borderRadius: 8, padding: "10px 12px", fontWeight: 900, cursor: "pointer" };
-const smallBox: React.CSSProperties = { background: "#0b1424", border: "1px solid rgba(148,163,184,0.16)", borderRadius: 10, padding: 12 };
+const title: React.CSSProperties = { margin: "0 0 12px", fontSize: 15, fontWeight: 900, color: "#1f2933" };
+const muted: React.CSSProperties = { color: "#64748b", fontSize: 12, lineHeight: 1.45 };
+const button: React.CSSProperties = { border: "1px solid #2563eb", background: "#2563eb", color: "#ffffff", borderRadius: 8, padding: "10px 12px", fontWeight: 900, cursor: "pointer" };
+const smallBox: React.CSSProperties = { background: "#ffffff", border: "1px solid #ddd8cf", borderRadius: 10, padding: 12 };
 
 function text(value: unknown): string {
   return String(value ?? "").trim();
@@ -285,10 +285,10 @@ export default function FasSbRouteImportPanel({ projectAssets, onApplySbRouteAss
         type="file"
         accept=".xlsx,.xlsm,.xls"
         onChange={(event) => handleFile(event.target.files?.[0] || null)}
-        style={{ color: "#cbd5e1", marginTop: 8 }}
+        style={{ color: "#64748b", marginTop: 8 }}
       />
 
-      <label style={{ display: "flex", gap: 8, alignItems: "center", color: "#cbd5e1", fontSize: 12, marginTop: 10 }}>
+      <label style={{ display: "flex", gap: 8, alignItems: "center", color: "#64748b", fontSize: 12, marginTop: 10 }}>
         <input
           type="checkbox"
           checked={replaceImportedRoutes}
@@ -297,19 +297,19 @@ export default function FasSbRouteImportPanel({ projectAssets, onApplySbRouteAss
         Replace previous FAS-imported SB routes only. Manual routes are preserved.
       </label>
 
-      {error ? <div style={{ color: "#fecaca", marginTop: 10, fontSize: 12 }}>{error}</div> : null}
+      {error ? <div style={{ color: "#dc2626", marginTop: 10, fontSize: 12 }}>{error}</div> : null}
 
       {routes.length ? (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginTop: 12 }}>
-          <div style={smallBox}><div style={muted}>Routes found</div><strong style={{ color: "#f8fafc", fontSize: 22 }}>{routes.length}</strong></div>
-          <div style={smallBox}><div style={muted}>Matching SBs</div><strong style={{ color: "#86efac", fontSize: 22 }}>{matchedCount}</strong></div>
+          <div style={smallBox}><div style={muted}>Routes found</div><strong style={{ color: "#1f2933", fontSize: 22 }}>{routes.length}</strong></div>
+          <div style={smallBox}><div style={muted}>Matching SBs</div><strong style={{ color: "#15803d", fontSize: 22 }}>{matchedCount}</strong></div>
           <div style={smallBox}><div style={muted}>Not found</div><strong style={{ color: missingRoutes.length ? "#fca5a5" : "#86efac", fontSize: 22 }}>{routes.length - matchedCount}</strong></div>
         </div>
       ) : null}
 
       {routes.slice(0, 6).map((route) => (
-        <div key={route.id} style={{ ...smallBox, marginTop: 8, color: "#cbd5e1", fontSize: 12 }}>
-          <strong style={{ color: "#f8fafc" }}>{route.fromSbName} → {route.toSbName}</strong>
+        <div key={route.id} style={{ ...smallBox, marginTop: 8, color: "#64748b", fontSize: 12 }}>
+          <strong style={{ color: "#1f2933" }}>{route.fromSbName} → {route.toSbName}</strong>
           <div>Parent: F{route.parentFibres.join(", F")} → Local: F{route.localFibres.join(", F")}</div>
           <div style={muted}>Cable: {route.supportingCableName || "optional / not set"}</div>
         </div>
@@ -333,3 +333,5 @@ export default function FasSbRouteImportPanel({ projectAssets, onApplySbRouteAss
     </section>
   );
 }
+
+

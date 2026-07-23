@@ -3886,7 +3886,7 @@ export default function ProjectWorkspace({
       ? {
           gridColumn: "2 / 3",
           borderLeft: "none",
-          borderTop: "1px solid rgba(148, 163, 184, 0.16)",
+          borderTop: "1px solid #ddd8cf",
           gridTemplateRows: "auto auto auto auto",
           maxHeight: "none",
         }
@@ -4253,7 +4253,7 @@ export default function ProjectWorkspace({
                                   background: selected
                                     ? "rgba(37,99,235,0.35)"
                                     : projectSwitcherResultButton.background,
-                                  color: selected ? "#bfdbfe" : "#e5e7eb",
+                                  color: selected ? "#bfdbfe" : "#1f2933",
                                 }}
                                 onMouseDown={(event) => {
                                   event.preventDefault();
@@ -4978,7 +4978,7 @@ export default function ProjectWorkspace({
                           gap: 10,
                           padding: 12,
                           border: "1px solid rgba(96,165,250,0.25)",
-                          background: "rgba(2, 6, 23, 0.22)",
+                          background: "transparent",
                           borderRadius: 12,
                           marginBottom: 12,
                         }}
@@ -4994,7 +4994,7 @@ export default function ProjectWorkspace({
                         >
                           <div>
                             <div style={operationKicker}>PHASE CONTROL</div>
-                            <strong style={{ color: "#f8fafc" }}>
+                            <strong style={{ color: "#1f2933" }}>
                               {deliveryPhaseConfig.label}
                             </strong>
                             <div style={{ color: "#9ca3af", fontSize: 12, marginTop: 4 }}>
@@ -5023,11 +5023,11 @@ export default function ProjectWorkspace({
                                 style={{
                                   ...smallButton,
                                   width: "100%",
-                                  background: selected ? "#1d4ed8" : "#111827",
+                                  background: selected ? "#2563eb" : "#ffffff",
                                   borderColor: selected
                                     ? "rgba(147,197,253,0.7)"
                                     : "rgba(148,163,184,0.22)",
-                                  color: selected ? "#ffffff" : "#e5e7eb",
+                                  color: selected ? "#ffffff" : "#1f2933",
                                   opacity: canManageWalkOff ? 1 : 0.55,
                                   cursor: canManageWalkOff ? "pointer" : "not-allowed",
                                 }}
@@ -5043,7 +5043,7 @@ export default function ProjectWorkspace({
                                   <span
                                     style={{
                                       display: "block",
-                                      color: selected ? "#bfdbfe" : "#93c5fd",
+                                      color: selected ? "#bfdbfe" : "#2563eb",
                                       fontSize: 10,
                                       fontWeight: 950,
                                       textTransform: "uppercase",
@@ -5059,7 +5059,7 @@ export default function ProjectWorkspace({
                           })}
                         </div>
                         {!isHarrellicommsBackhaulWorkspace && deliveryPhaseOverrideReason && piaGateCustomerLiveOverride && (
-                          <div style={{ color: "#cbd5e1", fontSize: 12 }}>
+                          <div style={{ color: "#64748b", fontSize: 12 }}>
                             Override note: {deliveryPhaseOverrideReason}
                           </div>
                         )}
@@ -5407,7 +5407,7 @@ export default function ProjectWorkspace({
                         </div>
 
                         <div style={qaToolbar}>
-                          <div style={{ color: "#cbd5e1", fontWeight: 800 }}>
+                          <div style={{ color: "#64748b", fontWeight: 800 }}>
                             {selectedIssueSeverity
                               ? `${selectedIssueSeverity.toUpperCase()} issues — ${selectedSeverityIssues.length.toLocaleString("en-GB")}`
                               : "No QA severity selected"}
@@ -6195,7 +6195,7 @@ export default function ProjectWorkspace({
 
 const operationDrawer: React.CSSProperties = {
   gridColumn: "1 / -1",
-  background: "#0f1b2d",
+  background: "transparent",
   border: "1px solid rgba(96, 165, 250, 0.35)",
   borderRadius: 12,
   padding: 16,
@@ -6210,7 +6210,7 @@ const operationDrawerHeader: React.CSSProperties = {
 };
 
 const operationKicker: React.CSSProperties = {
-  color: "#93c5fd",
+  color: "#2563eb",
   fontSize: 11,
   fontWeight: 900,
   letterSpacing: 0.5,
@@ -6223,7 +6223,7 @@ const operationTitle: React.CSSProperties = {
 
 const closePanelButton: React.CSSProperties = {
   background: "#132640",
-  color: "#e5e7eb",
+  color: "#1f2933",
   border: "1px solid rgba(148, 163, 184, 0.25)",
   borderRadius: 8,
   cursor: "pointer",
@@ -6254,11 +6254,11 @@ const operationList: React.CSSProperties = {
 };
 
 const emptyPanel: React.CSSProperties = {
-  background: "#111827",
-  border: "1px solid rgba(148, 163, 184, 0.16)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 10,
   padding: 14,
-  color: "#cbd5e1",
+  color: "#64748b",
 };
 
 
@@ -6479,7 +6479,7 @@ const tabBar: React.CSSProperties = {
 };
 const tabButton: React.CSSProperties = {
   background: "transparent",
-  color: "#cbd5e1",
+  color: "#64748b",
   border: "none",
   borderRadius: 8,
   padding: "7px 12px",
@@ -6489,7 +6489,7 @@ const tabButton: React.CSSProperties = {
 
 const commercialPanel: React.CSSProperties = {
   border: "1px solid rgba(96,165,250,0.32)",
-  background: "#0f1b2d",
+  background: "transparent",
   borderRadius: 12,
   padding: 16,
   marginTop: 14,
@@ -6501,7 +6501,7 @@ const commercialStatsSidePanel: React.CSSProperties = {
   gridColumn: "1 / -1",
   gridRow: "span 2",
   border: "1px solid rgba(96,165,250,0.32)",
-  background: "linear-gradient(180deg, #0f1b2d 0%, #0b1626 100%)",
+  background: "linear-gradient(180deg, transparent 0%, #f6f4ef 100%)",
   borderRadius: 14,
   padding: 16,
   display: "grid",
@@ -6514,7 +6514,7 @@ const commercialStatsSidePanel: React.CSSProperties = {
 const commercialBelowMapPanel: React.CSSProperties = {
   gridColumn: "1 / -1",
   border: "1px solid rgba(96,165,250,0.28)",
-  background: "linear-gradient(180deg, #0b1626 0%, #081120 100%)",
+  background: "linear-gradient(180deg, #f6f4ef 0%, #f6f4ef 100%)",
   borderRadius: 14,
   padding: 14,
   display: "grid",
@@ -6548,13 +6548,13 @@ const commercialHeaderRow: React.CSSProperties = {
 
 const commercialTitle: React.CSSProperties = {
   margin: "4px 0 0",
-  color: "#f8fafc",
+  color: "#1f2933",
   fontSize: 20,
   fontWeight: 900,
 };
 
 const commercialHint: React.CSSProperties = {
-  color: "#94a3b8",
+  color: "#64748b",
   fontSize: 13,
   marginTop: 6,
 };
@@ -6572,14 +6572,14 @@ const commercialDetailGrid: React.CSSProperties = {
 };
 
 const commercialDetailCard: React.CSSProperties = {
-  background: "#0b1424",
-  border: "1px solid rgba(148,163,184,0.18)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 12,
   padding: 12,
 };
 
 const commercialDetailTitle: React.CSSProperties = {
-  color: "#cbd5e1",
+  color: "#64748b",
   fontSize: 12,
   fontWeight: 900,
   textTransform: "uppercase",
@@ -6587,16 +6587,16 @@ const commercialDetailTitle: React.CSSProperties = {
 };
 
 const commercialSelectedAssetName: React.CSSProperties = {
-  color: "#f8fafc",
+  color: "#1f2933",
   fontSize: 16,
   fontWeight: 900,
   marginTop: 6,
 };
 
 const commercialEmptyBox: React.CSSProperties = {
-  color: "#cbd5e1",
-  background: "#0b1424",
-  border: "1px solid rgba(148,163,184,0.18)",
+  color: "#64748b",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 10,
   padding: 14,
 };
@@ -6604,7 +6604,7 @@ const commercialEmptyBox: React.CSSProperties = {
 const activeTabButton: React.CSSProperties = {
   ...tabButton,
   background: "rgba(37, 99, 235, 0.22)",
-  color: "#93c5fd",
+  color: "#2563eb",
   boxShadow: "inset 0 -2px 0 #3b82f6",
 };
 const workspaceQuickActionBar: React.CSSProperties = {
@@ -6614,7 +6614,7 @@ const workspaceQuickActionBar: React.CSSProperties = {
   gap: 4,
   padding: "14px 10px",
   background: "#07111a",
-  borderRight: "1px solid #111827",
+  borderRight: "1px solid #ffffff",
   overflow: "hidden",
   minHeight: 0,
 };
@@ -6651,7 +6651,7 @@ const quickActionLabel: React.CSSProperties = {
 
 const quickActionHelper: React.CSSProperties = {
   fontSize: 10,
-  color: "#94a3b8",
+  color: "#64748b",
   whiteSpace: "nowrap",
   overflow: "hidden",
   textOverflow: "ellipsis",
@@ -6668,7 +6668,7 @@ const railSectionTitle: React.CSSProperties = {
 
 const railDivider: React.CSSProperties = {
   height: 1,
-  background: "rgba(148, 163, 184, 0.18)",
+  background: "#ddd8cf",
   margin: "10px 0",
 };
 
@@ -6680,7 +6680,7 @@ const workspaceBody: React.CSSProperties = {
 };
 const leftRail: React.CSSProperties = {
   background: "linear-gradient(180deg, #07111f 0%, #050b14 100%)",
-  borderRight: "1px solid rgba(148, 163, 184, 0.16)",
+  borderRight: "1px solid #ddd8cf",
   padding: "12px 10px",
   display: "flex",
   flexDirection: "column",
@@ -6800,7 +6800,7 @@ const layerRow: React.CSSProperties = {
 };
 const layerMenuDivider: React.CSSProperties = {
   height: 1,
-  background: "rgba(148, 163, 184, 0.18)",
+  background: "#ddd8cf",
   margin: "10px 0",
 };
 const layerMenuActions: React.CSSProperties = {
@@ -7101,7 +7101,7 @@ const mapControls: React.CSSProperties = {
   position: "absolute",
   left: 12,
   top: 12,
-  background: "rgba(15,23,42,0.9)",
+  background: "rgba(255,255,255,0.92)",
   borderRadius: 8,
   padding: "8px 13px",
   lineHeight: 1.8,
@@ -7122,16 +7122,16 @@ const threeDButton: React.CSSProperties = {
 const intelligenceDock: React.CSSProperties = {
   gridColumn: "1 / -1",
   gridRow: "span 4",
-  background: "linear-gradient(180deg, #0f1b2d 0%, #0b1626 100%)",
-  border: "1px solid rgba(148, 163, 184, 0.18)",
+  background: "linear-gradient(180deg, transparent 0%, #f6f4ef 100%)",
+  border: "1px solid #ddd8cf",
   borderRadius: 14,
   overflow: "hidden",
   minHeight: 620,
   boxShadow: "0 18px 44px rgba(0,0,0,0.18)",
 };
 const summaryPanel: React.CSSProperties = {
-  background: "linear-gradient(180deg, #0f1b2d 0%, #0b1626 100%)",
-  border: "1px solid rgba(148, 163, 184, 0.18)",
+  background: "linear-gradient(180deg, transparent 0%, #f6f4ef 100%)",
+  border: "1px solid #ddd8cf",
   borderRadius: 14,
   padding: 16,
   minHeight: 170,
@@ -7145,7 +7145,7 @@ const widePanel: React.CSSProperties = {
 
 const areaHandoverPanel: React.CSSProperties = {
   gridColumn: "1 / -1",
-  background: "linear-gradient(180deg, #0f1b2d 0%, #0b1626 100%)",
+  background: "linear-gradient(180deg, transparent 0%, #f6f4ef 100%)",
   border: "1px solid rgba(96, 165, 250, 0.35)",
   borderRadius: 14,
   padding: 16,
@@ -7162,7 +7162,7 @@ const areaHandoverHeader: React.CSSProperties = {
 
 const areaHandoverTitle: React.CSSProperties = {
   margin: "4px 0 0",
-  color: "#f8fafc",
+  color: "#1f2933",
   fontSize: 18,
   fontWeight: 900,
 };
@@ -7207,8 +7207,8 @@ const handoverGoodBox: React.CSSProperties = {
 };
 
 const handoverSnapshotBox: React.CSSProperties = {
-  background: "#0b1424",
-  border: "1px solid rgba(148, 163, 184, 0.18)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 12,
   padding: 14,
   marginBottom: 12,
@@ -7284,7 +7284,7 @@ const qaStickyHeader: React.CSSProperties = {
   zIndex: 20,
   display: "grid",
   gap: 10,
-  background: "#0f1b2d",
+  background: "transparent",
   paddingBottom: 10,
 };
 
@@ -7293,16 +7293,16 @@ const qaToolbar: React.CSSProperties = {
   justifyContent: "space-between",
   alignItems: "center",
   gap: 12,
-  background: "#111827",
-  border: "1px solid rgba(148, 163, 184, 0.16)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 10,
   padding: "10px 12px",
 };
 
 const qaModeButton: React.CSSProperties = {
-  border: "1px solid rgba(148, 163, 184, 0.22)",
-  background: "#020617",
-  color: "#cbd5e1",
+  border: "1px solid #ddd8cf",
+  background: "#ffffff",
+  color: "#64748b",
   borderRadius: 999,
   padding: "7px 10px",
   fontSize: 12,
@@ -7327,10 +7327,10 @@ const qaCategoryCard: React.CSSProperties = {
   justifyContent: "space-between",
   alignItems: "center",
   gap: 10,
-  background: "#111827",
-  border: "1px solid rgba(148, 163, 184, 0.16)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 10,
-  color: "#e5e7eb",
+  color: "#1f2933",
   padding: "10px 12px",
   textAlign: "left",
   cursor: "pointer",
@@ -7346,8 +7346,8 @@ const qaCategoryCardActive: React.CSSProperties = {
 const qaNavigatorPanel: React.CSSProperties = {
   display: "grid",
   gap: 10,
-  background: "#111827",
-  border: "1px solid rgba(148, 163, 184, 0.16)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 12,
   padding: 14,
 };
@@ -7356,20 +7356,20 @@ const qaNavigatorTopline: React.CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
   gap: 12,
-  color: "#93c5fd",
+  color: "#2563eb",
   fontSize: 12,
   fontWeight: 900,
   letterSpacing: 0.2,
 };
 
 const qaNavigatorAsset: React.CSSProperties = {
-  color: "#f8fafc",
+  color: "#1f2933",
   fontSize: 20,
   fontWeight: 900,
 };
 
 const qaNavigatorIssue: React.CSSProperties = {
-  color: "#cbd5e1",
+  color: "#64748b",
   fontSize: 14,
   lineHeight: 1.45,
 };
@@ -7381,9 +7381,9 @@ const qaNavigatorActions: React.CSSProperties = {
 };
 
 const qaActionButton: React.CSSProperties = {
-  border: "1px solid rgba(148, 163, 184, 0.22)",
-  background: "#020617",
-  color: "#f8fafc",
+  border: "1px solid #ddd8cf",
+  background: "#ffffff",
+  color: "#1f2933",
   borderRadius: 8,
   padding: "10px 12px",
   fontWeight: 900,
@@ -7408,11 +7408,11 @@ const qaCompactRow: React.CSSProperties = {
   gridTemplateColumns: "90px 160px 220px 1fr",
   alignItems: "center",
   gap: 10,
-  background: "#111827",
-  border: "1px solid rgba(148, 163, 184, 0.16)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 8,
   padding: "8px 10px",
-  color: "#e5e7eb",
+  color: "#1f2933",
   textAlign: "left",
 };
 
@@ -7424,7 +7424,7 @@ const assetGrid: React.CSSProperties = {
 
 const assetTile: React.CSSProperties = {
   background: "rgba(17, 24, 39, 0.92)",
-  border: "1px solid rgba(148, 163, 184, 0.16)",
+  border: "1px solid #ddd8cf",
   borderRadius: 12,
   padding: 13,
   minHeight: 74,
@@ -7458,7 +7458,7 @@ const mobileSelectedSummary: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
   gap: 2,
-  color: "#f8fafc",
+  color: "#1f2933",
   overflow: "hidden",
 };
 
@@ -7474,8 +7474,8 @@ const mobileActionButton: React.CSSProperties = {
 
 const mobileCloseButton: React.CSSProperties = {
   border: "1px solid rgba(148, 163, 184, 0.25)",
-  background: "#020617",
-  color: "#f8fafc",
+  background: "#ffffff",
+  color: "#1f2933",
   borderRadius: 12,
   width: 38,
   minWidth: 38,
@@ -7508,7 +7508,7 @@ const mobileQuickPanelHeader: React.CSSProperties = {
   alignItems: "center",
   gap: 10,
   padding: "10px 12px",
-  borderBottom: "1px solid rgba(148, 163, 184, 0.16)",
+  borderBottom: "1px solid #ddd8cf",
 };
 
 const mobileListPanel: React.CSSProperties = {
@@ -7519,8 +7519,8 @@ const mobileListPanel: React.CSSProperties = {
 };
 
 const mobileDpCard: React.CSSProperties = {
-  background: "#111827",
-  border: "1px solid rgba(148, 163, 184, 0.16)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 12,
   padding: 10,
   display: "grid",
@@ -7533,7 +7533,7 @@ const mobileDpMainButton: React.CSSProperties = {
   width: "100%",
   border: "none",
   background: "transparent",
-  color: "#f8fafc",
+  color: "#1f2933",
   textAlign: "left",
   padding: 0,
   cursor: "pointer",
@@ -7575,3 +7575,4 @@ const mobileHomesGrid: React.CSSProperties = {
   display: "grid",
   gap: 8,
 };
+

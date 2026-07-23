@@ -418,35 +418,35 @@ export default function OperationalAssetExplorer({
           ["Cables", cableCount],
           ["Risk", riskCount],
         ].map(([label, value]) => (
-          <div key={String(label)} style={{ background: "#0f1b2d", border: "1px solid rgba(148,163,184,0.18)", borderRadius: 10, padding: 12 }}>
-            <div style={{ color: "#94a3b8", fontSize: 12 }}>{label}</div>
-            <div style={{ color: "#f8fafc", fontSize: 24, fontWeight: 900, marginTop: 5 }}>{Number(value).toLocaleString()}</div>
+          <div key={String(label)} style={{ background: "transparent", border: "1px solid #ddd8cf", borderRadius: 10, padding: 12 }}>
+            <div style={{ color: "#64748b", fontSize: 12 }}>{label}</div>
+            <div style={{ color: "#1f2933", fontSize: 24, fontWeight: 900, marginTop: 5 }}>{Number(value).toLocaleString()}</div>
           </div>
         ))}
       </div>
 
       <AssetExplorerFilters value={filters} onChange={setFilters} totalCount={allRows.length} filteredCount={filteredRows.length} />
 
-      <div style={{ background: "#0f1b2d", border: "1px solid rgba(14,165,233,0.28)", borderRadius: 12, padding: 12, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
+      <div style={{ background: "transparent", border: "1px solid #d8d2c8", borderRadius: 12, padding: 12, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
         <div>
           <div style={{ color: "#e0f2fe", fontWeight: 900 }}>Bulk PIA NOI</div>
-          <div style={{ color: "#94a3b8", fontSize: 12 }}>
+          <div style={{ color: "#64748b", fontSize: 12 }}>
             Select cable rows below, then apply one PIA NOI number to all selected cables.
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <span style={{ color: "#cbd5e1", fontSize: 12 }}>{selectedCableCount} selected</span>
-          <button type="button" style={{ border: "1px solid rgba(148,163,184,0.24)", background: "#111827", color: "#f8fafc", borderRadius: 8, padding: "8px 10px", fontWeight: 900, cursor: "pointer" }} onClick={selectFilteredCables}>
+          <span style={{ color: "#64748b", fontSize: 12 }}>{selectedCableCount} selected</span>
+          <button type="button" style={{ border: "1px solid #d8d2c8", background: "#ffffff", color: "#1f2933", borderRadius: 8, padding: "8px 10px", fontWeight: 900, cursor: "pointer" }} onClick={selectFilteredCables}>
             Select Filtered Cables ({filteredCableRows.length})
           </button>
-          <button type="button" style={{ border: "1px solid rgba(148,163,184,0.24)", background: "#111827", color: "#f8fafc", borderRadius: 8, padding: "8px 10px", fontWeight: 900, cursor: "pointer" }} onClick={clearBulkCableSelection}>
+          <button type="button" style={{ border: "1px solid #d8d2c8", background: "#ffffff", color: "#1f2933", borderRadius: 8, padding: "8px 10px", fontWeight: 900, cursor: "pointer" }} onClick={clearBulkCableSelection}>
             Clear
           </button>
           <button
             type="button"
             style={{
               border: "1px solid rgba(34,197,94,0.45)",
-              background: "#14532d",
+              background: "#15803d",
               color: "#dcfce7",
               borderRadius: 8,
               padding: "8px 10px",
@@ -474,3 +474,5 @@ export default function OperationalAssetExplorer({
     </section>
   );
 }
+
+

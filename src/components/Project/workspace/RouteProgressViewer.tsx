@@ -28,8 +28,8 @@ type RouteProgressAsset = {
 };
 
 const panel: React.CSSProperties = {
-  background: "#0f1b2d",
-  border: "1px solid rgba(148, 163, 184, 0.18)",
+  background: "transparent",
+  border: "1px solid #ddd8cf",
   borderRadius: 10,
   padding: 16,
   gridColumn: "span 2",
@@ -39,20 +39,20 @@ const title: React.CSSProperties = {
   margin: "0 0 12px",
   fontSize: 15,
   fontWeight: 900,
-  color: "#e5e7eb",
+  color: "#1f2933",
 };
 
 const tile: React.CSSProperties = {
-  background: "#0b1424",
-  border: "1px solid rgba(148,163,184,0.14)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 10,
   padding: 12,
 };
 
 const button: React.CSSProperties = {
-  border: "1px solid rgba(96,165,250,0.28)",
-  background: "#10203a",
-  color: "#f8fafc",
+  border: "1px solid #d8d2c8",
+  background: "#ffffff",
+  color: "#1f2933",
   borderRadius: 8,
   padding: "7px 10px",
   fontWeight: 850,
@@ -169,7 +169,7 @@ function ProgressBar({ route }: { route: RouteProgressAsset }) {
         borderRadius: 999,
         overflow: "hidden",
         background: "#1f2937",
-        border: "1px solid rgba(148,163,184,0.18)",
+        border: "1px solid #ddd8cf",
       }}
       title={`${formatDistance(route.completedMeters)} complete, ${remainingPct.toFixed(0)}% remaining`}
     >
@@ -215,15 +215,15 @@ export default function RouteProgressViewer({ projectAssets, onSelectAsset }: Pr
   return (
     <section style={panel}>
       <h3 style={title}>Route Progress Viewer</h3>
-      <p style={{ color: "#cbd5e1", marginTop: 0 }}>
+      <p style={{ color: "#64748b", marginTop: 0 }}>
         Duct and cable route sections logged in Daily Production are shown as green completed spans. Gaps are still to build or pull.
       </p>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 12 }}>
-        <div style={tile}><div style={{ color: "#94a3b8", fontSize: 12 }}>Routes</div><strong style={{ color: "#f8fafc", fontSize: 22 }}>{n(totals.routes)}</strong></div>
-        <div style={tile}><div style={{ color: "#94a3b8", fontSize: 12 }}>Ducts</div><strong style={{ color: "#f8fafc", fontSize: 22 }}>{n(totals.ductRoutes)}</strong></div>
-        <div style={tile}><div style={{ color: "#94a3b8", fontSize: 12 }}>Cables</div><strong style={{ color: "#f8fafc", fontSize: 22 }}>{n(totals.cableRoutes)}</strong></div>
-        <div style={tile}><div style={{ color: "#94a3b8", fontSize: 12 }}>Complete</div><strong style={{ color: "#22c55e", fontSize: 22 }}>{totals.percent}%</strong></div>
+        <div style={tile}><div style={{ color: "#64748b", fontSize: 12 }}>Routes</div><strong style={{ color: "#1f2933", fontSize: 22 }}>{n(totals.routes)}</strong></div>
+        <div style={tile}><div style={{ color: "#64748b", fontSize: 12 }}>Ducts</div><strong style={{ color: "#1f2933", fontSize: 22 }}>{n(totals.ductRoutes)}</strong></div>
+        <div style={tile}><div style={{ color: "#64748b", fontSize: 12 }}>Cables</div><strong style={{ color: "#1f2933", fontSize: 22 }}>{n(totals.cableRoutes)}</strong></div>
+        <div style={tile}><div style={{ color: "#64748b", fontSize: 12 }}>Complete</div><strong style={{ color: "#22c55e", fontSize: 22 }}>{totals.percent}%</strong></div>
       </div>
 
       <div style={{ display: "grid", gap: 10, maxHeight: 540, overflow: "auto" }}>
@@ -236,13 +236,13 @@ export default function RouteProgressViewer({ projectAssets, onSelectAsset }: Pr
               <div key={route.asset.id} style={{ ...tile, display: "grid", gap: 9 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                   <div>
-                    <div style={{ color: "#f8fafc", fontWeight: 900 }}>{getAssetDisplayName(route.asset)}</div>
-                    <div style={{ color: "#94a3b8", fontSize: 12 }}>
+                    <div style={{ color: "#1f2933", fontWeight: 900 }}>{getAssetDisplayName(route.asset)}</div>
+                    <div style={{ color: "#64748b", fontSize: 12 }}>
                       {route.type} - {formatDistance(route.length)} total - {formatDistance(route.completedMeters)} complete
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <strong style={{ color: percent ? "#22c55e" : "#94a3b8" }}>{percent}%</strong>
+                    <strong style={{ color: percent ? "#22c55e" : "#64748b" }}>{percent}%</strong>
                     <button type="button" style={button} onClick={() => onSelectAsset?.(route.asset)} disabled={!onSelectAsset}>
                       View
                     </button>
@@ -251,7 +251,7 @@ export default function RouteProgressViewer({ projectAssets, onSelectAsset }: Pr
 
                 <ProgressBar route={route} />
 
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", color: "#cbd5e1", fontSize: 12 }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", color: "#64748b", fontSize: 12 }}>
                   {route.spans.length ? (
                     route.spans.map((span, index) => (
                       <span
@@ -267,12 +267,12 @@ export default function RouteProgressViewer({ projectAssets, onSelectAsset }: Pr
                       </span>
                     ))
                   ) : (
-                    <span style={{ color: "#94a3b8" }}>No completed sections logged yet.</span>
+                    <span style={{ color: "#64748b" }}>No completed sections logged yet.</span>
                   )}
                 </div>
 
                 {latest ? (
-                  <div style={{ color: "#94a3b8", fontSize: 12 }}>
+                  <div style={{ color: "#64748b", fontSize: 12 }}>
                     Latest: {latest.date || "No date"} - {latest.team} - {latest.progressNote || latest.issueNote || latest.note || "production logged"}
                   </div>
                 ) : null}
@@ -280,7 +280,7 @@ export default function RouteProgressViewer({ projectAssets, onSelectAsset }: Pr
             );
           })
         ) : (
-          <div style={{ color: "#94a3b8", fontSize: 13 }}>
+          <div style={{ color: "#64748b", fontSize: 13 }}>
             No duct or cable routes are loaded in this workspace yet.
           </div>
         )}
@@ -288,3 +288,5 @@ export default function RouteProgressViewer({ projectAssets, onSelectAsset }: Pr
     </section>
   );
 }
+
+

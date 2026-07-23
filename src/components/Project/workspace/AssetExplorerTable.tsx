@@ -27,8 +27,8 @@ type Props = {
 };
 
 const wrap: React.CSSProperties = {
-  background: "#0f1b2d",
-  border: "1px solid rgba(148, 163, 184, 0.18)",
+  background: "transparent",
+  border: "1px solid #ddd8cf",
   borderRadius: 12,
   overflow: "hidden",
 };
@@ -36,24 +36,24 @@ const wrap: React.CSSProperties = {
 const table: React.CSSProperties = {
   width: "100%",
   borderCollapse: "collapse",
-  color: "#cbd5e1",
+  color: "#64748b",
   fontSize: 12,
 };
 
 const th: React.CSSProperties = {
   textAlign: "left",
   padding: "10px 12px",
-  background: "#111827",
-  color: "#94a3b8",
+  background: "#ffffff",
+  color: "#64748b",
   fontSize: 11,
   textTransform: "uppercase",
   letterSpacing: "0.04em",
-  borderBottom: "1px solid rgba(148,163,184,0.14)",
+  borderBottom: "1px solid #ddd8cf",
 };
 
 const td: React.CSSProperties = {
   padding: "9px 12px",
-  borderBottom: "1px solid rgba(148,163,184,0.10)",
+  borderBottom: "1px solid #e2ded7",
   verticalAlign: "top",
 };
 
@@ -68,9 +68,9 @@ const nameButton: React.CSSProperties = {
 };
 
 const actionButton: React.CSSProperties = {
-  border: "1px solid rgba(148,163,184,0.24)",
-  background: "#111827",
-  color: "#f8fafc",
+  border: "1px solid #d8d2c8",
+  background: "#ffffff",
+  color: "#1f2933",
   borderRadius: 7,
   padding: "6px 8px",
   fontSize: 11,
@@ -85,15 +85,15 @@ function riskStyle(risk: AssetExplorerRow["risk"]): React.CSSProperties {
     padding: "4px 8px",
     fontSize: 11,
     fontWeight: 900,
-    border: "1px solid rgba(148,163,184,0.25)",
-    color: "#cbd5e1",
-    background: "rgba(148,163,184,0.10)",
+    border: "1px solid #d8d2c8",
+    color: "#64748b",
+    background: "#e2ded7",
   };
 
-  if (risk === "OK") return { ...base, color: "#86efac", background: "rgba(34,197,94,0.14)", borderColor: "rgba(34,197,94,0.34)" };
-  if (risk === "WARN") return { ...base, color: "#fcd34d", background: "rgba(245,158,11,0.14)", borderColor: "rgba(245,158,11,0.34)" };
+  if (risk === "OK") return { ...base, color: "#15803d", background: "rgba(34,197,94,0.14)", borderColor: "rgba(34,197,94,0.34)" };
+  if (risk === "WARN") return { ...base, color: "#d97706", background: "rgba(245,158,11,0.14)", borderColor: "rgba(245,158,11,0.34)" };
   if (risk === "FULL") return { ...base, color: "#fdba74", background: "rgba(249,115,22,0.14)", borderColor: "rgba(249,115,22,0.34)" };
-  if (risk === "OVER") return { ...base, color: "#fecaca", background: "rgba(239,68,68,0.14)", borderColor: "rgba(239,68,68,0.34)" };
+  if (risk === "OVER") return { ...base, color: "#dc2626", background: "rgba(239,68,68,0.14)", borderColor: "rgba(239,68,68,0.34)" };
   return base;
 }
 
@@ -143,7 +143,7 @@ export default function AssetExplorerTable({
   const selectedBulkSet = new Set(selectedBulkCableIds);
   if (!rows.length) {
     return (
-      <div style={{ ...wrap, padding: 16, color: "#94a3b8" }}>
+      <div style={{ ...wrap, padding: 16, color: "#64748b" }}>
         No assets match the current filters.
       </div>
     );
@@ -190,7 +190,7 @@ export default function AssetExplorerTable({
                     <button type="button" style={nameButton} onClick={() => onSelectAsset?.(row.asset)}>{row.name}</button>
                     {displayReference(row.id) ? <div style={{ color: "#64748b", marginTop: 3 }}>{displayReference(row.id)}</div> : null}
                   </td>
-                  <td style={td}>{row.type}{row.closureType ? <div style={{ color: "#94a3b8" }}>{row.closureType}</div> : null}</td>
+                  <td style={td}>{row.type}{row.closureType ? <div style={{ color: "#64748b" }}>{row.closureType}</div> : null}</td>
                   <td style={td}>{row.status || "Unknown"}</td>
                   <td style={td}>{capacityText(row)}</td>
                   <td style={td}>{row.fibreSummary || "—"}</td>
@@ -213,3 +213,5 @@ export default function AssetExplorerTable({
     </div>
   );
 }
+
+

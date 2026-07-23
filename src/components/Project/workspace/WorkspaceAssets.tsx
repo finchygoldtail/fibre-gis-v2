@@ -29,8 +29,8 @@ type Props = {
 };
 
 const panel: React.CSSProperties = {
-  background: "#0f1b2d",
-  border: "1px solid rgba(148, 163, 184, 0.18)",
+  background: "transparent",
+  border: "1px solid #ddd8cf",
   borderRadius: 10,
   padding: 16,
   minHeight: 120,
@@ -40,13 +40,13 @@ const title: React.CSSProperties = {
   margin: "0 0 12px",
   fontSize: 15,
   fontWeight: 900,
-  color: "#e5e7eb",
+  color: "#1f2933",
 };
 
 const button: React.CSSProperties = {
-  border: "1px solid rgba(148,163,184,0.22)",
-  background: "#111827",
-  color: "#f8fafc",
+  border: "1px solid #ddd8cf",
+  background: "#ffffff",
+  color: "#1f2933",
   borderRadius: 8,
   padding: "10px 12px",
   fontWeight: 800,
@@ -75,7 +75,7 @@ export default function WorkspaceAssets({
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           <div>
             <h3 style={title}>Asset Register</h3>
-            <div style={{ color: "#94a3b8", fontSize: 13 }}>
+            <div style={{ color: "#64748b", fontSize: 13 }}>
               Operational asset search, risk filtering and quick actions. Counts: {Number(operationalAssets.length || 0).toLocaleString()} total - {Number(stats?.joints || 0).toLocaleString()} joints - {Number(stats?.dps || 0).toLocaleString()} DPs - {Number(stats?.cables || 0).toLocaleString()} cables.
             </div>
           </div>
@@ -93,3 +93,5 @@ export default function WorkspaceAssets({
     </>
   );
 }
+
+

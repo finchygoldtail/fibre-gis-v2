@@ -31,24 +31,24 @@ type QaCategoryGroup = {
   issues: any[];
 };
 
-const panel: React.CSSProperties = { background: "#0f1b2d", border: "1px solid rgba(148, 163, 184, 0.18)", borderRadius: 10, padding: 16, minHeight: 190 };
+const panel: React.CSSProperties = { background: "transparent", border: "1px solid #ddd8cf", borderRadius: 10, padding: 16, minHeight: 190 };
 const wide: React.CSSProperties = { ...panel, gridColumn: "1 / -1" };
-const title: React.CSSProperties = { margin: "0 0 12px", fontSize: 15, fontWeight: 900, color: "#e5e7eb" };
-const button: React.CSSProperties = { border: "1px solid rgba(148,163,184,0.22)", background: "#111827", color: "#f8fafc", borderRadius: 8, padding: "10px 12px", fontWeight: 800, cursor: "pointer" };
+const title: React.CSSProperties = { margin: "0 0 12px", fontSize: 15, fontWeight: 900, color: "#1f2933" };
+const button: React.CSSProperties = { border: "1px solid #ddd8cf", background: "#ffffff", color: "#1f2933", borderRadius: 8, padding: "10px 12px", fontWeight: 800, cursor: "pointer" };
 const severityGrid: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 };
-const stickyHeader: React.CSSProperties = { position: "sticky", top: 0, zIndex: 10, display: "grid", gap: 10, background: "#0f1b2d", paddingBottom: 10 };
-const severityCard: React.CSSProperties = { borderRadius: 10, padding: 12, minHeight: 74, color: "#fff", border: "1px solid rgba(255,255,255,0.12)", textAlign: "left", cursor: "pointer" };
-const toolbar: React.CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, background: "#111827", border: "1px solid rgba(148,163,184,0.16)", borderRadius: 10, padding: "10px 12px" };
-const modeButton: React.CSSProperties = { border: "1px solid rgba(148,163,184,0.22)", background: "#020617", color: "#cbd5e1", borderRadius: 999, padding: "7px 10px", fontSize: 12, fontWeight: 900, cursor: "pointer" };
-const modeButtonActive: React.CSSProperties = { background: "#1d4ed8", color: "#fff", borderColor: "rgba(147,197,253,0.65)" };
+const stickyHeader: React.CSSProperties = { position: "sticky", top: 0, zIndex: 10, display: "grid", gap: 10, background: "transparent", paddingBottom: 10 };
+const severityCard: React.CSSProperties = { borderRadius: 10, padding: 12, minHeight: 74, color: "#1f2933", border: "1px solid #ddd8cf", textAlign: "left", cursor: "pointer" };
+const toolbar: React.CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, background: "#ffffff", border: "1px solid #ddd8cf", borderRadius: 10, padding: "10px 12px" };
+const modeButton: React.CSSProperties = { border: "1px solid #ddd8cf", background: "#ffffff", color: "#64748b", borderRadius: 999, padding: "7px 10px", fontSize: 12, fontWeight: 900, cursor: "pointer" };
+const modeButtonActive: React.CSSProperties = { background: "#2563eb", color: "#ffffff", borderColor: "rgba(147,197,253,0.65)" };
 const categoryGrid: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 };
-const categoryCard: React.CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#111827", border: "1px solid rgba(148,163,184,0.16)", borderRadius: 10, color: "#e5e7eb", padding: "10px 12px", textAlign: "left", cursor: "pointer", fontWeight: 900 };
-const categoryCardActive: React.CSSProperties = { borderColor: "rgba(147,197,253,0.85)", boxShadow: "0 0 0 2px rgba(59,130,246,0.25)", background: "rgba(30,58,138,0.6)" };
-const navigatorPanel: React.CSSProperties = { display: "grid", gap: 10, background: "#111827", border: "1px solid rgba(148,163,184,0.16)", borderRadius: 12, padding: 14 };
+const categoryCard: React.CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#ffffff", border: "1px solid #ddd8cf", borderRadius: 10, color: "#1f2933", padding: "10px 12px", textAlign: "left", cursor: "pointer", fontWeight: 900 };
+const categoryCardActive: React.CSSProperties = { borderColor: "rgba(147,197,253,0.85)", boxShadow: "0 0 0 2px rgba(59,130,246,0.25)", background: "#eff6ff" };
+const navigatorPanel: React.CSSProperties = { display: "grid", gap: 10, background: "#ffffff", border: "1px solid #ddd8cf", borderRadius: 12, padding: 14 };
 const compactList: React.CSSProperties = { display: "grid", gap: 6, maxHeight: 360, overflow: "auto" };
-const compactRow: React.CSSProperties = { display: "grid", gridTemplateColumns: "90px 160px 220px 1fr", alignItems: "center", gap: 10, background: "#111827", border: "1px solid rgba(148,163,184,0.16)", borderRadius: 8, padding: "8px 10px", color: "#e5e7eb", textAlign: "left" };
+const compactRow: React.CSSProperties = { display: "grid", gridTemplateColumns: "90px 160px 220px 1fr", alignItems: "center", gap: 10, background: "#ffffff", border: "1px solid #ddd8cf", borderRadius: 8, padding: "8px 10px", color: "#1f2933", textAlign: "left" };
 const navActions: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 };
-const empty: React.CSSProperties = { color: "#94a3b8", background: "#111827", border: "1px solid rgba(148,163,184,0.16)", borderRadius: 10, padding: 14 };
+const empty: React.CSSProperties = { color: "#64748b", background: "#ffffff", border: "1px solid #ddd8cf", borderRadius: 10, padding: 14 };
 
 function n(value: any): string {
   const num = Number(value ?? 0);
@@ -128,7 +128,7 @@ function findAssetForIssue(issue: any, assets: SavedMapAsset[]): SavedMapAsset |
 
 function SeverityCard({ label, value, tone, active, onClick }: { label: string; value: number; tone: string; active: boolean; onClick: () => void }) {
   return (
-    <button type="button" style={{ ...severityCard, background: tone, border: active ? "2px solid #93c5fd" : severityCard.border }} onClick={onClick}>
+    <button type="button" style={{ ...severityCard, background: tone, border: active ? "2px solid #2563eb" : severityCard.border }} onClick={onClick}>
       <div style={{ fontSize: 12, opacity: 0.9 }}>{label}</div>
       <div style={{ fontSize: 28, fontWeight: 900 }}>{n(value)}</div>
       <small style={{ opacity: 0.75 }}>Open assets</small>
@@ -188,10 +188,10 @@ export default function WorkspaceQA({ auditIssues = [], projectAssets, onOpenQA,
         <div style={severityGrid}>
           <SeverityCard label="High" value={buckets.high.length} tone="#7f1d1d" active={selectedSeverity === "high"} onClick={() => setSeverity("high")} />
           <SeverityCard label="Medium" value={buckets.medium.length} tone="#78350f" active={selectedSeverity === "medium"} onClick={() => setSeverity("medium")} />
-          <SeverityCard label="Low" value={buckets.low.length} tone="#1e3a8a" active={selectedSeverity === "low"} onClick={() => setSeverity("low")} />
+          <SeverityCard label="Low" value={buckets.low.length} tone="#dbeafe" active={selectedSeverity === "low"} onClick={() => setSeverity("low")} />
         </div>
         <div style={toolbar}>
-          <strong style={{ color: "#cbd5e1" }}>{selectedSeverity ? `${selectedSeverity.toUpperCase()} issues — ${n(severityIssues.length)}` : "No QA issues"}</strong>
+          <strong style={{ color: "#64748b" }}>{selectedSeverity ? `${selectedSeverity.toUpperCase()} issues — ${n(severityIssues.length)}` : "No QA issues"}</strong>
           <div style={{ display: "flex", gap: 8 }}>
             <button type="button" style={{ ...modeButton, ...(viewMode === "navigator" ? modeButtonActive : {}) }} onClick={() => setViewMode("navigator")}>Navigator View</button>
             <button type="button" style={{ ...modeButton, ...(viewMode === "list" ? modeButtonActive : {}) }} onClick={() => setViewMode("list")}>List View</button>
@@ -212,15 +212,15 @@ export default function WorkspaceQA({ auditIssues = [], projectAssets, onOpenQA,
         {viewMode === "navigator" ? (
           <div style={{ ...navigatorPanel, marginTop: 10 }}>
             {selectedIssue ? <>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#93c5fd", fontSize: 12, fontWeight: 900 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#2563eb", fontSize: 12, fontWeight: 900 }}>
                 <span>{selectedGroup?.label || "QA Issue"} — Issue {Math.min(issueIndex + 1, selectedIssues.length)} of {selectedIssues.length}</span>
                 <span>{String(selectedIssue?.severity || selectedSeverity || "issue").toUpperCase()}</span>
               </div>
-              <div style={{ color: "#f8fafc", fontSize: 20, fontWeight: 900 }}>{issueAssetLabel(selectedIssue)}</div>
-              <div style={{ color: "#cbd5e1", lineHeight: 1.45 }}>{issueDescription(selectedIssue)}</div>
+              <div style={{ color: "#1f2933", fontSize: 20, fontWeight: 900 }}>{issueAssetLabel(selectedIssue)}</div>
+              <div style={{ color: "#64748b", lineHeight: 1.45 }}>{issueDescription(selectedIssue)}</div>
               <div style={navActions}>
                 <button type="button" style={button} onClick={() => move(-1)}>◀ Previous</button>
-                <button type="button" style={{ ...button, background: "#1d4ed8" }} onClick={() => selectIssue(selectedIssue)}>Zoom / Select Asset</button>
+                <button type="button" style={{ ...button, background: "#2563eb", color: "#ffffff" }} onClick={() => selectIssue(selectedIssue)}>Zoom / Select Asset</button>
                 <button type="button" style={button} onClick={() => move(1)}>Next ▶</button>
               </div>
             </> : <div style={empty}>Select a category to start reviewing issues.</div>}
@@ -252,3 +252,7 @@ export default function WorkspaceQA({ auditIssues = [], projectAssets, onOpenQA,
     />
   </>;
 }
+
+
+
+

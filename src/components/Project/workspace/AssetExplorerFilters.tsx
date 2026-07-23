@@ -38,8 +38,8 @@ type Props = {
 };
 
 const shell: React.CSSProperties = {
-  background: "#0f1b2d",
-  border: "1px solid rgba(148, 163, 184, 0.18)",
+  background: "transparent",
+  border: "1px solid #ddd8cf",
   borderRadius: 12,
   padding: 14,
   display: "grid",
@@ -56,7 +56,7 @@ const row: React.CSSProperties = {
 const label: React.CSSProperties = {
   display: "grid",
   gap: 5,
-  color: "#94a3b8",
+  color: "#64748b",
   fontSize: 12,
   fontWeight: 800,
 };
@@ -64,18 +64,18 @@ const label: React.CSSProperties = {
 const input: React.CSSProperties = {
   width: "100%",
   boxSizing: "border-box",
-  border: "1px solid rgba(148,163,184,0.24)",
-  background: "#020617",
-  color: "#f8fafc",
+  border: "1px solid #d8d2c8",
+  background: "#ffffff",
+  color: "#1f2933",
   borderRadius: 9,
   padding: "9px 10px",
   outline: "none",
 };
 
 const toggle: React.CSSProperties = {
-  border: "1px solid rgba(148,163,184,0.24)",
-  background: "#111827",
-  color: "#e5e7eb",
+  border: "1px solid #d8d2c8",
+  background: "#ffffff",
+  color: "#1f2933",
   borderRadius: 9,
   padding: "9px 11px",
   fontWeight: 900,
@@ -85,9 +85,9 @@ const toggle: React.CSSProperties = {
 
 const toggleActive: React.CSSProperties = {
   ...toggle,
-  background: "#7f1d1d",
+  background: "#dc2626",
   borderColor: "rgba(248,113,113,0.45)",
-  color: "#fecaca",
+  color: "#dc2626",
 };
 
 const meta: React.CSSProperties = {
@@ -95,7 +95,7 @@ const meta: React.CSSProperties = {
   justifyContent: "space-between",
   alignItems: "center",
   gap: 10,
-  color: "#94a3b8",
+  color: "#64748b",
   fontSize: 12,
 };
 
@@ -115,7 +115,7 @@ export default function AssetExplorerFilters({ value, onChange, totalCount, filt
   return (
     <div style={shell}>
       <div style={meta}>
-        <strong style={{ color: "#e5e7eb" }}>Operational Asset Explorer</strong>
+        <strong style={{ color: "#1f2933" }}>Operational Asset Explorer</strong>
         <span>{filteredCount.toLocaleString()} of {totalCount.toLocaleString()} assets</span>
       </div>
 
@@ -180,3 +180,5 @@ export default function AssetExplorerFilters({ value, onChange, totalCount, filt
     </div>
   );
 }
+
+
