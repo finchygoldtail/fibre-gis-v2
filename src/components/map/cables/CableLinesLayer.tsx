@@ -53,14 +53,6 @@ function formatCableLength(length: number): string {
   return `${(length / 1000).toFixed(3)} km`;
 }
 
-const LONG_CABLE_CLICK_ZOOM = 17;
-
-function focusCableClick(map: L.Map, point: L.LatLng) {
-  map.setView(point, Math.max(map.getZoom(), LONG_CABLE_CLICK_ZOOM), {
-    animate: false,
-  });
-}
-
 function isDropCableAsset(asset: SavedMapAsset): boolean {
   const cableType = String((asset as any).cableType || "").toLowerCase();
   const assetType = String((asset as any).assetType || "").toLowerCase();
@@ -1531,7 +1523,6 @@ export default function CableLinesLayer({
                   L.DomEvent.stopPropagation(e);
                   if (cableDrawingMode) return;
                   setSelectedCableId(asset.id);
-                  focusCableClick(map, e.latlng);
                 },
                 mouseover: () => setHoveredCableId(asset.id),
                 mouseout: () => setHoveredCableId(null),

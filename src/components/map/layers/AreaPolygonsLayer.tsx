@@ -67,6 +67,11 @@ export default function AreaPolygonsLayer({
   const [mapZoom, setMapZoom] = useState(() => map.getZoom());
 
   useMapEvents({
+    click() {
+      if (editingAreaId && !polygonBulkSelectEnabled) {
+        onUnlockPolygon?.(null);
+      }
+    },
     zoomend(event) {
       setMapZoom(event.target.getZoom());
     },
@@ -86,10 +91,8 @@ export default function AreaPolygonsLayer({
         const isSecretEditing = asset.id === editingAreaId;
         const isBulkSelected = selectedAreaIds.includes(asset.id);
         const isInteractive =
-          polygonEditingEnabled ||
           polygonBulkSelectEnabled ||
-          isSecretEditing ||
-          (isActive && Boolean(onUnlockPolygon));
+          (polygonEditingEnabled && isSecretEditing);
         const shouldShowLabel =
           isActive || isSecretEditing || mapZoom >= AREA_LABEL_MIN_ZOOM;
 
@@ -122,6 +125,7 @@ export default function AreaPolygonsLayer({
               isInteractive
                 ? {
                     click: (event) => {
+                      event.originalEvent?.stopPropagation();
                       if (polygonBulkSelectEnabled) {
                         onToggleSelect?.(asset.id);
                         return;
@@ -173,7 +177,6 @@ export default function AreaPolygonsLayer({
                       onToggleSelect?.(asset.id);
                       return;
                     }
-                    onSelect(asset.id);
                   }}
                   onDoubleClick={(event) => {
                     if (!event.ctrlKey) return;
@@ -184,7 +187,7 @@ export default function AreaPolygonsLayer({
                     alignItems: "center",
                     gap: 4,
                     pointerEvents: "auto",
-                    cursor: polygonBulkSelectEnabled || !isSecretEditing ? "pointer" : "default",
+                    cursor: polygonBulkSelectEnabled || isSecretEditing ? "pointer" : "default",
                     userSelect: "none",
                   }}
                 >
