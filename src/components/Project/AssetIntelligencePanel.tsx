@@ -47,6 +47,7 @@ type AssetIntelligencePanelProps = {
   onZoomAsset?: (asset: SavedMapAsset) => void;
   onSelectAsset?: (asset: SavedMapAsset) => void;
   onOpenJointEditor?: (asset: SavedMapAsset) => void;
+  onOpenDuctEditor?: (asset: SavedMapAsset) => void;
   onOpenDistributionPointEditor?: (asset: SavedMapAsset) => void;
   onUpdateDpStatus?: (args: {
     asset: SavedMapAsset;
@@ -96,6 +97,7 @@ function getAssetType(asset: SavedMapAsset | null): string {
 
 function getPrettyType(asset: SavedMapAsset | null): string {
   const raw = getAssetType(asset);
+  if (raw.includes("duct")) return "Duct";
   if (raw.includes("cable") || raw.includes("line")) return "Cable";
   if (raw.includes("joint") || raw.includes("lmj") || raw.includes("midj") || raw.includes("cmj")) return "Joint";
   if (raw.includes("distribution") || raw === "dp" || raw.includes("cbt") || raw.includes("afn")) return "Distribution Point";
@@ -105,6 +107,11 @@ function getPrettyType(asset: SavedMapAsset | null): string {
   if (raw.includes("home") || raw.includes("premise")) return "Home";
   if (raw.includes("polygon") || raw.includes("area")) return "Area";
   return raw.replace(/-/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function isDuct(asset: SavedMapAsset | null): boolean {
+  const type = getAssetType(asset);
+  return type.includes("duct");
 }
 
 function isCable(asset: SavedMapAsset | null): boolean {
@@ -1069,6 +1076,7 @@ export default function AssetIntelligencePanel({
   onZoomAsset,
   onSelectAsset,
   onOpenJointEditor,
+  onOpenDuctEditor,
   onOpenDistributionPointEditor,
   onUpdateDpStatus,
 }: AssetIntelligencePanelProps) {
@@ -1239,6 +1247,9 @@ export default function AssetIntelligencePanel({
           ) : null}
           {isJoint(asset) ? (
             <button type="button" style={operationButton} onClick={() => onOpenJointEditor?.(asset)}>Open Joint</button>
+          ) : null}
+          {isDuct(asset) ? (
+            <button type="button" style={liveOperationButton} onClick={() => onOpenDuctEditor?.(asset)}>Open Duct Editor</button>
           ) : null}
           {selectedAssetType.dp ? (
             <button type="button" style={liveOperationButton} onClick={() => onOpenDistributionPointEditor?.(asset)}>

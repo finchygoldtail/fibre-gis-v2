@@ -5451,6 +5451,10 @@ export default function JointMapManager({
           }
           onOpenJoint(asset);
         }}
+        onOpenDuctEditor={(asset) => {
+          setIsProjectWorkspaceOpen(false);
+          setOpenDuctAsset(asset);
+        }}
         onOpenDistributionPointEditor={(asset) => {
           setIsProjectWorkspaceOpen(false);
           setOpenDistributionPointAsset(asset);

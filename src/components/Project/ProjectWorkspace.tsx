@@ -152,6 +152,7 @@ type ProjectWorkspaceProps = {
   onOpenQA?: () => void;
   onOpenFibreTopology?: () => void;
   onOpenJointEditor?: (asset: SavedMapAsset) => void;
+  onOpenDuctEditor?: (asset: SavedMapAsset) => void;
   onOpenDistributionPointEditor?: (asset: SavedMapAsset) => void;
   onOpenAudit?: (asset: SavedMapAsset) => void;
   onExport?: () => void;
@@ -1359,6 +1360,7 @@ export default function ProjectWorkspace({
   onOpenQA,
   onOpenFibreTopology,
   onOpenJointEditor,
+  onOpenDuctEditor,
   onOpenDistributionPointEditor,
   onOpenAudit,
   onExport,
@@ -4765,6 +4767,10 @@ export default function ProjectWorkspace({
                     onSelectAsset={setSelectedWorkspaceAsset}
                     onZoomAsset={setSelectedWorkspaceAsset}
                     onOpenJointEditor={onOpenJointEditor}
+                    onOpenDuctEditor={(asset) => {
+                      setSelectedWorkspaceAsset(asset);
+                      onOpenDuctEditor?.(asset);
+                    }}
                     onOpenDistributionPointEditor={(asset) => {
                       setSelectedWorkspaceAsset(asset);
                       onOpenDistributionPointEditor?.(asset);
