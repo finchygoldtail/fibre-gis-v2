@@ -112,8 +112,10 @@ import {
 } from "./map/utils/mapAssetGeometry";
 import StreetCabDesigner from "./streetcab/StreetCabDesigner";
 import DistributionPointEditor from "./dp/DistributionPointEditor";
+import DuctDesigner from "./duct/DuctDesigner";
 import { filterAssetsForProjectArea } from "./map/projects/projectAssetFilter";
 import { useProjectAreaView } from "./map/projects/useProjectAreaView";
+import { isHarrellicommsBusiness } from "../utils/clientAccessControl";
 import { useProjectWorkspaceStats } from "./map/workspace/useProjectWorkspaceStats";
 import { useLayerCounts } from "./map/layers/useLayerCounts";
 import { useCableAllocationOptions } from "./map/cables/useCableAllocationOptions";
@@ -1633,6 +1635,8 @@ export default function JointMapManager({
     useState<SavedMapAsset | null>(null);
   const [openDistributionPointAsset, setOpenDistributionPointAsset] =
     useState<SavedMapAsset | null>(null);
+  const [openDuctAsset, setOpenDuctAsset] =
+    useState<SavedMapAsset | null>(null);
   useEffect(() => {
     setJointName(currentJointName || "");
     setJointType(currentJointType || "CMJ (12 trays)");
@@ -1765,6 +1769,7 @@ export default function JointMapManager({
     setShowChamberModal(false);
     setOpenStreetCabAsset(null);
     setOpenDistributionPointAsset(null);
+    setOpenDuctAsset(null);
     setContextMenu({
       visible: false,
       x: 0,
@@ -1903,10 +1908,33 @@ export default function JointMapManager({
     allMapAssets,
     openreachReferenceAssets,
     activeProjectId,
+    businessId: mapBusinessId,
     mapBounds,
     mapZoom,
     visibleLayers,
   });
+
+  const showGlobalHarrellicommsRoutes =
+    !activeProjectArea && isHarrellicommsBusiness(mapBusinessId);
+
+  const routeVisibleLayers = useMemo(
+    () =>
+      showGlobalHarrellicommsRoutes
+        ? {
+            ...visibleLayers,
+            ducts: true,
+            cables: true,
+            feeders: true,
+            links: true,
+            ulw96: true,
+            ulw48: true,
+            ulw36: true,
+            ulw24: true,
+            ulw12: true,
+          }
+        : visibleLayers,
+    [showGlobalHarrellicommsRoutes, visibleLayers],
+  );
 
   const virtualHomeDropAssets = useMemo(
     () => buildVirtualHomeDropAssets(visibleProjectAssets),
@@ -3377,154 +3405,6 @@ export default function JointMapManager({
     }
 
     openCableModalForNew();
-  };
-
-  const handleAttachCableToDuct = async (
-    duct: SavedMapAsset,
-    ductNumber?: number,
-    subDuctDiameterMm = 12,
-    subDuctCount = 1,
-  ) => {
-    if (!canManageNetworkDesign) {
-      alert("This account is view-only for cable drawing.");
-      return;
-    }
-
-    if (duct.geometry?.type !== "LineString" || duct.geometry.coordinates.length < 2) {
-      alert("This duct does not have enough route points to add a cable.");
-      return;
-    }
-
-    const safeSubDuctDiameterMm = Math.max(1, Math.round(Number(subDuctDiameterMm) || 12));
-    const safeSubDuctCount = Math.max(1, Math.min(12, Math.round(Number(subDuctCount) || 1)));
-    const cableName = `${safeSubDuctCount} x ${safeSubDuctDiameterMm}mm sub duct${ductNumber ? ` in Duct ${ductNumber}` : ""}`;
-    const reason = getChangeReasonForCurrentMode("created", cableName);
-    if (!reason) return;
-
-    const routedCoordinates = sanitiseCableRouteCoordinates(duct.geometry.coordinates);
-    const endpointAssets = findCableEndpointAssets(
-      allNetworkAssetsWithExchanges,
-      routedCoordinates.map(([lat, lng]) => ({ lat, lng })),
-      25,
-    );
-
-    const cableRecords = Array.from({ length: safeSubDuctCount }, (_, index) =>
-      markAssetForLiveSync(
-        withAreaAssetIndex(
-          {
-          id: crypto.randomUUID(),
-          name:
-            safeSubDuctCount === 1
-              ? `${safeSubDuctDiameterMm}mm sub duct${ductNumber ? ` - Duct ${ductNumber}` : ""}`
-              : `${safeSubDuctDiameterMm}mm sub duct ${index + 1}/${safeSubDuctCount}${ductNumber ? ` - Duct ${ductNumber}` : ""}`,
-          assetType: "cable",
-          jointType: "Cable",
-          notes: `Sub duct installed in ${duct.name || "selected duct"}${ductNumber ? ` / Duct ${ductNumber}` : ""}`,
-          cableType: "Sub duct" as any,
-          fibreCount,
-          installMethod: "Underground",
-          cableSegmentInstallMethods: Array.from(
-            { length: Math.max(0, routedCoordinates.length - 1) },
-            () => "Underground",
-          ),
-          parentCableId,
-          allocatedInputFibres,
-          ductId: duct.id,
-          ductName: duct.name,
-          ductNumber,
-          ductSlotNumber: ductNumber,
-          subDuctDiameterMm: safeSubDuctDiameterMm,
-          subDuctSequence: index + 1,
-          subDuctCount: safeSubDuctCount,
-          subDuctGroupName: cableName,
-          fromAssetId: endpointAssets.fromAssetId,
-          toAssetId: endpointAssets.toAssetId,
-          startAssetId: endpointAssets.fromAssetId,
-          endAssetId: endpointAssets.toAssetId,
-          fromAssetType: (endpointAssets.fromAsset as any)?.assetType,
-          toAssetType: (endpointAssets.toAsset as any)?.assetType,
-          fromAssetName: (endpointAssets.fromAsset as any)?.name,
-          toAssetName: (endpointAssets.toAsset as any)?.name,
-          routeMode: "selected-duct-slot",
-          geometry: {
-            type: "LineString",
-            coordinates: routedCoordinates,
-          },
-          } as SavedMapAsset,
-          activeProjectId,
-          activeProjectAreaName,
-        ),
-        true,
-      ),
-    );
-
-    const nextSavedJoints = (savedJoints ?? [])
-      .map((asset) => {
-        if (asset.id !== duct.id) return asset;
-
-        const linkedCableIds = Array.from(
-          new Set([
-            ...(((asset as any).linkedCableIds || []) as string[]),
-            ...cableRecords.map((record) => record.id),
-          ]),
-        );
-
-        return markAssetForLiveSync(
-          {
-            ...asset,
-            linkedCableIds,
-            linkedCableCount: linkedCableIds.length,
-          } as SavedMapAsset,
-          true,
-        );
-      })
-      .concat(cableRecords);
-
-    setSavedJoints(nextSavedJoints);
-    cableRecords.forEach((cableRecord) => writeAssetAuditLog({
-      asset: cableRecord,
-      action: "created",
-      reason,
-      after: cableRecord,
-    }));
-
-    try {
-      await saveMapAssetsViaCoordinator(nextSavedJoints, {
-        businessId: mapBusinessId,
-        reason: `duct-slot-cable-create:${cableName}`,
-        source: "joint-map-manager",
-      });
-      clearPendingMapSaveSnapshot(activeProjectIdRef.current);
-      lastSavedMapSignatureRef.current = getMapAssetsSaveSignature(nextSavedJoints);
-      setLastMapAutosaveAt(
-        new Date().toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-      );
-      setMapAutosaveStatus("saved");
-      setMapAutosaveError("");
-      alert(
-        `${safeSubDuctCount} x ${safeSubDuctDiameterMm}mm sub duct${safeSubDuctCount === 1 ? "" : "s"} added to ${
-          ductNumber ? `Duct ${ductNumber}` : duct.name || "duct"
-        }.`,
-      );
-    } catch (error) {
-      console.error("Duct slot cable save failed", error);
-      storePendingMapSaveSnapshot(
-        activeProjectIdRef.current,
-        nextSavedJoints,
-        `duct-slot-cable-create:${cableName}`,
-        error,
-      );
-      setMapAutosaveStatus("error");
-      setMapAutosaveError(error instanceof Error ? error.message : String(error));
-      alert(
-        `Cable is on this screen, but it did not save to Firestore.\n\nA pending save has been stored on this device. Retry it before refreshing another device.\n\nError: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
   };
 
   const handleMobileCloseCableDrawing = () => {
@@ -6203,6 +6083,7 @@ export default function JointMapManager({
                 setShowChamberModal(false);
                 setOpenStreetCabAsset(null);
                 setOpenDistributionPointAsset(null);
+                setOpenDuctAsset(null);
                 setIsPanelOpen(false);
                 return;
               }
@@ -6225,6 +6106,7 @@ export default function JointMapManager({
                 routedType.includes("street") ||
                 routedType.includes("cab")
               ) {
+                setOpenDuctAsset(null);
                 setOpenStreetCabAsset(asset);
                 return;
               }
@@ -6237,6 +6119,7 @@ export default function JointMapManager({
                 routedType.includes("cbt") ||
                 routedType.includes("mdu")
               ) {
+                setOpenDuctAsset(null);
                 setOpenDistributionPointAsset(asset);
                 setShowDpModal(false);
                 setIsPanelOpen(false);
@@ -6468,20 +6351,26 @@ export default function JointMapManager({
           <CableLinesLayer
             assets={mapMode === "draw-cable" ? engineeringDrawingAssets : renderProjectAssetsWithExchanges}
             endpointAssetOptions={engineeringDrawingSourceAssets}
-            cablesVisible={visibleLayers.cables}
-            visibleLayers={visibleLayers}
+            cablesVisible={showGlobalHarrellicommsRoutes || visibleLayers.cables}
+            visibleLayers={routeVisibleLayers}
             showCableDistances={visibleLayers.cableDistances}
             cableDrawingMode={mapMode === "draw-cable"}
             canEditCables={canManageNetworkDesign}
             canDeleteCables={isAdmin}
             onDeleteAsset={handleAdminDeleteAsset}
-            onEditAsset={handleEditAsset}
-            onAttachCableToDuct={handleAttachCableToDuct}
             onUpdateAsset={(asset) => {
               saveMapAssetToState(asset, {
                 isNew: false,
                 message: "Cable endpoints updated.",
               });
+            }}
+            onEditAsset={(asset) => {
+              if (String((asset as any).assetType || "").toLowerCase() === "duct") {
+                setOpenDuctAsset(asset);
+                return;
+              }
+
+              handleEditAsset(asset);
             }}
           />
 
@@ -7224,6 +7113,31 @@ export default function JointMapManager({
                 message: "Street cab saved to map.",
               });
               setOpenStreetCabAsset(syncedAsset);
+            }}
+          />
+        </div>
+      )}
+      {openDuctAsset && (
+        <div
+          style={mobileEditorOverlayStyle(isMobile)}
+        >
+          <DuctDesigner
+            asset={openDuctAsset}
+            allAssets={allMapAssetsWithVirtualDrops}
+            onClose={() => setOpenDuctAsset(null)}
+            onSave={(updatedDuct, updatedCables) => {
+              const syncedDuct = saveMapAssetToState(updatedDuct, {
+                isNew: false,
+                message: "Duct layout saved to map.",
+              });
+
+              updatedCables.forEach((updatedCable) => {
+                saveMapAssetToState(updatedCable, {
+                  isNew: false,
+                });
+              });
+
+              setOpenDuctAsset(syncedDuct);
             }}
           />
         </div>

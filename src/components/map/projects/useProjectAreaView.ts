@@ -9,12 +9,14 @@ import {
   shouldRenderOpenreachAssetAtZoom,
 } from "../utils/viewportFiltering";
 import { withAreaAssetIndex } from "../../../services/areaAssetIndex";
+import { isHarrellicommsBusiness } from "../../../utils/clientAccessControl";
 import { filterAssetsForProjectArea } from "./projectAssetFilter";
 
 type UseProjectAreaViewArgs = {
   allMapAssets: SavedMapAsset[];
   openreachReferenceAssets: SavedMapAsset[];
   activeProjectId: string | null;
+  businessId?: string;
   mapBounds: unknown;
   mapZoom: number;
   visibleLayers: LayerVisibility;
@@ -34,6 +36,34 @@ export function isProjectAreaAsset(asset: SavedMapAsset): boolean {
       assetType === "polygon" ||
       assetType === "project-area" ||
       jointType.includes("polygon area"))
+  );
+}
+
+function isGlobalDuctOrCableAsset(asset: SavedMapAsset): boolean {
+  const item = asset as any;
+  const text = [
+    item.assetType,
+    item.type,
+    item.cableType,
+    item.category,
+    item.name,
+    item.label,
+    item.properties?.assetType,
+    item.properties?.type,
+    item.properties?.cableType,
+  ]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    asset.geometry?.type === "LineString" &&
+    (item.assetType === "duct" ||
+      item.assetType === "cable" ||
+      text.includes("duct") ||
+      text.includes("cable") ||
+      text.includes("feeder") ||
+      text.includes("link"))
   );
 }
 
@@ -57,11 +87,13 @@ export function useProjectAreaView({
   allMapAssets,
   openreachReferenceAssets,
   activeProjectId,
+  businessId,
   mapBounds,
   mapZoom,
   visibleLayers,
 }: UseProjectAreaViewArgs) {
   const { profile } = useUserRole();
+  const canShowGlobalDuctsAndCables = isHarrellicommsBusiness(businessId);
 
   const projectAreas = useMemo(
     () =>
@@ -104,17 +136,18 @@ export function useProjectAreaView({
   );
 
   const visibleProjectAssets = useMemo(() => {
-  // Global view = polygons only
-  if (!activeProjectArea) {
-    return [];
-  }
+    if (!activeProjectArea) {
+      return canShowGlobalDuctsAndCables
+        ? allMapAssets.filter(isGlobalDuctOrCableAsset)
+        : [];
+    }
 
-  const nonAreaAssets = allMapAssets.filter(
-    (asset) => !isProjectAreaAsset(asset),
-  );
+    const nonAreaAssets = allMapAssets.filter(
+      (asset) => !isProjectAreaAsset(asset),
+    );
 
-  return filterAssetsForProjectArea(nonAreaAssets, activeProjectArea);
-}, [activeProjectArea, allMapAssets]);
+    return filterAssetsForProjectArea(nonAreaAssets, activeProjectArea);
+  }, [activeProjectArea, allMapAssets, canShowGlobalDuctsAndCables]);
 
   const visibleProjectAreas = useMemo(
     () => (activeProjectArea ? [activeProjectArea] : projectAreas),

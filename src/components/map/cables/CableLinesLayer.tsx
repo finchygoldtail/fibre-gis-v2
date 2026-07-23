@@ -39,18 +39,10 @@ type Props = {
   endpointAssetOptions?: SavedMapAsset[];
   onDeleteAsset: (id: string) => void;
   onEditAsset: (asset: SavedMapAsset) => void;
-  onAttachCableToDuct?: (
-    duct: SavedMapAsset,
-    ductNumber?: number,
-    subDuctDiameterMm?: number,
-    subDuctCount?: number,
-  ) => void;
   onUpdateAsset?: (asset: SavedMapAsset) => void;
   canEditCables?: boolean;
   canDeleteCables?: boolean;
 };
-
-const SUB_DUCT_DIAMETER_OPTIONS_MM = [12, 14, 16, 18, 20, 22, 24, 25];
 
 function formatCableLength(length: number): string {
   if (length < 1000) return `${length.toFixed(1)} m`;
@@ -1065,7 +1057,6 @@ export default function CableLinesLayer({
   endpointAssetOptions,
   onDeleteAsset,
   onEditAsset,
-  onAttachCableToDuct,
   onUpdateAsset,
   canEditCables = true,
   canDeleteCables = true,
@@ -1076,10 +1067,6 @@ export default function CableLinesLayer({
   const [selectedCableId, setSelectedCableId] = useState<string | null>(null);
   const [editingCableId, setEditingCableId] = useState<string | null>(null);
   const [hoveredCableId, setHoveredCableId] = useState<string | null>(null);
-  const [selectedSubDuctDiameterByDuctId, setSelectedSubDuctDiameterByDuctId] =
-    useState<Record<string, number>>({});
-  const [selectedSubDuctCountByDuctId, setSelectedSubDuctCountByDuctId] =
-    useState<Record<string, number>>({});
   const [mappingRowsByAssetId, setMappingRowsByAssetId] = useState<MappingRowsByAssetId>({});
   const [mapViewBounds, setMapViewBounds] = useState(() => map.getBounds());
   const [mapViewZoom, setMapViewZoom] = useState(() => map.getZoom());
@@ -1346,13 +1333,6 @@ export default function CableLinesLayer({
         const linkedCableIds = Array.isArray((asset as any).linkedCableIds)
           ? ((asset as any).linkedCableIds as string[])
           : [];
-        const selectedSubDuctDiameter =
-          selectedSubDuctDiameterByDuctId[asset.id] ??
-          Number((asset as any).defaultSubDuctDiameterMm || 12);
-        const selectedSubDuctCount = Math.max(
-          1,
-          Math.min(12, Math.round(Number(selectedSubDuctCountByDuctId[asset.id] || 1))),
-        );
         const isHovered = hoveredCableId === asset.id;
         const isSelected = selectedCableId === asset.id;
         const isEditing = editingCableId === asset.id;
@@ -1565,66 +1545,6 @@ export default function CableLinesLayer({
                       <div style={{ marginTop: 6 }}>
                         <b>Ducts:</b> {getDuctNumberLabels(asset).join(", ")}
                       </div>
-
-                      {onAttachCableToDuct ? (
-                        <div style={{ marginTop: 8, display: "grid", gap: 4 }}>
-                          <label style={{ display: "grid", gap: 3, fontSize: 12, fontWeight: 700 }}>
-                            Sub duct size
-                            <select
-                              value={selectedSubDuctDiameter}
-                              onChange={(event) =>
-                                setSelectedSubDuctDiameterByDuctId((prev) => ({
-                                  ...prev,
-                                  [asset.id]: Number(event.target.value),
-                                }))
-                              }
-                            >
-                              {SUB_DUCT_DIAMETER_OPTIONS_MM.map((diameter) => (
-                                <option key={diameter} value={diameter}>
-                                  {diameter}mm
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-
-                          <label style={{ display: "grid", gap: 3, fontSize: 12, fontWeight: 700 }}>
-                            Quantity
-                            <input
-                              type="number"
-                              min={1}
-                              max={12}
-                              value={selectedSubDuctCount}
-                              onChange={(event) =>
-                                setSelectedSubDuctCountByDuctId((prev) => ({
-                                  ...prev,
-                                  [asset.id]: Number(event.target.value),
-                                }))
-                              }
-                            />
-                          </label>
-
-                          {getDuctNumberLabels(asset).map((label) => {
-                            const ductNumber = Number(label.replace(/\D/g, ""));
-                            return (
-                              <button
-                                key={`${asset.id}-${label}`}
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  onAttachCableToDuct(
-                                    asset,
-                                    ductNumber,
-                                    selectedSubDuctDiameter,
-                                    selectedSubDuctCount,
-                                  );
-                                }}
-                              >
-                                Add {selectedSubDuctCount} x {selectedSubDuctDiameter}mm to {label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ) : null}
                     </>
                   ) : (
                     <div style={{ marginTop: 6 }}>
@@ -1859,69 +1779,9 @@ export default function CableLinesLayer({
                   <div style={mobileCableWarningStyle}>{capacityWarning}</div>
                 ) : null}
 
-                {isDuct && onAttachCableToDuct ? (
-                  <div style={mobileSubDuctControlStyle}>
-                    <label>
-                      <span>Size</span>
-                      <select
-                        value={selectedSubDuctDiameter}
-                        onChange={(event) =>
-                          setSelectedSubDuctDiameterByDuctId((prev) => ({
-                            ...prev,
-                            [asset.id]: Number(event.target.value),
-                          }))
-                        }
-                      >
-                        {SUB_DUCT_DIAMETER_OPTIONS_MM.map((diameter) => (
-                          <option key={diameter} value={diameter}>
-                            {diameter}mm
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      <span>Qty</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={12}
-                        value={selectedSubDuctCount}
-                        onChange={(event) =>
-                          setSelectedSubDuctCountByDuctId((prev) => ({
-                            ...prev,
-                            [asset.id]: Number(event.target.value),
-                          }))
-                        }
-                      />
-                    </label>
-                  </div>
-                ) : null}
-
                 <div style={mobileCableButtonGridStyle}>
-                  {isDuct && onAttachCableToDuct ? (
-                    getDuctNumberLabels(asset).map((label) => {
-                      const ductNumber = Number(label.replace(/\D/g, ""));
-                      return (
-                        <button
-                          key={`${asset.id}-mobile-${label}`}
-                          type="button"
-                          style={mobilePrimaryButtonStyle}
-                          onClick={() =>
-                            onAttachCableToDuct(
-                              asset,
-                              ductNumber,
-                              selectedSubDuctDiameter,
-                              selectedSubDuctCount,
-                            )
-                          }
-                        >
-                          {label}
-                        </button>
-                      );
-                    })
-                  ) : null}
                   <button type="button" style={mobilePrimaryButtonStyle} onClick={() => onEditAsset(asset)}>
-                    View / Edit
+                    {isDuct ? "Open Duct Editor" : "View / Edit"}
                   </button>
                   {canEditCables ? (
                     <button
@@ -2229,19 +2089,6 @@ const mobileCableButtonGridStyle: React.CSSProperties = {
   gridTemplateColumns: "1fr 1fr",
   gap: 8,
   marginTop: 12,
-};
-
-const mobileSubDuctControlStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: 8,
-  marginTop: 12,
-  padding: "9px 10px",
-  borderRadius: 12,
-  background: "rgba(30,41,59,0.78)",
-  border: "1px solid rgba(148,163,184,0.22)",
-  color: "#cbd5e1",
-  fontSize: 12,
 };
 
 const mobilePrimaryButtonStyle: React.CSSProperties = {

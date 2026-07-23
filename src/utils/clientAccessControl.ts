@@ -11,10 +11,20 @@ export type InfrastructureSector =
 export const DEFAULT_BUSINESS_ID = "fibre-gis-v2";
 export const DEFAULT_SECTOR: InfrastructureSector = "telecoms";
 export const UNRESTRICTED_CLIENT_ACCESS = "*";
+const HARRELLICOMMS_BUSINESS_IDS = new Set([
+  "harrellicomms",
+  "harrellcomms",
+  "harrelli-comms",
+  "harrell-comms",
+]);
 
 export function normaliseBusinessId(value: unknown): string {
   const clean = String(value || "").trim().toLowerCase();
   return clean || DEFAULT_BUSINESS_ID;
+}
+
+export function isHarrellicommsBusiness(value: unknown): boolean {
+  return HARRELLICOMMS_BUSINESS_IDS.has(normaliseBusinessId(value));
 }
 
 export function normaliseSector(value: unknown): InfrastructureSector {

@@ -194,6 +194,16 @@ export type SavedMapAsset = {
   ductStartNumber?: number;
   linkedCableIds?: string[];
   subDuctDiameterMm?: number;
+  subDuctsByDuctNumber?: Record<string, Array<{ diameterMm: number; quantity: number }>>;
+  subDuctLayoutByDuctNumber?: Record<
+    string,
+    Array<{
+      id: string;
+      diameterMm: number;
+      children?: Array<any>;
+      cableIds?: string[];
+    }>
+  >;
 
   // Branch / jump-off cable fibre reservation from a parent spine cable.
   parentCableId?: string;
