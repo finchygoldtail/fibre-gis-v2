@@ -46,51 +46,45 @@ const permitRoadworksIcon = L.divIcon({
   html: `
     <div style="
       position: relative;
-      width: 42px;
+      width: 46px;
       height: 42px;
       display: grid;
       place-items: center;
-      filter: drop-shadow(0 8px 12px rgba(15, 23, 42, 0.35));
+      filter: drop-shadow(0 8px 12px rgba(15, 23, 42, 0.38));
     ">
-      <div style="
-        width: 0;
-        height: 0;
-        border-left: 19px solid transparent;
-        border-right: 19px solid transparent;
-        border-bottom: 34px solid #f59e0b;
-      "></div>
-      <div style="
-        position: absolute;
-        top: 13px;
-        left: 12px;
-        right: 12px;
-        height: 4px;
-        border-radius: 999px;
-        background: #111827;
-        transform: rotate(-22deg);
-      "></div>
-      <div style="
-        position: absolute;
-        top: 19px;
-        left: 11px;
-        right: 11px;
-        height: 4px;
-        border-radius: 999px;
-        background: #111827;
-        transform: rotate(22deg);
-      "></div>
-      <div style="
-        position: absolute;
-        top: 21px;
-        color: #111827;
-        font-size: 13px;
-        font-weight: 900;
-        line-height: 1;
-      ">!</div>
+      <svg width="46" height="42" viewBox="0 0 46 42" aria-hidden="true">
+        <path
+          d="M23 3 L44 39 H2 Z"
+          fill="#ffffff"
+          stroke="#e11d48"
+          stroke-width="5"
+          stroke-linejoin="round"
+        />
+        <path
+          d="M7.5 33.5 L16.5 22.5 C18 20.6 20.8 20.6 22.2 22.6 L29.8 33.5 Z"
+          fill="#111827"
+        />
+        <circle cx="21.6" cy="14.2" r="3.2" fill="#111827" />
+        <path
+          d="M20.6 17.2 L18 26.5 M19.4 18.4 L25.4 22.8 M19 23.5 L14.5 30.8 M22 25 L27.6 32.8 M22.8 18.1 L27.7 14.7"
+          fill="none"
+          stroke="#111827"
+          stroke-width="4"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+        <path
+          d="M23.3 12.6 C26 13.2 27.9 14.8 28.8 17.2"
+          fill="none"
+          stroke="#111827"
+          stroke-width="2.8"
+          stroke-linecap="round"
+        />
+      </svg>
     </div>
   `,
-  iconSize: [42, 42],
-  iconAnchor: [21, 34],
+  iconSize: [46, 42],
+  iconAnchor: [23, 39],
   popupAnchor: [0, -30],
 });
 
