@@ -16,6 +16,7 @@ export type MapContextAction =
   | "distribution-point-oh"
   | "chamber"
   | "street-cab"
+  | "data-centre"
   | "exchange"
   | "duct"
   | "cable"
@@ -126,6 +127,7 @@ export default function MapContextMenu({
             />
             <MenuRow label="Create Chamber" onClick={() => select("chamber")} />
             <MenuRow label="Create Street Cab" onClick={() => select("street-cab")} />
+            <MenuRow label="Create Data Centre" onClick={() => select("data-centre")} />
             <MenuRow label="Create Exchange" onClick={() => select("exchange")} />
           </Submenu>
         )}
