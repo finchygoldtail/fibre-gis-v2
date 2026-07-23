@@ -293,20 +293,6 @@ const HARRELLICOMMS_BACKHAUL_HIDDEN_PANELS = new Set<WorkspaceOperationPanel>([
   "piaQa",
 ]);
 
-function getAreaWorkType(area?: SavedMapAsset | null): "pia" | "data-centre" {
-  const raw = String(
-    (area as any)?.areaWorkType ||
-      (area as any)?.properties?.areaWorkType ||
-      "",
-  )
-    .trim()
-    .toLowerCase();
-
-  return raw === "data-centre" || raw === "data center" || raw === "backhaul"
-    ? "data-centre"
-    : "pia";
-}
-
 const defaultOpenreachLayers: OpenreachLayerVisibility = {
   // Openreach / PIA overlays can be very heavy, so default them off.
   ducts: false,
@@ -1388,9 +1374,7 @@ export default function ProjectWorkspace({
   const { isAdmin, isSuperUser } = useUserRole();
   const canManageWalkOff = isAdmin || isSuperUser;
   const canViewCommercial = isAdmin || isSuperUser;
-  const isHarrellicommsBackhaulWorkspace =
-    isHarrellicommsBusiness(activeBusinessId) &&
-    getAreaWorkType(projectArea) === "data-centre";
+  const isHarrellicommsBackhaulWorkspace = isHarrellicommsBusiness(activeBusinessId);
   const visibleWorkspaceTabs = useMemo(
     () =>
       tabs.filter((tab) => {
