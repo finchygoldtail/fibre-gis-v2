@@ -30,6 +30,10 @@ import { buildNetworkState } from "../../../services/network";
 import { isOpenreachReferenceAsset } from "../../../services/orAssetStorage";
 import { getPaddedRenderBounds, isLineStringInsideRenderBounds } from "../utils/renderBounds";
 import { useDeviceLayout } from "../responsive/useDeviceLayout";
+import {
+  getDailyProgressTeamColour,
+  getDailyProgressTotals,
+} from "../../Project/workspace/workspaceOperations";
 type Props = {
   assets: SavedMapAsset[];
   cablesVisible: boolean;
@@ -245,6 +249,19 @@ function getDashArray(
   if (isOverheadInstall(asset)) return isDistributionPointAsset(startAsset) || isDistributionPointAsset(endAsset) ? "10, 8" : "10, 8";
 
   return undefined;
+}
+
+function getDailyRouteProgress(asset: SavedMapAsset) {
+  const totals = getDailyProgressTotals(asset as any);
+  const meters = totals.civilsMeters + totals.cablingMeters;
+  const team =
+    totals.cablingMeters >= totals.civilsMeters && totals.cablingMeters > 0
+      ? "cabling"
+      : totals.civilsMeters > 0
+        ? "civils"
+        : null;
+
+  return { ...totals, meters, team };
 }
 
 function getSegmentInstallMethod(asset: SavedMapAsset, index: number): "OH" | "Underground" | null {
@@ -1350,6 +1367,7 @@ export default function CableLinesLayer({
           ? new Set(getRouteEditInsertSegmentIndexes(points, routeEditHandleIndexes))
           : new Set<number>();
         const rendersMixedInstallSegments = hasMixedSegmentInstallMethods(asset);
+        const dailyProgress = getDailyRouteProgress(asset);
 
         const startAsset = shouldCalculateCableDetails
           ? points.length >= 2
@@ -1723,6 +1741,26 @@ export default function CableLinesLayer({
               </Tooltip>
               ) : null}
             </Polyline>
+
+            {!cableDrawingMode && dailyProgress.team ? (
+              <Polyline
+                renderer={cableCanvasRenderer}
+                positions={displayPoints}
+                interactive={false}
+                pathOptions={{
+                  color: getDailyProgressTeamColour(dailyProgress.team),
+                  weight: isDuct ? 10 : isSelected ? 11 : 8,
+                  opacity: 0.96,
+                  dashArray: "14, 8",
+                }}
+              >
+                {!isMobile ? (
+                  <Tooltip sticky>
+                    {isDuct ? getDuctBundleTitle(asset) : asset.name || "Cable"} - today {dailyProgress.team}: {dailyProgress.meters.toFixed(1)}m
+                  </Tooltip>
+                ) : null}
+              </Polyline>
+            ) : null}
 
             {!cableDrawingMode && usesTouchCableSheet && isSelected ? (
               <div

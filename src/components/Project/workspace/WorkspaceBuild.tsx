@@ -2,9 +2,9 @@ import React from "react";
 import DuplicateHomeResolutionPanel from "./DuplicateHomeResolutionPanel";
 import AddressSheetImportPanel from "./AddressSheetImportPanel";
 import FasSbRouteImportPanel from "./FasSbRouteImportPanel";
-import type { SavedMapAsset } from "../../map/types";
+import type { DailyProgressTeam, SavedMapAsset } from "../../map/types";
 import type { WorkStatus } from "../../map/types";
-import { getAssetTypeLabel, getAssetWorkStatus } from "./workspaceOperations";
+import { getAssetTypeLabel, getAssetWorkStatus, getTodayIsoDate } from "./workspaceOperations";
 
 type ManagerPoint = { lat: number; lng: number };
 type JointInstallFilter = "ALL" | "AG_JOINTS" | "DPS" | "LMJ" | "CMJ" | "MMJ" | "MIDJ";
@@ -45,6 +45,15 @@ type Props = {
     assetIds: string[];
     status: WorkStatus;
     assignedTeam?: string;
+    note: string;
+  }) => void | Promise<void>;
+  onRecordDailyProgress?: (args: {
+    assetIds: string[];
+    team: DailyProgressTeam;
+    date: string;
+    meters?: number;
+    spliceCount?: number;
+    crewName?: string;
     note: string;
   }) => void | Promise<void>;
   onSelectAsset?: (asset: SavedMapAsset) => void;
@@ -192,6 +201,7 @@ type BuildToolKey =
   | "homes"
   | "joints"
   | "pia"
+  | "daily"
   | "status"
   | "reset"
   | "actions";
@@ -257,6 +267,7 @@ export default function WorkspaceBuild({
   onBulkUpdateCablePiaNoi,
   onBulkUpdateJointInstallMethod,
   onBulkUpdateWorkStatus,
+  onRecordDailyProgress,
   onClearDpFibreAllocations,
   onSelectAsset,
   onOpenJointEditor,
@@ -277,6 +288,13 @@ export default function WorkspaceBuild({
   const [workStatusAssetFilter, setWorkStatusAssetFilter] = React.useState("all");
   const [workStatusTeam, setWorkStatusTeam] = React.useState("");
   const [workStatusNote, setWorkStatusNote] = React.useState("Bulk update production status from workspace");
+  const [dailyTeam, setDailyTeam] = React.useState<DailyProgressTeam>("civils");
+  const [dailyDate, setDailyDate] = React.useState(getTodayIsoDate());
+  const [dailyMeters, setDailyMeters] = React.useState(0);
+  const [dailySpliceCount, setDailySpliceCount] = React.useState(0);
+  const [dailyCrewName, setDailyCrewName] = React.useState("");
+  const [dailyNote, setDailyNote] = React.useState("Daily production update");
+  const [selectedDailyAssetIds, setSelectedDailyAssetIds] = React.useState<Set<string>>(new Set());
   const [selectedWorkAssetIds, setSelectedWorkAssetIds] = React.useState<Set<string>>(new Set());
   const [selectedInstallAssetIds, setSelectedInstallAssetIds] = React.useState<Set<string>>(new Set());
   const readiness = stats?.operationalReadiness;
@@ -345,6 +363,24 @@ export default function WorkspaceBuild({
     () => workStatusAssets.filter((asset: any) => selectedWorkAssetIds.has(String(asset.id || ""))),
     [selectedWorkAssetIds, workStatusAssets],
   );
+  const dailyProgressAssets = React.useMemo(() => {
+    const routeTeam = dailyTeam === "civils" || dailyTeam === "cabling";
+    return (projectAssets || [])
+      .filter((asset: any) => {
+        const type = getAssetTypeLabel(asset).toLowerCase();
+        if (routeTeam) return asset?.geometry?.type === "LineString" && (type === "duct" || type === "cable");
+        return ["joint", "dp", "chamber"].includes(type);
+      })
+      .sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id), undefined, { numeric: true }));
+  }, [dailyTeam, projectAssets]);
+  const dailyProgressAssetIds = React.useMemo(
+    () => dailyProgressAssets.map((asset: any) => String(asset.id || "")),
+    [dailyProgressAssets],
+  );
+  const selectedDailyProgressAssets = React.useMemo(
+    () => dailyProgressAssets.filter((asset: any) => selectedDailyAssetIds.has(String(asset.id || ""))),
+    [dailyProgressAssets, selectedDailyAssetIds],
+  );
   const installMethodAssetIds = React.useMemo(
     () => installMethodAssets.map((asset: any) => String(asset.id || "")),
     [installMethodAssets],
@@ -369,6 +405,14 @@ export default function WorkspaceBuild({
       return new Set(kept.length ? kept : workStatusAssetIds);
     });
   }, [workStatusAssetIds.join("|")]);
+
+  React.useEffect(() => {
+    setSelectedDailyAssetIds((previous) => {
+      const validIds = new Set(dailyProgressAssetIds);
+      const kept = Array.from(previous).filter((id) => validIds.has(id));
+      return new Set(kept);
+    });
+  }, [dailyProgressAssetIds.join("|")]);
 
   const toggleInstallAssetSelection = (assetId: string) => {
     setSelectedInstallAssetIds((previous) => {
@@ -416,6 +460,49 @@ export default function WorkspaceBuild({
       assetIds: selectedWorkStatusAssets.map((asset) => asset.id),
       status: workStatus,
       assignedTeam: workStatusTeam.trim() || undefined,
+      note,
+    });
+  };
+
+  const toggleDailyAssetSelection = (assetId: string) => {
+    setSelectedDailyAssetIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(assetId)) next.delete(assetId);
+      else next.add(assetId);
+      return next;
+    });
+  };
+
+  const applyDailyProgress = async () => {
+    if (!onRecordDailyProgress) return;
+    const note = dailyNote.trim();
+    if (!note) {
+      alert("A note is required before saving daily production.");
+      return;
+    }
+    if (!selectedDailyProgressAssets.length) {
+      alert("Select at least one route or splice asset.");
+      return;
+    }
+    const routeTeam = dailyTeam === "civils" || dailyTeam === "cabling";
+    const meters = Math.max(0, Number(dailyMeters || 0));
+    const spliceCount = Math.max(0, Math.round(Number(dailySpliceCount || 0)));
+    if (routeTeam && !meters) {
+      alert("Enter metres done today.");
+      return;
+    }
+    if (!routeTeam && !spliceCount) {
+      alert("Enter splice count done today.");
+      return;
+    }
+
+    await onRecordDailyProgress({
+      assetIds: selectedDailyProgressAssets.map((asset) => asset.id),
+      team: dailyTeam,
+      date: dailyDate || getTodayIsoDate(),
+      meters: routeTeam ? meters : undefined,
+      spliceCount: routeTeam ? undefined : spliceCount,
+      crewName: dailyCrewName.trim() || undefined,
       note,
     });
   };
@@ -548,6 +635,13 @@ export default function WorkspaceBuild({
           active={activeTool === "pia"}
           tone="good"
           onClick={() => setActiveTool((value) => value === "pia" ? null : "pia")}
+        />
+        <ToolButton
+          label="Daily Production"
+          description="Record metres or splices done today and highlight them on the map."
+          active={activeTool === "daily"}
+          tone="good"
+          onClick={() => setActiveTool((value) => value === "daily" ? null : "daily")}
         />
         <ToolButton
           label="Production Status"
@@ -744,6 +838,94 @@ export default function WorkspaceBuild({
         <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 8 }}>
           This updates piaNoiNumber on the cable and inside properties.piaNoiNumber so older panels can read it.
         </div>
+      </section>
+    ) : null}
+
+    {activeTool === "daily" ? (
+      <section style={wide}>
+        <h3 style={title}>Daily Production</h3>
+        <p style={{ color: "#cbd5e1", marginTop: 0 }}>
+          Record what was completed today. Civils and cabling use metres on duct/cable routes; splicing uses splice counts on joints, DPs or chambers.
+        </p>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10, marginBottom: 12 }}>
+          <Tile label="Matched assets" value={n(dailyProgressAssets.length)} />
+          <Tile label="Selected assets" value={n(selectedDailyProgressAssets.length)} />
+          <Tile label="Team" value={dailyTeam === "civils" ? "Civils" : dailyTeam === "cabling" ? "Cabling" : "Splicing"} />
+        </div>
+
+        <div style={formGrid}>
+          <label style={labelStyle}>
+            Team
+            <select value={dailyTeam} onChange={(event) => setDailyTeam(event.target.value as DailyProgressTeam)} style={inputStyle}>
+              <option value="civils">Civils</option>
+              <option value="cabling">Cabling</option>
+              <option value="splicing">Splicing</option>
+            </select>
+          </label>
+          <label style={labelStyle}>
+            Date
+            <input type="date" value={dailyDate} onChange={(event) => setDailyDate(event.target.value)} style={inputStyle} />
+          </label>
+          {dailyTeam === "splicing" ? (
+            <label style={labelStyle}>
+              Splices done
+              <input type="number" min={0} value={dailySpliceCount} onChange={(event) => setDailySpliceCount(Number(event.target.value))} style={inputStyle} />
+            </label>
+          ) : (
+            <label style={labelStyle}>
+              Metres done
+              <input type="number" min={0} step={0.1} value={dailyMeters} onChange={(event) => setDailyMeters(Number(event.target.value))} style={inputStyle} />
+            </label>
+          )}
+          <label style={labelStyle}>
+            Team / gang
+            <input value={dailyCrewName} onChange={(event) => setDailyCrewName(event.target.value)} placeholder="Optional" style={inputStyle} />
+          </label>
+          <label style={labelStyle}>
+            Note
+            <input value={dailyNote} onChange={(event) => setDailyNote(event.target.value)} style={inputStyle} />
+          </label>
+        </div>
+
+        <div style={cablePreviewBox}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 8 }}>
+            <div style={{ color: "#e5e7eb", fontWeight: 900 }}>Select Map Assets</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button type="button" onClick={() => setSelectedDailyAssetIds(new Set(dailyProgressAssetIds))} style={{ ...button, padding: "6px 9px", fontSize: 12 }}>
+                Select All
+              </button>
+              <button type="button" onClick={() => setSelectedDailyAssetIds(new Set())} style={{ ...button, padding: "6px 9px", fontSize: 12 }}>
+                Clear
+              </button>
+            </div>
+          </div>
+          {dailyProgressAssets.slice(0, 180).map((asset: any) => {
+            const assetId = String(asset.id || "");
+            const selected = selectedDailyAssetIds.has(assetId);
+            return (
+              <label key={assetId} style={{ display: "grid", gridTemplateColumns: "22px minmax(160px, 1fr) auto", alignItems: "center", gap: 10, borderBottom: "1px solid rgba(148,163,184,0.10)", padding: "4px 0 7px", color: selected ? "#f8fafc" : "#cbd5e1", fontSize: 12, cursor: "pointer" }}>
+                <input type="checkbox" checked={selected} onChange={() => toggleDailyAssetSelection(assetId)} />
+                <span style={{ fontWeight: selected ? 850 : 600 }}>{asset.name || asset.label || asset.id}</span>
+                <span style={{ color: "#94a3b8" }}>{getAssetTypeLabel(asset)}</span>
+              </label>
+            );
+          })}
+          {dailyProgressAssets.length > 180 ? (
+            <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 8 }}>
+              Showing first 180 of {n(dailyProgressAssets.length)} matching assets.
+            </div>
+          ) : null}
+        </div>
+
+        <button
+          type="button"
+          style={{ ...button, background: "#14532d", borderColor: "rgba(74,222,128,0.42)", marginTop: 12 }}
+          onClick={applyDailyProgress}
+          disabled={!onRecordDailyProgress || !selectedDailyProgressAssets.length || !dailyNote.trim()}
+        >
+          Save Today&apos;s Production To {n(selectedDailyProgressAssets.length)} Asset{selectedDailyProgressAssets.length === 1 ? "" : "s"}
+        </button>
       </section>
     ) : null}
 

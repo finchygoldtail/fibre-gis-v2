@@ -171,6 +171,7 @@ import AssetDetailsSidebarSections from "./map/AssetDetailsSidebarSections";
 import type {
   AssetType,
   CableType,
+  DailyProgressTeam,
   DistributionPointDetails,
   DuctUse,
   FibreCount,
@@ -4012,6 +4013,131 @@ export default function JointMapManager({
     alert(`Updated ${updatedById.size} asset${updatedById.size === 1 ? "" : "s"} to ${args.status}.`);
   };
 
+  const handleWorkspaceDailyProgressUpdate = async (args: {
+    assetIds: string[];
+    team: DailyProgressTeam;
+    date: string;
+    meters?: number;
+    spliceCount?: number;
+    crewName?: string;
+    note: string;
+  }) => {
+    const ids = new Set((args.assetIds || []).map(String).filter(Boolean));
+    if (!ids.size) {
+      alert("No assets selected for daily production.");
+      return;
+    }
+
+    const reason = String(args.note || "").trim();
+    if (!reason) {
+      alert("A note is required before saving daily production.");
+      return;
+    }
+
+    const date = String(args.date || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    const meters = Math.max(0, Number(args.meters || 0));
+    const spliceCount = Math.max(0, Math.round(Number(args.spliceCount || 0)));
+    if ((args.team === "civils" || args.team === "cabling") && !meters) {
+      alert("Enter metres done today.");
+      return;
+    }
+    if (args.team === "splicing" && !spliceCount) {
+      alert("Enter splice count done today.");
+      return;
+    }
+
+    const beforeAssets = (savedJoints ?? []).filter((asset) =>
+      ids.has(String(asset.id || "")),
+    );
+    if (!beforeAssets.length) {
+      alert("No matching saved assets were found for daily production.");
+      return;
+    }
+
+    const recordedAt = new Date().toISOString();
+    const updatedById = new Map<string, SavedMapAsset>();
+
+    beforeAssets.forEach((asset) => {
+      const item = asset as any;
+      const nextEntry = {
+        id: crypto.randomUUID(),
+        date,
+        team: args.team,
+        ...(args.team === "splicing" ? { spliceCount } : { meters }),
+        ...(args.crewName ? { crewName: args.crewName } : {}),
+        note: reason,
+        recordedAt,
+      };
+
+      const rawNextAsset = {
+        ...item,
+        workStatus: item.workStatus || "in-progress",
+        lastFieldCheckedAt: recordedAt,
+        dailyProgress: [...(Array.isArray(item.dailyProgress) ? item.dailyProgress : []), nextEntry],
+        properties: {
+          ...(item.properties || {}),
+          workStatus: item.properties?.workStatus || item.workStatus || "in-progress",
+          lastFieldCheckedAt: recordedAt,
+          dailyProgress: [
+            ...(Array.isArray(item.properties?.dailyProgress) ? item.properties.dailyProgress : []),
+            nextEntry,
+          ],
+        },
+      } as SavedMapAsset;
+
+      const nextAsset = withAssetEditedMetadata(
+        markAssetForLiveSync(rawNextAsset),
+        "updated",
+        reason,
+      );
+      updatedById.set(String(asset.id || ""), nextAsset);
+    });
+
+    const nextSavedJoints = (savedJoints ?? []).map(
+      (asset) => updatedById.get(String(asset.id || "")) || asset,
+    );
+
+    setSavedJoints(nextSavedJoints);
+
+    beforeAssets.forEach((beforeAsset) => {
+      const afterAsset = updatedById.get(String(beforeAsset.id || ""));
+      if (!afterAsset) return;
+
+      writeAssetAuditLog({
+        asset: afterAsset,
+        action: "updated",
+        reason,
+        comment: `Daily ${args.team} production update from Project Workspace`,
+        before: {
+          dailyProgressCount: Array.isArray((beforeAsset as any).dailyProgress)
+            ? (beforeAsset as any).dailyProgress.length
+            : 0,
+        },
+        after: {
+          date,
+          team: args.team,
+          meters,
+          spliceCount,
+        },
+      });
+    });
+
+    try {
+      await saveMapAssetsViaCoordinator(nextSavedJoints, {
+        businessId: mapBusinessId,
+        reason: `daily-production:${args.team}:${reason}`,
+        source: "joint-map-manager",
+      });
+    } catch (error) {
+      console.error("Daily production map save failed", error);
+      throw new Error(
+        "Daily production was applied locally, but the map save failed. Check the console before refreshing.",
+      );
+    }
+
+    alert(`Saved daily ${args.team} production to ${updatedById.size} asset${updatedById.size === 1 ? "" : "s"}.`);
+  };
+
   const handleWorkspaceClearDpFibreAllocations = async (args: {
     assetIds: string[];
     note: string;
@@ -5136,6 +5262,7 @@ export default function JointMapManager({
         onBulkUpdateCablePiaNoi={handleWorkspaceBulkCablePiaNoiUpdate}
         onBulkUpdateJointInstallMethod={handleWorkspaceBulkJointInstallMethodUpdate}
         onBulkUpdateWorkStatus={handleWorkspaceBulkWorkStatusUpdate}
+        onRecordDailyProgress={handleWorkspaceDailyProgressUpdate}
         onUpdateDpStatus={handleWorkspaceSingleDpStatusUpdate}
         onClearDpFibreAllocations={handleWorkspaceClearDpFibreAllocations}
         onApplyAddressSheetAssignments={handleWorkspaceAddressSheetAssignments}

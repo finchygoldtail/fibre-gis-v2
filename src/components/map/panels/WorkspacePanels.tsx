@@ -43,6 +43,15 @@ type WorkspacePanelsProps = {
     assignedTeam?: string;
     note: string;
   }) => void | Promise<void>;
+  onRecordDailyProgress: (args: {
+    assetIds: string[];
+    team: "civils" | "cabling" | "splicing";
+    date: string;
+    meters?: number;
+    spliceCount?: number;
+    crewName?: string;
+    note: string;
+  }) => void | Promise<void>;
   onUpdateDpStatus: (args: {
     assetId: string;
     status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
@@ -78,6 +87,7 @@ export default function WorkspacePanels({
   onBulkUpdateCablePiaNoi,
   onBulkUpdateJointInstallMethod,
   onBulkUpdateWorkStatus,
+  onRecordDailyProgress,
   onUpdateDpStatus,
   onClearDpFibreAllocations,
   onApplyAddressSheetAssignments,
@@ -133,6 +143,7 @@ export default function WorkspacePanels({
       onBulkUpdateCablePiaNoi={onBulkUpdateCablePiaNoi}
       onBulkUpdateJointInstallMethod={onBulkUpdateJointInstallMethod}
       onBulkUpdateWorkStatus={onBulkUpdateWorkStatus}
+      onRecordDailyProgress={onRecordDailyProgress}
       onUpdateDpStatus={onUpdateDpStatus}
       onClearDpFibreAllocations={onClearDpFibreAllocations}
       onApplyAddressSheetAssignments={onApplyAddressSheetAssignments}

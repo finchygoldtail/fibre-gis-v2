@@ -32,6 +32,10 @@ import type { NetworkState } from "../../services/network";
 import { getDpIntelligence, isDpLikeAsset } from "../../services/dpIntelligence";
 import { getHomeConnectionStatus } from "../../services/homeIntelligence";
 import { hasCanonicalHomeServiceException } from "./workspace/canonicalHomeStatus";
+import {
+  getDailyProgressTeamColour,
+  getDailyProgressTotals,
+} from "./workspace/workspaceOperations";
 
 // =====================================================
 // TYPES
@@ -544,6 +548,19 @@ function isDuctAsset(asset: SavedMapAsset): boolean {
     .map((value) => String(value ?? "").toLowerCase())
     .join(" ");
   return text.includes("duct") && !text.includes("drop");
+}
+
+function getDailyRouteProgress(asset: SavedMapAsset) {
+  const totals = getDailyProgressTotals(asset);
+  const meters = totals.civilsMeters + totals.cablingMeters;
+  const team =
+    totals.cablingMeters >= totals.civilsMeters && totals.cablingMeters > 0
+      ? "cabling"
+      : totals.civilsMeters > 0
+        ? "civils"
+        : null;
+
+  return { ...totals, meters, team };
 }
 
 function getCableColour(asset: SavedMapAsset): string {
@@ -1232,6 +1249,7 @@ export default function WorkspaceMap({
         {ductAssets.map((asset) => {
           const points = getLinePoints(asset);
           const labelPlacement = getLineLabelPlacement(points);
+          const dailyProgress = getDailyRouteProgress(asset);
 
           return (
             <React.Fragment key={`workspace-duct-${asset.id}`}>
@@ -1258,6 +1276,22 @@ export default function WorkspaceMap({
                   {getAssetName(asset)} - duct - {formatDistance(getPathDistanceMeters(points))}
                 </Tooltip>
               </Polyline>
+              {dailyProgress.team ? (
+                <Polyline
+                  positions={points.map((point) => [point.lat, point.lng] as [number, number])}
+                  pathOptions={{
+                    color: getDailyProgressTeamColour(dailyProgress.team),
+                    weight: selectedAssetId === asset.id ? 13 : 10,
+                    opacity: 0.95,
+                    dashArray: "14, 8",
+                  }}
+                  eventHandlers={{ click: (event) => selectWorkspaceAsset(asset, onAssetSelect, event) }}
+                >
+                  <Tooltip sticky>
+                    {getAssetName(asset)} - today {dailyProgress.team}: {dailyProgress.meters.toFixed(1)}m
+                  </Tooltip>
+                </Polyline>
+              ) : null}
               {showMapLabels && labelPlacement && viewportZoom >= 10 && (
                 <Marker
                   position={[labelPlacement.point.lat, labelPlacement.point.lng]}
@@ -1324,6 +1358,7 @@ export default function WorkspaceMap({
           const cableState = networkState?.cableStates[asset.id];
           const cableUsageDisplay = getWorkspaceCableUsageDisplay(asset, cableState);
           const cableLabel = getWorkspaceCableLabel(asset, showPiaNoiLabels);
+          const dailyProgress = getDailyRouteProgress(asset);
 
           return (
             <React.Fragment key={`workspace-cable-${asset.id}`}>
@@ -1353,6 +1388,22 @@ export default function WorkspaceMap({
                   {cableUsageDisplay ? ` - ${cableUsageDisplay}` : ""}
                 </Tooltip>
               </Polyline>
+              {dailyProgress.team ? (
+                <Polyline
+                  positions={points.map((point) => [point.lat, point.lng] as [number, number])}
+                  pathOptions={{
+                    color: getDailyProgressTeamColour(dailyProgress.team),
+                    weight: selectedAssetId === asset.id ? 13 : 10,
+                    opacity: 0.95,
+                    dashArray: "14, 8",
+                  }}
+                  eventHandlers={{ click: (event) => selectWorkspaceAsset(asset, onAssetSelect, event) }}
+                >
+                  <Tooltip sticky>
+                    {getAssetName(asset)} - today {dailyProgress.team}: {dailyProgress.meters.toFixed(1)}m
+                  </Tooltip>
+                </Polyline>
+              ) : null}
 
               {showMapLabels && (showCableDistances || cableLabel) && labelPlacement && (
                 <Marker
@@ -1413,63 +1464,84 @@ export default function WorkspaceMap({
           const traceKind = getTraceKind(asset, traceHighlightedAssetIds, traceHighlightKinds);
           const homeStatus = isHomeAssetForWorkspace(asset) ? getHomeConnectionStatus(asset, assets, isHomeDropCable) : undefined;
           const dpCapacityState = getDpCapacityState(asset, assets);
+          const dailyProgress = getDailyProgressTotals(asset);
 
           return (
-            <Marker
-              key={`workspace-point-${asset.id}`}
-              position={[point.lat, point.lng]}
-              icon={getAssetMarkerIcon(asset, selected, traceKind, homeStatus, isTouchWorkspace, assets, showMapLabels)}
-              ref={(marker) => {
-                if (marker) {
-                  markerRefs.current.set(asset.id, marker);
-                } else {
-                  markerRefs.current.delete(asset.id);
-                }
-              }}
-              eventHandlers={{ click: (event) => selectWorkspaceAsset(asset, onAssetSelect, event) }}
-            >
-              <Popup minWidth={260}>
-                <strong>{getAssetName(asset)}</strong>
-                <br />
-                {getAssetType(asset)}
-                {dpCapacityState ? (
-                  <>
-                    <br />
-                    Connected Homes: {dpCapacityState.connectedHomes}
-                    <br />
-                    Capacity: {dpCapacityState.capacity}
-                    <br />
-                    Used Ports: {dpCapacityState.usedPorts}
-                    <br />
-                    Free Ports: {dpCapacityState.freePorts}
-                    <br />
-                    Capacity %: {Math.round(dpCapacityState.percent || 0)}%
-                    <br />
-                    Capacity Warning: {dpCapacityState.capacityWarning}
-                  </>
-                ) : null}
-                <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {hasAuditFormTemplate(asset) ? (
-                    <button
-                      type="button"
-                      onClick={() => onOpenAudit?.(asset)}
-                      style={workspacePopupButton}
-                    >
-                      {getAuditButtonLabel(asset)}
-                    </button>
+            <React.Fragment key={`workspace-point-wrap-${asset.id}`}>
+              <Marker
+                key={`workspace-point-${asset.id}`}
+                position={[point.lat, point.lng]}
+                icon={getAssetMarkerIcon(asset, selected, traceKind, homeStatus, isTouchWorkspace, assets, showMapLabels)}
+                ref={(marker) => {
+                  if (marker) {
+                    markerRefs.current.set(asset.id, marker);
+                  } else {
+                    markerRefs.current.delete(asset.id);
+                  }
+                }}
+                eventHandlers={{ click: (event) => selectWorkspaceAsset(asset, onAssetSelect, event) }}
+              >
+                <Popup minWidth={260}>
+                  <strong>{getAssetName(asset)}</strong>
+                  <br />
+                  {getAssetType(asset)}
+                  {dpCapacityState ? (
+                    <>
+                      <br />
+                      Connected Homes: {dpCapacityState.connectedHomes}
+                      <br />
+                      Capacity: {dpCapacityState.capacity}
+                      <br />
+                      Used Ports: {dpCapacityState.usedPorts}
+                      <br />
+                      Free Ports: {dpCapacityState.freePorts}
+                      <br />
+                      Capacity %: {Math.round(dpCapacityState.percent || 0)}%
+                      <br />
+                      Capacity Warning: {dpCapacityState.capacityWarning}
+                    </>
                   ) : null}
-                  {isDpLikeAsset(asset) ? (
-                    <button
-                      type="button"
-                      onClick={() => onOpenDistributionPointEditor?.(asset)}
-                      style={workspacePopupSecondaryButton}
-                    >
-                      Open DP
-                    </button>
+                  {dailyProgress.spliceCount > 0 ? (
+                    <>
+                      <br />
+                      Today spliced: {dailyProgress.spliceCount}
+                    </>
                   ) : null}
-                </div>
-              </Popup>
-            </Marker>
+                  <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {hasAuditFormTemplate(asset) ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenAudit?.(asset)}
+                        style={workspacePopupButton}
+                      >
+                        {getAuditButtonLabel(asset)}
+                      </button>
+                    ) : null}
+                    {isDpLikeAsset(asset) ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenDistributionPointEditor?.(asset)}
+                        style={workspacePopupSecondaryButton}
+                      >
+                        Open DP
+                      </button>
+                    ) : null}
+                  </div>
+                </Popup>
+              </Marker>
+              {dailyProgress.spliceCount > 0 ? (
+                <Marker
+                  position={[point.lat, point.lng]}
+                  interactive={false}
+                  icon={L.divIcon({
+                    className: "alistra-workspace-daily-splice-label",
+                    html: `<div style="transform:translate(12px,-28px);background:${getDailyProgressTeamColour("splicing")};color:#fff;border:1px solid rgba(251,207,232,0.85);border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,0.28);">SPLICE ${dailyProgress.spliceCount}</div>`,
+                    iconSize: [1, 1],
+                    iconAnchor: [0, 0],
+                  })}
+                />
+              ) : null}
+            </React.Fragment>
           );
         })}
       </MapContainer>

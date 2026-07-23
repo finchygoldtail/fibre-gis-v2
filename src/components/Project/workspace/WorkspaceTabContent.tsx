@@ -43,6 +43,15 @@ type Props = {
     assignedTeam?: string;
     note: string;
   }) => void | Promise<void>;
+  onRecordDailyProgress?: (args: {
+    assetIds: string[];
+    team: "civils" | "cabling" | "splicing";
+    date: string;
+    meters?: number;
+    spliceCount?: number;
+    crewName?: string;
+    note: string;
+  }) => void | Promise<void>;
   onClearDpFibreAllocations?: () => void;
   onApplyAddressSheetAssignments?: (request: any) => void | Promise<void>;
   onApplySbRouteAssignments?: (request: any) => void | Promise<void>;

@@ -1,5 +1,5 @@
 import { getPathDistanceMeters } from "../../../utils/mapMeasure";
-import type { SavedMapAsset } from "../../map/types";
+import type { DailyProgressEntry, DailyProgressTeam, SavedMapAsset } from "../../map/types";
 
 export type WorkStatus =
   | "planned"
@@ -35,6 +35,13 @@ export type ProductionSummary = {
 export type WorkspaceOperationsSummary = {
   production: ProductionSummary;
   closeout: CloseoutSummary;
+};
+
+export type DailyProgressTotals = {
+  civilsMeters: number;
+  cablingMeters: number;
+  spliceCount: number;
+  entries: DailyProgressEntry[];
 };
 
 function text(value: unknown): string {
@@ -88,6 +95,42 @@ export function getAssetTypeLabel(asset: SavedMapAsset): string {
   if (item.assetType === "street-cab" || raw.includes("cab")) return "Street cab";
   if (raw.includes("joint")) return "Joint";
   return "Asset";
+}
+
+export function getTodayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function getDailyProgressEntries(asset: SavedMapAsset, date = getTodayIsoDate()): DailyProgressEntry[] {
+  const item = asset as any;
+  const entries = Array.isArray(item.dailyProgress)
+    ? (item.dailyProgress as DailyProgressEntry[])
+    : Array.isArray(item.properties?.dailyProgress)
+      ? (item.properties.dailyProgress as DailyProgressEntry[])
+      : [];
+  return entries.filter((entry) => entry?.date === date);
+}
+
+export function getDailyProgressTotals(asset: SavedMapAsset, date = getTodayIsoDate()): DailyProgressTotals {
+  const entries = getDailyProgressEntries(asset, date);
+  return {
+    entries,
+    civilsMeters: entries
+      .filter((entry) => entry.team === "civils")
+      .reduce((sum, entry) => sum + Number(entry.meters || 0), 0),
+    cablingMeters: entries
+      .filter((entry) => entry.team === "cabling")
+      .reduce((sum, entry) => sum + Number(entry.meters || 0), 0),
+    spliceCount: entries
+      .filter((entry) => entry.team === "splicing")
+      .reduce((sum, entry) => sum + Number(entry.spliceCount || 0), 0),
+  };
+}
+
+export function getDailyProgressTeamColour(team: DailyProgressTeam) {
+  if (team === "civils") return "#f59e0b";
+  if (team === "cabling") return "#06b6d4";
+  return "#ec4899";
 }
 
 function isCloseoutAsset(asset: SavedMapAsset): boolean {

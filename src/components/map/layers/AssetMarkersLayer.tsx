@@ -35,6 +35,10 @@ import {
   renderImagePreview,
   renderPhotoStrip,
 } from "./assetPopupRenderHelpers";
+import {
+  getDailyProgressTeamColour,
+  getDailyProgressTotals,
+} from "../../Project/workspace/workspaceOperations";
 
 type LayerVisibility = {
   agJoints: boolean;
@@ -1100,14 +1104,16 @@ const icon = asset.id === highlightedAssetId
     const dpUsage = asset.assetType === "distribution-point" ? dpUsageById.get(asset.id) || null : null;
     const parentSbSummary = asset.assetType === "distribution-point" ? parentSbSummaryById.get(asset.id) || null : null;
     const connectionMode = String((asset as any).connectionMode || "auto").toLowerCase() === "manual" ? "manual" : "auto";
+    const dailyProgress = getDailyProgressTotals(asset);
 
     return (
-      <Marker
-        key={asset.id}
-        position={[lat, lng]}
-        icon={icon}
-        draggable={assetMovementEnabled && activeMoveAssetId === asset.id && asset.assetType !== "home"}
-        eventHandlers={{
+      <React.Fragment key={`asset-marker-wrap-${asset.id}`}>
+        <Marker
+          key={asset.id}
+          position={[lat, lng]}
+          icon={icon}
+          draggable={assetMovementEnabled && activeMoveAssetId === asset.id && asset.assetType !== "home"}
+          eventHandlers={{
           dragend: (e) => {
             if (!assetMovementEnabled || activeMoveAssetId !== asset.id) return;
             const marker = e.target as L.Marker;
@@ -1152,18 +1158,23 @@ const icon = asset.id === highlightedAssetId
 
   onEditAsset(asset);
 },
-        }}
-      >
-        {!cableDrawingMode ? (
-        <Popup minWidth={260}>
-          <div style={popupCardStyle}>
-            <div style={titleStyle}>{asset.name}</div>
-            <div style={subTitleStyle}>{getAssetTypeLabel(asset)}</div>
-            {(asset.assetType === "pole" || asset.assetType === "chamber") && isPiaQaModeEnabled(visibleLayers as any) ? (
-              <div style={{ fontSize: "0.78rem", fontWeight: 900, color: "#9a3412" }}>
-                PIA QA: {getPiaQaStatusLabel(asset)}
-              </div>
-            ) : null}
+          }}
+        >
+          {!cableDrawingMode ? (
+          <Popup minWidth={260}>
+            <div style={popupCardStyle}>
+              <div style={titleStyle}>{asset.name}</div>
+              <div style={subTitleStyle}>{getAssetTypeLabel(asset)}</div>
+              {(asset.assetType === "pole" || asset.assetType === "chamber") && isPiaQaModeEnabled(visibleLayers as any) ? (
+                <div style={{ fontSize: "0.78rem", fontWeight: 900, color: "#9a3412" }}>
+                  PIA QA: {getPiaQaStatusLabel(asset)}
+                </div>
+              ) : null}
+              {dailyProgress.spliceCount > 0 ? (
+                <div style={{ fontSize: "0.78rem", fontWeight: 900, color: getDailyProgressTeamColour("splicing") }}>
+                  Today spliced: {dailyProgress.spliceCount}
+                </div>
+              ) : null}
 
             <div style={sectionStyle}>
               {infoRow("Coordinates", `${lat.toFixed(5)}, ${lng.toFixed(5)}`)}
@@ -1421,9 +1432,22 @@ const icon = asset.id === highlightedAssetId
               ) : null}
             </div>
           </div>
-        </Popup>
+          </Popup>
+          ) : null}
+        </Marker>
+        {!cableDrawingMode && dailyProgress.spliceCount > 0 ? (
+          <Marker
+            position={[lat, lng]}
+            interactive={false}
+            icon={L.divIcon({
+              className: "alistra-daily-splice-label",
+              html: `<div style="transform:translate(12px,-28px);background:${getDailyProgressTeamColour("splicing")};color:#fff;border:1px solid rgba(251,207,232,0.85);border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,0.28);">SPLICE ${dailyProgress.spliceCount}</div>`,
+              iconSize: [1, 1],
+              iconAnchor: [0, 0],
+            })}
+          />
         ) : null}
-      </Marker>
+      </React.Fragment>
     );
   };
 

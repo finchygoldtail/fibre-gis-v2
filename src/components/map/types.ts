@@ -61,6 +61,19 @@ export type FieldEvidence = {
   notes?: string;
 };
 
+export type DailyProgressTeam = "civils" | "cabling" | "splicing";
+
+export type DailyProgressEntry = {
+  id: string;
+  date: string;
+  team: DailyProgressTeam;
+  meters?: number;
+  spliceCount?: number;
+  crewName?: string;
+  note?: string;
+  recordedAt: string;
+};
+
 export type HomeServiceStatus =
   | "serviceable"
   | "blocked"
@@ -245,6 +258,7 @@ export type SavedMapAsset = {
   assignedTeam?: string;
   closeout?: FieldEvidence;
   fieldEvidence?: FieldEvidence;
+  dailyProgress?: DailyProgressEntry[];
 
   source?: "manual" | "osm" | "openreach" | string;
   referenceSubtype?: "or" | "np" | "suggested" | string;
