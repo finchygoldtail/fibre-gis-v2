@@ -274,7 +274,7 @@ export default function WorkspaceOverview({
         <h3 style={title}>Asset Totals</h3>
         <div style={{ ...tileGrid, marginTop: 10 }}>
           <Tile label="Total" value={n(operationalAssets.length)} />
-          <Tile label="DPs" value={n(stats?.dps)} />
+          {!isBackhaulWorkspace ? <Tile label="DPs" value={n(stats?.dps)} /> : null}
           <Tile label="Cables" value={n(stats?.cables)} />
           <Tile label="Joints" value={n(stats?.joints)} />
           <Tile label="Poles" value={n(stats?.poles)} />
@@ -296,9 +296,11 @@ export default function WorkspaceOverview({
           <button type="button" style={primaryButton} onClick={() => onOpenPanel?.("handover", "overview")}>
             Delivery Phase
           </button>
-          <button type="button" style={button} onClick={() => onOpenPanel?.("dpStatus", "overview")}>
-            DP Status
-          </button>
+          {!isBackhaulWorkspace ? (
+            <button type="button" style={button} onClick={() => onOpenPanel?.("dpStatus", "overview")}>
+              DP Status
+            </button>
+          ) : null}
           <button type="button" style={button} onClick={() => onOpenPanel?.("issues", "qa")}>
             QA Navigator
           </button>
