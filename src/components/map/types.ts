@@ -69,6 +69,8 @@ export type DailyProgressEntry = {
   date: string;
   team: DailyProgressTeam;
   meters?: number;
+  startMeter?: number;
+  endMeter?: number;
   spliceCount?: number;
   crewName?: string;
   note?: string;

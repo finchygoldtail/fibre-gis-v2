@@ -246,14 +246,56 @@ function getDashArray(
 function getDailyRouteProgress(asset: SavedMapAsset) {
   const totals = getDailyProgressTotals(asset as any);
   const meters = totals.civilsMeters + totals.cablingMeters;
-  const team =
-    totals.cablingMeters >= totals.civilsMeters && totals.cablingMeters > 0
-      ? "cabling"
-      : totals.civilsMeters > 0
-        ? "civils"
-        : null;
+  const routeEntries = totals.entries.filter((entry) => entry.team === "civils" || entry.team === "cabling");
+  const team = routeEntries.length ? routeEntries[routeEntries.length - 1].team : null;
 
-  return { ...totals, meters, team };
+  return { ...totals, meters, team, routeEntries };
+}
+
+function interpolateTuplePoint(a: [number, number], b: [number, number], ratio: number): [number, number] {
+  return [
+    a[0] + (b[0] - a[0]) * ratio,
+    a[1] + (b[1] - a[1]) * ratio,
+  ];
+}
+
+function sliceTupleLineByMeters(points: [number, number][], startMeter: number, endMeter: number): [number, number][] {
+  if (points.length < 2 || endMeter <= startMeter) return [];
+
+  const total = getTuplePathDistanceMeters(points);
+  const start = Math.max(0, Math.min(startMeter, total));
+  const end = Math.max(start, Math.min(endMeter, total));
+  if (end <= start) return [];
+
+  const sliced: [number, number][] = [];
+  let travelled = 0;
+
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const a = points[index];
+    const b = points[index + 1];
+    const segmentLength = getDistanceMeters(a, b);
+    const segmentStart = travelled;
+    const segmentEnd = travelled + segmentLength;
+    travelled = segmentEnd;
+
+    if (!segmentLength || segmentEnd < start || segmentStart > end) continue;
+
+    const fromRatio = Math.max(0, (start - segmentStart) / segmentLength);
+    const toRatio = Math.min(1, (end - segmentStart) / segmentLength);
+    const fromPoint = fromRatio <= 0 ? a : interpolateTuplePoint(a, b, fromRatio);
+    const toPoint = toRatio >= 1 ? b : interpolateTuplePoint(a, b, toRatio);
+
+    if (!sliced.length) sliced.push(fromPoint);
+    else {
+      const previous = sliced[sliced.length - 1];
+      if (Math.abs(previous[0] - fromPoint[0]) > 0.0000001 || Math.abs(previous[1] - fromPoint[1]) > 0.0000001) {
+        sliced.push(fromPoint);
+      }
+    }
+    sliced.push(toPoint);
+  }
+
+  return sliced;
 }
 
 function getSegmentInstallMethod(asset: SavedMapAsset, index: number): "OH" | "Underground" | null {
@@ -1733,25 +1775,34 @@ export default function CableLinesLayer({
               ) : null}
             </Polyline>
 
-            {!cableDrawingMode && dailyProgress.team ? (
-              <Polyline
-                renderer={cableCanvasRenderer}
-                positions={displayPoints}
-                interactive={false}
-                pathOptions={{
-                  color: getDailyProgressTeamColour(dailyProgress.team),
-                  weight: isDuct ? 10 : isSelected ? 11 : 8,
-                  opacity: 0.96,
-                  dashArray: "14, 8",
-                }}
-              >
-                {!isMobile ? (
-                  <Tooltip sticky>
-                    {isDuct ? getDuctBundleTitle(asset) : asset.name || "Cable"} - today {dailyProgress.team}: {dailyProgress.meters.toFixed(1)}m
-                  </Tooltip>
-                ) : null}
-              </Polyline>
-            ) : null}
+            {!cableDrawingMode
+              ? dailyProgress.routeEntries.map((entry) => {
+                  const startMeter = Number(entry.startMeter ?? 0);
+                  const endMeter = Number(entry.endMeter ?? startMeter + Number(entry.meters || 0));
+                  const segment = sliceTupleLineByMeters(displayPoints as [number, number][], startMeter, endMeter);
+                  if (segment.length < 2) return null;
+
+                  return (
+                    <Polyline
+                      key={`${asset.id}-daily-${entry.id}`}
+                      renderer={cableCanvasRenderer}
+                      positions={segment}
+                      interactive={false}
+                      pathOptions={{
+                        color: getDailyProgressTeamColour(entry.team),
+                        weight: isDuct ? 10 : isSelected ? 11 : 8,
+                        opacity: 0.98,
+                      }}
+                    >
+                      {!isMobile ? (
+                        <Tooltip sticky>
+                          {isDuct ? getDuctBundleTitle(asset) : asset.name || "Cable"} - completed {startMeter.toFixed(0)}m to {endMeter.toFixed(0)}m
+                        </Tooltip>
+                      ) : null}
+                    </Polyline>
+                  );
+                })
+              : null}
 
             {!cableDrawingMode && usesTouchCableSheet && isSelected ? (
               <div

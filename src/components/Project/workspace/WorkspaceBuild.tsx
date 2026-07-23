@@ -52,6 +52,8 @@ type Props = {
     team: DailyProgressTeam;
     date: string;
     meters?: number;
+    startMeter?: number;
+    endMeter?: number;
     spliceCount?: number;
     crewName?: string;
     note: string;
@@ -291,6 +293,8 @@ export default function WorkspaceBuild({
   const [dailyTeam, setDailyTeam] = React.useState<DailyProgressTeam>("civils");
   const [dailyDate, setDailyDate] = React.useState(getTodayIsoDate());
   const [dailyMeters, setDailyMeters] = React.useState(0);
+  const [dailyStartMeter, setDailyStartMeter] = React.useState(0);
+  const [dailyEndMeter, setDailyEndMeter] = React.useState(0);
   const [dailySpliceCount, setDailySpliceCount] = React.useState(0);
   const [dailyCrewName, setDailyCrewName] = React.useState("");
   const [dailyNote, setDailyNote] = React.useState("Daily production update");
@@ -485,10 +489,12 @@ export default function WorkspaceBuild({
       return;
     }
     const routeTeam = dailyTeam === "civils" || dailyTeam === "cabling";
-    const meters = Math.max(0, Number(dailyMeters || 0));
+    const startMeter = Math.max(0, Number(dailyStartMeter || 0));
+    const endMeter = Math.max(0, Number(dailyEndMeter || 0));
+    const meters = routeTeam ? Math.max(0, endMeter - startMeter) : Math.max(0, Number(dailyMeters || 0));
     const spliceCount = Math.max(0, Math.round(Number(dailySpliceCount || 0)));
-    if (routeTeam && !meters) {
-      alert("Enter metres done today.");
+    if (routeTeam && endMeter <= startMeter) {
+      alert("Enter a To metre that is greater than the From metre.");
       return;
     }
     if (!routeTeam && !spliceCount) {
@@ -501,6 +507,8 @@ export default function WorkspaceBuild({
       team: dailyTeam,
       date: dailyDate || getTodayIsoDate(),
       meters: routeTeam ? meters : undefined,
+      startMeter: routeTeam ? startMeter : undefined,
+      endMeter: routeTeam ? endMeter : undefined,
       spliceCount: routeTeam ? undefined : spliceCount,
       crewName: dailyCrewName.trim() || undefined,
       note,
@@ -873,10 +881,16 @@ export default function WorkspaceBuild({
               <input type="number" min={0} value={dailySpliceCount} onChange={(event) => setDailySpliceCount(Number(event.target.value))} style={inputStyle} />
             </label>
           ) : (
-            <label style={labelStyle}>
-              Metres done
-              <input type="number" min={0} step={0.1} value={dailyMeters} onChange={(event) => setDailyMeters(Number(event.target.value))} style={inputStyle} />
-            </label>
+            <>
+              <label style={labelStyle}>
+                From metre
+                <input type="number" min={0} step={0.1} value={dailyStartMeter} onChange={(event) => setDailyStartMeter(Number(event.target.value))} style={inputStyle} />
+              </label>
+              <label style={labelStyle}>
+                To metre
+                <input type="number" min={0} step={0.1} value={dailyEndMeter} onChange={(event) => setDailyEndMeter(Number(event.target.value))} style={inputStyle} />
+              </label>
+            </>
           )}
           <label style={labelStyle}>
             Team / gang

@@ -554,14 +554,56 @@ function isDuctAsset(asset: SavedMapAsset): boolean {
 function getDailyRouteProgress(asset: SavedMapAsset) {
   const totals = getDailyProgressTotals(asset);
   const meters = totals.civilsMeters + totals.cablingMeters;
-  const team =
-    totals.cablingMeters >= totals.civilsMeters && totals.cablingMeters > 0
-      ? "cabling"
-      : totals.civilsMeters > 0
-        ? "civils"
-        : null;
+  const routeEntries = totals.entries.filter((entry) => entry.team === "civils" || entry.team === "cabling");
+  const team = routeEntries.length ? routeEntries[routeEntries.length - 1].team : null;
 
-  return { ...totals, meters, team };
+  return { ...totals, meters, team, routeEntries };
+}
+
+function interpolateWorkspacePoint(a: LatLngLiteral, b: LatLngLiteral, ratio: number): LatLngLiteral {
+  return {
+    lat: a.lat + (b.lat - a.lat) * ratio,
+    lng: a.lng + (b.lng - a.lng) * ratio,
+  };
+}
+
+function sliceWorkspaceLineByMeters(points: LatLngLiteral[], startMeter: number, endMeter: number): LatLngLiteral[] {
+  if (points.length < 2 || endMeter <= startMeter) return [];
+
+  const total = getPathDistanceMeters(points);
+  const start = Math.max(0, Math.min(startMeter, total));
+  const end = Math.max(start, Math.min(endMeter, total));
+  if (end <= start) return [];
+
+  const sliced: LatLngLiteral[] = [];
+  let travelled = 0;
+
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const a = points[index];
+    const b = points[index + 1];
+    const segmentLength = distanceBetweenWorkspacePointsMeters(a, b);
+    const segmentStart = travelled;
+    const segmentEnd = travelled + segmentLength;
+    travelled = segmentEnd;
+
+    if (!segmentLength || segmentEnd < start || segmentStart > end) continue;
+
+    const fromRatio = Math.max(0, (start - segmentStart) / segmentLength);
+    const toRatio = Math.min(1, (end - segmentStart) / segmentLength);
+    const fromPoint = fromRatio <= 0 ? a : interpolateWorkspacePoint(a, b, fromRatio);
+    const toPoint = toRatio >= 1 ? b : interpolateWorkspacePoint(a, b, toRatio);
+
+    if (!sliced.length) sliced.push(fromPoint);
+    else {
+      const previous = sliced[sliced.length - 1];
+      if (Math.abs(previous.lat - fromPoint.lat) > 0.0000001 || Math.abs(previous.lng - fromPoint.lng) > 0.0000001) {
+        sliced.push(fromPoint);
+      }
+    }
+    sliced.push(toPoint);
+  }
+
+  return sliced;
 }
 
 function getCableColour(asset: SavedMapAsset): string {
@@ -1298,22 +1340,29 @@ export default function WorkspaceMap({
                   {getAssetName(asset)} - duct - {formatDistance(getPathDistanceMeters(points))}
                 </Tooltip>
               </Polyline>
-              {dailyProgress.team ? (
-                <Polyline
-                  positions={points.map((point) => [point.lat, point.lng] as [number, number])}
-                  pathOptions={{
-                    color: getDailyProgressTeamColour(dailyProgress.team),
-                    weight: selectedAssetId === asset.id ? 13 : 10,
-                    opacity: 0.95,
-                    dashArray: "14, 8",
-                  }}
-                  eventHandlers={{ click: (event) => selectWorkspaceAsset(asset, onAssetSelect, event) }}
-                >
-                  <Tooltip sticky>
-                    {getAssetName(asset)} - today {dailyProgress.team}: {dailyProgress.meters.toFixed(1)}m
-                  </Tooltip>
-                </Polyline>
-              ) : null}
+              {dailyProgress.routeEntries.map((entry) => {
+                const startMeter = Number(entry.startMeter ?? 0);
+                const endMeter = Number(entry.endMeter ?? startMeter + Number(entry.meters || 0));
+                const segment = sliceWorkspaceLineByMeters(points, startMeter, endMeter);
+                if (segment.length < 2) return null;
+
+                return (
+                  <Polyline
+                    key={`workspace-duct-daily-${asset.id}-${entry.id}`}
+                    positions={segment.map((point) => [point.lat, point.lng] as [number, number])}
+                    pathOptions={{
+                      color: getDailyProgressTeamColour(entry.team),
+                      weight: selectedAssetId === asset.id ? 13 : 10,
+                      opacity: 0.98,
+                    }}
+                    eventHandlers={{ click: (event) => selectWorkspaceAsset(asset, onAssetSelect, event) }}
+                  >
+                    <Tooltip sticky>
+                      {getAssetName(asset)} - completed {startMeter.toFixed(0)}m to {endMeter.toFixed(0)}m
+                    </Tooltip>
+                  </Polyline>
+                );
+              })}
               {showMapLabels && labelPlacement && viewportZoom >= 10 && (
                 <Marker
                   position={[labelPlacement.point.lat, labelPlacement.point.lng]}
@@ -1410,22 +1459,29 @@ export default function WorkspaceMap({
                   {cableUsageDisplay ? ` - ${cableUsageDisplay}` : ""}
                 </Tooltip>
               </Polyline>
-              {dailyProgress.team ? (
-                <Polyline
-                  positions={points.map((point) => [point.lat, point.lng] as [number, number])}
-                  pathOptions={{
-                    color: getDailyProgressTeamColour(dailyProgress.team),
-                    weight: selectedAssetId === asset.id ? 13 : 10,
-                    opacity: 0.95,
-                    dashArray: "14, 8",
-                  }}
-                  eventHandlers={{ click: (event) => selectWorkspaceAsset(asset, onAssetSelect, event) }}
-                >
-                  <Tooltip sticky>
-                    {getAssetName(asset)} - today {dailyProgress.team}: {dailyProgress.meters.toFixed(1)}m
-                  </Tooltip>
-                </Polyline>
-              ) : null}
+              {dailyProgress.routeEntries.map((entry) => {
+                const startMeter = Number(entry.startMeter ?? 0);
+                const endMeter = Number(entry.endMeter ?? startMeter + Number(entry.meters || 0));
+                const segment = sliceWorkspaceLineByMeters(points, startMeter, endMeter);
+                if (segment.length < 2) return null;
+
+                return (
+                  <Polyline
+                    key={`workspace-cable-daily-${asset.id}-${entry.id}`}
+                    positions={segment.map((point) => [point.lat, point.lng] as [number, number])}
+                    pathOptions={{
+                      color: getDailyProgressTeamColour(entry.team),
+                      weight: selectedAssetId === asset.id ? 13 : 10,
+                      opacity: 0.98,
+                    }}
+                    eventHandlers={{ click: (event) => selectWorkspaceAsset(asset, onAssetSelect, event) }}
+                  >
+                    <Tooltip sticky>
+                      {getAssetName(asset)} - completed {startMeter.toFixed(0)}m to {endMeter.toFixed(0)}m
+                    </Tooltip>
+                  </Polyline>
+                );
+              })}
 
               {showMapLabels && (showCableDistances || cableLabel) && labelPlacement && (
                 <Marker

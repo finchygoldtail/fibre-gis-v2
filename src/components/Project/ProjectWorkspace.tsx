@@ -188,6 +188,8 @@ type ProjectWorkspaceProps = {
     team: "civils" | "cabling" | "splicing";
     date: string;
     meters?: number;
+    startMeter?: number;
+    endMeter?: number;
     spliceCount?: number;
     crewName?: string;
     note: string;

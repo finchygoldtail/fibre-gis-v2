@@ -117,6 +117,10 @@ import { filterAssetsForProjectArea } from "./map/projects/projectAssetFilter";
 import { useProjectAreaView } from "./map/projects/useProjectAreaView";
 import { isHarrellicommsBusiness } from "../utils/clientAccessControl";
 import { useProjectWorkspaceStats } from "./map/workspace/useProjectWorkspaceStats";
+import {
+  dailyProgressRangeOverlaps,
+  getDailyProgressHistory,
+} from "./Project/workspace/workspaceOperations";
 import { useLayerCounts } from "./map/layers/useLayerCounts";
 import { useCableAllocationOptions } from "./map/cables/useCableAllocationOptions";
 import { useCableWorkflow } from "./map/cables/useCableWorkflow";
@@ -4027,6 +4031,8 @@ export default function JointMapManager({
     team: DailyProgressTeam;
     date: string;
     meters?: number;
+    startMeter?: number;
+    endMeter?: number;
     spliceCount?: number;
     crewName?: string;
     note: string;
@@ -4044,10 +4050,12 @@ export default function JointMapManager({
     }
 
     const date = String(args.date || new Date().toISOString().slice(0, 10)).slice(0, 10);
-    const meters = Math.max(0, Number(args.meters || 0));
+    const startMeter = Math.max(0, Number(args.startMeter || 0));
+    const endMeter = Math.max(0, Number(args.endMeter || 0));
+    const meters = Math.max(0, Number(args.meters || (endMeter > startMeter ? endMeter - startMeter : 0)));
     const spliceCount = Math.max(0, Math.round(Number(args.spliceCount || 0)));
-    if ((args.team === "civils" || args.team === "cabling") && !meters) {
-      alert("Enter metres done today.");
+    if ((args.team === "civils" || args.team === "cabling") && endMeter <= startMeter) {
+      alert("Enter a To metre that is greater than the From metre.");
       return;
     }
     if (args.team === "splicing" && !spliceCount) {
@@ -4063,6 +4071,25 @@ export default function JointMapManager({
       return;
     }
 
+    if (args.team === "civils" || args.team === "cabling") {
+      const overlaps = beforeAssets
+        .map((asset) => ({
+          asset,
+          match: getDailyProgressHistory(asset).find((entry) =>
+            dailyProgressRangeOverlaps(entry, args.team, null, startMeter, endMeter),
+          ),
+        }))
+        .filter((item) => item.match);
+
+      if (overlaps.length) {
+        const first = overlaps[0];
+        alert(
+          `${first.asset.name || first.asset.id} already has ${args.team} production recorded from ${first.match?.startMeter}m to ${first.match?.endMeter}m. Use the next open section, for example ${first.match?.endMeter}m onward.`,
+        );
+        return;
+      }
+    }
+
     const recordedAt = new Date().toISOString();
     const updatedById = new Map<string, SavedMapAsset>();
 
@@ -4072,7 +4099,7 @@ export default function JointMapManager({
         id: crypto.randomUUID(),
         date,
         team: args.team,
-        ...(args.team === "splicing" ? { spliceCount } : { meters }),
+        ...(args.team === "splicing" ? { spliceCount } : { meters, startMeter, endMeter }),
         ...(args.crewName ? { crewName: args.crewName } : {}),
         note: reason,
         recordedAt,

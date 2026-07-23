@@ -102,13 +102,17 @@ export function getTodayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function getDailyProgressEntries(asset: SavedMapAsset, date = getTodayIsoDate()): DailyProgressEntry[] {
+export function getDailyProgressHistory(asset: SavedMapAsset): DailyProgressEntry[] {
   const item = asset as any;
-  const entries = Array.isArray(item.dailyProgress)
+  return Array.isArray(item.dailyProgress)
     ? (item.dailyProgress as DailyProgressEntry[])
     : Array.isArray(item.properties?.dailyProgress)
       ? (item.properties.dailyProgress as DailyProgressEntry[])
       : [];
+}
+
+export function getDailyProgressEntries(asset: SavedMapAsset, date = getTodayIsoDate()): DailyProgressEntry[] {
+  const entries = getDailyProgressHistory(asset);
   return entries.filter((entry) => entry?.date === date);
 }
 
@@ -129,9 +133,25 @@ export function getDailyProgressTotals(asset: SavedMapAsset, date = getTodayIsoD
 }
 
 export function getDailyProgressTeamColour(team: DailyProgressTeam) {
-  if (team === "civils") return "#f59e0b";
+  if (team === "civils") return "#22c55e";
   if (team === "cabling") return "#06b6d4";
   return "#ec4899";
+}
+
+export function dailyProgressRangeOverlaps(
+  entry: DailyProgressEntry,
+  team: DailyProgressTeam,
+  date: string | null,
+  startMeter: number,
+  endMeter: number,
+) {
+  if (entry.team !== team) return false;
+  if (date && entry.date !== date) return false;
+  if (typeof entry.startMeter !== "number" || typeof entry.endMeter !== "number") return false;
+
+  const existingStart = Math.min(entry.startMeter, entry.endMeter);
+  const existingEnd = Math.max(entry.startMeter, entry.endMeter);
+  return startMeter < existingEnd && endMeter > existingStart;
 }
 
 function isCloseoutAsset(asset: SavedMapAsset): boolean {
