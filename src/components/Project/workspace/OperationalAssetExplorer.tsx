@@ -429,7 +429,7 @@ export default function OperationalAssetExplorer({
 
       <div style={{ background: "transparent", border: "1px solid #d8d2c8", borderRadius: 12, padding: 12, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
         <div>
-          <div style={{ color: "#e0f2fe", fontWeight: 900 }}>Bulk PIA NOI</div>
+          <div style={{ color: "#1f2933", fontWeight: 900 }}>Bulk PIA NOI</div>
           <div style={{ color: "#64748b", fontSize: 12 }}>
             Select cable rows below, then apply one PIA NOI number to all selected cables.
           </div>

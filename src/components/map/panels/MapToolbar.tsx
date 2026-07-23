@@ -864,7 +864,10 @@ const messageButtonStyle: React.CSSProperties = {
   whiteSpace: "nowrap",
   display: "inline-flex",
   alignItems: "center",
+  justifyContent: "center",
   gap: 7,
+  minHeight: 48,
+  lineHeight: 1,
   position: "relative",
 };
 
@@ -1186,6 +1189,11 @@ const actionButtonStyle: React.CSSProperties = {
   fontSize: 13,
   fontWeight: 850,
   whiteSpace: "nowrap",
+  minHeight: 48,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  lineHeight: 1,
 };
 
 const refreshButtonStyle = (isRefreshing: boolean): React.CSSProperties => ({
@@ -1199,6 +1207,11 @@ const refreshButtonStyle = (isRefreshing: boolean): React.CSSProperties => ({
   fontSize: 13,
   fontWeight: 850,
   whiteSpace: "nowrap",
+  minHeight: 48,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  lineHeight: 1,
 });
 
 const locationButtonStyle = (
@@ -1215,4 +1228,9 @@ const locationButtonStyle = (
   fontSize: 13,
   fontWeight: 900,
   whiteSpace: "nowrap",
+  minHeight: 48,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  lineHeight: 1,
 });

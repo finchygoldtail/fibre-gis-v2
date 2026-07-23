@@ -36,7 +36,7 @@ const wrap: React.CSSProperties = {
 const table: React.CSSProperties = {
   width: "100%",
   borderCollapse: "collapse",
-  color: "#64748b",
+  color: "#334155",
   fontSize: 12,
 };
 
@@ -60,7 +60,7 @@ const td: React.CSSProperties = {
 const nameButton: React.CSSProperties = {
   border: 0,
   background: "transparent",
-  color: "#bfdbfe",
+  color: "#2563eb",
   fontWeight: 900,
   padding: 0,
   cursor: "pointer",

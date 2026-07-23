@@ -935,12 +935,12 @@ function Info({ label, value }: { label: string; value: React.ReactNode }) {
 
 
 const shell: React.CSSProperties = {
-  background: "rgba(2, 6, 23, 0.96)",
-  border: "1px solid rgba(148, 163, 184, 0.22)",
-  borderRadius: 22,
+  background: "#fbfaf7",
+  border: "1px solid #ddd8cf",
+  borderRadius: 14,
   padding: 18,
-  color: "#e5e7eb",
-  boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
+  color: "#1f2933",
+  boxShadow: "0 12px 30px rgba(15,23,42,0.08)",
 };
 
 const header: React.CSSProperties = {
@@ -952,7 +952,7 @@ const header: React.CSSProperties = {
 };
 
 const eyebrow: React.CSSProperties = {
-  color: "#38bdf8",
+  color: "#2563eb",
   fontSize: 11,
   fontWeight: 800,
   letterSpacing: "0.12em",
@@ -966,22 +966,22 @@ const title: React.CSSProperties = {
 
 const subtitle: React.CSSProperties = {
   margin: 0,
-  color: "#94a3b8",
+  color: "#64748b",
   maxWidth: 820,
 };
 
 const statusCard: React.CSSProperties = {
   minWidth: 190,
-  border: "1px solid rgba(56, 189, 248, 0.35)",
+  border: "1px solid #d8d2c8",
   borderRadius: 16,
   padding: 14,
-  background: "rgba(8, 47, 73, 0.5)",
+  background: "#ffffff",
   display: "grid",
   gap: 4,
 };
 
 const statusLabel: React.CSSProperties = {
-  color: "#bae6fd",
+  color: "#2563eb",
   fontSize: 12,
   fontWeight: 800,
 };
@@ -994,20 +994,20 @@ const tabBar: React.CSSProperties = {
 };
 
 const tabButton: React.CSSProperties = {
-  border: "1px solid rgba(148, 163, 184, 0.22)",
+  border: "1px solid #d8d2c8",
   borderRadius: 999,
   padding: "8px 12px",
-  background: "rgba(15, 23, 42, 0.9)",
-  color: "#cbd5e1",
+  background: "#ffffff",
+  color: "#1f2933",
   cursor: "pointer",
   fontWeight: 800,
 };
 
 const tabButtonActive: React.CSSProperties = {
   ...tabButton,
-  background: "linear-gradient(135deg, rgba(14, 165, 233, 0.95), rgba(37, 99, 235, 0.95))",
-  color: "white",
-  borderColor: "rgba(125, 211, 252, 0.65)",
+  background: "#eaf2ff",
+  color: "#1d4ed8",
+  borderColor: "#93c5fd",
 };
 
 const grid: React.CSSProperties = {
@@ -1017,9 +1017,9 @@ const grid: React.CSSProperties = {
 };
 
 const panel: React.CSSProperties = {
-  border: "1px solid rgba(148, 163, 184, 0.18)",
-  borderRadius: 18,
-  background: "rgba(15, 23, 42, 0.86)",
+  border: "1px solid #ddd8cf",
+  borderRadius: 14,
+  background: "#ffffff",
   padding: 16,
 };
 
@@ -1032,7 +1032,7 @@ const panelTitle: React.CSSProperties = {
   fontSize: 15,
   fontWeight: 900,
   marginBottom: 12,
-  color: "#f8fafc",
+  color: "#1f2933",
 };
 
 const kpiGrid: React.CSSProperties = {
@@ -1044,10 +1044,10 @@ const kpiGrid: React.CSSProperties = {
 const infoCard: React.CSSProperties = {
   display: "grid",
   gap: 4,
-  border: "1px solid rgba(148, 163, 184, 0.14)",
+  border: "1px solid #e2ded7",
   borderRadius: 14,
   padding: 12,
-  background: "rgba(2, 6, 23, 0.55)",
+  background: "#fbfaf7",
 };
 
 const gateBox = (open: boolean): React.CSSProperties => ({
@@ -1055,14 +1055,14 @@ const gateBox = (open: boolean): React.CSSProperties => ({
   border: `1px solid ${open ? "rgba(34, 197, 94, 0.35)" : "rgba(248, 113, 113, 0.35)"}`,
   borderRadius: 16,
   padding: 13,
-  background: open ? "rgba(20, 83, 45, 0.25)" : "rgba(127, 29, 29, 0.25)",
+  background: open ? "rgba(220, 252, 231, 0.72)" : "rgba(254, 226, 226, 0.72)",
   display: "grid",
   gap: 4,
 });
 
-const revisionTitle: React.CSSProperties = { color: "#f8fafc", fontSize: 16 };
-const muted: React.CSSProperties = { color: "#94a3b8", margin: "6px 0" };
-const list: React.CSSProperties = { margin: "8px 0 0", paddingLeft: 18, color: "#cbd5e1" };
+const revisionTitle: React.CSSProperties = { color: "#1f2933", fontSize: 16 };
+const muted: React.CSSProperties = { color: "#64748b", margin: "6px 0" };
+const list: React.CSSProperties = { margin: "8px 0 0", paddingLeft: 18, color: "#334155" };
 
 const workflowRow: React.CSSProperties = {
   display: "grid",
@@ -1074,7 +1074,7 @@ const workflowStep = (done: boolean): React.CSSProperties => ({
   border: `1px solid ${done ? "rgba(34, 197, 94, 0.35)" : "rgba(148, 163, 184, 0.18)"}`,
   borderRadius: 14,
   padding: 12,
-  background: done ? "rgba(20, 83, 45, 0.22)" : "rgba(30, 41, 59, 0.55)",
+  background: done ? "rgba(220, 252, 231, 0.72)" : "#fbfaf7",
   display: "grid",
   gap: 6,
 });
@@ -1092,33 +1092,33 @@ const primaryButton: React.CSSProperties = {
   cursor: "pointer",
 };
 const secondaryButton: React.CSSProperties = {
-  border: "1px solid rgba(56, 189, 248, 0.45)",
+  border: "1px solid #d8d2c8",
   borderRadius: 10,
   padding: "8px 10px",
-  background: "rgba(14, 165, 233, 0.12)",
-  color: "#bae6fd",
+  background: "#ffffff",
+  color: "#1f2933",
   fontWeight: 800,
   cursor: "pointer",
 };
 const linkButton: React.CSSProperties = {
   ...secondaryButton,
-  borderColor: "rgba(148, 163, 184, 0.3)",
-  color: "#e5e7eb",
+  borderColor: "#d8d2c8",
+  color: "#1f2933",
 };
-const fieldLabel: React.CSSProperties = { display: "block", marginTop: 10, marginBottom: 5, color: "#cbd5e1", fontSize: 12, fontWeight: 800 };
-const input: React.CSSProperties = { width: "100%", boxSizing: "border-box", borderRadius: 10, border: "1px solid rgba(148, 163, 184, 0.22)", background: "rgba(2, 6, 23, 0.65)", color: "#f8fafc", padding: 10 };
+const fieldLabel: React.CSSProperties = { display: "block", marginTop: 10, marginBottom: 5, color: "#334155", fontSize: 12, fontWeight: 800 };
+const input: React.CSSProperties = { width: "100%", boxSizing: "border-box", borderRadius: 10, border: "1px solid #d8d2c8", background: "#ffffff", color: "#1f2933", padding: 10 };
 const textarea: React.CSSProperties = { ...input, minHeight: 86, resize: "vertical" };
-const assetPicker: React.CSSProperties = { marginTop: 12, border: "1px solid rgba(148, 163, 184, 0.16)", borderRadius: 14, padding: 12, background: "rgba(2, 6, 23, 0.35)" };
+const assetPicker: React.CSSProperties = { marginTop: 12, border: "1px solid #e2ded7", borderRadius: 14, padding: 12, background: "#fbfaf7" };
 const assetChipWrap: React.CSSProperties = { display: "flex", flexWrap: "wrap", gap: 6, margin: "8px 0" };
-const assetChip: React.CSSProperties = { border: "1px solid rgba(148, 163, 184, 0.18)", borderRadius: 999, padding: "6px 9px", background: "rgba(15, 23, 42, 0.85)", color: "#cbd5e1", cursor: "pointer" };
-const assetChipActive: React.CSSProperties = { ...assetChip, background: "rgba(14, 165, 233, 0.22)", borderColor: "rgba(56, 189, 248, 0.55)", color: "#e0f2fe" };
+const assetChip: React.CSSProperties = { border: "1px solid #d8d2c8", borderRadius: 999, padding: "6px 9px", background: "#ffffff", color: "#1f2933", cursor: "pointer" };
+const assetChipActive: React.CSSProperties = { ...assetChip, background: "#eaf2ff", borderColor: "#93c5fd", color: "#1d4ed8" };
 const stack: React.CSSProperties = { display: "grid", gap: 10 };
-const recordCard: React.CSSProperties = { border: "1px solid rgba(148, 163, 184, 0.16)", borderRadius: 14, padding: 12, background: "rgba(2, 6, 23, 0.45)" };
+const recordCard: React.CSSProperties = { border: "1px solid #e2ded7", borderRadius: 14, padding: 12, background: "#ffffff" };
 const recordHead: React.CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 };
 const buttonRow: React.CSSProperties = { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 };
-const emptyBox: React.CSSProperties = { border: "1px dashed rgba(148, 163, 184, 0.22)", borderRadius: 14, padding: 18, color: "#94a3b8" };
-const packCard: React.CSSProperties = { border: "1px solid rgba(56, 189, 248, 0.25)", borderRadius: 16, padding: 16, background: "rgba(8, 47, 73, 0.32)", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", marginBottom: 12 };
-const packTitle: React.CSSProperties = { margin: "5px 0", color: "#f8fafc" };
+const emptyBox: React.CSSProperties = { border: "1px dashed #cbd5e1", borderRadius: 14, padding: 18, color: "#64748b" };
+const packCard: React.CSSProperties = { border: "1px solid #d8d2c8", borderRadius: 16, padding: 16, background: "#fbfaf7", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", marginBottom: 12 };
+const packTitle: React.CSSProperties = { margin: "5px 0", color: "#1f2933" };
 const approvalList: React.CSSProperties = { display: "grid", gap: 8 };
 const approvalCard = (status: ApprovalStatus): React.CSSProperties => ({
   border: `1px solid ${status === "Approved" ? "rgba(34,197,94,.35)" : status === "Pending" ? "rgba(234,179,8,.35)" : "rgba(148,163,184,.18)"}`,

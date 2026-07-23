@@ -1668,8 +1668,8 @@ export default function PiaReviewWorkspace({
 const routeReviewPanel: React.CSSProperties = {
   gridColumn: "1 / -1",
   minHeight: 0,
-  background: "rgba(2,6,23,0.52)",
-  border: "1px solid rgba(148,163,184,0.16)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 12,
   padding: 12,
   display: "flex",
@@ -1677,7 +1677,7 @@ const routeReviewPanel: React.CSSProperties = {
   gap: 10,
 };
 const routeReviewIntro: React.CSSProperties = {
-  color: "#94a3b8",
+  color: "#64748b",
   fontSize: 12,
   lineHeight: 1.35,
 };
@@ -1690,9 +1690,9 @@ const routeChipList: React.CSSProperties = {
   paddingRight: 4,
 };
 const routeChip: React.CSSProperties = {
-  background: "rgba(15,23,42,0.8)",
-  border: "1px solid rgba(148,163,184,0.2)",
-  color: "#cbd5e1",
+  background: "#ffffff",
+  border: "1px solid #d8d2c8",
+  color: "#1f2933",
   borderRadius: 999,
   padding: "7px 10px",
   display: "inline-flex",
@@ -1702,19 +1702,19 @@ const routeChip: React.CSSProperties = {
   cursor: "pointer",
 };
 const routeChipActive: React.CSSProperties = {
-  borderColor: "#38bdf8",
-  color: "#e0f2fe",
-  background: "rgba(56,189,248,0.16)",
+  borderColor: "#2563eb",
+  color: "#1d4ed8",
+  background: "#eaf2ff",
 };
 const activeRouteBanner: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
   gap: 10,
-  color: "#cbd5e1",
+  color: "#1f2933",
   fontSize: 12,
-  background: "rgba(56,189,248,0.1)",
-  border: "1px solid rgba(56,189,248,0.22)",
+  background: "#eaf2ff",
+  border: "1px solid rgba(147,197,253,0.7)",
   borderRadius: 10,
   padding: "8px 10px",
 };
@@ -1733,9 +1733,8 @@ const root: React.CSSProperties = {
   position: "fixed",
   inset: 0,
   zIndex: 6600,
-  background:
-    "radial-gradient(circle at top left, rgba(37,99,235,0.18), transparent 32%), #020617",
-  color: "#f8fafc",
+  background: "#f6f4ef",
+  color: "#1f2933",
   display: "flex",
   flexDirection: "column",
   fontFamily:
@@ -1746,8 +1745,8 @@ const root: React.CSSProperties = {
 const header: React.CSSProperties = {
   minHeight: 76,
   padding: "14px 20px",
-  borderBottom: "1px solid rgba(148,163,184,0.16)",
-  background: "rgba(15,23,42,0.96)",
+  borderBottom: "1px solid #ddd8cf",
+  background: "#fbfaf7",
   backdropFilter: "blur(14px)",
   display: "grid",
   gridTemplateColumns: "330px 1fr auto",
@@ -1759,7 +1758,7 @@ const header: React.CSSProperties = {
   zIndex: 20,
 };
 const kicker: React.CSSProperties = {
-  color: "#38bdf8",
+  color: "#2563eb",
   fontSize: 11,
   fontWeight: 900,
   letterSpacing: 0.7,
@@ -1773,7 +1772,7 @@ const title: React.CSSProperties = {
 };
 const subtitle: React.CSSProperties = {
   marginTop: 6,
-  color: "#cbd5e1",
+  color: "#64748b",
   fontSize: 14,
 };
 const headerCentre: React.CSSProperties = {
@@ -1784,11 +1783,11 @@ const headerCentre: React.CSSProperties = {
   flexWrap: "wrap",
 };
 const headerMetric: React.CSSProperties = {
-  background: "rgba(15,23,42,0.75)",
-  border: "1px solid rgba(148,163,184,0.16)",
+  background: "#ffffff",
+  border: "1px solid #d8d2c8",
   borderRadius: 10,
   padding: "9px 12px",
-  color: "#cbd5e1",
+  color: "#1f2933",
   fontSize: 13,
 };
 const headerActions: React.CSSProperties = { display: "flex", gap: 10 };
@@ -1810,19 +1809,19 @@ const summaryPanel: React.CSSProperties = {
   gap: 16,
 };
 const summaryLeft: React.CSSProperties = {
-  background: "linear-gradient(180deg, rgba(15,23,42,0.96), rgba(2,6,23,0.94))",
-  border: "1px solid rgba(96,165,250,0.24)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 14,
   padding: 16,
 };
 const alertPanel: React.CSSProperties = {
-  background: "linear-gradient(180deg, rgba(15,23,42,0.96), rgba(2,6,23,0.94))",
-  border: "1px solid rgba(96,165,250,0.22)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 14,
   padding: 16,
 };
 const sectionKicker: React.CSSProperties = {
-  color: "#bfdbfe",
+  color: "#2563eb",
   fontSize: 12,
   fontWeight: 900,
   textTransform: "uppercase",
@@ -1843,7 +1842,7 @@ const progressHeader: React.CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
   gap: 12,
-  color: "#cbd5e1",
+  color: "#475569",
   fontSize: 13,
   marginBottom: 8,
 };
@@ -1869,22 +1868,22 @@ const contractorSummaryRow: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "minmax(0, 1fr) 48px",
   gap: 6,
-  color: "#cbd5e1",
-  background: "rgba(2,6,23,0.45)",
-  border: "1px solid rgba(148,163,184,0.12)",
+  color: "#1f2933",
+  background: "#fbfaf7",
+  border: "1px solid #e2ded7",
   borderRadius: 9,
   padding: 8,
   fontSize: 12,
 };
 const kpiTile: React.CSSProperties = {
-  background: "rgba(2,6,23,0.58)",
-  border: "1px solid rgba(148,163,184,0.15)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 12,
   padding: 12,
   minHeight: 70,
 };
 const kpiLabel: React.CSSProperties = {
-  color: "#cbd5e1",
+  color: "#64748b",
   fontSize: 11,
   fontWeight: 850,
 };
@@ -1898,8 +1897,8 @@ const queuePanel: React.CSSProperties = {
   minHeight: 0,
   minWidth: 0,
   height: "auto",
-  background: "linear-gradient(180deg, rgba(15,23,42,0.96), rgba(2,6,23,0.94))",
-  border: "1px solid rgba(96,165,250,0.24)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 14,
   padding: 16,
   display: "flex",
@@ -1909,8 +1908,8 @@ const reviewPanel: React.CSSProperties = {
   minHeight: 0,
   minWidth: 0,
   height: "auto",
-  background: "linear-gradient(180deg, rgba(15,23,42,0.96), rgba(2,6,23,0.94))",
-  border: "1px solid rgba(96,165,250,0.24)",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 14,
   padding: 16,
   overflow: "visible",
@@ -1924,12 +1923,12 @@ const panelHeader: React.CSSProperties = {
 };
 const panelTitle: React.CSSProperties = {
   margin: 0,
-  color: "#dbeafe",
+  color: "#1f2933",
   fontSize: 18,
 };
 const reviewTitle: React.CSSProperties = {
   margin: 0,
-  color: "#f8fafc",
+  color: "#1f2933",
   fontSize: 22,
   letterSpacing: "-0.03em",
 };
@@ -1942,10 +1941,10 @@ const filters: React.CSSProperties = {
 const input: React.CSSProperties = {
   width: "100%",
   boxSizing: "border-box",
-  background: "rgba(2,6,23,0.55)",
-  border: "1px solid rgba(148,163,184,0.28)",
+  background: "#ffffff",
+  border: "1px solid #d8d2c8",
   borderRadius: 9,
-  color: "#f8fafc",
+  color: "#1f2933",
   padding: "10px 12px",
   outline: "none",
 };
@@ -1970,11 +1969,11 @@ const assetRow: React.CSSProperties = {
   gap: 10,
   alignItems: "center",
   textAlign: "left",
-  background: "rgba(2,6,23,0.48)",
-  border: "1px solid rgba(148,163,184,0.12)",
+  background: "#ffffff",
+  border: "1px solid #e2ded7",
   borderRadius: 11,
   padding: "11px 12px",
-  color: "#e5e7eb",
+  color: "#1f2933",
   cursor: "pointer",
 };
 const selectedAssetRow: React.CSSProperties = {
@@ -1987,8 +1986,8 @@ const reviewTick: React.CSSProperties = {
   borderRadius: 999,
   display: "grid",
   placeItems: "center",
-  background: "rgba(15,23,42,0.82)",
-  border: "1px solid rgba(148,163,184,0.14)",
+  background: "#f8fafc",
+  border: "1px solid #d8d2c8",
   fontWeight: 950,
 };
 const assetNameBlock: React.CSSProperties = {
@@ -1997,7 +1996,7 @@ const assetNameBlock: React.CSSProperties = {
   gap: 4,
 };
 const queueMeta: React.CSSProperties = {
-  color: "#94a3b8",
+  color: "#64748b",
   fontSize: 12,
   whiteSpace: "nowrap",
 };
@@ -2027,7 +2026,7 @@ const photoPane: React.CSSProperties = {
   minHeight: 0,
   overflowY: "visible",
   overflowX: "visible",
-  borderLeft: "1px solid rgba(148,163,184,0.12)",
+  borderLeft: "1px solid #e2ded7",
   paddingLeft: 16,
 };
 const statusButtons: React.CSSProperties = {
@@ -2037,9 +2036,9 @@ const statusButtons: React.CSSProperties = {
   marginBottom: 14,
 };
 const statusButton: React.CSSProperties = {
-  background: "rgba(2,6,23,0.44)",
-  color: "#cbd5e1",
-  border: "1px solid rgba(148,163,184,0.18)",
+  background: "#ffffff",
+  color: "#1f2933",
+  border: "1px solid #d8d2c8",
   borderRadius: 9,
   padding: "9px 8px",
   cursor: "pointer",
@@ -2054,7 +2053,7 @@ const formGrid: React.CSSProperties = {
 const field: React.CSSProperties = {
   display: "grid",
   gap: 7,
-  color: "#cbd5e1",
+  color: "#334155",
   fontSize: 12,
   fontWeight: 750,
   marginBottom: 12,
@@ -2065,27 +2064,27 @@ const manualCheckBox: React.CSSProperties = {
   justifyContent: "space-between",
   alignItems: "center",
   gap: 12,
-  border: "1px dashed rgba(56,189,248,0.35)",
+  border: "1px dashed #93c5fd",
   borderRadius: 12,
   padding: 12,
-  color: "#cbd5e1",
-  background: "rgba(14,165,233,0.08)",
+  color: "#1f2933",
+  background: "#eaf2ff",
 };
 const manualCheckGrid: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "110px minmax(0, 1fr)",
   gap: "6px 10px",
   marginTop: 8,
-  color: "#cbd5e1",
+  color: "#334155",
 };
 const shortcutHelp: React.CSSProperties = {
-  color: "#94a3b8",
+  color: "#64748b",
   fontSize: 11,
   lineHeight: 1.45,
-  border: "1px solid rgba(148,163,184,0.14)",
+  border: "1px solid #e2ded7",
   borderRadius: 10,
   padding: 10,
-  background: "rgba(2,6,23,0.35)",
+  background: "#fbfaf7",
   marginTop: 12,
 };
 const actions: React.CSSProperties = {
@@ -2095,9 +2094,9 @@ const actions: React.CSSProperties = {
   marginTop: 14,
 };
 const button: React.CSSProperties = {
-  background: "#132640",
-  color: "#e5e7eb",
-  border: "1px solid rgba(148,163,184,0.25)",
+  background: "#ffffff",
+  color: "#1f2933",
+  border: "1px solid #d8d2c8",
   borderRadius: 10,
   padding: "10px 13px",
   cursor: "pointer",
@@ -2116,17 +2115,17 @@ const primaryButton: React.CSSProperties = {
 };
 const closeButton: React.CSSProperties = {
   background: "transparent",
-  color: "#f8fafc",
+  color: "#1f2933",
   border: "none",
   fontSize: 28,
   cursor: "pointer",
   lineHeight: 1,
 };
 const emptyState: React.CSSProperties = {
-  border: "1px dashed rgba(148,163,184,0.28)",
+  border: "1px dashed #cbd5e1",
   borderRadius: 12,
   padding: 18,
-  color: "#94a3b8",
+  color: "#64748b",
   textAlign: "center",
 };
 const emptyReview: React.CSSProperties = {
@@ -2134,7 +2133,7 @@ const emptyReview: React.CSSProperties = {
   display: "grid",
   placeContent: "center",
   textAlign: "center",
-  border: "1px dashed rgba(148,163,184,0.24)",
+  border: "1px dashed #cbd5e1",
   borderRadius: 14,
 };
 const photoGrid: React.CSSProperties = {
@@ -2146,9 +2145,9 @@ const photoTile: React.CSSProperties = {
   display: "grid",
   gap: 8,
   textAlign: "left",
-  color: "#dbeafe",
-  background: "rgba(2,6,23,0.55)",
-  border: "1px solid rgba(148,163,184,0.18)",
+  color: "#1f2933",
+  background: "#ffffff",
+  border: "1px solid #e2ded7",
   borderRadius: 10,
   padding: 8,
   minWidth: 0,
@@ -2166,9 +2165,9 @@ const photoPlaceholder: React.CSSProperties = {
   height: 175,
   display: "grid",
   placeItems: "center",
-  color: "#94a3b8",
-  background: "rgba(15,23,42,0.85)",
-  border: "1px dashed rgba(148,163,184,0.28)",
+  color: "#64748b",
+  background: "#fbfaf7",
+  border: "1px dashed #cbd5e1",
   borderRadius: 8,
 };
 const viewerBackdrop: React.CSSProperties = {

@@ -212,6 +212,14 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
     );
   }, [areaOptions, areaSearch]);
 
+  const visibleUsers = useMemo(
+    () =>
+      users.filter(
+        (user) => normaliseBusinessId(user.businessId) === currentBusinessId,
+      ),
+    [currentBusinessId, users],
+  );
+
   if (!visible) return null;
 
   const saveUserRole = async (
@@ -447,7 +455,7 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
       setNewName("");
       setNewEmail("");
       setNewPassword("");
-      setNewBusinessId(BUSINESS_ID);
+      setNewBusinessId(currentBusinessId);
       setNewRole("survey_user");
     } catch (err) {
       console.error("Failed to create/update login user", err);
@@ -577,13 +585,17 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
           <div style={getCardStyle(isNarrowViewport)}>
             <h4 style={sectionTitleStyle}>Existing Users</h4>
 
+            <div style={{ ...mutedStyle, marginBottom: 10 }}>
+              Showing users for {currentBusinessId}.
+            </div>
+
             {isLoading ? (
               <div style={mutedStyle}>Loading users...</div>
-            ) : users.length === 0 ? (
+            ) : visibleUsers.length === 0 ? (
               <div style={mutedStyle}>No users configured yet.</div>
             ) : (
               <div style={existingUsersListStyle}>
-                {users.map((user) => {
+                {visibleUsers.map((user) => {
                   const areaAccessOpen = openAreaUserUid === user.uid;
                   const unrestricted = hasUnrestrictedAreaAccess(user);
                   const selectedAreaKeys = new Set(
