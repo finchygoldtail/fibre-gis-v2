@@ -2626,6 +2626,7 @@ export default function JointMapManager({
 
   const { handleSaveEdits, handleSaveJoint, handleDeleteAsset } =
     useAssetSaveHandlers({
+      activeBusinessId: mapBusinessId,
       activeProjectId,
       activeProjectAreaName,
       allocatedInputFibres,

@@ -47,6 +47,7 @@ type SaveDetailOverrides = {
 };
 
 type UseAssetSaveHandlersArgs = {
+  activeBusinessId: string;
   activeProjectId: string | null;
   activeProjectAreaName: string | null | undefined;
   allocatedInputFibres: number[];
@@ -196,6 +197,7 @@ function recordEngineeringChangeSafely(args: {
 }
 
 export function useAssetSaveHandlers({
+  activeBusinessId,
   activeProjectId,
   activeProjectAreaName,
   allocatedInputFibres,
@@ -749,6 +751,7 @@ export function useAssetSaveHandlers({
 
     try {
       await saveMapAssetsViaCoordinator(nextSavedAssets, {
+        businessId: activeBusinessId,
         reason: `asset-delete:${reason}`,
         source: "joint-map-manager",
         explicitDeletedAssetIds: [deletedId],
