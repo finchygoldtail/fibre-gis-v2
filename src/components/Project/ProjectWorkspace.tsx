@@ -72,7 +72,9 @@ import {
 } from "./workspace/WorkspaceUi";
 import {
   buildAreaReadiness,
+  backhaulDeliveryPhaseOptions,
   deliveryPhaseOptions,
+  getBackhaulDeliveryPhaseConfig,
   getDeliveryPhaseConfig,
   getWorkspaceDeliveryPhase,
   readinessColour,
@@ -2091,9 +2093,15 @@ export default function ProjectWorkspace({
   );
 
   const deliveryPhaseConfig = useMemo(
-    () => getDeliveryPhaseConfig(deliveryPhase),
-    [deliveryPhase],
+    () =>
+      isHarrellicommsBackhaulWorkspace
+        ? getBackhaulDeliveryPhaseConfig(deliveryPhase)
+        : getDeliveryPhaseConfig(deliveryPhase),
+    [deliveryPhase, isHarrellicommsBackhaulWorkspace],
   );
+  const workspaceDeliveryPhaseOptions = isHarrellicommsBackhaulWorkspace
+    ? backhaulDeliveryPhaseOptions
+    : deliveryPhaseOptions;
 
   const effectiveWorkspaceStatus = deliveryPhaseConfig.statusLabel || status;
 
@@ -2104,7 +2112,9 @@ export default function ProjectWorkspace({
   ).trim();
 
   const handleDeliveryPhaseChange = (phaseId: DeliveryPhaseId) => {
-    const phase = getDeliveryPhaseConfig(phaseId);
+    const phase = isHarrellicommsBackhaulWorkspace
+      ? getBackhaulDeliveryPhaseConfig(phaseId)
+      : getDeliveryPhaseConfig(phaseId);
 
     if (!canManageWalkOff) {
       alert("Administrator or Super User access required to change delivery stage.");
@@ -2117,7 +2127,7 @@ export default function ProjectWorkspace({
     }
 
     let reason = deliveryPhaseOverrideReason;
-    if (phase.allowsCustomerLiveWithoutPia || phase.allowsWalkOffWithoutPia) {
+    if (!isHarrellicommsBackhaulWorkspace && (phase.allowsCustomerLiveWithoutPia || phase.allowsWalkOffWithoutPia)) {
       const enteredReason = window.prompt(
         `${phase.label} needs a manager note so the PIA exception is auditable.`,
         reason || "Customer service released while PIA evidence is being completed.",
@@ -4861,11 +4871,14 @@ export default function ProjectWorkspace({
                         <div>
                           <div style={operationKicker}>AREA HANDOVER</div>
                           <h3 style={areaHandoverTitle}>
-                            Delivery Stage / Commercial Sign-Off
+                            {isHarrellicommsBackhaulWorkspace
+                              ? "Route Delivery Stage"
+                              : "Delivery Stage / Commercial Sign-Off"}
                           </h3>
                           <div style={areaHandoverHint}>
-                            Track the area from identification and survey gates through build,
-                            PIA, walk-off and final handover.
+                            {isHarrellicommsBackhaulWorkspace
+                              ? "Track the backhaul route from survey through planned, in progress, built, walk-off, as-builts and handover."
+                              : "Track the area from identification and survey gates through build, PIA, walk-off and final handover."}
                           </div>
                         </div>
                         <span style={walkOffStatusPill(walkOffStatus)}>
@@ -4902,7 +4915,7 @@ export default function ProjectWorkspace({
                               {deliveryPhaseConfig.description}
                             </div>
                           </div>
-                          {piaGateCustomerLiveOverride && (
+                          {!isHarrellicommsBackhaulWorkspace && piaGateCustomerLiveOverride && (
                             <span style={walkOffStatusPill("Review Required")}>
                               PIA override active
                             </span>
@@ -4915,7 +4928,7 @@ export default function ProjectWorkspace({
                             gap: 8,
                           }}
                         >
-                          {deliveryPhaseOptions.map((phase) => {
+                          {workspaceDeliveryPhaseOptions.map((phase) => {
                             const selected = phase.id === deliveryPhase;
                             return (
                               <button
@@ -4959,7 +4972,7 @@ export default function ProjectWorkspace({
                             );
                           })}
                         </div>
-                        {deliveryPhaseOverrideReason && piaGateCustomerLiveOverride && (
+                        {!isHarrellicommsBackhaulWorkspace && deliveryPhaseOverrideReason && piaGateCustomerLiveOverride && (
                           <div style={{ color: "#cbd5e1", fontSize: 12 }}>
                             Override note: {deliveryPhaseOverrideReason}
                           </div>
@@ -4967,17 +4980,25 @@ export default function ProjectWorkspace({
                       </div>
 
                       <div style={areaHandoverGrid}>
-                        <InfoRow
-                          label="PIA Gate"
-                          value={
-                            rawPiaGatePassedForWalkOff
-                              ? "Passed"
-                              : deliveryPhaseConfig.allowsWalkOffWithoutPia
-                                ? "Override"
-                                : `${piaQaStats.piaPass} / ${piaQaStats.requiredTotal}`
-                          }
-                          highlight={piaGatePassedForWalkOff}
-                        />
+                        {!isHarrellicommsBackhaulWorkspace ? (
+                          <InfoRow
+                            label="PIA Gate"
+                            value={
+                              rawPiaGatePassedForWalkOff
+                                ? "Passed"
+                                : deliveryPhaseConfig.allowsWalkOffWithoutPia
+                                  ? "Override"
+                                  : `${piaQaStats.piaPass} / ${piaQaStats.requiredTotal}`
+                            }
+                            highlight={piaGatePassedForWalkOff}
+                          />
+                        ) : (
+                          <InfoRow
+                            label="Route Stage"
+                            value={deliveryPhaseConfig.shortLabel}
+                            highlight={deliveryPhase !== "survey-stage"}
+                          />
+                        )}
                         <InfoRow
                           label="Readiness"
                           value={`${operationalReadiness.score}% · ${operationalReadiness.state}`}
@@ -4996,22 +5017,26 @@ export default function ProjectWorkspace({
                           value={`${issueBuckets.high.length} / ${issueBuckets.medium.length}`}
                           highlight={issueBuckets.high.length === 0}
                         />
-                        <InfoRow
-                          label="Homes Live"
-                          value={`${formatNumber(rolloutKpis.homesLive)} / ${formatNumber(rolloutKpis.homesPassed)}`}
-                          highlight={
-                            rolloutKpis.homesPassed > 0 &&
-                            rolloutKpis.homesLive >= rolloutKpis.homesPassed
-                          }
-                        />
-                        <InfoRow
-                          label="DPs Live"
-                          value={`${formatNumber(rolloutKpis.dpLive)} / ${formatNumber(rolloutKpis.dpTotal)}`}
-                          highlight={
-                            rolloutKpis.dpTotal > 0 &&
-                            rolloutKpis.dpLive >= rolloutKpis.dpTotal
-                          }
-                        />
+                        {!isHarrellicommsBackhaulWorkspace ? (
+                          <>
+                            <InfoRow
+                              label="Homes Live"
+                              value={`${formatNumber(rolloutKpis.homesLive)} / ${formatNumber(rolloutKpis.homesPassed)}`}
+                              highlight={
+                                rolloutKpis.homesPassed > 0 &&
+                                rolloutKpis.homesLive >= rolloutKpis.homesPassed
+                              }
+                            />
+                            <InfoRow
+                              label="DPs Live"
+                              value={`${formatNumber(rolloutKpis.dpLive)} / ${formatNumber(rolloutKpis.dpTotal)}`}
+                              highlight={
+                                rolloutKpis.dpTotal > 0 &&
+                                rolloutKpis.dpLive >= rolloutKpis.dpTotal
+                              }
+                            />
+                          </>
+                        ) : null}
                         <InfoRow
                           label="Last Walk-Off"
                           value={walkOffSavedAt || "Not completed"}
@@ -5019,7 +5044,24 @@ export default function ProjectWorkspace({
                         />
                       </div>
 
-                      {!piaGatePassedForWalkOff ? (
+                      {isHarrellicommsBackhaulWorkspace ? (
+                        operationalReadiness.blockers.length ? (
+                          <div style={handoverBlockerBox}>
+                            <strong>Current blockers</strong>
+                            <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
+                              {operationalReadiness.blockers
+                                .slice(0, 4)
+                                .map((blocker) => (
+                                  <li key={blocker}>{blocker}</li>
+                                ))}
+                            </ul>
+                          </div>
+                        ) : (
+                          <div style={handoverGoodBox}>
+                            Route delivery stage is tracking without hard readiness blockers.
+                          </div>
+                        )
+                      ) : !piaGatePassedForWalkOff ? (
                         <div style={handoverBlockerBox}>
                           <strong>PIA gate blocker</strong>
                           <div style={{ marginTop: 8 }}>{piaGateBlockerText}</div>
@@ -5052,14 +5094,18 @@ export default function ProjectWorkspace({
                           type="button"
                           style={{
                             ...wideButton,
-                            opacity: piaGatePassedForWalkOff ? 1 : 0.48,
-                            cursor: piaGatePassedForWalkOff ? "pointer" : "not-allowed",
+                            opacity: isHarrellicommsBackhaulWorkspace || piaGatePassedForWalkOff ? 1 : 0.48,
+                            cursor: isHarrellicommsBackhaulWorkspace || piaGatePassedForWalkOff ? "pointer" : "not-allowed",
                           }}
-                          disabled={!piaGatePassedForWalkOff}
+                          disabled={!isHarrellicommsBackhaulWorkspace && !piaGatePassedForWalkOff}
                           title={piaGateBlockerText}
                           onClick={handleOpenWalkOffAudit}
                         >
-                          {piaGatePassedForWalkOff ? "Launch Walk-Off Audit" : "Walk-Off Locked - PIA Not Passed"}
+                          {isHarrellicommsBackhaulWorkspace
+                            ? "Launch Route Walk-Off"
+                            : piaGatePassedForWalkOff
+                              ? "Launch Walk-Off Audit"
+                              : "Walk-Off Locked - PIA Not Passed"}
                         </button>
                         {canManageWalkOff && latestWalkOffAudit ? (
                           <button

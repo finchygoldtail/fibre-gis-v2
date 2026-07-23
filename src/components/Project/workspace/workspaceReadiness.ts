@@ -30,6 +30,9 @@ export type DeliveryPhaseId =
   | "building-job-packs"
   | "ready-for-build"
   | "survey-stage"
+  | "route-planned"
+  | "in-progress"
+  | "built"
   | "build"
   | "customers-live"
   | "pia-ready"
@@ -174,10 +177,83 @@ export const deliveryPhaseOptions: DeliveryPhaseConfig[] = [
   },
 ];
 
+export const backhaulDeliveryPhaseOptions: DeliveryPhaseConfig[] = [
+  {
+    id: "survey-stage",
+    label: "Survey Stage",
+    shortLabel: "Survey Stage",
+    description: "Route survey is underway before the backhaul route is planned.",
+    statusLabel: "Survey Stage",
+    allowsCustomerLiveWithoutPia: true,
+    allowsWalkOffWithoutPia: true,
+  },
+  {
+    id: "route-planned",
+    label: "Route Planned",
+    shortLabel: "Route Planned",
+    description: "Backhaul route has been planned and is ready for delivery checks.",
+    statusLabel: "Route Planned",
+    allowsCustomerLiveWithoutPia: true,
+    allowsWalkOffWithoutPia: true,
+  },
+  {
+    id: "in-progress",
+    label: "In Progress",
+    shortLabel: "In Progress",
+    description: "Civils, cabling or splicing works are currently in progress.",
+    statusLabel: "In Progress",
+    allowsCustomerLiveWithoutPia: true,
+    allowsWalkOffWithoutPia: true,
+  },
+  {
+    id: "built",
+    label: "Built",
+    shortLabel: "Built",
+    description: "Physical route build is complete and ready for walk-off.",
+    statusLabel: "Built",
+    allowsCustomerLiveWithoutPia: true,
+    allowsWalkOffWithoutPia: true,
+  },
+  {
+    id: "walkoff",
+    label: "Walk-Off Complete",
+    shortLabel: "Walk-Off Complete",
+    description: "Route walk-off is complete.",
+    statusLabel: "Walk-Off Complete",
+    allowsCustomerLiveWithoutPia: true,
+    allowsWalkOffWithoutPia: true,
+  },
+  {
+    id: "as-builds-complete",
+    label: "As-Builts Complete",
+    shortLabel: "As-Builts Complete",
+    description: "As-built records are complete.",
+    statusLabel: "As-Builts Complete",
+    allowsCustomerLiveWithoutPia: true,
+    allowsWalkOffWithoutPia: true,
+  },
+  {
+    id: "handover",
+    label: "Handover",
+    shortLabel: "Handover",
+    description: "Route is ready for final handover.",
+    statusLabel: "Handover",
+    allowsCustomerLiveWithoutPia: true,
+    allowsWalkOffWithoutPia: true,
+  },
+];
+
 export function getDeliveryPhaseConfig(id: DeliveryPhaseId): DeliveryPhaseConfig {
   return (
     deliveryPhaseOptions.find((phase) => phase.id === id) ||
     deliveryPhaseOptions[0]
+  );
+}
+
+export function getBackhaulDeliveryPhaseConfig(id: DeliveryPhaseId): DeliveryPhaseConfig {
+  return (
+    backhaulDeliveryPhaseOptions.find((phase) => phase.id === id) ||
+    getDeliveryPhaseConfig(id)
   );
 }
 
@@ -219,6 +295,20 @@ function normaliseDeliveryPhase(value: unknown): DeliveryPhaseId | null {
     text === "survey"
   )
     return "survey-stage";
+  if (
+    text === "route-planned" ||
+    text === "route_planned" ||
+    text.includes("route planned")
+  )
+    return "route-planned";
+  if (
+    text === "in-progress" ||
+    text === "in_progress" ||
+    text.includes("in progress") ||
+    text.includes("wip")
+  )
+    return "in-progress";
+  if (text === "built" || text.includes("built")) return "built";
   if (
     text === "as-builds-complete" ||
     text === "as_builts_complete" ||
