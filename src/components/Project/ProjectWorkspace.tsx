@@ -220,6 +220,7 @@ const defaultWorkspaceLayers: WorkspaceLayerVisibility = {
   // Heavy render layers stay available, but operators turn them on when needed.
   projectBoundary: true,
   areas: true,
+  ducts: true,
   cables: false,
   dropCables: false,
   joints: true,
@@ -241,6 +242,7 @@ const workspaceLayerOptions: {
 }[] = [
   { key: "projectBoundary", label: "Project Boundary" },
   { key: "areas", label: "Areas" },
+  { key: "ducts", label: "Ducts" },
   { key: "cables", label: "Cables" },
   { key: "dropCables", label: "Home Drop Cables" },
   { key: "joints", label: "Joints" },
@@ -580,13 +582,33 @@ function hasDrawableLineRoute(asset: SavedMapAsset | null | undefined): boolean 
   return Array.isArray(coordinates) && coordinates.length >= 2;
 }
 
+function isWorkspaceDuctAsset(asset: SavedMapAsset | null | undefined): boolean {
+  if (!asset) return false;
+  const item = asset as any;
+  const text = [
+    item.assetType,
+    item.type,
+    item.jointType,
+    item.name,
+    item.label,
+    item.category,
+    item.properties?.assetType,
+    item.properties?.type,
+    item.properties?.name,
+  ]
+    .map((value) => String(value ?? "").toLowerCase())
+    .join(" ");
+
+  return text.includes("duct") && !isHomeDropCableAsset(asset);
+}
+
 function isDesignCableAsset(asset: SavedMapAsset | null | undefined): boolean {
   if (!asset) return false;
   const item = asset as any;
   const type = String(item.assetType || item.type || "").toLowerCase();
   const hasLineGeometry = asset.geometry?.type === "LineString";
   const looksLikeCable = hasLineGeometry || type.includes("cable");
-  return looksLikeCable && !isHomeDropCableAsset(asset);
+  return looksLikeCable && !isHomeDropCableAsset(asset) && !isWorkspaceDuctAsset(asset);
 }
 
 function isQgisExportableReferenceCable(
@@ -1547,6 +1569,7 @@ export default function ProjectWorkspace({
       ...defaultWorkspaceLayers,
       projectBoundary: true,
       areas: true,
+      ducts: true,
       cables: true,
       dropCables: false,
       joints: true,
@@ -2502,6 +2525,7 @@ export default function ProjectWorkspace({
     const homeAssets = workspaceAssets.filter(
       (asset) => assetTypeBucket(asset) === "Home",
     );
+    const ductAssets = workspaceAssets.filter(isWorkspaceDuctAsset);
     const designCableAssets = workspaceAssets.filter(isDesignCableAsset);
     const dropCableAssets = workspaceAssets.filter(isHomeDropCableAsset);
 
@@ -3200,6 +3224,7 @@ export default function ProjectWorkspace({
     return {
       projectBoundary: projectArea ? 1 : 0,
       areas: areaAssets.length,
+      ducts: ductAssets.length,
       cables: designCableAssets.length,
       dropCables: dropCableAssets.length,
       joints: jointAssets.length,
@@ -3216,6 +3241,7 @@ export default function ProjectWorkspace({
         0,
         workspaceAssets.length -
           areaAssets.length -
+          ductAssets.length -
           designCableAssets.length -
           dropCableAssets.length -
           jointAssets.length -
@@ -3299,6 +3325,7 @@ export default function ProjectWorkspace({
       ...defaultWorkspaceLayers,
       projectBoundary: true,
       areas: false,
+      ducts: false,
       cables: false,
       dropCables: false,
       joints: false,
@@ -3324,6 +3351,7 @@ export default function ProjectWorkspace({
       ...defaultWorkspaceLayers,
       projectBoundary: false,
       areas: false,
+      ducts: false,
       cables: false,
       dropCables: false,
       joints: false,
@@ -3644,6 +3672,7 @@ export default function ProjectWorkspace({
           ...visibleLayers,
           projectBoundary: true,
           areas: true,
+          ducts: false,
           poles: true,
           chambers: true,
           dps: false,

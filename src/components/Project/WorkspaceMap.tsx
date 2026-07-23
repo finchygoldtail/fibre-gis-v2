@@ -40,6 +40,7 @@ import { hasCanonicalHomeServiceException } from "./workspace/canonicalHomeStatu
 export type WorkspaceLayerVisibility = {
   projectBoundary: boolean;
   areas: boolean;
+  ducts: boolean;
   cables: boolean;
   dropCables: boolean;
   joints: boolean;
@@ -524,6 +525,14 @@ function isHomeDropCable(asset: SavedMapAsset): boolean {
   );
 }
 
+function isDuctAsset(asset: SavedMapAsset): boolean {
+  const item = asset as any;
+  const text = [item.assetType, item.type, item.jointType, item.name, item.label, item.category]
+    .map((value) => String(value ?? "").toLowerCase())
+    .join(" ");
+  return text.includes("duct") && !text.includes("drop");
+}
+
 function getCableColour(asset: SavedMapAsset): string {
   const item = asset as any;
   const type = `${item.cableType || ""} ${item.name || ""}`.toLowerCase();
@@ -845,6 +854,7 @@ function hasAuditFormTemplate(asset: SavedMapAsset): boolean {
 function isLayerVisibleForAsset(asset: SavedMapAsset, visibleLayers: WorkspaceLayerVisibility): boolean {
   const type = getAssetType(asset);
 
+  if (isDuctAsset(asset)) return visibleLayers.ducts;
   if (getLinePoints(asset).length >= 2) return isHomeDropCable(asset) ? visibleLayers.dropCables : visibleLayers.cables;
   if (getPolygonRings(asset).length > 0) return visibleLayers.areas;
 
@@ -966,25 +976,21 @@ export default function WorkspaceMap({
   showCableDistances = false,
   visibleLayers = {
     projectBoundary: true,
-  areas: true,
-
-  cables: false,
-  dropCables: false,
-
-  joints: true,
-  dps: true,
-
-  poles: false,
-  chambers: false,
-  streetCabs: true,
-  homes: false,
-  homesConnected: true,
-  homesUnconnected: true,
-  homesLive: true,
-  homesNotLive: true,
-
-  other: false,
-
+    areas: true,
+    ducts: true,
+    cables: false,
+    dropCables: false,
+    joints: true,
+    dps: true,
+    poles: false,
+    chambers: false,
+    streetCabs: true,
+    homes: false,
+    homesConnected: true,
+    homesUnconnected: true,
+    homesLive: true,
+    homesNotLive: true,
+    other: false,
   },
   openreachLayers = DEFAULT_OPENREACH_LAYERS,
   traceHighlightedAssetIds = [],
