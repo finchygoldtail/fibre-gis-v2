@@ -68,7 +68,6 @@ import {
   InfoRow,
   IssueCard,
   SideGroup,
-  StatCard,
 } from "./workspace/WorkspaceUi";
 import {
   buildAreaReadiness,
@@ -4004,6 +4003,122 @@ export default function ProjectWorkspace({
       (!isHarrellicommsBackhaulWorkspace || item.label !== "RFS"),
   );
 
+  const headerMetricItems = isHarrellicommsBackhaulWorkspace
+    ? [
+        {
+          label: "Build complete",
+          value: `${rolloutKpis.buildCompletionPercent}%`,
+          tone:
+            rolloutKpis.buildCompletionPercent >= 80
+              ? "good"
+              : rolloutKpis.buildCompletionPercent >= 50
+                ? "warn"
+                : "bad",
+        },
+        {
+          label: "Readiness",
+          value: `${operationalReadiness.score}%`,
+          tone: readinessTone(operationalReadiness.state),
+        },
+        {
+          label: "QA issues",
+          value: formatNumber(rolloutKpis.qaIssues),
+          tone: rolloutKpis.qaIssues > 0 ? "bad" : "good",
+          onClick: () => openKpiDrilldown("qa", "qa"),
+        },
+        {
+          label: "Duct metres",
+          value: formatNumber(Math.round(Number(workspaceDisplayStats.production?.ductMeters || 0))),
+          tone: "default",
+        },
+        {
+          label: "Cable metres",
+          value: formatNumber(Math.round(Number(workspaceDisplayStats.production?.cableMeters || 0))),
+          tone: "default",
+        },
+        {
+          label: "Blocked assets",
+          value: formatNumber(Number(workspaceDisplayStats.production?.blockedAssets || workspaceDisplayStats.closeout?.blockers || 0)),
+          tone: Number(workspaceDisplayStats.production?.blockedAssets || workspaceDisplayStats.closeout?.blockers || 0) ? "bad" : "good",
+        },
+      ]
+    : [
+        { label: "RFS", value: `${rolloutKpis.rfsPercent}%`, tone: rfsTone },
+        {
+          label: "Build complete",
+          value: `${rolloutKpis.buildCompletionPercent}%`,
+          tone:
+            rolloutKpis.buildCompletionPercent >= 80
+              ? "good"
+              : rolloutKpis.buildCompletionPercent >= 50
+                ? "warn"
+                : "bad",
+        },
+        {
+          label: "Readiness",
+          value: `${operationalReadiness.score}%`,
+          tone: readinessTone(operationalReadiness.state),
+        },
+        {
+          label: "Homes live",
+          value: formatNumber(rolloutKpis.homesLive),
+          tone: "good",
+          onClick: () => openKpiDrilldown("homesLive", "build"),
+        },
+        {
+          label: "DPs live",
+          value: `${formatNumber(rolloutKpis.dpLive)} / ${formatNumber(rolloutKpis.dpTotal)}`,
+          tone:
+            rolloutKpis.dpTotal > 0 && rolloutKpis.dpLive === rolloutKpis.dpTotal
+              ? "good"
+              : "warn",
+        },
+        {
+          label: "QA issues",
+          value: formatNumber(rolloutKpis.qaIssues),
+          tone: rolloutKpis.qaIssues > 0 ? "bad" : "good",
+          onClick: () => openKpiDrilldown("qa", "qa"),
+        },
+      ];
+
+  const mapProgressStages = [
+    {
+      label: "Survey",
+      status: deliveryPhase === "survey-stage" ? "Ready" : "Complete",
+      tone: "good",
+    },
+    {
+      label: "PIA",
+      status: piaGatePassedForWalkOff ? "Ready" : "Not started",
+      tone: piaGatePassedForWalkOff ? "good" : "neutral",
+    },
+    {
+      label: "Build",
+      status:
+        rolloutKpis.buildCompletionPercent >= 100
+          ? "Complete"
+          : rolloutKpis.buildCompletionPercent > 0
+            ? "In progress"
+            : "Not started",
+      tone:
+        rolloutKpis.buildCompletionPercent >= 100
+          ? "good"
+          : rolloutKpis.buildCompletionPercent > 0
+            ? "warn"
+            : "neutral",
+    },
+    {
+      label: "QA",
+      status: rolloutKpis.qaIssues === 0 ? "Clear" : `${formatNumber(rolloutKpis.qaIssues)} issues`,
+      tone: rolloutKpis.qaIssues === 0 ? "good" : "warn",
+    },
+    {
+      label: "Handover",
+      status: walkOffStatus === "Approved" ? "Complete" : "Not started",
+      tone: walkOffStatus === "Approved" ? "good" : walkOffStatus === "Pending" ? "neutral" : "warn",
+    },
+  ];
+
   const shouldShowOperationPanel =
     activeOperationPanel !== "none" &&
     !(
@@ -4186,105 +4301,23 @@ export default function ProjectWorkspace({
             </div>
 
             <div style={responsiveTopMetrics}>
-              {isHarrellicommsBackhaulWorkspace ? (
-                <>
-                  <StatCard
-                    label="Build Complete"
-                    value={`${rolloutKpis.buildCompletionPercent}%`}
-                    tone={
-                      rolloutKpis.buildCompletionPercent >= 80
-                        ? "good"
-                        : rolloutKpis.buildCompletionPercent >= 50
-                          ? "warn"
-                          : "bad"
-                    }
-                  />
-                  <StatCard
-                    label="Readiness"
-                    value={`${operationalReadiness.score}%`}
-                    tone={readinessTone(operationalReadiness.state)}
-                  />
-                  <StatCard
-                    label="QA Issues"
-                    value={formatNumber(rolloutKpis.qaIssues)}
-                    tone={rolloutKpis.qaIssues > 0 ? "bad" : "good"}
-                    active={
-                      activeOperationPanel === "qa" ||
-                      activeOperationPanel === "issues"
-                    }
-                    title="Click to open QA issues"
-                    onClick={() => openKpiDrilldown("qa", "qa")}
-                  />
-                  <StatCard
-                    label="Duct Metres"
-                    value={formatNumber(Math.round(Number(workspaceDisplayStats.production?.ductMeters || 0)))}
-                    tone="default"
-                  />
-                  <StatCard
-                    label="Cable Metres"
-                    value={formatNumber(Math.round(Number(workspaceDisplayStats.production?.cableMeters || 0)))}
-                    tone="default"
-                  />
-                  <StatCard
-                    label="Blocked Assets"
-                    value={formatNumber(Number(workspaceDisplayStats.production?.blockedAssets || workspaceDisplayStats.closeout?.blockers || 0))}
-                    tone={Number(workspaceDisplayStats.production?.blockedAssets || workspaceDisplayStats.closeout?.blockers || 0) ? "bad" : "good"}
-                  />
-                </>
-              ) : (
-                <>
-                  <StatCard
-                    label="RFS"
-                    value={`${rolloutKpis.rfsPercent}%`}
-                    tone={rfsTone}
-                  />
-                  <StatCard
-                    label="Build Complete"
-                    value={`${rolloutKpis.buildCompletionPercent}%`}
-                    tone={
-                      rolloutKpis.buildCompletionPercent >= 80
-                        ? "good"
-                        : rolloutKpis.buildCompletionPercent >= 50
-                          ? "warn"
-                          : "bad"
-                    }
-                  />
-                  <StatCard
-                    label="Readiness"
-                    value={`${operationalReadiness.score}%`}
-                    tone={readinessTone(operationalReadiness.state)}
-                  />
-                  <StatCard
-                    label="Homes Live"
-                    value={formatNumber(rolloutKpis.homesLive)}
-                    tone="good"
-                    active={activeOperationPanel === "homesLive"}
-                    title="Click to show live homes"
-                    onClick={() => openKpiDrilldown("homesLive", "build")}
-                  />
-                  <StatCard
-                    label="DPs Live"
-                    value={`${formatNumber(rolloutKpis.dpLive)} / ${formatNumber(rolloutKpis.dpTotal)}`}
-                    tone={
-                      rolloutKpis.dpTotal > 0 &&
-                      rolloutKpis.dpLive === rolloutKpis.dpTotal
-                        ? "good"
-                        : "warn"
-                    }
-                  />
-                  <StatCard
-                    label="QA Issues"
-                    value={formatNumber(rolloutKpis.qaIssues)}
-                    tone={rolloutKpis.qaIssues > 0 ? "bad" : "good"}
-                    active={
-                      activeOperationPanel === "qa" ||
-                      activeOperationPanel === "issues"
-                    }
-                    title="Click to open QA issues"
-                    onClick={() => openKpiDrilldown("qa", "qa")}
-                  />
-                </>
-              )}
+              {headerMetricItems.map((item) => {
+                const clickable = typeof item.onClick === "function";
+                return (
+                  <button
+                    key={item.label}
+                    type="button"
+                    style={topMetricItem(item.tone, clickable)}
+                    onClick={item.onClick}
+                    disabled={!clickable}
+                  >
+                    <span style={topMetricItemLabel}>{item.label}</span>
+                    <strong style={{ ...topMetricItemValue, color: operationalToneColour(item.tone) }}>
+                      {item.value}
+                    </strong>
+                  </button>
+                );
+              })}
             </div>
 
             <div style={responsiveHeaderActions}>
@@ -4562,7 +4595,7 @@ export default function ProjectWorkspace({
                   <div style={responsiveMapAssetInspector}>
                     <div
                       style={{
-                        color: "#93c5fd",
+                        color: "#64748b",
                         fontSize: 11,
                         fontWeight: 900,
                         letterSpacing: 0.4,
@@ -4580,7 +4613,7 @@ export default function ProjectWorkspace({
                         : "Click an asset"}
                     </div>
                     <div
-                      style={{ marginTop: 3, color: "#cbd5e1", fontSize: 12 }}
+                      style={{ marginTop: 3, color: "#64748b", fontSize: 12 }}
                     >
                       {fullSelectedWorkspaceAsset
                         ? String(
@@ -4590,6 +4623,23 @@ export default function ProjectWorkspace({
                           )
                         : "Cable, DP, joint, pole, chamber or area"}
                     </div>
+                  </div>
+
+                  <div style={mapStageStrip}>
+                    {mapProgressStages.map((stage, index) => (
+                      <div key={stage.label} style={mapStageItem}>
+                        <div style={mapStageLabel(stage.tone)}>
+                          {stage.label}
+                        </div>
+                        <div style={mapStageStatus(stage.tone)}>
+                          {stage.status}
+                        </div>
+                        <span style={mapStageMarker(stage.tone)} />
+                        {index < mapProgressStages.length - 1 ? (
+                          <span style={mapStageLine} />
+                        ) : null}
+                      </div>
+                    ))}
                   </div>
                 </div>
               </section>
@@ -5786,48 +5836,53 @@ export default function ProjectWorkspace({
             >
               <div style={nextActionsHeader}>
                 <div>
-                  <div style={operationKicker}>AREA CONTROL</div>
                   <h3 style={nextActionsTitle}>Next Actions</h3>
                 </div>
-                <span
-                  style={{
-                    ...readinessPill,
-                    borderColor: readinessColour(operationalReadiness.state),
-                    color: readinessColour(operationalReadiness.state),
-                  }}
+                <select
+                  value={deliveryPhase}
+                  onChange={(event) => handleDeliveryPhaseChange(event.target.value as DeliveryPhaseId)}
+                  style={phaseSelector}
+                  disabled={!canManageWalkOff}
+                  title={canManageWalkOff ? "Change delivery stage" : "Administrator or Super User access required"}
                 >
-                  {operationalReadiness.state}
-                </span>
+                  {workspaceDeliveryPhaseOptions.map((phase) => (
+                    <option key={phase.id} value={phase.id}>
+                      {phase.shortLabel}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div style={nextActionsSummaryGrid}>
-                <InfoRow
-                  label="Area Size"
-                  value={formatAreaSize(workspaceAreaMetrics.areaSquareMeters)}
-                />
-                <InfoRow
-                  label="Route"
-                  value={formatDistance(rolloutKpis.routeLengthMeters)}
-                />
-                <InfoRow
-                  label="Assets"
-                  value={formatNumber(operationalWorkspaceAssets.length)}
-                />
-                <InfoRow
-                  label="Disconnected"
-                  value={formatNumber(rolloutKpis.disconnectedAssets)}
-                  highlight={rolloutKpis.disconnectedAssets === 0}
-                />
+                <div style={nextInfoRow}>
+                  <span>Area size</span>
+                  <strong>{formatAreaSize(workspaceAreaMetrics.areaSquareMeters)}</strong>
+                </div>
+                <div style={nextInfoRow}>
+                  <span>Route</span>
+                  <strong>{formatDistance(rolloutKpis.routeLengthMeters)}</strong>
+                </div>
+                <div style={nextInfoRow}>
+                  <span>Assets</span>
+                  <strong>{formatNumber(operationalWorkspaceAssets.length)}</strong>
+                </div>
+                <div style={nextInfoRow}>
+                  <span>Disconnected</span>
+                  <strong style={{ color: rolloutKpis.disconnectedAssets === 0 ? "#16a34a" : "#dc2626" }}>
+                    {formatNumber(rolloutKpis.disconnectedAssets)}
+                  </strong>
+                </div>
               </div>
 
               <div style={nextActionList}>
                 {nextActionItems.map((item) => (
                   <button
                     key={item.label}
-                    type="button"
-                    style={nextActionButton(item.tone)}
-                    onClick={item.onClick}
-                  >
+                      type="button"
+                      style={nextActionButton(item.tone)}
+                      onClick={item.onClick}
+                    >
+                    <span style={nextActionDot(item.tone)} />
                     <span style={nextActionText}>
                       <strong>{item.label}</strong>
                       <small style={nextActionValue}>{item.value}</small>
@@ -6211,8 +6266,8 @@ const workspaceRoot: React.CSSProperties = {
   position: "absolute",
   inset: 0,
   zIndex: 5000,
-  background: "#07111f",
-  color: "#f8fafc",
+  background: "#f6f4ef",
+  color: "#1f2933",
   display: "flex",
   flexDirection: "column",
   fontFamily:
@@ -6220,26 +6275,26 @@ const workspaceRoot: React.CSSProperties = {
 };
 
 const topHeader: React.CSSProperties = {
-  minHeight: 82,
+  minHeight: 80,
   display: "grid",
-  gridTemplateColumns: "minmax(260px, 320px) minmax(0, 720px) auto",
+  gridTemplateColumns: "minmax(220px, 290px) minmax(0, 1fr) auto",
   alignItems: "center",
-  gap: 12,
-  padding: "8px 14px 8px 16px",
-  borderBottom: "1px solid rgba(148, 163, 184, 0.18)",
-  background: "linear-gradient(180deg, #0f1b2d 0%, #0a1424 100%)",
+  gap: 18,
+  padding: "10px 18px 10px 22px",
+  borderBottom: "1px solid #ddd8cf",
+  background: "#fbfaf7",
 };
 
 const projectTitle: React.CSSProperties = {
   margin: 0,
   fontSize: 22,
   lineHeight: 1.02,
-  fontWeight: 950,
-  letterSpacing: "-0.03em",
+  fontWeight: 850,
+  letterSpacing: 0,
 };
 const projectSubtitle: React.CSSProperties = {
-  marginTop: 3,
-  color: "#94a3b8",
+  marginTop: 8,
+  color: "#64748b",
   fontSize: 12,
 };
 
@@ -6259,7 +6314,7 @@ const projectSwitcherRow: React.CSSProperties = {
 };
 
 const projectSwitcherLabel: React.CSSProperties = {
-  color: "#93c5fd",
+  color: "#64748b",
   fontSize: 10,
   fontWeight: 950,
   letterSpacing: "0.08em",
@@ -6267,9 +6322,9 @@ const projectSwitcherLabel: React.CSSProperties = {
 };
 
 const projectSwitcherStatic: React.CSSProperties = {
-  background: "rgba(15, 23, 42, 0.88)",
-  color: "#e5e7eb",
-  border: "1px solid rgba(59, 130, 246, 0.45)",
+  background: "#ffffff",
+  color: "#1f2933",
+  border: "1px solid #d8d2c8",
   borderRadius: 8,
   padding: "7px 10px",
   fontWeight: 900,
@@ -6281,15 +6336,14 @@ const projectSwitcherStatic: React.CSSProperties = {
 const projectSwitcherSelect: React.CSSProperties = {
   width: "100%",
   minWidth: 0,
-  background: "#020617",
-  color: "#e5e7eb",
-  border: "1px solid rgba(59, 130, 246, 0.75)",
+  background: "#ffffff",
+  color: "#1f2933",
+  border: "1px solid #cfc8bc",
   borderRadius: 8,
   padding: "7px 10px",
   fontWeight: 900,
   outline: "none",
-  boxShadow:
-    "0 0 0 1px rgba(37,99,235,0.16), inset 0 1px 0 rgba(255,255,255,0.04)",
+  boxShadow: "none",
   cursor: "pointer",
 };
 
@@ -6315,10 +6369,10 @@ const projectSwitcherResults: React.CSSProperties = {
   zIndex: 5000,
   maxHeight: 320,
   overflowY: "auto",
-  background: "#020617",
-  border: "1px solid rgba(96,165,250,0.6)",
+  background: "#ffffff",
+  border: "1px solid #cfc8bc",
   borderRadius: 10,
-  boxShadow: "0 18px 40px rgba(0,0,0,0.45)",
+  boxShadow: "0 18px 40px rgba(15,23,42,0.14)",
   padding: 4,
 };
 
@@ -6328,7 +6382,7 @@ const projectSwitcherResultButton: React.CSSProperties = {
   textAlign: "left",
   border: "none",
   background: "transparent",
-  color: "#e5e7eb",
+  color: "#1f2933",
   padding: "8px 10px",
   borderRadius: 7,
   fontSize: 12,
@@ -6337,14 +6391,14 @@ const projectSwitcherResultButton: React.CSSProperties = {
 };
 
 const projectSwitcherNoResults: React.CSSProperties = {
-  color: "#94a3b8",
+  color: "#64748b",
   padding: "10px 12px",
   fontSize: 12,
 };
 const statusPill: React.CSSProperties = {
-  background: "rgba(34,197,94,0.18)",
-  color: "#86efac",
-  border: "1px solid rgba(34,197,94,0.25)",
+  background: "#ecfdf3",
+  color: "#15803d",
+  border: "1px solid #bbf7d0",
   borderRadius: 7,
   padding: "4px 7px",
   fontSize: 10,
@@ -6352,8 +6406,8 @@ const statusPill: React.CSSProperties = {
 };
 
 const readinessPill: React.CSSProperties = {
-  background: "rgba(15,23,42,0.68)",
-  border: "1px solid rgba(148,163,184,0.35)",
+  background: "#ffffff",
+  border: "1px solid #d8d2c8",
   borderRadius: 7,
   padding: "4px 7px",
   fontSize: 10,
@@ -6361,20 +6415,56 @@ const readinessPill: React.CSSProperties = {
 };
 const topMetrics: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(6, minmax(98px, 1fr))",
-  alignItems: "stretch",
-  gap: 8,
+  gridTemplateColumns: "repeat(6, minmax(104px, 1fr))",
+  alignItems: "center",
+  gap: 0,
   overflowX: "hidden",
   overflowY: "hidden",
   paddingBottom: 2,
   scrollbarWidth: "thin",
 };
+
+function operationalToneColour(tone: string): string {
+  if (tone === "good") return "#16a34a";
+  if (tone === "warn") return "#d97706";
+  if (tone === "bad") return "#dc2626";
+  return "#1f2933";
+}
+
+function topMetricItem(tone: string, clickable: boolean): React.CSSProperties {
+  return {
+    border: "none",
+    borderLeft: "1px solid #ddd8cf",
+    background: "transparent",
+    color: "#1f2933",
+    padding: "2px 18px",
+    minHeight: 46,
+    display: "grid",
+    alignContent: "center",
+    gap: 3,
+    textAlign: "left",
+    cursor: clickable ? "pointer" : "default",
+    font: "inherit",
+  };
+}
+
+const topMetricItemLabel: React.CSSProperties = {
+  color: "#64748b",
+  fontSize: 12,
+  fontWeight: 700,
+};
+
+const topMetricItemValue: React.CSSProperties = {
+  fontSize: 23,
+  lineHeight: 1,
+  fontWeight: 500,
+};
 const smallButton: React.CSSProperties = {
-  background: "#132640",
-  color: "#e5e7eb",
-  border: "1px solid rgba(148, 163, 184, 0.25)",
-  borderRadius: 8,
-  padding: "7px 10px",
+  background: "#ffffff",
+  color: "#1f2933",
+  border: "1px solid #d8d2c8",
+  borderRadius: 7,
+  padding: "7px 11px",
   cursor: "pointer",
   fontWeight: 700,
 };
@@ -6521,20 +6611,21 @@ const workspaceQuickActionBar: React.CSSProperties = {
   display: "grid",
   gridAutoRows: "min-content",
   alignContent: "start",
-  gap: 5,
-  padding: "10px 8px",
-  background: "#07111f",
-  borderRight: "1px solid rgba(148, 163, 184, 0.16)",
+  gap: 4,
+  padding: "14px 10px",
+  background: "#07111a",
+  borderRight: "1px solid #111827",
   overflow: "hidden",
   minHeight: 0,
 };
 
 const quickActionButton: React.CSSProperties = {
-  border: "1px solid rgba(148, 163, 184, 0.22)",
-  background: "#111c30",
-  color: "#cbd5e1",
-  borderRadius: 8,
-  padding: "6px 8px",
+  border: "none",
+  borderLeft: "3px solid transparent",
+  background: "transparent",
+  color: "#d8dee8",
+  borderRadius: 0,
+  padding: "8px 8px 8px 11px",
   cursor: "pointer",
   textAlign: "left",
   minHeight: 34,
@@ -6546,10 +6637,10 @@ const quickActionButton: React.CSSProperties = {
 
 const quickActionButtonActive: React.CSSProperties = {
   ...quickActionButton,
-  borderColor: "#3b82f6",
-  background: "rgba(37, 99, 235, 0.24)",
-  color: "#dbeafe",
-  boxShadow: "inset 0 0 0 1px rgba(59,130,246,0.22)",
+  borderLeftColor: "#2563eb",
+  background: "rgba(37, 99, 235, 0.16)",
+  color: "#ffffff",
+  boxShadow: "none",
 };
 
 const quickActionLabel: React.CSSProperties = {
@@ -6567,7 +6658,7 @@ const quickActionHelper: React.CSSProperties = {
 };
 
 const railSectionTitle: React.CSSProperties = {
-  color: "#93c5fd",
+  color: "#8392a7",
   fontSize: 10,
   fontWeight: 950,
   letterSpacing: "0.08em",
@@ -6577,8 +6668,8 @@ const railSectionTitle: React.CSSProperties = {
 
 const railDivider: React.CSSProperties = {
   height: 1,
-  background: "rgba(148, 163, 184, 0.14)",
-  margin: "4px 0",
+  background: "rgba(148, 163, 184, 0.18)",
+  margin: "10px 0",
 };
 
 const workspaceBody: React.CSSProperties = {
@@ -6612,50 +6703,55 @@ const brandIcon: React.CSSProperties = {
   fontWeight: 900,
 };
 const contentGrid: React.CSSProperties = {
-  padding: 16,
+  padding: 0,
   overflow: "auto",
   display: "grid",
   gridTemplateColumns:
     "minmax(760px, 2.15fr) minmax(310px, 0.75fr) minmax(310px, 0.75fr)",
   gridAutoRows: "min-content",
-  gap: 16,
+  gap: 0,
   alignItems: "start",
   minHeight: 0,
 };
 const mapPanel: React.CSSProperties = {
   gridRow: "span 2",
-  background: "linear-gradient(180deg, #0f1b2d 0%, #0b1626 100%)",
-  border: "1px solid rgba(148, 163, 184, 0.18)",
-  borderRadius: 14,
-  padding: 14,
-  boxShadow: "0 18px 44px rgba(0,0,0,0.18)",
+  background: "#fbfaf7",
+  border: "none",
+  borderRadius: 0,
+  padding: 0,
+  boxShadow: "none",
 };
 const mapToolbar: React.CSSProperties = {
   display: "flex",
-  gap: 10,
-  marginBottom: 10,
+  gap: 12,
+  marginBottom: 0,
+  padding: "14px 16px",
+  alignItems: "center",
+  borderBottom: "1px solid #ddd8cf",
+  background: "#fbfaf7",
 };
 const searchWrap: React.CSSProperties = { flex: 1, position: "relative" };
 const searchInput: React.CSSProperties = {
   width: "100%",
-  background: "#111827",
-  border: "1px solid rgba(148, 163, 184, 0.2)",
-  borderRadius: 8,
-  color: "#e5e7eb",
-  padding: "10px 12px",
+  maxWidth: 380,
+  background: "#ffffff",
+  border: "1px solid #d8d2c8",
+  borderRadius: 7,
+  color: "#1f2933",
+  padding: "10px 13px",
   outline: "none",
 };
 const searchResultsPanel: React.CSSProperties = {
   position: "absolute",
   left: 0,
   right: 0,
-  top: 44,
+  top: 46,
   zIndex: 1400,
-  background: "rgba(2, 6, 23, 0.97)",
-  border: "1px solid rgba(96, 165, 250, 0.35)",
+  background: "#ffffff",
+  border: "1px solid #d8d2c8",
   borderRadius: 10,
   padding: 8,
-  boxShadow: "0 18px 45px rgba(0,0,0,0.45)",
+  boxShadow: "0 18px 45px rgba(15,23,42,0.16)",
 };
 const searchResultButton: React.CSSProperties = {
   width: "100%",
@@ -6664,7 +6760,7 @@ const searchResultButton: React.CSSProperties = {
   gap: 12,
   textAlign: "left",
   background: "transparent",
-  color: "#e5e7eb",
+  color: "#1f2933",
   border: "none",
   borderRadius: 8,
   padding: "9px 10px",
@@ -6680,14 +6776,14 @@ const layerMenu: React.CSSProperties = {
   width: 260,
   maxHeight: 520,
   overflowY: "auto",
-  background: "rgba(2, 6, 23, 0.96)",
-  border: "1px solid rgba(148, 163, 184, 0.28)",
+  background: "#ffffff",
+  border: "1px solid #d8d2c8",
   borderRadius: 10,
   padding: 12,
-  boxShadow: "0 16px 45px rgba(0,0,0,0.45)",
+  boxShadow: "0 16px 45px rgba(15,23,42,0.16)",
 };
 const layerMenuHeader: React.CSSProperties = {
-  color: "#93c5fd",
+  color: "#475569",
   fontSize: 12,
   fontWeight: 900,
   letterSpacing: 0.4,
@@ -6698,7 +6794,7 @@ const layerRow: React.CSSProperties = {
   alignItems: "center",
   gap: 8,
   padding: "6px 0",
-  color: "#e5e7eb",
+  color: "#1f2933",
   fontSize: 13,
   fontWeight: 700,
 };
@@ -6717,7 +6813,7 @@ const miniLayerButton: React.CSSProperties = {
   ...smallButton,
   padding: "7px 8px",
   fontSize: 12,
-  background: "#111827",
+  background: "#ffffff",
 };
 const fullWidthMiniLayerButton: React.CSSProperties = {
   ...miniLayerButton,
@@ -6727,34 +6823,95 @@ const fullWidthMiniLayerButton: React.CSSProperties = {
 const mapLiveWrap: React.CSSProperties = {
   position: "relative",
   height: 620,
-  borderRadius: 12,
+  borderRadius: 0,
   overflow: "hidden",
-  border: "1px solid rgba(148, 163, 184, 0.22)",
-  background: "#020617",
-  boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.02)",
+  border: "none",
+  background: "#e8e3d8",
+  boxShadow: "none",
 };
 const mapAssetInspector: React.CSSProperties = {
   position: "absolute",
-  right: 14,
-  top: 14,
+  right: 18,
+  top: 18,
   zIndex: 800,
   minWidth: 190,
   maxWidth: 260,
-  background: "rgba(2, 6, 23, 0.86)",
-  border: "1px solid rgba(148, 163, 184, 0.28)",
-  borderRadius: 10,
+  background: "rgba(255, 255, 255, 0.92)",
+  border: "1px solid rgba(203, 213, 225, 0.86)",
+  borderRadius: 7,
   padding: 12,
-  color: "#f8fafc",
-  boxShadow: "0 12px 35px rgba(0,0,0,0.35)",
+  color: "#1f2933",
+  boxShadow: "0 10px 28px rgba(15,23,42,0.10)",
+};
+
+const mapStageStrip: React.CSSProperties = {
+  position: "absolute",
+  left: 0,
+  right: 0,
+  bottom: 0,
+  zIndex: 760,
+  minHeight: 94,
+  display: "grid",
+  gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+  alignItems: "end",
+  padding: "14px 80px 24px",
+  background: "rgba(251, 250, 247, 0.92)",
+  borderTop: "1px solid rgba(216, 210, 200, 0.9)",
+  backdropFilter: "blur(2px)",
+};
+
+const mapStageItem: React.CSSProperties = {
+  position: "relative",
+  display: "grid",
+  justifyItems: "center",
+  gap: 4,
+  minWidth: 0,
+};
+
+function mapStageLabel(tone: string): React.CSSProperties {
+  return {
+    color: operationalToneColour(tone),
+    fontSize: 12,
+    fontWeight: 800,
+  };
+}
+
+function mapStageStatus(tone: string): React.CSSProperties {
+  return {
+    color: tone === "neutral" ? "#64748b" : operationalToneColour(tone),
+    fontSize: 11,
+    fontWeight: 600,
+  };
+}
+
+function mapStageMarker(tone: string): React.CSSProperties {
+  return {
+    width: 11,
+    height: 11,
+    borderRadius: 999,
+    background: tone === "neutral" ? "#fbfaf7" : operationalToneColour(tone),
+    border: `2px solid ${tone === "neutral" ? "#b8b1a6" : operationalToneColour(tone)}`,
+    zIndex: 2,
+  };
+}
+
+const mapStageLine: React.CSSProperties = {
+  position: "absolute",
+  left: "50%",
+  right: "-50%",
+  bottom: 4,
+  height: 2,
+  background: "#cfc8bc",
+  zIndex: 1,
 };
 
 const nextActionsPanel: React.CSSProperties = {
-  background: "#08111f",
-  borderLeft: "1px solid rgba(148, 163, 184, 0.16)",
-  padding: 12,
+  background: "#fbfaf7",
+  borderLeft: "1px solid #ddd8cf",
+  padding: "22px 18px",
   display: "grid",
   gridTemplateRows: "auto auto auto auto 1fr",
-  gap: 10,
+  gap: 16,
   minHeight: 0,
   overflow: "hidden",
 };
@@ -6770,27 +6927,47 @@ const workspaceDetailPanel: React.CSSProperties = {
 
 const nextActionsHeader: React.CSSProperties = {
   display: "flex",
-  alignItems: "flex-start",
+  alignItems: "center",
   justifyContent: "space-between",
   gap: 10,
 };
 
 const nextActionsTitle: React.CSSProperties = {
-  margin: "3px 0 0",
-  fontSize: 18,
-  fontWeight: 950,
-  color: "#f8fafc",
+  margin: 0,
+  fontSize: 20,
+  fontWeight: 700,
+  color: "#1f2933",
+};
+
+const phaseSelector: React.CSSProperties = {
+  background: "#ffffff",
+  color: "#1f2933",
+  border: "1px solid #d8d2c8",
+  borderRadius: 999,
+  padding: "7px 10px",
+  fontWeight: 700,
+  outline: "none",
 };
 
 const nextActionsSummaryGrid: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: 8,
+  gridTemplateColumns: "1fr",
+  gap: 0,
+};
+
+const nextInfoRow: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 14,
+  padding: "12px 0",
+  borderBottom: "1px solid #e2ded7",
+  color: "#475569",
+  fontSize: 13,
 };
 
 const nextActionList: React.CSSProperties = {
   display: "grid",
-  gap: 8,
+  gap: 0,
 };
 
 const nextActionText: React.CSSProperties = {
@@ -6800,7 +6977,7 @@ const nextActionText: React.CSSProperties = {
 };
 
 const nextActionValue: React.CSSProperties = {
-  color: "#94a3b8",
+  color: "#64748b",
   fontSize: 11,
   fontWeight: 800,
   whiteSpace: "nowrap",
@@ -6809,41 +6986,51 @@ const nextActionValue: React.CSSProperties = {
 };
 
 const nextActionCommand: React.CSSProperties = {
-  color: "#bfdbfe",
+  color: "#64748b",
   fontSize: 11,
   fontStyle: "normal",
   fontWeight: 900,
   whiteSpace: "nowrap",
 };
 
-function nextActionButton(tone: string): React.CSSProperties {
-  const toneColour =
-    tone === "good" ? "#22c55e" : tone === "bad" ? "#ef4444" : "#f59e0b";
-
+function nextActionDot(tone: string): React.CSSProperties {
   return {
-    border: `1px solid ${toneColour}66`,
-    background: "rgba(15, 23, 42, 0.82)",
-    color: "#e5e7eb",
-    borderRadius: 8,
-    padding: "10px 11px",
+    width: 9,
+    height: 9,
+    borderRadius: 999,
+    border: `2px solid ${operationalToneColour(tone)}`,
+    background: "#ffffff",
+    flex: "0 0 auto",
+    marginTop: 3,
+  };
+}
+
+function nextActionButton(tone: string): React.CSSProperties {
+  return {
+    border: "none",
+    borderBottom: "1px solid #e2ded7",
+    background: "transparent",
+    color: "#1f2933",
+    borderRadius: 0,
+    padding: "14px 0",
     display: "flex",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
-    gap: 10,
+    gap: 12,
     cursor: "pointer",
     textAlign: "left",
-    boxShadow: `inset 3px 0 0 ${toneColour}`,
+    boxShadow: "none",
   };
 }
 
 const selectedAssetStrip: React.CSSProperties = {
   display: "grid",
-  gap: 4,
-  border: "1px solid rgba(96, 165, 250, 0.26)",
-  background: "#0f1b2d",
-  borderRadius: 8,
-  padding: 12,
-  color: "#e5e7eb",
+  gap: 6,
+  border: "1px solid #d8d2c8",
+  background: "#ffffff",
+  borderRadius: 7,
+  padding: 14,
+  color: "#1f2933",
 };
 
 const nextBlockerBox: React.CSSProperties = {
@@ -6857,12 +7044,13 @@ const nextBlockerBox: React.CSSProperties = {
 };
 
 const nextGoodBox: React.CSSProperties = {
-  border: "1px solid rgba(34, 197, 94, 0.3)",
-  background: "rgba(20, 83, 45, 0.16)",
-  color: "#bbf7d0",
-  borderRadius: 8,
-  padding: 12,
-  fontSize: 12,
+  border: "none",
+  borderTop: "1px solid #e2ded7",
+  background: "transparent",
+  color: "#166534",
+  borderRadius: 0,
+  padding: "14px 0 0",
+  fontSize: 13,
 };
 const areaBoundary: React.CSSProperties = {
   position: "absolute",
