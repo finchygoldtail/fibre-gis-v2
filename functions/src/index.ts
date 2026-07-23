@@ -190,6 +190,12 @@ const toStringOrNull = (value: unknown): string | null => {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 };
 
+const normaliseIsoDate = (value: unknown): string | null => {
+  const clean = toStringOrNull(value);
+  if (!clean || !/^\d{4}-\d{2}-\d{2}$/.test(clean)) return null;
+  return clean;
+};
+
 const getCallableBusinessId = (value: unknown): string =>
   cleanPathPart(value, "fibre-gis-v2");
 
@@ -313,6 +319,123 @@ export const getLiveUserLocations = onCall(
       );
 
     return { locations };
+  },
+);
+
+export const extendStreetManagerPermit = onCall(
+  {
+    region: "europe-west2",
+    cors: true,
+    secrets: ["STREET_MANAGER_API_TOKEN"],
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "You must be signed in.");
+    }
+
+    const businessId = getCallableBusinessId(request.data?.businessId);
+    if (!["harrellicomms", "harrellcomms", "harrelli-comms", "harrell-comms"].includes(businessId.toLowerCase())) {
+      throw new HttpsError(
+        "permission-denied",
+        "Street Manager permit updates are only enabled for Harrellicomms.",
+      );
+    }
+
+    const permitDetails = request.data?.permitDetails || {};
+    const permitNumber = toStringOrNull(permitDetails.permitNumber);
+    const newEndDate = normaliseIsoDate(request.data?.newEndDate);
+    const reason = toStringOrNull(request.data?.reason) || "Permit extension requested from Alistra GIS";
+    const assetId = toStringOrNull(request.data?.assetId);
+
+    if (!permitNumber || !newEndDate || !assetId) {
+      throw new HttpsError(
+        "invalid-argument",
+        "Permit number, map asset id and new end date are required.",
+      );
+    }
+
+    const apiToken = process.env.STREET_MANAGER_API_TOKEN;
+    const apiBaseUrl = process.env.STREET_MANAGER_API_BASE_URL;
+    const urlTemplate = process.env.STREET_MANAGER_EXTEND_URL_TEMPLATE;
+    const apiMethod = (process.env.STREET_MANAGER_EXTEND_METHOD || "POST").toUpperCase();
+
+    if (!apiToken || (!apiBaseUrl && !urlTemplate)) {
+      await admin
+        .firestore()
+        .collection(`businesses/${businessId}/streetManagerPermitRequests`)
+        .add({
+          assetId,
+          permitNumber,
+          requestedEndDate: newEndDate,
+          reason,
+          status: "pending-api-configuration",
+          requestedBy: uid,
+          requestedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+      return {
+        success: true,
+        skipped: true,
+        message:
+          "Street Manager API credentials are not configured yet. The extension request was logged in Firestore.",
+      };
+    }
+
+    const encodedPermit = encodeURIComponent(permitNumber);
+    const endpoint = urlTemplate
+      ? urlTemplate
+          .replace("{permitNumber}", encodedPermit)
+          .replace("{worksReference}", encodeURIComponent(toStringOrNull(permitDetails.worksReference) || permitNumber))
+      : `${apiBaseUrl!.replace(/\/$/, "")}/permits/${encodedPermit}/extension-requests`;
+
+    const response = await fetch(endpoint, {
+      method: apiMethod,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiToken}`,
+      },
+      body: JSON.stringify({
+        permitNumber,
+        worksReference: toStringOrNull(permitDetails.worksReference),
+        requestedEndDate: newEndDate,
+        reason,
+        source: "alistra-gis",
+        requestedBy: request.auth?.token?.email || uid,
+      }),
+    });
+
+    const responseText = await response.text();
+    if (!response.ok) {
+      console.error("Street Manager permit extension failed", {
+        status: response.status,
+        responseText,
+      });
+      throw new HttpsError(
+        "failed-precondition",
+        `Street Manager rejected the extension request (${response.status}).`,
+      );
+    }
+
+    await admin
+      .firestore()
+      .collection(`businesses/${businessId}/streetManagerPermitRequests`)
+      .add({
+        assetId,
+        permitNumber,
+        requestedEndDate: newEndDate,
+        reason,
+        status: "submitted",
+        streetManagerResponse: responseText.slice(0, 4000),
+        requestedBy: uid,
+        requestedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+    return {
+      success: true,
+      message: "Street Manager extension request submitted.",
+      streetManagerReference: responseText.slice(0, 250),
+    };
   },
 );
 

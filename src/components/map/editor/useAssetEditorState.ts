@@ -8,6 +8,7 @@ import type {
   InstallMethod,
   PoleDetails,
   AreaWorkType,
+  PermitDetails,
 } from "../types";
 import type { ChamberDetails } from "../modals/ChamberDetailsModal";
 import { DEFAULT_DISTRIBUTION_CLOSURE_TYPE } from "../../../services/assetNameValidation";
@@ -30,6 +31,10 @@ export function useAssetEditorState(
   const [cablePiaNoiNumber, setCablePiaNoiNumber] = useState("");
   const [areaLevel, setAreaLevel] = useState<AreaLevel>("L0");
   const [areaWorkType, setAreaWorkType] = useState<AreaWorkType>("pia");
+  const [permitDetails, setPermitDetails] = useState<PermitDetails>({
+    status: "draft",
+    source: "street-manager",
+  });
 
   const [cableType, setCableType] = useState<CableType>("Feeder Cable");
   const [fibreCount, setFibreCount] = useState<FibreCount>("12F");
@@ -75,6 +80,8 @@ export function useAssetEditorState(
     setAreaLevel,
     areaWorkType,
     setAreaWorkType,
+    permitDetails,
+    setPermitDetails,
     cableType,
     setCableType,
     fibreCount,

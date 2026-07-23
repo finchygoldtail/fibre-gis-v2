@@ -12,6 +12,7 @@ type UseEditorResetArgs = {
   setCablePiaNoiNumber: Setter<string>;
   setAreaLevel: Setter<any>;
   setAreaWorkType: Setter<any>;
+  setPermitDetails: Setter<any>;
   setMapMode: Setter<any>;
   setSelectedReferenceDuctId: Setter<string | null>;
   setSelectedReferenceDuctName: Setter<string>;
@@ -46,6 +47,7 @@ export function useEditorReset(args: UseEditorResetArgs) {
     args.setCablePiaNoiNumber("");
     args.setAreaLevel("L0");
     args.setAreaWorkType("pia");
+    args.setPermitDetails({ status: "draft", source: "street-manager" });
     args.setMapMode("pick");
     args.setSelectedReferenceDuctId(null);
     args.setSelectedReferenceDuctName("");

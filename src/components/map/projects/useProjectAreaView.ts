@@ -39,6 +39,16 @@ export function isProjectAreaAsset(asset: SavedMapAsset): boolean {
   );
 }
 
+function isPermitZoneAsset(asset: SavedMapAsset): boolean {
+  const item = asset as any;
+  const assetType = String(item.assetType ?? "").toLowerCase();
+  const jointType = String(item.jointType ?? "").toLowerCase();
+  return (
+    asset.geometry?.type === "Polygon" &&
+    (assetType === "permit-zone" || jointType.includes("permit zone"))
+  );
+}
+
 function isGlobalDuctOrCableAsset(asset: SavedMapAsset): boolean {
   const item = asset as any;
   const text = [
@@ -138,7 +148,7 @@ export function useProjectAreaView({
   const visibleProjectAssets = useMemo(() => {
     if (!activeProjectArea) {
       return canShowGlobalDuctsAndCables
-        ? allMapAssets.filter(isGlobalDuctOrCableAsset)
+        ? allMapAssets.filter((asset) => isGlobalDuctOrCableAsset(asset) || isPermitZoneAsset(asset))
         : [];
     }
 

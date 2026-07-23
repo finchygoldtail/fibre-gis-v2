@@ -194,6 +194,11 @@ type ProjectWorkspaceProps = {
     endMeter?: number;
     spliceCount?: number;
     crewName?: string;
+    progressNote?: string;
+    issueNote?: string;
+    permitNumber?: string;
+    permitStartDate?: string;
+    permitEndDate?: string;
     note: string;
   }) => void | Promise<void>;
   onUpdateDpStatus?: (args: {

@@ -9,6 +9,7 @@ export type AssetType =
   | "chamber"
   | "home"
   | "area"
+  | "permit-zone"
   | "pia-route"
   | "duct"
   | "cable";
@@ -75,7 +76,24 @@ export type DailyProgressEntry = {
   spliceCount?: number;
   crewName?: string;
   note?: string;
+  progressNote?: string;
+  issueNote?: string;
+  permitNumber?: string;
+  permitStartDate?: string;
+  permitEndDate?: string;
   recordedAt: string;
+};
+
+export type PermitDetails = {
+  permitNumber?: string;
+  streetName?: string;
+  startDate?: string;
+  endDate?: string;
+  status?: "draft" | "applied" | "granted" | "in-progress" | "closed" | "issue";
+  worksReference?: string;
+  progressNote?: string;
+  issueNote?: string;
+  source?: "street-manager" | "manual" | string;
 };
 
 export type HomeServiceStatus =
@@ -251,6 +269,7 @@ export type SavedMapAsset = {
 
   areaLevel?: AreaLevel;
   areaWorkType?: AreaWorkType;
+  permitDetails?: PermitDetails;
   homeType?: "SDU" | "MDU" | "Flats";
   serviceStatus?: HomeServiceStatus;
   serviceNote?: string;

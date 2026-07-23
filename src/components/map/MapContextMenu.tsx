@@ -21,6 +21,7 @@ export type MapContextAction =
   | "duct"
   | "cable"
   | "area"
+  | "permit-zone"
   | "measure"
   | "drive-to-location"
   | "pick-location";
@@ -31,6 +32,7 @@ type Props = {
   y: number;
   onSelect: (action: MapContextAction) => void;
   onClose: () => void;
+  showPermitZones?: boolean;
 };
 
 type SubmenuKey = "assets" | "draw" | "tools" | null;
@@ -42,6 +44,7 @@ export default function MapContextMenu({
   y,
   onSelect,
   onClose,
+  showPermitZones = false,
 }: Props) {
   const [openSubmenu, setOpenSubmenu] = useState<SubmenuKey>(null);
   const [openAssetSubmenu, setOpenAssetSubmenu] = useState<AssetSubmenuKey>(null);
@@ -163,6 +166,9 @@ export default function MapContextMenu({
             <MenuRow label="Create Duct" onClick={() => select("duct")} />
             <MenuRow label="Create Cable" onClick={() => select("cable")} />
             <MenuRow label="Create Polygon / Area" onClick={() => select("area")} />
+            {showPermitZones ? (
+              <MenuRow label="Add Permit Zone" onClick={() => select("permit-zone")} />
+            ) : null}
           </Submenu>
         )}
 

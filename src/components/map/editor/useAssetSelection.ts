@@ -16,6 +16,7 @@ import type {
   InstallMethod,
   PoleDetails,
   SavedMapAsset,
+  PermitDetails,
 } from "../types";
 import type { ChamberDetails } from "../modals/ChamberDetailsModal";
 import { getDpOperationalStatus } from "./assetEditCoordinator";
@@ -61,6 +62,7 @@ type UseAssetSelectionArgs = {
   setCablePiaNoiNumber: Setter<string>;
   setAreaLevel: Setter<AreaLevel>;
   setAreaWorkType: Setter<AreaWorkType>;
+  setPermitDetails: Setter<PermitDetails>;
   setCableType: Setter<CableType>;
   setFibreCount: Setter<FibreCount>;
   setInstallMethod: Setter<InstallMethod>;
@@ -99,6 +101,7 @@ export function useAssetSelection({
   setCablePiaNoiNumber,
   setAreaLevel,
   setAreaWorkType,
+  setPermitDetails,
   setCableType,
   setFibreCount,
   setInstallMethod,
@@ -156,6 +159,13 @@ export function useAssetSelection({
             (viewedAsset as any).properties?.areaWorkType,
         ),
       );
+      setPermitDetails({
+        status: "draft",
+        source: "street-manager",
+        ...((viewedAsset as any).permitDetails ||
+          (viewedAsset as any).properties?.permitDetails ||
+          {}),
+      });
       setCableType(viewedAsset.cableType || "Feeder Cable");
       setFibreCount(viewedAsset.fibreCount || "12F");
       setInstallMethod(viewedAsset.installMethod || "Underground");
@@ -226,6 +236,7 @@ export function useAssetSelection({
       setAllocatedInputFibres,
       setAreaLevel,
       setAreaWorkType,
+      setPermitDetails,
       setAssetType,
       setCablePiaNoiNumber,
       setCableType,

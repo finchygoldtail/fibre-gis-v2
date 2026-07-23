@@ -180,6 +180,7 @@ import type {
   DuctUse,
   FibreCount,
   InstallMethod,
+  PermitDetails,
   PoleDetails,
   SavedMapAsset,
   WorkStatus,
@@ -193,6 +194,7 @@ import {
 } from "../services/orAssetStorage";
 import { withAreaAssetIndex } from "../services/areaAssetIndex";
 import { DEFAULT_DISTRIBUTION_CLOSURE_TYPE } from "../services/assetNameValidation";
+import { extendStreetManagerPermit } from "../services/streetManagerPermitService";
 export type SavedJoint = SavedMapAsset;
 export type { SavedMapAsset };
 
@@ -725,6 +727,12 @@ function AssetActivityMiniSummary({ asset }: { asset: SavedMapAsset | null }) {
 
 type AreaLevel = "L0" | "L1" | "L2" | "L3";
 type AreaWorkType = "pia" | "data-centre";
+
+function getPermitDefaultDate(offsetDays = 0): string {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+  return date.toISOString().slice(0, 10);
+}
 
 function MapClickHandler({
   mode,
@@ -1261,6 +1269,8 @@ export default function JointMapManager({
     setAreaLevel,
     areaWorkType,
     setAreaWorkType,
+    permitDetails,
+    setPermitDetails,
     cableType,
     setCableType,
     fibreCount,
@@ -2275,6 +2285,7 @@ export default function JointMapManager({
     setCablePiaNoiNumber,
     setAreaLevel,
     setAreaWorkType,
+    setPermitDetails,
     setMapMode,
     setSelectedReferenceDuctId,
     setSelectedReferenceDuctName,
@@ -2434,6 +2445,7 @@ export default function JointMapManager({
     setCablePiaNoiNumber,
     setAreaLevel,
     setAreaWorkType,
+    setPermitDetails,
     setCableType,
     setFibreCount,
     setInstallMethod,
@@ -2647,6 +2659,7 @@ export default function JointMapManager({
       jointType,
       notes,
       parentCableId,
+      permitDetails,
       pickedLocation,
       poleDetails,
       dpDetails,
@@ -2741,8 +2754,10 @@ export default function JointMapManager({
     jointName,
     savedJoints,
     notes,
+    assetType,
     areaLevel,
     areaWorkType,
+    permitDetails,
     saveMapAssetToState,
     writeAssetAuditLog,
     getChangeReasonForCurrentMode,
@@ -3284,14 +3299,23 @@ export default function JointMapManager({
       return;
     }
 
-    if (type === "area") {
-      setAssetType("area");
-      setJointType("Polygon Area");
+    if (type === "area" || type === "permit-zone") {
+      const isPermitZone = type === "permit-zone";
+      setAssetType(isPermitZone ? "permit-zone" : "area");
+      setJointType(isPermitZone ? "Street Manager Permit Zone" : "Polygon Area");
       setJointName(
-        `Area ${(savedJoints ?? []).filter((asset) => asset.assetType === "area").length + 1}`,
+        isPermitZone
+          ? `Permit Zone ${(savedJoints ?? []).filter((asset) => asset.assetType === "permit-zone").length + 1}`
+          : `Area ${(savedJoints ?? []).filter((asset) => asset.assetType === "area").length + 1}`,
       );
       setAreaLevel("L0");
-      setAreaWorkType("pia");
+      setAreaWorkType(isPermitZone ? "data-centre" : "pia");
+      setPermitDetails({
+        status: "draft",
+        source: "street-manager",
+        startDate: getPermitDefaultDate(0),
+        endDate: getPermitDefaultDate(4),
+      });
       setPickedLocation(null);
       setDraftAreaPoints(clickedPoint ? [clickedPoint] : []);
       setMapMode("draw-area");
@@ -4045,6 +4069,11 @@ export default function JointMapManager({
     endMeter?: number;
     spliceCount?: number;
     crewName?: string;
+    progressNote?: string;
+    issueNote?: string;
+    permitNumber?: string;
+    permitStartDate?: string;
+    permitEndDate?: string;
     note: string;
   }) => {
     const ids = new Set((args.assetIds || []).map(String).filter(Boolean));
@@ -4111,6 +4140,11 @@ export default function JointMapManager({
         team: args.team,
         ...(args.team === "splicing" ? { spliceCount } : { meters, startMeter, endMeter }),
         ...(args.crewName ? { crewName: args.crewName } : {}),
+        ...(args.progressNote ? { progressNote: args.progressNote } : {}),
+        ...(args.issueNote ? { issueNote: args.issueNote } : {}),
+        ...(args.permitNumber ? { permitNumber: args.permitNumber } : {}),
+        ...(args.permitStartDate ? { permitStartDate: args.permitStartDate } : {}),
+        ...(args.permitEndDate ? { permitEndDate: args.permitEndDate } : {}),
         note: reason,
         recordedAt,
       };
@@ -4301,6 +4335,83 @@ export default function JointMapManager({
     alert(
       `Cleared fibre allocations from ${clearResult.summary.clearedDpCount} DP${clearResult.summary.clearedDpCount === 1 ? "" : "s"} in this area. You can now run Rebuild Chain.`,
     );
+  };
+
+  const handleUpdatePermitDetails = async (
+    asset: SavedMapAsset,
+    nextPermitDetails: PermitDetails,
+  ) => {
+    const reason = `permit-update:${asset.name || asset.id}`;
+    const previousPermit = ((asset as any).permitDetails ||
+      (asset as any).properties?.permitDetails ||
+      {}) as PermitDetails;
+    const isExtensionRequest =
+      Boolean(previousPermit.endDate) &&
+      Boolean(nextPermitDetails.endDate) &&
+      previousPermit.endDate !== nextPermitDetails.endDate &&
+      Boolean(nextPermitDetails.permitNumber);
+    let streetManagerMessage = "";
+
+    if (isExtensionRequest) {
+      try {
+        const result = await extendStreetManagerPermit({
+          businessId: mapBusinessId,
+          assetId: asset.id,
+          permitDetails: previousPermit,
+          newEndDate: String(nextPermitDetails.endDate),
+          reason: `Extend permit ${nextPermitDetails.permitNumber} to ${nextPermitDetails.endDate}`,
+        });
+        streetManagerMessage = result.message || "";
+      } catch (error) {
+        console.error("Street Manager extension request failed", error);
+        alert(
+          "Street Manager did not accept the extension request. The map permit will not be extended until that is sorted.",
+        );
+        return;
+      }
+    }
+
+    const nextAsset = withAssetEditedMetadata(
+      markAssetForLiveSync({
+        ...(asset as any),
+        permitDetails: nextPermitDetails,
+        properties: {
+          ...((asset as any).properties || {}),
+          permitDetails: nextPermitDetails,
+        },
+      } as SavedMapAsset),
+      "updated",
+      reason,
+    );
+    const nextSavedJoints = (savedJoints ?? []).map((item) =>
+      item.id === asset.id ? nextAsset : item,
+    );
+
+    setSavedJoints(nextSavedJoints);
+    writeAssetAuditLog({
+      asset: nextAsset,
+      action: "updated",
+      reason,
+      comment:
+        streetManagerMessage ||
+        "Street Manager permit details updated from map popup.",
+      before: asset,
+      after: nextAsset,
+    });
+
+    try {
+      await saveMapAssetsViaCoordinator(nextSavedJoints, {
+        businessId: mapBusinessId,
+        reason,
+        source: "joint-map-manager",
+      });
+      if (streetManagerMessage) {
+        alert(streetManagerMessage);
+      }
+    } catch (error) {
+      console.error("Permit map save failed", error);
+      alert("Permit updated on screen, but Firestore did not save it. Refresh may bring the old permit back.");
+    }
   };
 
   // =====================================================
@@ -5614,6 +5725,9 @@ export default function JointMapManager({
                 <option value="chamber">Chamber</option>
                 <option value="home">Home</option>
                 <option value="area">Polygon Area</option>
+                {isHarrellicommsBusiness(mapBusinessId) ? (
+                  <option value="permit-zone">Permit Zone</option>
+                ) : null}
                 <option value="duct">Duct</option>
                 <option value="cable">Cable</option>
               </select>
@@ -5801,9 +5915,103 @@ export default function JointMapManager({
                 </>
               ) : null}
 
-              {assetType === "area" ? (
+              {(assetType === "area" || assetType === "permit-zone") ? (
                 <>
-                  {isHarrellicommsBusiness(mapBusinessId) ? (
+                  {assetType === "permit-zone" ? (
+                    <>
+                      <div style={{ ...label, marginTop: 10 }}>Permit Number</div>
+                      <input
+                        value={permitDetails.permitNumber || ""}
+                        onChange={(e) =>
+                          setPermitDetails((prev) => ({
+                            ...prev,
+                            permitNumber: e.target.value,
+                          }))
+                        }
+                        placeholder="Street Manager permit number"
+                        style={input}
+                      />
+                      <div style={{ ...label, marginTop: 10 }}>Street / Location</div>
+                      <input
+                        value={permitDetails.streetName || ""}
+                        onChange={(e) =>
+                          setPermitDetails((prev) => ({
+                            ...prev,
+                            streetName: e.target.value,
+                          }))
+                        }
+                        placeholder="Street name"
+                        style={input}
+                      />
+                      <div style={{ ...label, marginTop: 10 }}>Permit Dates</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                        <input
+                          type="date"
+                          value={permitDetails.startDate || ""}
+                          onChange={(e) =>
+                            setPermitDetails((prev) => ({
+                              ...prev,
+                              startDate: e.target.value,
+                            }))
+                          }
+                          style={input}
+                        />
+                        <input
+                          type="date"
+                          value={permitDetails.endDate || ""}
+                          onChange={(e) =>
+                            setPermitDetails((prev) => ({
+                              ...prev,
+                              endDate: e.target.value,
+                            }))
+                          }
+                          style={input}
+                        />
+                      </div>
+                      <div style={{ ...label, marginTop: 10 }}>Permit Status</div>
+                      <select
+                        value={permitDetails.status || "draft"}
+                        onChange={(e) =>
+                          setPermitDetails((prev) => ({
+                            ...prev,
+                            status: e.target.value as PermitDetails["status"],
+                          }))
+                        }
+                        style={input}
+                      >
+                        <option value="draft">Draft</option>
+                        <option value="applied">Applied</option>
+                        <option value="granted">Granted</option>
+                        <option value="in-progress">In progress</option>
+                        <option value="closed">Closed</option>
+                        <option value="issue">Issue</option>
+                      </select>
+                      <div style={{ ...label, marginTop: 10 }}>Progress</div>
+                      <textarea
+                        value={permitDetails.progressNote || ""}
+                        onChange={(e) =>
+                          setPermitDetails((prev) => ({
+                            ...prev,
+                            progressNote: e.target.value,
+                          }))
+                        }
+                        placeholder="Permit progress update"
+                        style={{ ...input, minHeight: 58, resize: "vertical" }}
+                      />
+                      <div style={{ ...label, marginTop: 10 }}>Issues</div>
+                      <textarea
+                        value={permitDetails.issueNote || ""}
+                        onChange={(e) =>
+                          setPermitDetails((prev) => ({
+                            ...prev,
+                            issueNote: e.target.value,
+                          }))
+                        }
+                        placeholder="Traffic management, Street Manager, access or reinstatement issue"
+                        style={{ ...input, minHeight: 58, resize: "vertical" }}
+                      />
+                    </>
+                  ) : isHarrellicommsBusiness(mapBusinessId) ? (
                     <>
                       <div style={{ ...label, marginTop: 10 }}>Area Work Type</div>
                       <select
@@ -5816,17 +6024,21 @@ export default function JointMapManager({
                       </select>
                     </>
                   ) : null}
-                  <div style={{ ...label, marginTop: 10 }}>Polygon Level</div>
-                  <select
-                    value={areaLevel}
-                    onChange={(e) => setAreaLevel(e.target.value as AreaLevel)}
-                    style={input}
-                  >
-                    <option value="L0">L0</option>
-                    <option value="L1">L1</option>
-                    <option value="L2">L2</option>
-                    <option value="L3">L3</option>
-                  </select>
+                  {assetType === "area" ? (
+                    <>
+                      <div style={{ ...label, marginTop: 10 }}>Polygon Level</div>
+                      <select
+                        value={areaLevel}
+                        onChange={(e) => setAreaLevel(e.target.value as AreaLevel)}
+                        style={input}
+                      >
+                        <option value="L0">L0</option>
+                        <option value="L1">L1</option>
+                        <option value="L2">L2</option>
+                        <option value="L3">L3</option>
+                      </select>
+                    </>
+                  ) : null}
                 </>
               ) : null}
 
@@ -6580,9 +6792,14 @@ export default function JointMapManager({
 
           {visibleLayers.areas && (
             <AreaPolygonsLayer
-              areas={visibleProjectAreas.filter((asset) =>
-                isAreaVisibleForLevel(asset, visibleLayers),
-              )}
+              areas={[
+                ...visibleProjectAreas.filter((asset) =>
+                  isAreaVisibleForLevel(asset, visibleLayers),
+                ),
+                ...visibleProjectAssets.filter(
+                  (asset) => asset.assetType === "permit-zone",
+                ),
+              ]}
               activeProjectId={activeProjectId}
               editingAreaId={isAdmin ? editingAreaId : null}
               polygonEditingEnabled={isAdmin && polygonBulkSelectEnabled}
@@ -6593,6 +6810,7 @@ export default function JointMapManager({
               onToggleSelect={isAdmin ? togglePolygonBulkSelection : undefined}
               onEdit={handleEditAsset}
               onDelete={handleAdminDeleteAsset}
+              onUpdatePermit={handleUpdatePermitDetails}
             />
           )}
 
@@ -6882,6 +7100,7 @@ export default function JointMapManager({
           y={contextMenu.y}
           onClose={handleCloseContextMenu}
           onSelect={handleContextAddAsset}
+          showPermitZones={isHarrellicommsBusiness(mapBusinessId)}
         />
 
         <CableDetailsModal

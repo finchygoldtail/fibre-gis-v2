@@ -57,6 +57,11 @@ type Props = {
     endMeter?: number;
     spliceCount?: number;
     crewName?: string;
+    progressNote?: string;
+    issueNote?: string;
+    permitNumber?: string;
+    permitStartDate?: string;
+    permitEndDate?: string;
     note: string;
   }) => void | Promise<void>;
   onSelectAsset?: (asset: SavedMapAsset) => void;
@@ -304,6 +309,11 @@ export default function WorkspaceBuild({
   const [dailySpliceCount, setDailySpliceCount] = React.useState(0);
   const [dailyCrewName, setDailyCrewName] = React.useState("");
   const [dailyNote, setDailyNote] = React.useState("Daily production update");
+  const [dailyProgressNote, setDailyProgressNote] = React.useState("");
+  const [dailyIssueNote, setDailyIssueNote] = React.useState("");
+  const [dailyPermitNumber, setDailyPermitNumber] = React.useState("");
+  const [dailyPermitStartDate, setDailyPermitStartDate] = React.useState("");
+  const [dailyPermitEndDate, setDailyPermitEndDate] = React.useState("");
   const [selectedDailyAssetIds, setSelectedDailyAssetIds] = React.useState<Set<string>>(new Set());
   const [selectedWorkAssetIds, setSelectedWorkAssetIds] = React.useState<Set<string>>(new Set());
   const [selectedInstallAssetIds, setSelectedInstallAssetIds] = React.useState<Set<string>>(new Set());
@@ -538,6 +548,11 @@ export default function WorkspaceBuild({
       endMeter: routeTeam ? endMeter : undefined,
       spliceCount: routeTeam ? undefined : spliceCount,
       crewName: dailyCrewName.trim() || undefined,
+      progressNote: dailyProgressNote.trim() || undefined,
+      issueNote: dailyIssueNote.trim() || undefined,
+      permitNumber: dailyPermitNumber.trim() || undefined,
+      permitStartDate: dailyPermitStartDate || undefined,
+      permitEndDate: dailyPermitEndDate || undefined,
       note,
     });
   };
@@ -931,10 +946,38 @@ export default function WorkspaceBuild({
             Team / gang
             <input value={dailyCrewName} onChange={(event) => setDailyCrewName(event.target.value)} placeholder="Optional" style={inputStyle} />
           </label>
+          {isBackhaulWorkspace ? (
+            <>
+              <label style={labelStyle}>
+                Permit number
+                <input value={dailyPermitNumber} onChange={(event) => setDailyPermitNumber(event.target.value)} placeholder="Street Manager ref" style={inputStyle} />
+              </label>
+              <label style={labelStyle}>
+                Permit start
+                <input type="date" value={dailyPermitStartDate} onChange={(event) => setDailyPermitStartDate(event.target.value)} style={inputStyle} />
+              </label>
+              <label style={labelStyle}>
+                Permit end
+                <input type="date" value={dailyPermitEndDate} onChange={(event) => setDailyPermitEndDate(event.target.value)} style={inputStyle} />
+              </label>
+            </>
+          ) : null}
           <label style={labelStyle}>
             Note
             <input value={dailyNote} onChange={(event) => setDailyNote(event.target.value)} style={inputStyle} />
           </label>
+          {isBackhaulWorkspace ? (
+            <>
+              <label style={labelStyle}>
+                Progress
+                <textarea value={dailyProgressNote} onChange={(event) => setDailyProgressNote(event.target.value)} placeholder="What progressed today" style={{ ...inputStyle, minHeight: 64, resize: "vertical" }} />
+              </label>
+              <label style={labelStyle}>
+                Issues
+                <textarea value={dailyIssueNote} onChange={(event) => setDailyIssueNote(event.target.value)} placeholder="Blocks, permit issues, traffic management or access issues" style={{ ...inputStyle, minHeight: 64, resize: "vertical" }} />
+              </label>
+            </>
+          ) : null}
         </div>
 
         <div style={cablePreviewBox}>

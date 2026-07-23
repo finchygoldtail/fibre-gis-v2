@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { LatLngLiteral } from "leaflet";
-import type { AreaWorkType, SavedMapAsset } from "../types";
+import type { AreaWorkType, AssetType, PermitDetails, SavedMapAsset } from "../types";
 
 type UseAreaDrawingToolsArgs = {
   draftAreaPoints: LatLngLiteral[];
@@ -8,8 +8,10 @@ type UseAreaDrawingToolsArgs = {
   jointName: string;
   savedJoints: SavedMapAsset[];
   notes: string;
+  assetType: AssetType;
   areaLevel: string;
   areaWorkType: AreaWorkType;
+  permitDetails: PermitDetails;
   saveMapAssetToState: (
     asset: SavedMapAsset,
     options?: { isNew?: boolean },
@@ -35,8 +37,10 @@ export function useAreaDrawingTools({
   jointName,
   savedJoints,
   notes,
+  assetType,
   areaLevel,
   areaWorkType,
+  permitDetails,
   saveMapAssetToState,
   writeAssetAuditLog,
   getChangeReasonForCurrentMode,
@@ -48,9 +52,12 @@ export function useAreaDrawingTools({
       return;
     }
 
+    const isPermitZone = assetType === "permit-zone";
     const areaName =
       jointName.trim() ||
-      `Area ${(savedJoints ?? []).filter((asset) => asset.assetType === "area").length + 1}`;
+      (isPermitZone
+        ? `Permit Zone ${(savedJoints ?? []).filter((asset) => asset.assetType === "permit-zone").length + 1}`
+        : `Area ${(savedJoints ?? []).filter((asset) => asset.assetType === "area").length + 1}`);
 
     const reason = getChangeReasonForCurrentMode("created", areaName);
     if (!reason) return;
@@ -58,14 +65,16 @@ export function useAreaDrawingTools({
     const areaRecord: SavedMapAsset = {
       id: crypto.randomUUID(),
       name: areaName,
-      assetType: "area",
-      jointType: "Polygon Area",
+      assetType: isPermitZone ? "permit-zone" : "area",
+      jointType: isPermitZone ? "Street Manager Permit Zone" : "Polygon Area",
       notes: notes.trim(),
       areaLevel: areaLevel as any,
       areaWorkType,
+      ...(isPermitZone ? { permitDetails } : {}),
       properties: {
         areaLevel,
         areaWorkType,
+        ...(isPermitZone ? { permitDetails } : {}),
       },
       mappingRows: [],
       geometry: {

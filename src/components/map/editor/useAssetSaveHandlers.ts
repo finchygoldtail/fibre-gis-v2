@@ -9,6 +9,7 @@ import type {
   FibreCount,
   HomeServiceStatus,
   InstallMethod,
+  PermitDetails,
   PoleDetails,
   SavedMapAsset,
 } from "../types";
@@ -71,6 +72,7 @@ type UseAssetSaveHandlersArgs = {
   jointType: string;
   notes: string;
   parentCableId: string;
+  permitDetails: PermitDetails;
   pickedLocation: LatLngLiteral | null;
   poleDetails: PoleDetails;
   dpDetails: DistributionPointDetails;
@@ -218,6 +220,7 @@ export function useAssetSaveHandlers({
   jointType,
   notes,
   parentCableId,
+  permitDetails,
   pickedLocation,
   poleDetails,
   dpDetails,
@@ -377,22 +380,25 @@ export function useAssetSaveHandlers({
       prev.map((asset) => {
         if (asset.id !== editingAssetId) return asset;
 
-        if (assetType === "area") {
+        if (assetType === "area" || assetType === "permit-zone") {
           if (draftAreaPoints.length < 3) return asset;
+          const isPermitZone = assetType === "permit-zone";
 
           savedAfterAsset = withAssetEditedMetadata(
             markAssetForLiveSync({
               ...asset,
               name: jointName.trim() || asset.name,
-              jointType: "Polygon Area",
+              jointType: isPermitZone ? "Street Manager Permit Zone" : "Polygon Area",
               notes: notes.trim(),
-              assetType: "area",
+              assetType: isPermitZone ? "permit-zone" : "area",
               areaLevel,
               areaWorkType,
+              ...(isPermitZone ? { permitDetails } : {}),
               properties: {
                 ...((asset as any).properties || {}),
                 areaLevel,
                 areaWorkType,
+                ...(isPermitZone ? { permitDetails } : {}),
               },
               geometry: {
                 type: "Polygon",
@@ -532,7 +538,7 @@ export function useAssetSaveHandlers({
       return;
     }
 
-    if (assetType === "area") {
+    if (assetType === "area" || assetType === "permit-zone") {
       alert("Use Draw Area, then Finish Area for polygons.");
       return;
     }
