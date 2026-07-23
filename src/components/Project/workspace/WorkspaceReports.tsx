@@ -19,6 +19,7 @@ type Props = {
   projectName?: string;
   projectAssets?: SavedMapAsset[];
   stats?: any;
+  isBackhaulWorkspace?: boolean;
 };
 
 const panel: React.CSSProperties = {
@@ -81,7 +82,7 @@ function Tile({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-export default function WorkspaceReports({ projectName = "workspace", projectAssets = [], stats }: Props) {
+export default function WorkspaceReports({ projectName = "workspace", projectAssets = [], stats, isBackhaulWorkspace = false }: Props) {
   const summary = React.useMemo(
     () => ({
       production: stats?.production,
@@ -119,27 +120,35 @@ export default function WorkspaceReports({ projectName = "workspace", projectAss
       <section style={panel}>
         <h3 style={title}>Templates</h3>
         <div style={grid}>
-          <button type="button" style={button} onClick={() => void downloadAddressSheetTemplate()}>
-            Address Sheet Template
-          </button>
+          {!isBackhaulWorkspace ? (
+            <button type="button" style={button} onClick={() => void downloadAddressSheetTemplate()}>
+              Address Sheet Template
+            </button>
+          ) : null}
           <button type="button" style={button} onClick={downloadAgJointTemplate}>
             AG Joint Template
           </button>
           <button type="button" style={button} onClick={downloadLmjJointTemplate}>
             LMJ Joint Template
           </button>
-          <button type="button" style={button} onClick={downloadMidjJointTemplate}>
-            MidJ Joint Template
-          </button>
+          {!isBackhaulWorkspace ? (
+            <button type="button" style={button} onClick={downloadMidjJointTemplate}>
+              MidJ Joint Template
+            </button>
+          ) : null}
           <button type="button" style={button} onClick={downloadMeetMeJointTemplate}>
             Meet Me Chamber Template
           </button>
-          <button type="button" style={button} onClick={downloadStreetCabTemplate}>
-            Street Cab Template
-          </button>
-          <button type="button" style={button} onClick={downloadExchangeTemplate}>
-            Exchange Template
-          </button>
+          {!isBackhaulWorkspace ? (
+            <>
+              <button type="button" style={button} onClick={downloadStreetCabTemplate}>
+                Street Cab Template
+              </button>
+              <button type="button" style={button} onClick={downloadExchangeTemplate}>
+                Exchange Template
+              </button>
+            </>
+          ) : null}
         </div>
       </section>
     </>

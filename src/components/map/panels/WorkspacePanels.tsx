@@ -13,6 +13,7 @@ type WorkspacePanelsProps = {
   visibleOpenreachAssets?: SavedMapAsset[];
   projectAreas: SavedMapAsset[];
   activeProjectId: string | null;
+  activeBusinessId?: string | null;
   onSelectProject: (projectId: string) => void;
   onBackToMap: () => void;
   onOpenTrace: () => void;
@@ -77,6 +78,7 @@ export default function WorkspacePanels({
   visibleOpenreachAssets = [],
   projectAreas,
   activeProjectId,
+  activeBusinessId,
   onSelectProject,
   onBackToMap,
   onOpenTrace,
@@ -133,6 +135,7 @@ export default function WorkspacePanels({
       openreachAssets={visibleOpenreachAssets}
       projectAreas={projectAreas}
       activeProjectId={activeProjectId}
+      activeBusinessId={activeBusinessId}
       onSelectProject={onSelectProject}
       onBackToMap={onBackToMap}
       onOpenTrace={onOpenTrace}

@@ -7,6 +7,7 @@ import type {
   HomeServiceStatus,
   InstallMethod,
   PoleDetails,
+  AreaWorkType,
 } from "../types";
 import type { ChamberDetails } from "../modals/ChamberDetailsModal";
 import { DEFAULT_DISTRIBUTION_CLOSURE_TYPE } from "../../../services/assetNameValidation";
@@ -28,6 +29,7 @@ export function useAssetEditorState(
   const [notes, setNotes] = useState("");
   const [cablePiaNoiNumber, setCablePiaNoiNumber] = useState("");
   const [areaLevel, setAreaLevel] = useState<AreaLevel>("L0");
+  const [areaWorkType, setAreaWorkType] = useState<AreaWorkType>("pia");
 
   const [cableType, setCableType] = useState<CableType>("Feeder Cable");
   const [fibreCount, setFibreCount] = useState<FibreCount>("12F");
@@ -71,6 +73,8 @@ export function useAssetEditorState(
     setCablePiaNoiNumber,
     areaLevel,
     setAreaLevel,
+    areaWorkType,
+    setAreaWorkType,
     cableType,
     setCableType,
     fibreCount,

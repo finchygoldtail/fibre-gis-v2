@@ -7,6 +7,7 @@ import {
 } from "../../../services/assetActivityService";
 import type {
   AssetType,
+  AreaWorkType,
   CableType,
   DistributionPointDetails,
   DuctUse,
@@ -42,6 +43,13 @@ function normaliseAreaLevel(value: unknown): AreaLevel {
   return "L0";
 }
 
+function normaliseAreaWorkType(value: unknown): AreaWorkType {
+  const clean = String(value || "").trim().toLowerCase();
+  return clean === "data-centre" || clean === "data center" || clean === "backhaul"
+    ? "data-centre"
+    : "pia";
+}
+
 type UseAssetSelectionArgs = {
   activeProjectIdRef: React.MutableRefObject<string | null>;
   setSavedJoints: Setter<SavedMapAsset[]>;
@@ -52,6 +60,7 @@ type UseAssetSelectionArgs = {
   setNotes: Setter<string>;
   setCablePiaNoiNumber: Setter<string>;
   setAreaLevel: Setter<AreaLevel>;
+  setAreaWorkType: Setter<AreaWorkType>;
   setCableType: Setter<CableType>;
   setFibreCount: Setter<FibreCount>;
   setInstallMethod: Setter<InstallMethod>;
@@ -89,6 +98,7 @@ export function useAssetSelection({
   setNotes,
   setCablePiaNoiNumber,
   setAreaLevel,
+  setAreaWorkType,
   setCableType,
   setFibreCount,
   setInstallMethod,
@@ -140,6 +150,12 @@ export function useAssetSelection({
       setNotes(viewedAsset.notes || "");
       setCablePiaNoiNumber((viewedAsset as any).piaNoiNumber || "");
       setAreaLevel(normaliseAreaLevel((viewedAsset as any).areaLevel));
+      setAreaWorkType(
+        normaliseAreaWorkType(
+          (viewedAsset as any).areaWorkType ||
+            (viewedAsset as any).properties?.areaWorkType,
+        ),
+      );
       setCableType(viewedAsset.cableType || "Feeder Cable");
       setFibreCount(viewedAsset.fibreCount || "12F");
       setInstallMethod(viewedAsset.installMethod || "Underground");
@@ -209,6 +225,7 @@ export function useAssetSelection({
       activeProjectIdRef,
       setAllocatedInputFibres,
       setAreaLevel,
+      setAreaWorkType,
       setAssetType,
       setCablePiaNoiNumber,
       setCableType,

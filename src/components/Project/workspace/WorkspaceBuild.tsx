@@ -15,6 +15,7 @@ type Props = {
   stats: any;
   projectAssets: SavedMapAsset[];
   projectArea?: SavedMapAsset | null;
+  isBackhaulWorkspace?: boolean;
   auditIssues?: any[];
   disconnectedAssets?: any[];
   networkGraph?: any;
@@ -219,14 +220,18 @@ function ToolButton({
   description,
   active,
   tone = "default",
+  hidden = false,
   onClick,
 }: {
   label: string;
   description: string;
   active: boolean;
   tone?: "default" | "warn" | "danger" | "good";
+  hidden?: boolean;
   onClick: () => void;
 }) {
+  if (hidden) return null;
+
   const activeBorder =
     tone === "danger"
       ? "rgba(248,113,113,0.7)"
@@ -278,6 +283,7 @@ export default function WorkspaceBuild({
   onAutoSpreadStackedHomes,
   onApplyAddressSheetAssignments,
   onApplySbRouteAssignments,
+  isBackhaulWorkspace = false,
 }: Props) {
   const [activeTool, setActiveTool] = React.useState<BuildToolKey | null>(null);
   const [piaNoiNumber, setPiaNoiNumber] = React.useState("");
@@ -304,6 +310,25 @@ export default function WorkspaceBuild({
   const readiness = stats?.operationalReadiness;
   const blockers = Array.isArray(readiness?.blockers) ? readiness.blockers : [];
   const nextActions = Array.isArray(readiness?.nextActions) ? readiness.nextActions : [];
+  const hiddenBackhaulTools = React.useMemo(
+    () => new Set<BuildToolKey>(["fas", "address", "homes", "joints", "pia", "reset"]),
+    [],
+  );
+
+  React.useEffect(() => {
+    if (activeTool && isBackhaulWorkspace && hiddenBackhaulTools.has(activeTool)) {
+      setActiveTool(null);
+    }
+  }, [activeTool, hiddenBackhaulTools, isBackhaulWorkspace]);
+
+  React.useEffect(() => {
+    if (
+      isBackhaulWorkspace &&
+      (workStatusAssetFilter === "dp" || workStatusAssetFilter === "street cab")
+    ) {
+      setWorkStatusAssetFilter("all");
+    }
+  }, [isBackhaulWorkspace, workStatusAssetFilter]);
 
   const designCables = React.useMemo(
     () =>
@@ -354,11 +379,12 @@ export default function WorkspaceBuild({
       .filter((asset: any) => {
         if (asset?.assetType === "home" || asset?.assetType === "area") return false;
         const type = getAssetTypeLabel(asset).toLowerCase();
+        if (isBackhaulWorkspace && (type === "dp" || type === "street cab")) return false;
         if (filter === "all") return type !== "asset";
         return type === filter;
       })
       .sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id), undefined, { numeric: true }));
-  }, [projectAssets, workStatusAssetFilter]);
+  }, [isBackhaulWorkspace, projectAssets, workStatusAssetFilter]);
   const workStatusAssetIds = React.useMemo(
     () => workStatusAssets.map((asset: any) => String(asset.id || "")),
     [workStatusAssets],
@@ -373,10 +399,11 @@ export default function WorkspaceBuild({
       .filter((asset: any) => {
         const type = getAssetTypeLabel(asset).toLowerCase();
         if (routeTeam) return asset?.geometry?.type === "LineString" && (type === "duct" || type === "cable");
+        if (isBackhaulWorkspace) return ["joint", "chamber", "data centre"].includes(type);
         return ["joint", "dp", "chamber"].includes(type);
       })
       .sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id), undefined, { numeric: true }));
-  }, [dailyTeam, projectAssets]);
+  }, [dailyTeam, isBackhaulWorkspace, projectAssets]);
   const dailyProgressAssetIds = React.useMemo(
     () => dailyProgressAssets.map((asset: any) => String(asset.id || "")),
     [dailyProgressAssets],
@@ -615,18 +642,21 @@ export default function WorkspaceBuild({
           label="FAS Route Import"
           description="Import SB → SB fibre routes from the FAS."
           active={activeTool === "fas"}
+          hidden={isBackhaulWorkspace}
           onClick={() => setActiveTool((value) => value === "fas" ? null : "fas")}
         />
         <ToolButton
           label="Address Sheet Matcher"
           description="Match UPRNs to map homes and group by SB."
           active={activeTool === "address"}
+          hidden={isBackhaulWorkspace}
           onClick={() => setActiveTool((value) => value === "address" ? null : "address")}
         />
         <ToolButton
           label="Home Tools"
           description="Duplicates, stacked homes and home clean-up."
           active={activeTool === "homes"}
+          hidden={isBackhaulWorkspace}
           tone="good"
           onClick={() => setActiveTool((value) => value === "homes" ? null : "homes")}
         />
@@ -634,6 +664,7 @@ export default function WorkspaceBuild({
           label="Bulk Joint / DP Install"
           description="Mark existing joints and DPs as UG or OH in one pass."
           active={activeTool === "joints"}
+          hidden={isBackhaulWorkspace}
           tone="good"
           onClick={() => setActiveTool((value) => value === "joints" ? null : "joints")}
         />
@@ -641,6 +672,7 @@ export default function WorkspaceBuild({
           label="Bulk PIA NOI"
           description="Apply one PIA NOI number to project design cables."
           active={activeTool === "pia"}
+          hidden={isBackhaulWorkspace}
           tone="good"
           onClick={() => setActiveTool((value) => value === "pia" ? null : "pia")}
         />
@@ -662,6 +694,7 @@ export default function WorkspaceBuild({
           label="Fibre Reset"
           description="Clear DP fibre allocations in this area."
           active={activeTool === "reset"}
+          hidden={isBackhaulWorkspace}
           tone="danger"
           onClick={() => setActiveTool((value) => value === "reset" ? null : "reset")}
         />
@@ -853,7 +886,9 @@ export default function WorkspaceBuild({
       <section style={wide}>
         <h3 style={title}>Daily Production</h3>
         <p style={{ color: "#cbd5e1", marginTop: 0 }}>
-          Record what was completed today. Civils and cabling use metres on duct/cable routes; splicing uses splice counts on joints, DPs or chambers.
+          {isBackhaulWorkspace
+            ? "Record what was completed today. Civils and cabling use metres on duct/cable routes; splicing uses splice counts on joints, chambers or data centres."
+            : "Record what was completed today. Civils and cabling use metres on duct/cable routes; splicing uses splice counts on joints, DPs or chambers."}
         </p>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10, marginBottom: 12 }}>
@@ -947,7 +982,9 @@ export default function WorkspaceBuild({
       <section style={wide}>
         <h3 style={title}>Production Status</h3>
         <p style={{ color: "#cbd5e1", marginTop: 0 }}>
-          Update build state for ducts, cables, DPs, chambers, poles, cabinets and joints. This feeds the overview, blockers and closeout exports.
+          {isBackhaulWorkspace
+            ? "Update build state for ducts, cables, joints, chambers, poles and data centres. This feeds the overview, blockers and closeout exports."
+            : "Update build state for ducts, cables, DPs, chambers, poles, cabinets and joints. This feeds the overview, blockers and closeout exports."}
         </p>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10, marginBottom: 12 }}>
@@ -963,11 +1000,12 @@ export default function WorkspaceBuild({
               <option value="all">All build assets</option>
               <option value="duct">Ducts</option>
               <option value="cable">Cables</option>
-              <option value="dp">DPs</option>
+              {!isBackhaulWorkspace ? <option value="dp">DPs</option> : null}
               <option value="chamber">Chambers</option>
               <option value="pole">Poles</option>
               <option value="joint">Joints</option>
-              <option value="street cab">Street cabs</option>
+              {!isBackhaulWorkspace ? <option value="street cab">Street cabs</option> : null}
+              {isBackhaulWorkspace ? <option value="data centre">Data Centres</option> : null}
             </select>
           </label>
           <label style={labelStyle}>

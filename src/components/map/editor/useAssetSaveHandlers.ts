@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { LatLngLiteral } from "leaflet";
 import type {
+  AreaWorkType,
   AssetType,
   CableType,
   DistributionPointDetails,
@@ -50,6 +51,7 @@ type UseAssetSaveHandlersArgs = {
   activeProjectAreaName: string | null | undefined;
   allocatedInputFibres: number[];
   areaLevel: string;
+  areaWorkType: AreaWorkType;
   assetType: AssetType;
   cablePiaNoiNumber: string;
   cableType: CableType;
@@ -198,6 +200,7 @@ export function useAssetSaveHandlers({
   activeProjectAreaName,
   allocatedInputFibres,
   areaLevel,
+  areaWorkType,
   assetType,
   cablePiaNoiNumber,
   cableType,
@@ -383,6 +386,12 @@ export function useAssetSaveHandlers({
               notes: notes.trim(),
               assetType: "area",
               areaLevel,
+              areaWorkType,
+              properties: {
+                ...((asset as any).properties || {}),
+                areaLevel,
+                areaWorkType,
+              },
               geometry: {
                 type: "Polygon",
                 coordinates: [draftAreaPoints.map((p) => [p.lat, p.lng])],

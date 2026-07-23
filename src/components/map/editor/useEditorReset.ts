@@ -11,6 +11,7 @@ type UseEditorResetArgs = {
   setNotes: Setter<string>;
   setCablePiaNoiNumber: Setter<string>;
   setAreaLevel: Setter<any>;
+  setAreaWorkType: Setter<any>;
   setMapMode: Setter<any>;
   setSelectedReferenceDuctId: Setter<string | null>;
   setSelectedReferenceDuctName: Setter<string>;
@@ -44,6 +45,7 @@ export function useEditorReset(args: UseEditorResetArgs) {
     args.setNotes("");
     args.setCablePiaNoiNumber("");
     args.setAreaLevel("L0");
+    args.setAreaWorkType("pia");
     args.setMapMode("pick");
     args.setSelectedReferenceDuctId(null);
     args.setSelectedReferenceDuctName("");

@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { LatLngLiteral } from "leaflet";
-import type { SavedMapAsset } from "../types";
+import type { AreaWorkType, SavedMapAsset } from "../types";
 
 type UseAreaDrawingToolsArgs = {
   draftAreaPoints: LatLngLiteral[];
@@ -9,6 +9,7 @@ type UseAreaDrawingToolsArgs = {
   savedJoints: SavedMapAsset[];
   notes: string;
   areaLevel: string;
+  areaWorkType: AreaWorkType;
   saveMapAssetToState: (
     asset: SavedMapAsset,
     options?: { isNew?: boolean },
@@ -35,6 +36,7 @@ export function useAreaDrawingTools({
   savedJoints,
   notes,
   areaLevel,
+  areaWorkType,
   saveMapAssetToState,
   writeAssetAuditLog,
   getChangeReasonForCurrentMode,
@@ -60,6 +62,11 @@ export function useAreaDrawingTools({
       jointType: "Polygon Area",
       notes: notes.trim(),
       areaLevel: areaLevel as any,
+      areaWorkType,
+      properties: {
+        areaLevel,
+        areaWorkType,
+      },
       mappingRows: [],
       geometry: {
         type: "Polygon",

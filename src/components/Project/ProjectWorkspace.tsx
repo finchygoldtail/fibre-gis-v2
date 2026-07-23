@@ -39,6 +39,7 @@ import AuditPaymentBlockerPanel from "../audits/AuditPaymentBlockerPanel";
 import AuditHistoryPanel from "../audits/AuditHistoryPanel";
 import UserMenu from "../UserMenu";
 import { useUserRole } from "../../context/UserRoleContext";
+import { isHarrellicommsBusiness } from "../../utils/clientAccessControl";
 import AreaOperationsCentre from "../operations/AreaOperationsCentre";
 import EngineeringDeliveryWorkspace from "../delivery/EngineeringDeliveryWorkspace";
 import {
@@ -155,6 +156,7 @@ type ProjectWorkspaceProps = {
   onOpenAudit?: (asset: SavedMapAsset) => void;
   onExport?: () => void;
   onUpdateWorkspaceAsset?: (asset: SavedMapAsset) => void;
+  activeBusinessId?: string | null;
   projectArea?: SavedMapAsset | null;
   projectAssets?: SavedMapAsset[];
   openreachAssets?: SavedMapAsset[];
@@ -270,6 +272,34 @@ const workspaceLayerOptions: {
   { key: "homesNotLive", label: "Not Live Homes" },
   { key: "other", label: "Other Assets" },
 ];
+
+const HARRELLICOMMS_BACKHAUL_HIDDEN_TABS = new Set<WorkspaceTab>([
+  "pia",
+  "commercial",
+  "delivery",
+]);
+
+const HARRELLICOMMS_BACKHAUL_HIDDEN_PANELS = new Set<WorkspaceOperationPanel>([
+  "homesNotLive",
+  "homesLive",
+  "dpStatus",
+  "capacity",
+  "piaQa",
+]);
+
+function getAreaWorkType(area?: SavedMapAsset | null): "pia" | "data-centre" {
+  const raw = String(
+    (area as any)?.areaWorkType ||
+      (area as any)?.properties?.areaWorkType ||
+      "",
+  )
+    .trim()
+    .toLowerCase();
+
+  return raw === "data-centre" || raw === "data center" || raw === "backhaul"
+    ? "data-centre"
+    : "pia";
+}
 
 const defaultOpenreachLayers: OpenreachLayerVisibility = {
   // Openreach / PIA overlays can be very heavy, so default them off.
@@ -1328,6 +1358,7 @@ export default function ProjectWorkspace({
   onOpenAudit,
   onExport,
   onUpdateWorkspaceAsset,
+  activeBusinessId,
   projectArea = null,
   projectAssets = [],
   openreachAssets = [],
@@ -1350,10 +1381,18 @@ export default function ProjectWorkspace({
   const { isAdmin, isSuperUser } = useUserRole();
   const canManageWalkOff = isAdmin || isSuperUser;
   const canViewCommercial = isAdmin || isSuperUser;
+  const isHarrellicommsBackhaulWorkspace =
+    isHarrellicommsBusiness(activeBusinessId) &&
+    getAreaWorkType(projectArea) === "data-centre";
   const visibleWorkspaceTabs = useMemo(
     () =>
-      tabs.filter((tab) => canViewCommercial || tab.id !== "commercial"),
-    [canViewCommercial],
+      tabs.filter((tab) => {
+        if (isHarrellicommsBackhaulWorkspace && HARRELLICOMMS_BACKHAUL_HIDDEN_TABS.has(tab.id)) {
+          return false;
+        }
+        return canViewCommercial || tab.id !== "commercial";
+      }),
+    [canViewCommercial, isHarrellicommsBackhaulWorkspace],
   );
 
   // Keep the Project Workspace as the desktop engineering view on mobile/tablet.
@@ -1620,6 +1659,15 @@ export default function ProjectWorkspace({
   };
 
   const handleWorkspaceTabChange = (tab: WorkspaceTab) => {
+    if (
+      isHarrellicommsBackhaulWorkspace &&
+      HARRELLICOMMS_BACKHAUL_HIDDEN_TABS.has(tab)
+    ) {
+      setActiveTab("overview");
+      setSelectedWorkspaceAsset(null);
+      clearWorkspaceOperationState();
+      return;
+    }
     if (tab === "commercial" && !canViewCommercial) {
       setActiveTab("overview");
       setSelectedWorkspaceAsset(null);
@@ -1632,11 +1680,15 @@ export default function ProjectWorkspace({
   };
 
   useEffect(() => {
-    if (activeTab === "commercial" && !canViewCommercial) {
+    if (
+      (activeTab === "commercial" && !canViewCommercial) ||
+      (isHarrellicommsBackhaulWorkspace &&
+        HARRELLICOMMS_BACKHAUL_HIDDEN_TABS.has(activeTab))
+    ) {
       setActiveTab("overview");
       clearWorkspaceOperationState();
     }
-  }, [activeTab, canViewCommercial]);
+  }, [activeTab, canViewCommercial, isHarrellicommsBackhaulWorkspace]);
 
   useEffect(() => {
     setWorkspaceHeavyPassReady(false);
@@ -2406,6 +2458,14 @@ export default function ProjectWorkspace({
     panel: WorkspaceOperationPanel,
     tab?: WorkspaceTab,
   ) => {
+    if (
+      isHarrellicommsBackhaulWorkspace &&
+      HARRELLICOMMS_BACKHAUL_HIDDEN_PANELS.has(panel)
+    ) {
+      setActiveTab("overview");
+      setActiveOperationPanel("none");
+      return;
+    }
     if (tab) setActiveTab(tab);
     setActiveOperationPanel(panel);
   };
@@ -3685,7 +3745,7 @@ export default function ProjectWorkspace({
     setActiveTab("pia");
   };
 
-  if (activeTab === "pia") {
+  if (!isHarrellicommsBackhaulWorkspace && activeTab === "pia") {
     return (
       <PiaOperationsDashboard
         projectName={projectName}
@@ -3901,6 +3961,15 @@ export default function ProjectWorkspace({
     },
   ];
 
+  const visibleWorkspaceQuickActions = isHarrellicommsBackhaulWorkspace
+    ? workspaceQuickActions.filter(
+        (action) =>
+          action.label !== "Capacity" &&
+          action.label !== "Live Homes" &&
+          action.label !== "Not Live",
+      )
+    : workspaceQuickActions;
+
   const nextActionItems = [
     {
       label: "QA Gate",
@@ -3934,6 +4003,10 @@ export default function ProjectWorkspace({
 
   const shouldShowOperationPanel =
     activeOperationPanel !== "none" &&
+    !(
+      isHarrellicommsBackhaulWorkspace &&
+      HARRELLICOMMS_BACKHAUL_HIDDEN_PANELS.has(activeOperationPanel)
+    ) &&
     ((activeOperationPanel === "projectDetails" &&
       (activeTab === "overview" || activeTab === "assets")) ||
       (activeOperationPanel === "rfsBreakdown" &&
@@ -3997,7 +4070,11 @@ export default function ProjectWorkspace({
         setActiveOperationPanel("none");
       },
     },
-  ];
+  ].filter(
+    (tab) =>
+      !isHarrellicommsBackhaulWorkspace ||
+      (tab.label !== "DPs" && tab.label !== "Homes" && tab.label !== "Live"),
+  );
 
   return (
     <div style={scaledWorkspaceViewport}>
@@ -4215,24 +4292,26 @@ export default function ProjectWorkspace({
                   <span style={quickActionLabel}>{tab.label}</span>
                 </button>
               ))}
-              <button
-                type="button"
-                onClick={() => openOperationPanel("dpStatus", "overview")}
-                style={
-                  activeOperationPanel === "dpStatus"
-                    ? quickActionButtonActive
-                    : quickActionButton
-                }
-              >
-                <span style={quickActionLabel}>DPs</span>
-                <span style={quickActionHelper}>
-                  {formatNumber(rolloutKpis.dpTotal)} total
-                </span>
-              </button>
+              {!isHarrellicommsBackhaulWorkspace ? (
+                <button
+                  type="button"
+                  onClick={() => openOperationPanel("dpStatus", "overview")}
+                  style={
+                    activeOperationPanel === "dpStatus"
+                      ? quickActionButtonActive
+                      : quickActionButton
+                  }
+                >
+                  <span style={quickActionLabel}>DPs</span>
+                  <span style={quickActionHelper}>
+                    {formatNumber(rolloutKpis.dpTotal)} total
+                  </span>
+                </button>
+              ) : null}
 
               <div style={railDivider} />
               <div style={railSectionTitle}>Focus</div>
-              {workspaceQuickActions.slice(0, 7).map((action) => (
+              {visibleWorkspaceQuickActions.slice(0, 7).map((action) => (
                 <button
                   key={action.label}
                   type="button"
@@ -4706,6 +4785,7 @@ export default function ProjectWorkspace({
                       stats={workspaceDisplayStats}
                       projectAssets={workspaceAssets}
                       projectArea={projectArea}
+                      isBackhaulWorkspace={isHarrellicommsBackhaulWorkspace}
                       auditIssues={auditIssues}
                       disconnectedAssets={disconnectedAssets}
                       networkGraph={networkGraph}

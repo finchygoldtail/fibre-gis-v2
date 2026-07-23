@@ -37,6 +37,7 @@ export type CableSegmentInstallMethod = "OH" | "Underground";
 export type DuctUse = "Main route" | "Road crossing" | "Rider" | "Lead-in" | "Other";
 
 export type AreaLevel = "L0" | "L1" | "L2" | "L3";
+export type AreaWorkType = "pia" | "data-centre";
 
 export type AssetStatus =
   | "Live"
@@ -249,6 +250,7 @@ export type SavedMapAsset = {
   streetCabDetails?: any;
 
   areaLevel?: AreaLevel;
+  areaWorkType?: AreaWorkType;
   homeType?: "SDU" | "MDU" | "Flats";
   serviceStatus?: HomeServiceStatus;
   serviceNote?: string;

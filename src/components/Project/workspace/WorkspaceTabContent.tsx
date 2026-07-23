@@ -12,6 +12,7 @@ type Props = {
   stats: any;
   projectAssets: any[];
   projectArea?: any;
+  isBackhaulWorkspace?: boolean;
   auditIssues?: any[];
   disconnectedAssets?: any[];
   networkGraph?: any;

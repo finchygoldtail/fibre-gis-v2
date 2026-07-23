@@ -724,6 +724,7 @@ function AssetActivityMiniSummary({ asset }: { asset: SavedMapAsset | null }) {
 }
 
 type AreaLevel = "L0" | "L1" | "L2" | "L3";
+type AreaWorkType = "pia" | "data-centre";
 
 function MapClickHandler({
   mode,
@@ -1258,6 +1259,8 @@ export default function JointMapManager({
     setCablePiaNoiNumber,
     areaLevel,
     setAreaLevel,
+    areaWorkType,
+    setAreaWorkType,
     cableType,
     setCableType,
     fibreCount,
@@ -2271,6 +2274,7 @@ export default function JointMapManager({
     setNotes,
     setCablePiaNoiNumber,
     setAreaLevel,
+    setAreaWorkType,
     setMapMode,
     setSelectedReferenceDuctId,
     setSelectedReferenceDuctName,
@@ -2429,6 +2433,7 @@ export default function JointMapManager({
     setNotes,
     setCablePiaNoiNumber,
     setAreaLevel,
+    setAreaWorkType,
     setCableType,
     setFibreCount,
     setInstallMethod,
@@ -2625,6 +2630,7 @@ export default function JointMapManager({
       activeProjectAreaName,
       allocatedInputFibres,
       areaLevel,
+      areaWorkType,
       assetType,
       cablePiaNoiNumber,
       cableType,
@@ -2735,6 +2741,7 @@ export default function JointMapManager({
     savedJoints,
     notes,
     areaLevel,
+    areaWorkType,
     saveMapAssetToState,
     writeAssetAuditLog,
     getChangeReasonForCurrentMode,
@@ -3283,6 +3290,7 @@ export default function JointMapManager({
         `Area ${(savedJoints ?? []).filter((asset) => asset.assetType === "area").length + 1}`,
       );
       setAreaLevel("L0");
+      setAreaWorkType("pia");
       setPickedLocation(null);
       setDraftAreaPoints(clickedPoint ? [clickedPoint] : []);
       setMapMode("draw-area");
@@ -3405,6 +3413,7 @@ export default function JointMapManager({
       `Area ${(savedJoints ?? []).filter((asset) => asset.assetType === "area").length + 1}`,
     );
     setAreaLevel("L0");
+    setAreaWorkType("pia");
     setPickedLocation(null);
     setDraftCablePoints([]);
     setDraftCableSegmentMethods([]);
@@ -5267,6 +5276,7 @@ export default function JointMapManager({
         visibleOpenreachAssets={visibleOpenreachAssets}
         projectAreas={projectAreas}
         activeProjectId={activeProjectId}
+        activeBusinessId={mapBusinessId}
         onSelectProject={handleSelectProject}
         onBackToMap={handleBackToMapFromWorkspace}
         onOpenTrace={() => {
@@ -5792,6 +5802,19 @@ export default function JointMapManager({
 
               {assetType === "area" ? (
                 <>
+                  {isHarrellicommsBusiness(mapBusinessId) ? (
+                    <>
+                      <div style={{ ...label, marginTop: 10 }}>Area Work Type</div>
+                      <select
+                        value={areaWorkType}
+                        onChange={(e) => setAreaWorkType(e.target.value as AreaWorkType)}
+                        style={input}
+                      >
+                        <option value="pia">PIA Work</option>
+                        <option value="data-centre">Data Centre / Backhaul</option>
+                      </select>
+                    </>
+                  ) : null}
                   <div style={{ ...label, marginTop: 10 }}>Polygon Level</div>
                   <select
                     value={areaLevel}
