@@ -37,6 +37,12 @@ type Props = {
     installMethod: "Underground" | "Overhead";
     note: string;
   }) => void | Promise<void>;
+  onBulkUpdateWorkStatus?: (args: {
+    assetIds: string[];
+    status: "planned" | "assigned" | "in-progress" | "complete" | "blocked";
+    assignedTeam?: string;
+    note: string;
+  }) => void | Promise<void>;
   onClearDpFibreAllocations?: () => void;
   onApplyAddressSheetAssignments?: (request: any) => void | Promise<void>;
   onApplySbRouteAssignments?: (request: any) => void | Promise<void>;

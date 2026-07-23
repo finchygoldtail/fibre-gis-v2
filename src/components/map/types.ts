@@ -43,6 +43,24 @@ export type AssetStatus =
   | "Unserviceable"
   | "Live not ready for service";
 
+export type WorkStatus =
+  | "planned"
+  | "assigned"
+  | "in-progress"
+  | "complete"
+  | "blocked";
+
+export type FieldEvidence = {
+  beforePhotos?: string[];
+  duringPhotos?: string[];
+  afterPhotos?: string[];
+  documents?: string[];
+  gps?: { lat: number; lng: number; accuracyMeters?: number };
+  crewName?: string;
+  checkedAt?: string;
+  notes?: string;
+};
+
 export type HomeServiceStatus =
   | "serviceable"
   | "blocked"
@@ -223,6 +241,10 @@ export type SavedMapAsset = {
   lastFieldCheckedAt?: string;
   lastFieldCheckedBy?: string;
   status?: AssetStatus | "";
+  workStatus?: WorkStatus;
+  assignedTeam?: string;
+  closeout?: FieldEvidence;
+  fieldEvidence?: FieldEvidence;
 
   source?: "manual" | "osm" | "openreach" | string;
   referenceSubtype?: "or" | "np" | "suggested" | string;

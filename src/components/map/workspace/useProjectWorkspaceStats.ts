@@ -2,6 +2,11 @@ import { useMemo } from "react";
 import { getPathDistanceMeters } from "../../../utils/mapMeasure";
 import type { SavedMapAsset } from "../types";
 import { buildCanonicalHomeSummary } from "../../Project/workspace/canonicalHomeStatus";
+import {
+  buildWorkspaceOperationsSummary,
+  type CloseoutSummary,
+  type ProductionSummary,
+} from "../../Project/workspace/workspaceOperations";
 
 export type ProjectWorkspaceStats = {
   homesPassed: number;
@@ -19,6 +24,8 @@ export type ProjectWorkspaceStats = {
   designCables: number;
   dropCables: number;
   routeLengthMeters: number;
+  production: ProductionSummary;
+  closeout: CloseoutSummary;
 };
 
 type Args = {
@@ -117,6 +124,7 @@ export function useProjectWorkspaceStats({
     const jointCount = visibleProjectAssets.filter((asset) =>
       isType(asset, ["joint", "cmj", "midj", "lmj", "mmj"]),
     ).length;
+    const operations = buildWorkspaceOperationsSummary(visibleProjectAssets);
 
     return {
       homesPassed: canonicalHomeSummary.homesPassed,
@@ -141,6 +149,8 @@ export function useProjectWorkspaceStats({
       designCables: designCables.length,
       dropCables: dropCables.length,
       routeLengthMeters,
+      production: operations.production,
+      closeout: operations.closeout,
     };
   }, [visibleProjectAssets, topologyLinks]);
 }

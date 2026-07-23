@@ -37,6 +37,12 @@ type WorkspacePanelsProps = {
     installMethod: "Underground" | "Overhead";
     note: string;
   }) => void | Promise<void>;
+  onBulkUpdateWorkStatus: (args: {
+    assetIds: string[];
+    status: "planned" | "assigned" | "in-progress" | "complete" | "blocked";
+    assignedTeam?: string;
+    note: string;
+  }) => void | Promise<void>;
   onUpdateDpStatus: (args: {
     assetId: string;
     status: "Live" | "BWIP" | "Unserviceable" | "Live not ready for service";
@@ -71,6 +77,7 @@ export default function WorkspacePanels({
   onBulkUpdateDpStatus,
   onBulkUpdateCablePiaNoi,
   onBulkUpdateJointInstallMethod,
+  onBulkUpdateWorkStatus,
   onUpdateDpStatus,
   onClearDpFibreAllocations,
   onApplyAddressSheetAssignments,
@@ -125,6 +132,7 @@ export default function WorkspacePanels({
       onBulkUpdateDpStatus={onBulkUpdateDpStatus}
       onBulkUpdateCablePiaNoi={onBulkUpdateCablePiaNoi}
       onBulkUpdateJointInstallMethod={onBulkUpdateJointInstallMethod}
+      onBulkUpdateWorkStatus={onBulkUpdateWorkStatus}
       onUpdateDpStatus={onUpdateDpStatus}
       onClearDpFibreAllocations={onClearDpFibreAllocations}
       onApplyAddressSheetAssignments={onApplyAddressSheetAssignments}

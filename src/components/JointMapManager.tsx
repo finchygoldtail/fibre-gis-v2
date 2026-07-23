@@ -177,6 +177,7 @@ import type {
   InstallMethod,
   PoleDetails,
   SavedMapAsset,
+  WorkStatus,
 } from "./map/types";
 // Split storage is disabled during storage-integrity recovery.
 // Main chunks are the only authoritative save/load path.
@@ -3909,6 +3910,108 @@ export default function JointMapManager({
     alert(`Updated ${updatedById.size} joint / DP asset${updatedById.size === 1 ? "" : "s"} to ${args.installMethod}.`);
   };
 
+  const handleWorkspaceBulkWorkStatusUpdate = async (args: {
+    assetIds: string[];
+    status: WorkStatus;
+    assignedTeam?: string;
+    note: string;
+  }) => {
+    const ids = new Set((args.assetIds || []).map(String).filter(Boolean));
+    if (!ids.size) {
+      alert("No assets selected for production status update.");
+      return;
+    }
+
+    const reason = String(args.note || "").trim();
+    if (!reason) {
+      alert("An audit note is required before applying a production status update.");
+      return;
+    }
+
+    const beforeAssets = (savedJoints ?? []).filter((asset) =>
+      ids.has(String(asset.id || "")),
+    );
+
+    if (!beforeAssets.length) {
+      alert("No matching saved assets were found for the production status update.");
+      return;
+    }
+
+    const checkedAt = new Date().toISOString();
+    const assignedTeam = String(args.assignedTeam || "").trim();
+    const updatedById = new Map<string, SavedMapAsset>();
+
+    beforeAssets.forEach((asset) => {
+      const item = asset as any;
+      const rawNextAsset = {
+        ...item,
+        workStatus: args.status,
+        ...(assignedTeam ? { assignedTeam } : {}),
+        lastFieldCheckedAt: checkedAt,
+        properties: {
+          ...(item.properties || {}),
+          workStatus: args.status,
+          ...(assignedTeam ? { assignedTeam } : {}),
+          lastFieldCheckedAt: checkedAt,
+        },
+        closeout: {
+          ...(item.closeout || {}),
+          checkedAt,
+          notes: reason,
+        },
+      } as SavedMapAsset;
+
+      const nextAsset = withAssetEditedMetadata(
+        markAssetForLiveSync(rawNextAsset),
+        "updated",
+        reason,
+      );
+
+      updatedById.set(String(asset.id || ""), nextAsset);
+    });
+
+    const nextSavedJoints = (savedJoints ?? []).map(
+      (asset) => updatedById.get(String(asset.id || "")) || asset,
+    );
+
+    setSavedJoints(nextSavedJoints);
+
+    beforeAssets.forEach((beforeAsset) => {
+      const afterAsset = updatedById.get(String(beforeAsset.id || ""));
+      if (!afterAsset) return;
+
+      writeAssetAuditLog({
+        asset: afterAsset,
+        action: "updated",
+        reason,
+        comment: `Manager production status update from Project Workspace: ${args.status}`,
+        before: {
+          workStatus: (beforeAsset as any).workStatus || (beforeAsset as any).properties?.workStatus || "",
+          assignedTeam: (beforeAsset as any).assignedTeam || (beforeAsset as any).properties?.assignedTeam || "",
+        },
+        after: {
+          workStatus: (afterAsset as any).workStatus || (afterAsset as any).properties?.workStatus || "",
+          assignedTeam: (afterAsset as any).assignedTeam || (afterAsset as any).properties?.assignedTeam || "",
+        },
+      });
+    });
+
+    try {
+      await saveMapAssetsViaCoordinator(nextSavedJoints, {
+        businessId: mapBusinessId,
+        reason: `bulk-work-status:${reason}`,
+        source: "joint-map-manager",
+      });
+    } catch (error) {
+      console.error("Bulk production status map save failed", error);
+      throw new Error(
+        "Production statuses were applied locally, but the map save failed. Check the console before refreshing.",
+      );
+    }
+
+    alert(`Updated ${updatedById.size} asset${updatedById.size === 1 ? "" : "s"} to ${args.status}.`);
+  };
+
   const handleWorkspaceClearDpFibreAllocations = async (args: {
     assetIds: string[];
     note: string;
@@ -5032,6 +5135,7 @@ export default function JointMapManager({
         onBulkUpdateDpStatus={handleWorkspaceBulkDpStatusUpdate}
         onBulkUpdateCablePiaNoi={handleWorkspaceBulkCablePiaNoiUpdate}
         onBulkUpdateJointInstallMethod={handleWorkspaceBulkJointInstallMethodUpdate}
+        onBulkUpdateWorkStatus={handleWorkspaceBulkWorkStatusUpdate}
         onUpdateDpStatus={handleWorkspaceSingleDpStatusUpdate}
         onClearDpFibreAllocations={handleWorkspaceClearDpFibreAllocations}
         onApplyAddressSheetAssignments={handleWorkspaceAddressSheetAssignments}

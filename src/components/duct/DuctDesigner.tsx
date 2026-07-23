@@ -30,6 +30,7 @@ const PACKING_FILL_LIMIT = 0.78;
 const VISUAL_CLEARANCE_PERCENT = 3;
 const NESTED_VISUAL_CLEARANCE_PERCENT = 2;
 const MIN_NESTING_CONTAINER_MM = 25;
+const CABLE_FILL_LIMIT = 0.65;
 
 type PackedCircle = {
   id: string;
@@ -322,9 +323,28 @@ function addCableToLayout(layout: DuctLayout, targetPath: string, cableId: strin
   const item = itemId ? findItem(next[ductNumber] || [], itemId) : null;
 
   if (item) {
+    Object.values(next).forEach((items) => removeCableFromItems(items, cableId));
     item.cableIds = Array.from(new Set([...(item.cableIds || []), cableId]));
   }
 
+  return next;
+}
+
+function removeCableFromItems(items: DuctLayoutItem[], cableId: string) {
+  items.forEach((item) => {
+    item.cableIds = (item.cableIds || []).filter((id) => id !== cableId);
+    removeCableFromItems(item.children || [], cableId);
+  });
+}
+
+function removeCableFromLayout(layout: DuctLayout, itemId: string, cableId: string): DuctLayout {
+  const next = cloneLayout(layout);
+  Object.values(next).some((items) => {
+    const item = findItem(items, itemId);
+    if (!item) return false;
+    item.cableIds = (item.cableIds || []).filter((id) => id !== cableId);
+    return true;
+  });
   return next;
 }
 
@@ -354,6 +374,36 @@ function cableMatchesDuct(cable: SavedMapAsset, duct: SavedMapAsset) {
 
 function getCableLabel(cable: SavedMapAsset) {
   return `${cable.name || cable.id} - ${cable.fibreCount || (cable as any).cableType || "Cable"}`;
+}
+
+function getCableDiameterMm(cable: SavedMapAsset) {
+  const item = cable as any;
+  const direct = cleanNumber(item.cableDiameterMm || item.outerDiameterMm || item.diameterMm, 0);
+  if (direct) return direct;
+
+  const raw = String(cable.fibreCount || item.size || item.cableSize || item.name || "");
+  const match = raw.match(/\b(12|24|36|48|96|144|288)\s*f/i);
+  const fibreCount = match ? Number(match[1]) : 48;
+  if (fibreCount <= 12) return 6;
+  if (fibreCount <= 24) return 7;
+  if (fibreCount <= 48) return 8;
+  if (fibreCount <= 96) return 10;
+  if (fibreCount <= 144) return 12;
+  return 16;
+}
+
+function getAssignedCablesForItem(item: DuctLayoutItem | null, availableCables: SavedMapAsset[]) {
+  const cableIds = new Set(item?.cableIds || []);
+  return availableCables.filter((cable) => cableIds.has(cable.id));
+}
+
+function canFitCableInSubDuct(item: DuctLayoutItem, cable: SavedMapAsset, assignedCables: SavedMapAsset[]) {
+  const cableDiameterMm = getCableDiameterMm(cable);
+  const usedCableArea = assignedCables.reduce((sum, assignedCable) => {
+    const diameter = getCableDiameterMm(assignedCable);
+    return sum + diameter * diameter;
+  }, 0);
+  return usedCableArea + cableDiameterMm * cableDiameterMm <= item.diameterMm * item.diameterMm * CABLE_FILL_LIMIT;
 }
 
 function getSubDuctColor(size: number) {
@@ -394,6 +444,10 @@ export default function DuctDesigner({ asset, allAssets = [], onClose, onSave }:
     paths.forEach((path) => path.item?.cableIds?.forEach((id) => ids.add(id)));
     return ids;
   }, [paths]);
+  const selectedAssignedCables = useMemo(
+    () => getAssignedCablesForItem(selectedItem, availableCables),
+    [availableCables, selectedItem],
+  );
 
   useEffect(() => {
     if (selectedItem) {
@@ -460,8 +514,25 @@ export default function DuctDesigner({ asset, allAssets = [], onClose, onSave }:
   const handleAssignCable = () => {
     const cable = availableCables.find((candidate) => candidate.id === selectedCableId);
     if (!cable || !selected) return;
+    if (!selected.item) {
+      setValidationMessage("Select a sub-duct before assigning a cable. Main ducts can hold sub-ducts, cables should go into a selected sub-duct path.");
+      return;
+    }
+    if (!canFitCableInSubDuct(selected.item, cable, selectedAssignedCables.filter((assigned) => assigned.id !== cable.id))) {
+      setValidationMessage(
+        `${getCableLabel(cable)} is about ${getCableDiameterMm(cable)}mm and will not fit in the remaining ${selected.item.diameterMm}mm sub-duct capacity.`,
+      );
+      return;
+    }
 
+    setValidationMessage("");
     setLayout((current) => addCableToLayout(current, selected.path, cable.id));
+  };
+
+  const handleRemoveCable = (cableId: string) => {
+    if (!selectedItem) return;
+    setLayout((current) => removeCableFromLayout(current, selectedItem.id, cableId));
+    setValidationMessage("");
   };
 
   const handleSave = () => {
@@ -653,7 +724,11 @@ export default function DuctDesigner({ asset, allAssets = [], onClose, onSave }:
               {availableCables.map((cable) => (
                 <div key={cable.id} style={cableRow}>
                   <span>{getCableLabel(cable)}</span>
-                  <small style={muted}>{assignedCableIds.has(cable.id) ? "Assigned in this duct" : ((cable as any).ductPathLabel || "Unassigned")}</small>
+                  <small style={muted}>
+                    {assignedCableIds.has(cable.id)
+                      ? "Assigned in this duct"
+                      : ((cable as any).ductPathLabel || "Unassigned")} · approx {getCableDiameterMm(cable)}mm
+                  </small>
                 </div>
               ))}
             </div>
@@ -689,6 +764,18 @@ export default function DuctDesigner({ asset, allAssets = [], onClose, onSave }:
                 <div style={muted}>
                   Nested: {selectedItem.children?.length || 0} · Cables: {selectedItem.cableIds?.length || 0}
                 </div>
+                {selectedAssignedCables.length ? (
+                  <div style={cableList}>
+                    {selectedAssignedCables.map((cable) => (
+                      <div key={cable.id} style={cableRow}>
+                        <span>{getCableLabel(cable)}</span>
+                        <button type="button" style={btnSecondary} onClick={() => handleRemoveCable(cable.id)}>
+                          Remove from path
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </>
             ) : (
               <div style={muted}>Select a sub-duct circle to edit or delete it.</div>

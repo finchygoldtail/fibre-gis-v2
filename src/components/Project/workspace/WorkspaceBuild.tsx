@@ -3,6 +3,8 @@ import DuplicateHomeResolutionPanel from "./DuplicateHomeResolutionPanel";
 import AddressSheetImportPanel from "./AddressSheetImportPanel";
 import FasSbRouteImportPanel from "./FasSbRouteImportPanel";
 import type { SavedMapAsset } from "../../map/types";
+import type { WorkStatus } from "../../map/types";
+import { getAssetTypeLabel, getAssetWorkStatus } from "./workspaceOperations";
 
 type ManagerPoint = { lat: number; lng: number };
 type JointInstallFilter = "ALL" | "AG_JOINTS" | "DPS" | "LMJ" | "CMJ" | "MMJ" | "MIDJ";
@@ -37,6 +39,12 @@ type Props = {
   onBulkUpdateJointInstallMethod?: (args: {
     assetIds: string[];
     installMethod: "Underground" | "Overhead";
+    note: string;
+  }) => void | Promise<void>;
+  onBulkUpdateWorkStatus?: (args: {
+    assetIds: string[];
+    status: WorkStatus;
+    assignedTeam?: string;
     note: string;
   }) => void | Promise<void>;
   onSelectAsset?: (asset: SavedMapAsset) => void;
@@ -184,6 +192,7 @@ type BuildToolKey =
   | "homes"
   | "joints"
   | "pia"
+  | "status"
   | "reset"
   | "actions";
 
@@ -247,6 +256,7 @@ export default function WorkspaceBuild({
   areaDistributionPoints = [],
   onBulkUpdateCablePiaNoi,
   onBulkUpdateJointInstallMethod,
+  onBulkUpdateWorkStatus,
   onClearDpFibreAllocations,
   onSelectAsset,
   onOpenJointEditor,
@@ -263,6 +273,11 @@ export default function WorkspaceBuild({
   const [jointInstallMethod, setJointInstallMethod] = React.useState<"Underground" | "Overhead">("Underground");
   const [jointSubtypeFilter, setJointSubtypeFilter] = React.useState<JointInstallFilter>("ALL");
   const [jointInstallAuditNote, setJointInstallAuditNote] = React.useState("Bulk set existing joints / DPs to Underground");
+  const [workStatus, setWorkStatus] = React.useState<WorkStatus>("in-progress");
+  const [workStatusAssetFilter, setWorkStatusAssetFilter] = React.useState("all");
+  const [workStatusTeam, setWorkStatusTeam] = React.useState("");
+  const [workStatusNote, setWorkStatusNote] = React.useState("Bulk update production status from workspace");
+  const [selectedWorkAssetIds, setSelectedWorkAssetIds] = React.useState<Set<string>>(new Set());
   const [selectedInstallAssetIds, setSelectedInstallAssetIds] = React.useState<Set<string>>(new Set());
   const readiness = stats?.operationalReadiness;
   const blockers = Array.isArray(readiness?.blockers) ? readiness.blockers : [];
@@ -311,6 +326,25 @@ export default function WorkspaceBuild({
         .sort((a: any, b: any) => String(a.name || a.id).localeCompare(String(b.name || b.id), undefined, { numeric: true })),
     [projectAssets, jointSubtypeFilter, jointInstallMethod],
   );
+  const workStatusAssets = React.useMemo(() => {
+    const filter = workStatusAssetFilter;
+    return (projectAssets || [])
+      .filter((asset: any) => {
+        if (asset?.assetType === "home" || asset?.assetType === "area") return false;
+        const type = getAssetTypeLabel(asset).toLowerCase();
+        if (filter === "all") return type !== "asset";
+        return type === filter;
+      })
+      .sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id), undefined, { numeric: true }));
+  }, [projectAssets, workStatusAssetFilter]);
+  const workStatusAssetIds = React.useMemo(
+    () => workStatusAssets.map((asset: any) => String(asset.id || "")),
+    [workStatusAssets],
+  );
+  const selectedWorkStatusAssets = React.useMemo(
+    () => workStatusAssets.filter((asset: any) => selectedWorkAssetIds.has(String(asset.id || ""))),
+    [selectedWorkAssetIds, workStatusAssets],
+  );
   const installMethodAssetIds = React.useMemo(
     () => installMethodAssets.map((asset: any) => String(asset.id || "")),
     [installMethodAssets],
@@ -328,6 +362,14 @@ export default function WorkspaceBuild({
     });
   }, [installMethodAssetIds.join("|")]);
 
+  React.useEffect(() => {
+    setSelectedWorkAssetIds((previous) => {
+      const validIds = new Set(workStatusAssetIds);
+      const kept = Array.from(previous).filter((id) => validIds.has(id));
+      return new Set(kept.length ? kept : workStatusAssetIds);
+    });
+  }, [workStatusAssetIds.join("|")]);
+
   const toggleInstallAssetSelection = (assetId: string) => {
     setSelectedInstallAssetIds((previous) => {
       const next = new Set(previous);
@@ -343,6 +385,39 @@ export default function WorkspaceBuild({
 
   const clearInstallAssetSelection = () => {
     setSelectedInstallAssetIds(new Set());
+  };
+
+  const toggleWorkAssetSelection = (assetId: string) => {
+    setSelectedWorkAssetIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(assetId)) next.delete(assetId);
+      else next.add(assetId);
+      return next;
+    });
+  };
+
+  const applyBulkWorkStatus = async () => {
+    if (!onBulkUpdateWorkStatus) return;
+    const note = workStatusNote.trim();
+    if (!note) {
+      alert("An audit note is required before applying a production status update.");
+      return;
+    }
+    if (!selectedWorkStatusAssets.length) {
+      alert("Select at least one asset before applying a production status.");
+      return;
+    }
+    const confirmed = window.confirm(
+      `Set ${selectedWorkStatusAssets.length} selected asset${selectedWorkStatusAssets.length === 1 ? "" : "s"} to ${workStatus}?`,
+    );
+    if (!confirmed) return;
+
+    await onBulkUpdateWorkStatus({
+      assetIds: selectedWorkStatusAssets.map((asset) => asset.id),
+      status: workStatus,
+      assignedTeam: workStatusTeam.trim() || undefined,
+      note,
+    });
   };
 
   const canApplyBulkJointInstallMethod =
@@ -473,6 +548,13 @@ export default function WorkspaceBuild({
           active={activeTool === "pia"}
           tone="good"
           onClick={() => setActiveTool((value) => value === "pia" ? null : "pia")}
+        />
+        <ToolButton
+          label="Production Status"
+          description="Assign, start, complete or block build assets."
+          active={activeTool === "status"}
+          tone="good"
+          onClick={() => setActiveTool((value) => value === "status" ? null : "status")}
         />
         <ToolButton
           label="Fibre Reset"
@@ -662,6 +744,95 @@ export default function WorkspaceBuild({
         <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 8 }}>
           This updates piaNoiNumber on the cable and inside properties.piaNoiNumber so older panels can read it.
         </div>
+      </section>
+    ) : null}
+
+    {activeTool === "status" ? (
+      <section style={wide}>
+        <h3 style={title}>Production Status</h3>
+        <p style={{ color: "#cbd5e1", marginTop: 0 }}>
+          Update build state for ducts, cables, DPs, chambers, poles, cabinets and joints. This feeds the overview, blockers and closeout exports.
+        </p>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10, marginBottom: 12 }}>
+          <Tile label="Matched assets" value={n(workStatusAssets.length)} />
+          <Tile label="Selected assets" value={n(selectedWorkStatusAssets.length)} />
+          <Tile label="New status" value={workStatus} />
+        </div>
+
+        <div style={formGrid}>
+          <label style={labelStyle}>
+            Asset type
+            <select value={workStatusAssetFilter} onChange={(event) => setWorkStatusAssetFilter(event.target.value)} style={inputStyle}>
+              <option value="all">All build assets</option>
+              <option value="duct">Ducts</option>
+              <option value="cable">Cables</option>
+              <option value="dp">DPs</option>
+              <option value="chamber">Chambers</option>
+              <option value="pole">Poles</option>
+              <option value="joint">Joints</option>
+              <option value="street cab">Street cabs</option>
+            </select>
+          </label>
+          <label style={labelStyle}>
+            Work status
+            <select value={workStatus} onChange={(event) => setWorkStatus(event.target.value as WorkStatus)} style={inputStyle}>
+              <option value="planned">Planned</option>
+              <option value="assigned">Assigned</option>
+              <option value="in-progress">In progress</option>
+              <option value="complete">Complete</option>
+              <option value="blocked">Blocked</option>
+            </select>
+          </label>
+          <label style={labelStyle}>
+            Team / gang
+            <input value={workStatusTeam} onChange={(event) => setWorkStatusTeam(event.target.value)} placeholder="Optional" style={inputStyle} />
+          </label>
+          <label style={labelStyle}>
+            Audit note
+            <input value={workStatusNote} onChange={(event) => setWorkStatusNote(event.target.value)} style={inputStyle} />
+          </label>
+        </div>
+
+        <div style={cablePreviewBox}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 8 }}>
+            <div style={{ color: "#e5e7eb", fontWeight: 900 }}>Select Assets</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button type="button" onClick={() => setSelectedWorkAssetIds(new Set(workStatusAssetIds))} style={{ ...button, padding: "6px 9px", fontSize: 12 }}>
+                Select All
+              </button>
+              <button type="button" onClick={() => setSelectedWorkAssetIds(new Set())} style={{ ...button, padding: "6px 9px", fontSize: 12 }}>
+                Clear
+              </button>
+            </div>
+          </div>
+          {workStatusAssets.slice(0, 160).map((asset: any) => {
+            const assetId = String(asset.id || "");
+            const selected = selectedWorkAssetIds.has(assetId);
+            return (
+              <label key={assetId} style={{ display: "grid", gridTemplateColumns: "22px minmax(160px, 1fr) auto auto", alignItems: "center", gap: 10, borderBottom: "1px solid rgba(148,163,184,0.10)", padding: "4px 0 7px", color: selected ? "#f8fafc" : "#cbd5e1", fontSize: 12, cursor: "pointer" }}>
+                <input type="checkbox" checked={selected} onChange={() => toggleWorkAssetSelection(assetId)} />
+                <span style={{ fontWeight: selected ? 850 : 600 }}>{asset.name || asset.label || asset.id}</span>
+                <span style={{ color: "#94a3b8" }}>{getAssetTypeLabel(asset)}</span>
+                <span style={{ color: "#94a3b8" }}>{getAssetWorkStatus(asset)}</span>
+              </label>
+            );
+          })}
+          {workStatusAssets.length > 160 ? (
+            <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 8 }}>
+              Showing first 160 of {n(workStatusAssets.length)} assets. Use the type filter to narrow the list before applying.
+            </div>
+          ) : null}
+        </div>
+
+        <button
+          type="button"
+          style={{ ...button, background: "#14532d", borderColor: "rgba(74,222,128,0.42)", marginTop: 12 }}
+          onClick={applyBulkWorkStatus}
+          disabled={!onBulkUpdateWorkStatus || !selectedWorkStatusAssets.length || !workStatusNote.trim()}
+        >
+          Apply Status To {n(selectedWorkStatusAssets.length)} Asset{selectedWorkStatusAssets.length === 1 ? "" : "s"}
+        </button>
       </section>
     ) : null}
 

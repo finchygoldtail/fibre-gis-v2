@@ -164,6 +164,8 @@ export default function WorkspaceOverview({
   );
   const readiness = stats?.operationalReadiness;
   const rollout = stats?.rolloutKpis || {};
+  const production = stats?.production || {};
+  const closeout = stats?.closeout || {};
   const blockers = Array.isArray(readiness?.blockers) ? readiness.blockers : [];
   const phaseLabel = stats?.deliveryPhaseLabel || status || "Build Phase";
   const phaseReason = String(stats?.deliveryPhaseOverrideReason || "").trim();
@@ -207,6 +209,10 @@ export default function WorkspaceOverview({
           <Tile label="Homes Live" value={`${n(rollout.homesLive ?? stats?.homesConnected)} / ${n(rollout.homesPassed ?? stats?.homesPassed)}`} tone="good" />
           <Tile label="DPs Live" value={`${n(rollout.dpLive)} / ${n(rollout.dpTotal ?? stats?.dps)}`} tone="good" />
           <Tile label="QA Issues" value={n(issueCount)} tone={issueCount ? "bad" : "good"} />
+          <Tile label="Duct Metres" value={n(Math.round(production.ductMeters || 0))} />
+          <Tile label="Cable Metres" value={n(Math.round(production.cableMeters || 0))} />
+          <Tile label="Closeout Ready" value={`${n(closeout.closeoutReady)} / ${n(closeout.assetCount)}`} tone={Number(closeout.assetCount || 0) === Number(closeout.closeoutReady || 0) ? "good" : "warn"} />
+          <Tile label="Blocked Assets" value={n(production.blockedAssets || closeout.blockers)} tone={Number(production.blockedAssets || closeout.blockers || 0) ? "bad" : "good"} />
         </div>
       </section>
 
@@ -218,6 +224,9 @@ export default function WorkspaceOverview({
           <Row label="Readiness" value={readiness?.state || "Build"} />
           <Row label="Homes" value={`${n(stats?.homesConnected)} / ${n(stats?.homesPassed)}`} />
           <Row label="Route Length" value={`${n(stats?.routeLengthMeters)} m`} />
+          <Row label="Sub-duct Metres" value={`${n(Math.round(production.subDuctMeters || 0))} m`} />
+          <Row label="Missing Photos" value={n(closeout.missingPhotos)} />
+          <Row label="Missing GPS" value={n(closeout.missingGps)} />
           <Row label="Hard Blockers" value={blockers.length || "None"} />
         </div>
         {phaseReason && (
