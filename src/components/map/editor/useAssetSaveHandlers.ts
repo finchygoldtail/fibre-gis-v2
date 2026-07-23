@@ -67,6 +67,7 @@ type UseAssetSaveHandlersArgs = {
     action: AssetChangeAction,
     assetName?: string,
   ) => string | null;
+  onAssetCreated?: (asset: SavedMapAsset) => void;
   installMethod: InstallMethod;
   jointName: string;
   jointType: string;
@@ -215,6 +216,7 @@ export function useAssetSaveHandlers({
   editingAssetId,
   fibreCount,
   getChangeReasonForCurrentMode,
+  onAssetCreated,
   installMethod,
   jointName,
   jointType,
@@ -616,6 +618,7 @@ export function useAssetSaveHandlers({
       source: "asset-create-save",
     });
     resetEditor();
+    onAssetCreated?.(savedRecord);
   };
 
   const handleDeleteAsset = async (id: string) => {

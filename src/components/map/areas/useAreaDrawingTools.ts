@@ -28,6 +28,7 @@ type UseAreaDrawingToolsArgs = {
     action: "created" | "updated" | "deleted" | "moved" | string,
     assetName?: string,
   ) => string | null;
+  onAssetCreated?: (asset: SavedMapAsset) => void;
   resetEditor: () => void;
 };
 
@@ -44,6 +45,7 @@ export function useAreaDrawingTools({
   saveMapAssetToState,
   writeAssetAuditLog,
   getChangeReasonForCurrentMode,
+  onAssetCreated,
   resetEditor,
 }: UseAreaDrawingToolsArgs) {
   const handleFinishArea = () => {
@@ -91,6 +93,7 @@ export function useAreaDrawingTools({
       after: savedAreaRecord,
     });
     resetEditor();
+    onAssetCreated?.(savedAreaRecord);
   };
 
   const handleUndoAreaPoint = () => {

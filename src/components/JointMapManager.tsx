@@ -2500,6 +2500,15 @@ export default function JointMapManager({
     setShowCableModal,
   });
 
+  const openCreatedAssetDetails = useCallback(
+    (asset: SavedMapAsset) => {
+      setOpenDuctAsset(null);
+      handleEditAsset(asset);
+      setIsPanelOpen(true);
+    },
+    [handleEditAsset],
+  );
+
   const [highlightedSearchAssetId, setHighlightedSearchAssetId] = useState<
     string | null
   >(null);
@@ -2681,6 +2690,7 @@ export default function JointMapManager({
       editingAssetId,
       fibreCount,
       getChangeReasonForCurrentMode,
+      onAssetCreated: openCreatedAssetDetails,
       installMethod,
       jointName,
       jointType,
@@ -2788,6 +2798,7 @@ export default function JointMapManager({
     saveMapAssetToState,
     writeAssetAuditLog,
     getChangeReasonForCurrentMode,
+    onAssetCreated: openCreatedAssetDetails,
     resetEditor,
   });
 
@@ -2856,6 +2867,7 @@ export default function JointMapManager({
         after: savedDuctRecord,
       });
       resetEditor();
+      openCreatedAssetDetails(savedDuctRecord);
       return;
     }
 
@@ -3196,6 +3208,7 @@ export default function JointMapManager({
 
       setSelectedDuctForCableId(null);
       resetEditor();
+      openCreatedAssetDetails(markedCableRecord);
     } finally {
       setIsRoutingCable(false);
     }
@@ -6177,6 +6190,18 @@ export default function JointMapManager({
                       style={{ ...btnPrimary, marginTop: 10 }}
                     >
                       Open Street Cab Editor
+                    </button>
+                  ) : null}
+
+                  {currentEditingAsset?.assetType === "duct" ? (
+                    <button
+                      onClick={() =>
+                        currentEditingAsset &&
+                        setOpenDuctAsset(currentEditingAsset)
+                      }
+                      style={{ ...btnPrimary, marginTop: 10 }}
+                    >
+                      Open Duct Editor
                     </button>
                   ) : null}
 
