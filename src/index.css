@@ -5,13 +5,59 @@
   line-height: 1.5;
   font-weight: 400;
 
-  color: white;
-  background: #111827;
+  --app-bg: #f6f4ef;
+  --app-bg-soft: #fbfaf7;
+  --app-surface: #ffffff;
+  --app-surface-muted: #f8fafc;
+  --app-surface-strong: #eef2f7;
+  --app-panel: rgba(255, 255, 255, 0.96);
+  --app-elevated: #ffffff;
+  --app-text: #1f2933;
+  --app-heading: #111827;
+  --app-muted: #64748b;
+  --app-muted-strong: #475569;
+  --app-border: #ddd8cf;
+  --app-border-strong: #cfc8bc;
+  --app-primary: #2563eb;
+  --app-primary-soft: #eaf2ff;
+  --app-success: #16a34a;
+  --app-success-soft: #ecfdf3;
+  --app-danger: #dc2626;
+  --app-danger-soft: #fee2e2;
+  --app-shadow: 0 18px 45px rgba(31, 41, 51, 0.12);
+  --app-overlay: rgba(2, 6, 23, 0.55);
+
+  color: var(--app-text);
+  background: var(--app-bg);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+:root[data-theme="dark"] {
+  --app-bg: #07111f;
+  --app-bg-soft: #0b1322;
+  --app-surface: #101827;
+  --app-surface-muted: #121c2e;
+  --app-surface-strong: #1e293b;
+  --app-panel: rgba(15, 23, 42, 0.96);
+  --app-elevated: #111827;
+  --app-text: #f8fafc;
+  --app-heading: #ffffff;
+  --app-muted: #94a3b8;
+  --app-muted-strong: #cbd5e1;
+  --app-border: #334155;
+  --app-border-strong: #475569;
+  --app-primary: #60a5fa;
+  --app-primary-soft: rgba(37, 99, 235, 0.24);
+  --app-success: #22c55e;
+  --app-success-soft: rgba(34, 197, 94, 0.14);
+  --app-danger: #f87171;
+  --app-danger-soft: rgba(127, 29, 29, 0.32);
+  --app-shadow: 0 18px 45px rgba(0, 0, 0, 0.34);
+  --app-overlay: rgba(2, 6, 23, 0.72);
 }
 
 html,
@@ -22,8 +68,8 @@ body,
   width: 100%;
   height: 100%;
   min-width: 320px;
-  background: #111827;
-  color: white;
+  background: var(--app-bg);
+  color: var(--app-text);
 }
 
 body {
@@ -32,16 +78,24 @@ body {
 
 a {
   font-weight: 500;
-  color: #93c5fd;
+  color: var(--app-primary);
   text-decoration: inherit;
 }
 
 a:hover {
-  color: #bfdbfe;
+  color: var(--app-primary);
 }
 
 button {
   font-family: inherit;
+}
+
+input,
+select,
+textarea {
+  background: var(--app-surface);
+  color: var(--app-text);
+  border-color: var(--app-border);
 }
 
 .alistra-workspace-scrollless {
@@ -55,13 +109,13 @@ button {
   display: none;
 }
 
-/* Fix Chrome autofill white background in dark UI */
+/* Fix Chrome autofill fighting the active theme */
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
 textarea:-webkit-autofill {
-  -webkit-box-shadow: 0 0 0 1000px #111827 inset !important;
-  -webkit-text-fill-color: white !important;
+  -webkit-box-shadow: 0 0 0 1000px var(--app-surface) inset !important;
+  -webkit-text-fill-color: var(--app-text) !important;
   transition: background-color 9999s ease-in-out 0s;
 }
 /* Purple translucent polygon labels */
@@ -325,8 +379,8 @@ textarea:-webkit-autofill {
   overflow: hidden;
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 18px;
-  background: #111827;
-  color: #f9fafb;
+  background: var(--app-elevated);
+  color: var(--app-text);
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
 }
 

@@ -167,33 +167,33 @@ const panel: React.CSSProperties = {
   width: 276,
   maxWidth: "78vw",
   height: "100vh",
-  color: "#111827",
+  color: "var(--app-heading)",
   display: "flex",
   flexDirection: "column",
   gap: 10,
   overflowY: "auto",
   padding: "14px 12px",
   boxSizing: "border-box",
-  background: "rgba(250,250,248,0.98)",
-  borderLeft: "1px solid rgba(203,213,225,0.86)",
-  boxShadow: "-18px 0 44px rgba(15,23,42,0.12)",
+  background: "var(--app-panel)",
+  borderLeft: "1px solid var(--app-border)",
+  boxShadow: "var(--app-shadow)",
 };
 
 const card: React.CSSProperties = {
-  background: "#ffffff",
-  border: "1px solid rgba(203,213,225,0.92)",
+  background: "var(--app-surface)",
+  border: "1px solid var(--app-border)",
   borderRadius: 12,
   boxShadow: "0 8px 20px rgba(15,23,42,0.06)",
 };
 const label: React.CSSProperties = {
   fontSize: "0.8rem",
   fontWeight: 800,
-  color: "#334155",
+  color: "var(--app-muted-strong)",
 };
 
 const btnPrimary: React.CSSProperties = {
   background: "#2563eb",
-  color: "white",
+  color: "#ffffff",
   padding: "0.42rem",
   borderRadius: 6,
   cursor: "pointer",
@@ -203,19 +203,19 @@ const btnPrimary: React.CSSProperties = {
 };
 
 const btnSecondary: React.CSSProperties = {
-  background: "#f8fafc",
-  color: "#111827",
+  background: "var(--app-surface-muted)",
+  color: "var(--app-heading)",
   padding: "0.42rem",
   borderRadius: 6,
   cursor: "pointer",
-  border: "1px solid #cbd5e1",
+  border: "1px solid var(--app-border)",
   fontWeight: 700,
   fontSize: "0.82rem",
 };
 
 const btnDanger: React.CSSProperties = {
   background: "#dc2626",
-  color: "white",
+  color: "#ffffff",
   padding: "0.42rem",
   borderRadius: 6,
   cursor: "pointer",
@@ -228,10 +228,10 @@ const basemapSelectStyle: React.CSSProperties = {
   width: "100%",
   marginTop: 8,
   minHeight: 38,
-  border: "1px solid #cbd5e1",
+  border: "1px solid var(--app-border)",
   borderRadius: 8,
-  background: "#f8fafc",
-  color: "#111827",
+  background: "var(--app-surface-muted)",
+  color: "var(--app-heading)",
   padding: "0 10px",
   fontWeight: 800,
   outline: "none",
@@ -248,7 +248,7 @@ const layerGroupCard: React.CSSProperties = {
 const layerButton: React.CSSProperties = {
   width: "100%",
   background: "transparent",
-  color: "#111827",
+  color: "var(--app-heading)",
   border: "none",
   cursor: "pointer",
   padding: "0.62rem 0.75rem",
@@ -267,7 +267,7 @@ const dropdown: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
   gap: 7,
-  background: "#ffffff",
+  background: "var(--app-surface)",
 };
 
 const layerRow: React.CSSProperties = {
@@ -304,7 +304,7 @@ function LayerCheckbox({
         {typeof count === "number" ? (
           <span
             style={{
-              color: "#2563eb",
+              color: "var(--app-primary)",
               fontSize: "0.75rem",
               fontWeight: 800,
               whiteSpace: "nowrap",
@@ -582,7 +582,7 @@ export default function LayersPanel({
         </div>
 
         {isDrivingToLocation ? (
-          <div style={{ marginTop: 8, color: "#64748b", fontSize: "0.82rem" }}>
+          <div style={{ marginTop: 8, color: "var(--app-muted)", fontSize: "0.82rem" }}>
             Click a point on the map to open Google Maps directions.
           </div>
         ) : null}
@@ -630,7 +630,7 @@ export default function LayersPanel({
               </button>
             </div>
 
-            <div style={{ marginTop: 8, color: "#64748b", fontSize: "0.82rem" }}>
+            <div style={{ marginTop: 8, color: "var(--app-muted)", fontSize: "0.82rem" }}>
               Click points on the map to measure distance.
             </div>
 
@@ -638,14 +638,14 @@ export default function LayersPanel({
               style={{
                 marginTop: 8,
                 fontWeight: 800,
-                color: "#2563eb",
+                color: "var(--app-primary)",
                 fontSize: "0.88rem",
               }}
             >
               Total: {formatDistance(measurementDistance)}
             </div>
 
-            <div style={{ marginTop: 3, color: "#64748b", fontSize: "0.8rem" }}>
+            <div style={{ marginTop: 3, color: "var(--app-muted)", fontSize: "0.8rem" }}>
               Points: {measurementPointCount}
             </div>
 

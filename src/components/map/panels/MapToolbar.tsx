@@ -297,7 +297,10 @@ export default function MapToolbar({
                     onClick={() => handleSelectSearchResult(asset)}
                     style={{
                       ...searchResultButtonStyle,
-                      background: asset.id === selectedAssetId ? "#eff6ff" : "#ffffff",
+                      background:
+                        asset.id === selectedAssetId
+                          ? "var(--app-primary-soft)"
+                          : "var(--app-surface)",
                     }}
                   >
                     <span style={searchResultIconStyle}>{getAssetSearchTypeLabel(asset).slice(0, 2).toUpperCase()}</span>
@@ -564,20 +567,20 @@ const mapTopBarStyle = (isLayersOpen: boolean, isTablet: boolean): React.CSSProp
   alignItems: "center",
   gap: isLayersOpen ? 8 : isTablet ? 8 : 12,
   padding: isTablet ? "7px 14px" : isLayersOpen ? "7px 14px" : "7px 24px",
-  border: "1px solid rgba(38,50,68,0.9)",
+  border: "1px solid var(--app-border)",
   borderTop: "0",
   borderLeft: "0",
   borderRadius: 0,
-  background: "rgba(250,250,248,0.96)",
-  boxShadow: "0 10px 28px rgba(15,23,42,0.12)",
+  background: "var(--app-panel)",
+  boxShadow: "var(--app-shadow)",
   backdropFilter: "blur(12px)",
   overflow: "visible",
 });
 
 const topBarGhostButtonStyle: React.CSSProperties = {
   display: "none",
-  background: "rgba(30, 41, 59, 0.95)",
-  color: "white",
+  background: "var(--app-surface-strong)",
+  color: "var(--app-heading)",
   border: "1px solid rgba(148,163,184,0.34)",
   padding: "10px 12px",
   borderRadius: 12,
@@ -595,8 +598,8 @@ const areaSelectorShellStyle: React.CSSProperties = {
 
 const areaFallbackStyle: React.CSSProperties = {
   border: "1px solid rgba(203,213,225,0.9)",
-  background: "#ffffff",
-  color: "#111827",
+  background: "var(--app-surface)",
+  color: "var(--app-heading)",
   borderRadius: 10,
   padding: "10px 12px",
   fontWeight: 900,
@@ -610,7 +613,7 @@ const mapTopBarBrandStyle: React.CSSProperties = {
   alignItems: "center",
   gap: 10,
   minWidth: 0,
-  color: "#111827",
+  color: "var(--app-heading)",
   whiteSpace: "nowrap",
   order: 1,
 };
@@ -644,7 +647,7 @@ const searchShellStyle = (isMobile = false, isOpen = false): React.CSSProperties
 
 const searchCardStyle: React.CSSProperties = {
   position: "relative",
-  background: "#ffffff",
+  background: "var(--app-surface)",
   border: "1px solid rgba(148,163,184,0.55)",
   borderRadius: 24,
   boxShadow: "0 18px 32px rgba(2,6,23,0.18)",
@@ -659,7 +662,7 @@ const searchInputRowStyle: React.CSSProperties = {
 };
 
 const searchIconStyle: React.CSSProperties = {
-  color: "#0f172a",
+  color: "var(--app-heading)",
   fontSize: 22,
   textAlign: "center",
   lineHeight: "48px",
@@ -670,7 +673,7 @@ const searchInputStyle: React.CSSProperties = {
   boxSizing: "border-box",
   border: "none",
   background: "transparent",
-  color: "#0f172a",
+  color: "var(--app-heading)",
   padding: "0 6px",
   fontSize: 15,
   fontWeight: 800,
@@ -680,7 +683,7 @@ const searchInputStyle: React.CSSProperties = {
 const searchOptionsButtonStyle: React.CSSProperties = {
   border: "none",
   background: "transparent",
-  color: "#0f172a",
+  color: "var(--app-heading)",
   cursor: "pointer",
   fontSize: 19,
   fontWeight: 900,
@@ -696,17 +699,17 @@ const searchResultsStyle: React.CSSProperties = {
   top: "calc(100% + 6px)",
   left: 0,
   right: 0,
-  border: "1px solid #e5e7eb",
+  border: "1px solid var(--app-border)",
   borderRadius: "0 0 12px 12px",
   maxHeight: 380,
   overflowY: "auto",
-  background: "#ffffff",
+  background: "var(--app-surface)",
   boxShadow: "0 18px 38px rgba(15,23,42,0.25)",
 };
 
 const searchHintStyle: React.CSSProperties = {
   padding: "10px 22px 6px",
-  color: "#94a3b8",
+  color: "var(--app-muted)",
   fontSize: 11,
   fontWeight: 900,
   letterSpacing: 0.5,
@@ -721,8 +724,8 @@ const searchResultButtonStyle: React.CSSProperties = {
   width: "100%",
   textAlign: "left",
   border: "none",
-  borderTop: "1px solid #f1f5f9",
-  color: "#0f172a",
+  borderTop: "1px solid var(--app-border)",
+  color: "var(--app-heading)",
   padding: "10px 22px",
   cursor: "pointer",
 };
@@ -747,14 +750,14 @@ const searchResultNameStyle: React.CSSProperties = {
 };
 
 const searchResultTypeStyle: React.CSSProperties = {
-  color: "#64748b",
+  color: "var(--app-muted)",
   fontSize: 13,
   fontWeight: 700,
   whiteSpace: "nowrap",
 };
 
 const emptyResultsStyle: React.CSSProperties = {
-  color: "#64748b",
+  color: "var(--app-muted)",
   padding: "12px 22px 18px",
   fontSize: 13,
 };
@@ -788,7 +791,7 @@ const workspaceDockStyle: React.CSSProperties = {
   height: 48,
   padding: "0 12px 0 14px",
   borderRadius: 999,
-  background: "#ffffff",
+  background: "var(--app-surface)",
   border: "1px solid rgba(203,213,225,0.9)",
   boxShadow: "0 12px 26px rgba(15,23,42,0.08)",
   whiteSpace: "nowrap",
@@ -797,7 +800,7 @@ const workspaceDockStyle: React.CSSProperties = {
 const workspacePrimaryButtonStyle: React.CSSProperties = {
   border: "none",
   background: "transparent",
-  color: "#111827",
+  color: "var(--app-heading)",
   cursor: "pointer",
   fontSize: 13,
   fontWeight: 900,
@@ -807,7 +810,7 @@ const workspacePrimaryButtonStyle: React.CSSProperties = {
 const workspaceButtonStyle: React.CSSProperties = {
   border: "none",
   background: "transparent",
-  color: "#64748b",
+  color: "var(--app-muted)",
   cursor: "pointer",
   fontSize: 13,
   fontWeight: 800,
@@ -841,7 +844,7 @@ const qaModeButtonStyle = (active: boolean): React.CSSProperties => ({
   borderRadius: 9,
   padding: "8px 10px",
   background: active ? "#2563eb" : "transparent",
-  color: active ? "#ffffff" : "#bfdbfe",
+  color: active ? "#ffffff" : "var(--app-primary)",
   cursor: "pointer",
   fontWeight: 900,
   whiteSpace: "nowrap",
@@ -853,7 +856,7 @@ const messageButtonWrapStyle: React.CSSProperties = {
 
 const messageButtonStyle: React.CSSProperties = {
   background: "transparent",
-  color: "#111827",
+  color: "var(--app-heading)",
   border: "none",
   padding: 0,
   borderRadius: 0,
@@ -896,7 +899,7 @@ const messagesPanelStyle = (isMobile = false): React.CSSProperties => ({
   width: isMobile ? "auto" : 390,
   left: isMobile ? 8 : undefined,
   maxWidth: "calc(100vw - 28px)",
-  background: "#0f172a",
+  background: "var(--app-surface-muted)",
   border: "1px solid rgba(148,163,184,0.38)",
   borderRadius: 14,
   padding: 12,
@@ -979,7 +982,7 @@ const emptyMessagesStyle: React.CSSProperties = {
   border: "1px dashed rgba(148,163,184,0.28)",
   borderRadius: 12,
   padding: 14,
-  color: "#94a3b8",
+  color: "var(--app-muted)",
   fontSize: 13,
   lineHeight: 1.35,
   overflowWrap: "anywhere",
@@ -988,7 +991,7 @@ const emptyMessagesStyle: React.CSSProperties = {
 
 const messagesFootnoteStyle: React.CSSProperties = {
   marginTop: 10,
-  color: "#64748b",
+  color: "var(--app-muted)",
   fontSize: 11,
   fontWeight: 800,
 };
@@ -1097,7 +1100,7 @@ const mobileSaveRetryButtonStyle: React.CSSProperties = {
   border: "1px solid rgba(255,255,255,0.34)",
   borderRadius: 10,
   background: "rgba(255,255,255,0.14)",
-  color: "#ffffff",
+  color: "var(--app-heading)",
   fontWeight: 900,
   cursor: "pointer",
   ...mobileButtonBase,
@@ -1108,7 +1111,7 @@ const mobileTopButtonStyle: React.CSSProperties = {
   border: "1px solid rgba(148,163,184,0.34)",
   borderRadius: 12,
   background: "rgba(30,41,59,0.96)",
-  color: "#ffffff",
+  color: "var(--app-heading)",
   fontWeight: 900,
   cursor: "pointer",
   ...mobileButtonBase,
@@ -1120,7 +1123,7 @@ const mobileIconButtonStyle: React.CSSProperties = {
   border: "1px solid rgba(148,163,184,0.34)",
   borderRadius: 12,
   background: "rgba(30,41,59,0.96)",
-  color: "#ffffff",
+  color: "var(--app-heading)",
   fontSize: 18,
   fontWeight: 900,
   cursor: "pointer",
@@ -1180,7 +1183,7 @@ const mobileUserMenuWrapStyle: React.CSSProperties = {
 
 const actionButtonStyle: React.CSSProperties = {
   background: "transparent",
-  color: "#111827",
+  color: "var(--app-heading)",
   border: "none",
   padding: 0,
   borderRadius: 0,
@@ -1198,7 +1201,7 @@ const actionButtonStyle: React.CSSProperties = {
 
 const refreshButtonStyle = (isRefreshing: boolean): React.CSSProperties => ({
   background: isRefreshing ? "#eef2ff" : "transparent",
-  color: isRefreshing ? "#1d4ed8" : "#111827",
+  color: isRefreshing ? "#1d4ed8" : "var(--app-heading)",
   border: isRefreshing ? "1px solid rgba(147,197,253,0.75)" : "none",
   padding: isRefreshing ? "7px 10px" : 0,
   borderRadius: isRefreshing ? 999 : 0,
@@ -1219,7 +1222,7 @@ const locationButtonStyle = (
   hasError: boolean,
 ): React.CSSProperties => ({
   background: active ? "#dcfce7" : hasError ? "#fee2e2" : "transparent",
-  color: active ? "#14532d" : hasError ? "#991b1b" : "#111827",
+  color: active ? "#14532d" : hasError ? "#991b1b" : "var(--app-heading)",
   border: active || hasError ? "1px solid rgba(34,197,94,0.55)" : "none",
   padding: active || hasError ? "7px 10px" : 0,
   borderRadius: active || hasError ? 999 : 0,

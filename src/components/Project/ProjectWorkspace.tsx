@@ -4253,7 +4253,7 @@ export default function ProjectWorkspace({
                                   background: selected
                                     ? "rgba(37,99,235,0.35)"
                                     : projectSwitcherResultButton.background,
-                                  color: selected ? "#bfdbfe" : "#1f2933",
+                                  color: selected ? "#bfdbfe" : "var(--app-text)",
                                 }}
                                 onMouseDown={(event) => {
                                   event.preventDefault();
@@ -4595,7 +4595,7 @@ export default function ProjectWorkspace({
                   <div style={responsiveMapAssetInspector}>
                     <div
                       style={{
-                        color: "#64748b",
+                        color: "var(--app-muted)",
                         fontSize: 11,
                         fontWeight: 900,
                         letterSpacing: 0.4,
@@ -4613,7 +4613,7 @@ export default function ProjectWorkspace({
                         : "Click an asset"}
                     </div>
                     <div
-                      style={{ marginTop: 3, color: "#64748b", fontSize: 12 }}
+                      style={{ marginTop: 3, color: "var(--app-muted)", fontSize: 12 }}
                     >
                       {fullSelectedWorkspaceAsset
                         ? String(
@@ -4994,10 +4994,10 @@ export default function ProjectWorkspace({
                         >
                           <div>
                             <div style={operationKicker}>PHASE CONTROL</div>
-                            <strong style={{ color: "#1f2933" }}>
+                            <strong style={{ color: "var(--app-text)" }}>
                               {deliveryPhaseConfig.label}
                             </strong>
-                            <div style={{ color: "#9ca3af", fontSize: 12, marginTop: 4 }}>
+                            <div style={{ color: "var(--app-muted)", fontSize: 12, marginTop: 4 }}>
                               {deliveryPhaseConfig.description}
                             </div>
                           </div>
@@ -5023,11 +5023,11 @@ export default function ProjectWorkspace({
                                 style={{
                                   ...smallButton,
                                   width: "100%",
-                                  background: selected ? "#2563eb" : "#ffffff",
+                                  background: selected ? "#2563eb" : "var(--app-surface)",
                                   borderColor: selected
                                     ? "rgba(147,197,253,0.7)"
                                     : "rgba(148,163,184,0.22)",
-                                  color: selected ? "#ffffff" : "#1f2933",
+                                  color: selected ? "#ffffff" : "var(--app-text)",
                                   opacity: canManageWalkOff ? 1 : 0.55,
                                   cursor: canManageWalkOff ? "pointer" : "not-allowed",
                                 }}
@@ -5059,7 +5059,7 @@ export default function ProjectWorkspace({
                           })}
                         </div>
                         {!isHarrellicommsBackhaulWorkspace && deliveryPhaseOverrideReason && piaGateCustomerLiveOverride && (
-                          <div style={{ color: "#64748b", fontSize: 12 }}>
+                          <div style={{ color: "var(--app-muted)", fontSize: 12 }}>
                             Override note: {deliveryPhaseOverrideReason}
                           </div>
                         )}
@@ -5407,7 +5407,7 @@ export default function ProjectWorkspace({
                         </div>
 
                         <div style={qaToolbar}>
-                          <div style={{ color: "#64748b", fontWeight: 800 }}>
+                          <div style={{ color: "var(--app-muted)", fontWeight: 800 }}>
                             {selectedIssueSeverity
                               ? `${selectedIssueSeverity.toUpperCase()} issues — ${selectedSeverityIssues.length.toLocaleString("en-GB")}`
                               : "No QA severity selected"}
@@ -6196,7 +6196,7 @@ export default function ProjectWorkspace({
 const operationDrawer: React.CSSProperties = {
   gridColumn: "1 / -1",
   background: "transparent",
-  border: "1px solid #ddd8cf",
+  border: "1px solid var(--app-border)",
   borderRadius: 12,
   padding: 16,
 };
@@ -6210,7 +6210,7 @@ const operationDrawerHeader: React.CSSProperties = {
 };
 
 const operationKicker: React.CSSProperties = {
-  color: "#2563eb",
+  color: "var(--app-primary)",
   fontSize: 11,
   fontWeight: 900,
   letterSpacing: 0.5,
@@ -6222,9 +6222,9 @@ const operationTitle: React.CSSProperties = {
 };
 
 const closePanelButton: React.CSSProperties = {
-  background: "#ffffff",
-  color: "#1f2933",
-  border: "1px solid #d8d2c8",
+  background: "var(--app-surface)",
+  color: "var(--app-text)",
+  border: "1px solid var(--app-border)",
   borderRadius: 8,
   cursor: "pointer",
   fontWeight: 700,
@@ -6254,11 +6254,11 @@ const operationList: React.CSSProperties = {
 };
 
 const emptyPanel: React.CSSProperties = {
-  background: "#ffffff",
-  border: "1px solid #ddd8cf",
+  background: "var(--app-surface)",
+  border: "1px solid var(--app-border)",
   borderRadius: 10,
   padding: 14,
-  color: "#64748b",
+  color: "var(--app-muted)",
 };
 
 
@@ -6266,8 +6266,8 @@ const workspaceRoot: React.CSSProperties = {
   position: "absolute",
   inset: 0,
   zIndex: 5000,
-  background: "#f6f4ef",
-  color: "#1f2933",
+  background: "var(--app-bg)",
+  color: "var(--app-text)",
   display: "flex",
   flexDirection: "column",
   fontFamily:
@@ -6281,8 +6281,8 @@ const topHeader: React.CSSProperties = {
   alignItems: "center",
   gap: 18,
   padding: "10px 18px 10px 22px",
-  borderBottom: "1px solid #ddd8cf",
-  background: "#fbfaf7",
+  borderBottom: "1px solid var(--app-border)",
+  background: "var(--app-bg-soft)",
 };
 
 const projectTitle: React.CSSProperties = {
@@ -6294,7 +6294,7 @@ const projectTitle: React.CSSProperties = {
 };
 const projectSubtitle: React.CSSProperties = {
   marginTop: 8,
-  color: "#64748b",
+  color: "var(--app-muted)",
   fontSize: 12,
 };
 
@@ -6314,7 +6314,7 @@ const projectSwitcherRow: React.CSSProperties = {
 };
 
 const projectSwitcherLabel: React.CSSProperties = {
-  color: "#64748b",
+  color: "var(--app-muted)",
   fontSize: 10,
   fontWeight: 950,
   letterSpacing: "0.08em",
@@ -6322,9 +6322,9 @@ const projectSwitcherLabel: React.CSSProperties = {
 };
 
 const projectSwitcherStatic: React.CSSProperties = {
-  background: "#ffffff",
-  color: "#1f2933",
-  border: "1px solid #d8d2c8",
+  background: "var(--app-surface)",
+  color: "var(--app-text)",
+  border: "1px solid var(--app-border)",
   borderRadius: 8,
   padding: "7px 10px",
   fontWeight: 900,
@@ -6336,9 +6336,9 @@ const projectSwitcherStatic: React.CSSProperties = {
 const projectSwitcherSelect: React.CSSProperties = {
   width: "100%",
   minWidth: 0,
-  background: "#ffffff",
-  color: "#1f2933",
-  border: "1px solid #cfc8bc",
+  background: "var(--app-surface)",
+  color: "var(--app-text)",
+  border: "1px solid var(--app-border-strong)",
   borderRadius: 8,
   padding: "7px 10px",
   fontWeight: 900,
@@ -6369,10 +6369,10 @@ const projectSwitcherResults: React.CSSProperties = {
   zIndex: 5000,
   maxHeight: 320,
   overflowY: "auto",
-  background: "#ffffff",
-  border: "1px solid #cfc8bc",
+  background: "var(--app-surface)",
+  border: "1px solid var(--app-border-strong)",
   borderRadius: 10,
-  boxShadow: "0 18px 40px rgba(15,23,42,0.14)",
+  boxShadow: "var(--app-shadow)",
   padding: 4,
 };
 
@@ -6382,7 +6382,7 @@ const projectSwitcherResultButton: React.CSSProperties = {
   textAlign: "left",
   border: "none",
   background: "transparent",
-  color: "#1f2933",
+  color: "var(--app-text)",
   padding: "8px 10px",
   borderRadius: 7,
   fontSize: 12,
@@ -6391,13 +6391,13 @@ const projectSwitcherResultButton: React.CSSProperties = {
 };
 
 const projectSwitcherNoResults: React.CSSProperties = {
-  color: "#64748b",
+  color: "var(--app-muted)",
   padding: "10px 12px",
   fontSize: 12,
 };
 const statusPill: React.CSSProperties = {
-  background: "#ecfdf3",
-  color: "#15803d",
+  background: "var(--app-success-soft)",
+  color: "var(--app-success)",
   border: "1px solid #bbf7d0",
   borderRadius: 7,
   padding: "4px 7px",
@@ -6406,8 +6406,8 @@ const statusPill: React.CSSProperties = {
 };
 
 const readinessPill: React.CSSProperties = {
-  background: "#ffffff",
-  border: "1px solid #d8d2c8",
+  background: "var(--app-surface)",
+  border: "1px solid var(--app-border)",
   borderRadius: 7,
   padding: "4px 7px",
   fontSize: 10,
@@ -6428,15 +6428,15 @@ function operationalToneColour(tone: string): string {
   if (tone === "good") return "#16a34a";
   if (tone === "warn") return "#d97706";
   if (tone === "bad") return "#dc2626";
-  return "#1f2933";
+  return "var(--app-text)";
 }
 
 function topMetricItem(tone: string, clickable: boolean): React.CSSProperties {
   return {
     border: "none",
-    borderLeft: "1px solid #ddd8cf",
+    borderLeft: "1px solid var(--app-border)",
     background: "transparent",
-    color: "#1f2933",
+    color: "var(--app-text)",
     padding: "2px 18px",
     minHeight: 46,
     display: "grid",
@@ -6449,7 +6449,7 @@ function topMetricItem(tone: string, clickable: boolean): React.CSSProperties {
 }
 
 const topMetricItemLabel: React.CSSProperties = {
-  color: "#64748b",
+  color: "var(--app-muted)",
   fontSize: 12,
   fontWeight: 700,
 };
@@ -6460,9 +6460,9 @@ const topMetricItemValue: React.CSSProperties = {
   fontWeight: 500,
 };
 const smallButton: React.CSSProperties = {
-  background: "#ffffff",
-  color: "#1f2933",
-  border: "1px solid #d8d2c8",
+  background: "var(--app-surface)",
+  color: "var(--app-text)",
+  border: "1px solid var(--app-border)",
   borderRadius: 7,
   padding: "7px 11px",
   cursor: "pointer",
@@ -6475,11 +6475,11 @@ const tabBar: React.CSSProperties = {
   gap: 6,
   padding: "0 14px 0 152px",
   borderBottom: "1px solid rgba(148, 163, 184, 0.13)",
-  background: "#fbfaf7",
+  background: "var(--app-bg-soft)",
 };
 const tabButton: React.CSSProperties = {
   background: "transparent",
-  color: "#64748b",
+  color: "var(--app-muted)",
   border: "none",
   borderRadius: 8,
   padding: "7px 12px",
@@ -6488,7 +6488,7 @@ const tabButton: React.CSSProperties = {
 };
 
 const commercialPanel: React.CSSProperties = {
-  border: "1px solid #ddd8cf",
+  border: "1px solid var(--app-border)",
   background: "transparent",
   borderRadius: 12,
   padding: 16,
@@ -6500,26 +6500,26 @@ const commercialPanel: React.CSSProperties = {
 const commercialStatsSidePanel: React.CSSProperties = {
   gridColumn: "1 / -1",
   gridRow: "span 2",
-  border: "1px solid #ddd8cf",
-  background: "linear-gradient(180deg, transparent 0%, #f6f4ef 100%)",
+  border: "1px solid var(--app-border)",
+  background: "var(--app-surface)",
   borderRadius: 14,
   padding: 16,
   display: "grid",
   gap: 14,
   alignSelf: "stretch",
   minHeight: 360,
-  boxShadow: "0 12px 30px rgba(15,23,42,0.08)",
+  boxShadow: "var(--app-shadow)",
 };
 
 const commercialBelowMapPanel: React.CSSProperties = {
   gridColumn: "1 / -1",
-  border: "1px solid #ddd8cf",
-  background: "linear-gradient(180deg, #f6f4ef 0%, #f6f4ef 100%)",
+  border: "1px solid var(--app-border)",
+  background: "var(--app-surface)",
   borderRadius: 14,
   padding: 14,
   display: "grid",
   gap: 14,
-  boxShadow: "0 12px 30px rgba(15,23,42,0.08)",
+  boxShadow: "var(--app-shadow)",
 };
 
 const commercialSideKpiGrid: React.CSSProperties = {
@@ -6548,13 +6548,13 @@ const commercialHeaderRow: React.CSSProperties = {
 
 const commercialTitle: React.CSSProperties = {
   margin: "4px 0 0",
-  color: "#1f2933",
+  color: "var(--app-text)",
   fontSize: 20,
   fontWeight: 900,
 };
 
 const commercialHint: React.CSSProperties = {
-  color: "#64748b",
+  color: "var(--app-muted)",
   fontSize: 13,
   marginTop: 6,
 };
@@ -6572,14 +6572,14 @@ const commercialDetailGrid: React.CSSProperties = {
 };
 
 const commercialDetailCard: React.CSSProperties = {
-  background: "#ffffff",
-  border: "1px solid #ddd8cf",
+  background: "var(--app-surface)",
+  border: "1px solid var(--app-border)",
   borderRadius: 12,
   padding: 12,
 };
 
 const commercialDetailTitle: React.CSSProperties = {
-  color: "#64748b",
+  color: "var(--app-muted)",
   fontSize: 12,
   fontWeight: 900,
   textTransform: "uppercase",
@@ -6587,16 +6587,16 @@ const commercialDetailTitle: React.CSSProperties = {
 };
 
 const commercialSelectedAssetName: React.CSSProperties = {
-  color: "#1f2933",
+  color: "var(--app-text)",
   fontSize: 16,
   fontWeight: 900,
   marginTop: 6,
 };
 
 const commercialEmptyBox: React.CSSProperties = {
-  color: "#64748b",
-  background: "#ffffff",
-  border: "1px solid #ddd8cf",
+  color: "var(--app-muted)",
+  background: "var(--app-surface)",
+  border: "1px solid var(--app-border)",
   borderRadius: 10,
   padding: 14,
 };
@@ -6604,7 +6604,7 @@ const commercialEmptyBox: React.CSSProperties = {
 const activeTabButton: React.CSSProperties = {
   ...tabButton,
   background: "rgba(37, 99, 235, 0.22)",
-  color: "#2563eb",
+  color: "var(--app-primary)",
   boxShadow: "inset 0 -2px 0 #3b82f6",
 };
 const workspaceQuickActionBar: React.CSSProperties = {
@@ -6613,8 +6613,8 @@ const workspaceQuickActionBar: React.CSSProperties = {
   alignContent: "start",
   gap: 3,
   padding: "10px 8px",
-  background: "#fbfaf7",
-  borderRight: "1px solid #ddd8cf",
+  background: "var(--app-bg-soft)",
+  borderRight: "1px solid var(--app-border)",
   overflowX: "hidden",
   overflowY: "auto",
   minHeight: 0,
@@ -6624,7 +6624,7 @@ const quickActionButton: React.CSSProperties = {
   border: "none",
   borderLeft: "3px solid transparent",
   background: "transparent",
-  color: "#1f2933",
+  color: "var(--app-text)",
   borderRadius: 0,
   padding: "7px 8px 7px 10px",
   cursor: "pointer",
@@ -6639,8 +6639,8 @@ const quickActionButton: React.CSSProperties = {
 const quickActionButtonActive: React.CSSProperties = {
   ...quickActionButton,
   borderLeftColor: "#2563eb",
-  background: "#eaf2ff",
-  color: "#111827",
+  background: "var(--app-primary-soft)",
+  color: "var(--app-heading)",
   boxShadow: "none",
 };
 
@@ -6652,14 +6652,14 @@ const quickActionLabel: React.CSSProperties = {
 
 const quickActionHelper: React.CSSProperties = {
   fontSize: 10,
-  color: "#64748b",
+  color: "var(--app-muted)",
   whiteSpace: "nowrap",
   overflow: "hidden",
   textOverflow: "ellipsis",
 };
 
 const railSectionTitle: React.CSSProperties = {
-  color: "#64748b",
+  color: "var(--app-muted)",
   fontSize: 10,
   fontWeight: 950,
   letterSpacing: "0.08em",
@@ -6680,8 +6680,8 @@ const workspaceBody: React.CSSProperties = {
   minHeight: 0,
 };
 const leftRail: React.CSSProperties = {
-  background: "#fbfaf7",
-  borderRight: "1px solid #ddd8cf",
+  background: "var(--app-bg-soft)",
+  borderRight: "1px solid var(--app-border)",
   padding: "10px 8px",
   display: "flex",
   flexDirection: "column",
@@ -6718,7 +6718,7 @@ const contentGrid: React.CSSProperties = {
 };
 const mapPanel: React.CSSProperties = {
   gridRow: "span 2",
-  background: "#fbfaf7",
+  background: "var(--app-bg-soft)",
   border: "none",
   borderRadius: 0,
   padding: 0,
@@ -6730,17 +6730,17 @@ const mapToolbar: React.CSSProperties = {
   marginBottom: 0,
   padding: "14px 16px",
   alignItems: "center",
-  borderBottom: "1px solid #ddd8cf",
-  background: "#fbfaf7",
+  borderBottom: "1px solid var(--app-border)",
+  background: "var(--app-bg-soft)",
 };
 const searchWrap: React.CSSProperties = { flex: 1, position: "relative" };
 const searchInput: React.CSSProperties = {
   width: "100%",
   maxWidth: 380,
-  background: "#ffffff",
-  border: "1px solid #d8d2c8",
+  background: "var(--app-surface)",
+  border: "1px solid var(--app-border)",
   borderRadius: 7,
-  color: "#1f2933",
+  color: "var(--app-text)",
   padding: "10px 13px",
   outline: "none",
 };
@@ -6750,11 +6750,11 @@ const searchResultsPanel: React.CSSProperties = {
   right: 0,
   top: 46,
   zIndex: 1400,
-  background: "#ffffff",
-  border: "1px solid #d8d2c8",
+  background: "var(--app-surface)",
+  border: "1px solid var(--app-border)",
   borderRadius: 10,
   padding: 8,
-  boxShadow: "0 18px 45px rgba(15,23,42,0.16)",
+  boxShadow: "var(--app-shadow)",
 };
 const searchResultButton: React.CSSProperties = {
   width: "100%",
@@ -6763,7 +6763,7 @@ const searchResultButton: React.CSSProperties = {
   gap: 12,
   textAlign: "left",
   background: "transparent",
-  color: "#1f2933",
+  color: "var(--app-text)",
   border: "none",
   borderRadius: 8,
   padding: "9px 10px",
@@ -6779,14 +6779,14 @@ const layerMenu: React.CSSProperties = {
   width: 260,
   maxHeight: 520,
   overflowY: "auto",
-  background: "#ffffff",
-  border: "1px solid #d8d2c8",
+  background: "var(--app-surface)",
+  border: "1px solid var(--app-border)",
   borderRadius: 10,
   padding: 12,
-  boxShadow: "0 16px 45px rgba(15,23,42,0.16)",
+  boxShadow: "var(--app-shadow)",
 };
 const layerMenuHeader: React.CSSProperties = {
-  color: "#475569",
+  color: "var(--app-muted-strong)",
   fontSize: 12,
   fontWeight: 900,
   letterSpacing: 0.4,
@@ -6797,7 +6797,7 @@ const layerRow: React.CSSProperties = {
   alignItems: "center",
   gap: 8,
   padding: "6px 0",
-  color: "#1f2933",
+  color: "var(--app-text)",
   fontSize: 13,
   fontWeight: 700,
 };
@@ -6816,7 +6816,7 @@ const miniLayerButton: React.CSSProperties = {
   ...smallButton,
   padding: "7px 8px",
   fontSize: 12,
-  background: "#ffffff",
+  background: "var(--app-surface)",
 };
 const fullWidthMiniLayerButton: React.CSSProperties = {
   ...miniLayerButton,
@@ -6843,7 +6843,7 @@ const mapAssetInspector: React.CSSProperties = {
   border: "1px solid rgba(203, 213, 225, 0.86)",
   borderRadius: 7,
   padding: 12,
-  color: "#1f2933",
+  color: "var(--app-text)",
   boxShadow: "0 10px 28px rgba(15,23,42,0.10)",
 };
 
@@ -6881,7 +6881,7 @@ function mapStageLabel(tone: string): React.CSSProperties {
 
 function mapStageStatus(tone: string): React.CSSProperties {
   return {
-    color: tone === "neutral" ? "#64748b" : operationalToneColour(tone),
+    color: tone === "neutral" ? "var(--app-muted)" : operationalToneColour(tone),
     fontSize: 11,
     fontWeight: 600,
   };
@@ -6892,7 +6892,7 @@ function mapStageMarker(tone: string): React.CSSProperties {
     width: 11,
     height: 11,
     borderRadius: 999,
-    background: tone === "neutral" ? "#fbfaf7" : operationalToneColour(tone),
+    background: tone === "neutral" ? "var(--app-bg-soft)" : operationalToneColour(tone),
     border: `2px solid ${tone === "neutral" ? "#b8b1a6" : operationalToneColour(tone)}`,
     zIndex: 2,
   };
@@ -6909,8 +6909,8 @@ const mapStageLine: React.CSSProperties = {
 };
 
 const nextActionsPanel: React.CSSProperties = {
-  background: "#fbfaf7",
-  borderLeft: "1px solid #ddd8cf",
+  background: "var(--app-bg-soft)",
+  borderLeft: "1px solid var(--app-border)",
   padding: "22px 18px",
   display: "grid",
   gridTemplateRows: "auto auto auto auto 1fr",
@@ -6939,13 +6939,13 @@ const nextActionsTitle: React.CSSProperties = {
   margin: 0,
   fontSize: 20,
   fontWeight: 700,
-  color: "#1f2933",
+  color: "var(--app-text)",
 };
 
 const phaseSelector: React.CSSProperties = {
-  background: "#ffffff",
-  color: "#1f2933",
-  border: "1px solid #d8d2c8",
+  background: "var(--app-surface)",
+  color: "var(--app-text)",
+  border: "1px solid var(--app-border)",
   borderRadius: 999,
   padding: "7px 10px",
   fontWeight: 700,
@@ -6963,8 +6963,8 @@ const nextInfoRow: React.CSSProperties = {
   justifyContent: "space-between",
   gap: 14,
   padding: "12px 0",
-  borderBottom: "1px solid #e2ded7",
-  color: "#475569",
+  borderBottom: "1px solid var(--app-border)",
+  color: "var(--app-muted-strong)",
   fontSize: 13,
 };
 
@@ -6980,7 +6980,7 @@ const nextActionText: React.CSSProperties = {
 };
 
 const nextActionValue: React.CSSProperties = {
-  color: "#64748b",
+  color: "var(--app-muted)",
   fontSize: 11,
   fontWeight: 800,
   whiteSpace: "nowrap",
@@ -6989,7 +6989,7 @@ const nextActionValue: React.CSSProperties = {
 };
 
 const nextActionCommand: React.CSSProperties = {
-  color: "#64748b",
+  color: "var(--app-muted)",
   fontSize: 11,
   fontStyle: "normal",
   fontWeight: 900,
@@ -7002,7 +7002,7 @@ function nextActionDot(tone: string): React.CSSProperties {
     height: 9,
     borderRadius: 999,
     border: `2px solid ${operationalToneColour(tone)}`,
-    background: "#ffffff",
+    background: "var(--app-surface)",
     flex: "0 0 auto",
     marginTop: 3,
   };
@@ -7011,9 +7011,9 @@ function nextActionDot(tone: string): React.CSSProperties {
 function nextActionButton(tone: string): React.CSSProperties {
   return {
     border: "none",
-    borderBottom: "1px solid #e2ded7",
+    borderBottom: "1px solid var(--app-border)",
     background: "transparent",
-    color: "#1f2933",
+    color: "var(--app-text)",
     borderRadius: 0,
     padding: "14px 0",
     display: "flex",
@@ -7029,11 +7029,11 @@ function nextActionButton(tone: string): React.CSSProperties {
 const selectedAssetStrip: React.CSSProperties = {
   display: "grid",
   gap: 6,
-  border: "1px solid #d8d2c8",
-  background: "#ffffff",
+  border: "1px solid var(--app-border)",
+  background: "var(--app-surface)",
   borderRadius: 7,
   padding: 14,
-  color: "#1f2933",
+  color: "var(--app-text)",
 };
 
 const nextBlockerBox: React.CSSProperties = {
@@ -7050,7 +7050,7 @@ const nextGoodBox: React.CSSProperties = {
   border: "none",
   borderTop: "1px solid #e2ded7",
   background: "transparent",
-  color: "#166534",
+  color: "var(--app-success)",
   borderRadius: 0,
   padding: "14px 0 0",
   fontSize: 13,
@@ -7125,20 +7125,20 @@ const threeDButton: React.CSSProperties = {
 const intelligenceDock: React.CSSProperties = {
   gridColumn: "1 / -1",
   gridRow: "span 4",
-  background: "linear-gradient(180deg, transparent 0%, #f6f4ef 100%)",
-  border: "1px solid #ddd8cf",
+  background: "var(--app-surface)",
+  border: "1px solid var(--app-border)",
   borderRadius: 14,
   overflow: "hidden",
   minHeight: 620,
-  boxShadow: "0 18px 44px rgba(0,0,0,0.18)",
+  boxShadow: "var(--app-shadow)",
 };
 const summaryPanel: React.CSSProperties = {
-  background: "linear-gradient(180deg, transparent 0%, #f6f4ef 100%)",
-  border: "1px solid #ddd8cf",
+  background: "var(--app-surface)",
+  border: "1px solid var(--app-border)",
   borderRadius: 14,
   padding: 16,
   minHeight: 170,
-  boxShadow: "0 12px 30px rgba(0,0,0,0.14)",
+  boxShadow: "var(--app-shadow)",
 };
 const widePanel: React.CSSProperties = {
   ...summaryPanel,
@@ -7148,11 +7148,11 @@ const widePanel: React.CSSProperties = {
 
 const areaHandoverPanel: React.CSSProperties = {
   gridColumn: "1 / -1",
-  background: "linear-gradient(180deg, transparent 0%, #f6f4ef 100%)",
-  border: "1px solid #ddd8cf",
+  background: "var(--app-surface)",
+  border: "1px solid var(--app-border)",
   borderRadius: 14,
   padding: 16,
-  boxShadow: "0 12px 30px rgba(15,23,42,0.08)",
+  boxShadow: "var(--app-shadow)",
 };
 
 const areaHandoverHeader: React.CSSProperties = {
@@ -7165,13 +7165,13 @@ const areaHandoverHeader: React.CSSProperties = {
 
 const areaHandoverTitle: React.CSSProperties = {
   margin: "4px 0 0",
-  color: "#1f2933",
+  color: "var(--app-text)",
   fontSize: 18,
   fontWeight: 900,
 };
 
 const areaHandoverHint: React.CSSProperties = {
-  color: "#9ca3af",
+  color: "var(--app-muted)",
   fontSize: 12,
   marginTop: 4,
 };
@@ -7205,13 +7205,13 @@ const handoverGoodBox: React.CSSProperties = {
   borderRadius: 10,
   background: "rgba(22, 101, 52, 0.18)",
   border: "1px solid rgba(74, 222, 128, 0.35)",
-  color: "#166534",
+  color: "var(--app-success)",
   fontSize: 13,
 };
 
 const handoverSnapshotBox: React.CSSProperties = {
-  background: "#ffffff",
-  border: "1px solid #ddd8cf",
+  background: "var(--app-surface)",
+  border: "1px solid var(--app-border)",
   borderRadius: 12,
   padding: 14,
   marginBottom: 12,
@@ -7298,16 +7298,16 @@ const qaToolbar: React.CSSProperties = {
   justifyContent: "space-between",
   alignItems: "center",
   gap: 12,
-  background: "#ffffff",
-  border: "1px solid #ddd8cf",
+  background: "var(--app-surface)",
+  border: "1px solid var(--app-border)",
   borderRadius: 10,
   padding: "10px 12px",
 };
 
 const qaModeButton: React.CSSProperties = {
-  border: "1px solid #ddd8cf",
-  background: "#ffffff",
-  color: "#64748b",
+  border: "1px solid var(--app-border)",
+  background: "var(--app-surface)",
+  color: "var(--app-muted)",
   borderRadius: 999,
   padding: "7px 10px",
   fontSize: 12,
@@ -7332,10 +7332,10 @@ const qaCategoryCard: React.CSSProperties = {
   justifyContent: "space-between",
   alignItems: "center",
   gap: 10,
-  background: "#ffffff",
-  border: "1px solid #ddd8cf",
+  background: "var(--app-surface)",
+  border: "1px solid var(--app-border)",
   borderRadius: 10,
-  color: "#1f2933",
+  color: "var(--app-text)",
   padding: "10px 12px",
   textAlign: "left",
   cursor: "pointer",
@@ -7351,8 +7351,8 @@ const qaCategoryCardActive: React.CSSProperties = {
 const qaNavigatorPanel: React.CSSProperties = {
   display: "grid",
   gap: 10,
-  background: "#ffffff",
-  border: "1px solid #ddd8cf",
+  background: "var(--app-surface)",
+  border: "1px solid var(--app-border)",
   borderRadius: 12,
   padding: 14,
 };
@@ -7361,20 +7361,20 @@ const qaNavigatorTopline: React.CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
   gap: 12,
-  color: "#2563eb",
+  color: "var(--app-primary)",
   fontSize: 12,
   fontWeight: 900,
   letterSpacing: 0.2,
 };
 
 const qaNavigatorAsset: React.CSSProperties = {
-  color: "#1f2933",
+  color: "var(--app-text)",
   fontSize: 20,
   fontWeight: 900,
 };
 
 const qaNavigatorIssue: React.CSSProperties = {
-  color: "#64748b",
+  color: "var(--app-muted)",
   fontSize: 14,
   lineHeight: 1.45,
 };
@@ -7386,9 +7386,9 @@ const qaNavigatorActions: React.CSSProperties = {
 };
 
 const qaActionButton: React.CSSProperties = {
-  border: "1px solid #ddd8cf",
-  background: "#ffffff",
-  color: "#1f2933",
+  border: "1px solid var(--app-border)",
+  background: "var(--app-surface)",
+  color: "var(--app-text)",
   borderRadius: 8,
   padding: "10px 12px",
   fontWeight: 900,
@@ -7413,11 +7413,11 @@ const qaCompactRow: React.CSSProperties = {
   gridTemplateColumns: "90px 160px 220px 1fr",
   alignItems: "center",
   gap: 10,
-  background: "#ffffff",
-  border: "1px solid #ddd8cf",
+  background: "var(--app-surface)",
+  border: "1px solid var(--app-border)",
   borderRadius: 8,
   padding: "8px 10px",
-  color: "#1f2933",
+  color: "var(--app-text)",
   textAlign: "left",
 };
 
@@ -7428,12 +7428,12 @@ const assetGrid: React.CSSProperties = {
 };
 
 const assetTile: React.CSSProperties = {
-  background: "#ffffff",
-  border: "1px solid #ddd8cf",
+  background: "var(--app-surface)",
+  border: "1px solid var(--app-border)",
   borderRadius: 12,
   padding: 13,
   minHeight: 74,
-  color: "#1f2933",
+  color: "var(--app-text)",
 };
 
 const quickActions: React.CSSProperties = {
@@ -7464,14 +7464,14 @@ const mobileSelectedSummary: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
   gap: 2,
-  color: "#1f2933",
+  color: "var(--app-text)",
   overflow: "hidden",
 };
 
 const mobileActionButton: React.CSSProperties = {
   border: "1px solid rgba(148, 163, 184, 0.25)",
   background: "#1d4ed8",
-  color: "#fff",
+  color: "#ffffff",
   borderRadius: 12,
   padding: "10px 11px",
   fontWeight: 900,
@@ -7480,8 +7480,8 @@ const mobileActionButton: React.CSSProperties = {
 
 const mobileCloseButton: React.CSSProperties = {
   border: "1px solid rgba(148, 163, 184, 0.25)",
-  background: "#ffffff",
-  color: "#1f2933",
+  background: "var(--app-surface)",
+  color: "var(--app-text)",
   borderRadius: 12,
   width: 38,
   minWidth: 38,
@@ -7514,7 +7514,7 @@ const mobileQuickPanelHeader: React.CSSProperties = {
   alignItems: "center",
   gap: 10,
   padding: "10px 12px",
-  borderBottom: "1px solid #ddd8cf",
+  borderBottom: "1px solid var(--app-border)",
 };
 
 const mobileListPanel: React.CSSProperties = {
@@ -7525,8 +7525,8 @@ const mobileListPanel: React.CSSProperties = {
 };
 
 const mobileDpCard: React.CSSProperties = {
-  background: "#ffffff",
-  border: "1px solid #ddd8cf",
+  background: "var(--app-surface)",
+  border: "1px solid var(--app-border)",
   borderRadius: 12,
   padding: 10,
   display: "grid",
@@ -7539,7 +7539,7 @@ const mobileDpMainButton: React.CSSProperties = {
   width: "100%",
   border: "none",
   background: "transparent",
-  color: "#1f2933",
+  color: "var(--app-text)",
   textAlign: "left",
   padding: 0,
   cursor: "pointer",
@@ -7553,7 +7553,7 @@ const mobileStatusGrid: React.CSSProperties = {
 
 const mobileStatusButtonBase: React.CSSProperties = {
   border: "1px solid rgba(255,255,255,0.15)",
-  color: "#fff",
+  color: "var(--app-heading)",
   borderRadius: 10,
   padding: "9px 8px",
   fontWeight: 900,

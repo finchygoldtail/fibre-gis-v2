@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { signOut } from "firebase/auth";
 import { collection, getDocs } from "firebase/firestore";
 import { auth, db } from "../firebase";
+import { useThemeMode } from "../context/ThemeContext";
 import { ROLE_LABELS, useUserRole } from "../context/UserRoleContext";
 import UserManagementPanel from "./admin/UserManagementPanel";
 import { DEFAULT_BUSINESS_ID, normaliseBusinessId } from "../utils/clientAccessControl";
@@ -23,6 +24,7 @@ export default function UserMenu({ variant = "topbar" }: Props) {
   const [showUserManagement, setShowUserManagement] = useState(false);
   const [businessOptions, setBusinessOptions] = useState<string[]>([]);
   const [customBusinessId, setCustomBusinessId] = useState("");
+  const { themeMode, setThemeMode } = useThemeMode();
 
   const displayName = profile?.name || profile?.email || "User";
   const roleLabel = profile ? ROLE_LABELS[profile.role] : "Loading role";
@@ -123,6 +125,8 @@ export default function UserMenu({ variant = "topbar" }: Props) {
           />
         )}
 
+        <ThemeSwitcher themeMode={themeMode} onChange={setThemeMode} />
+
         {canManageUsers && (
           <button
             type="button"
@@ -173,22 +177,22 @@ export default function UserMenu({ variant = "topbar" }: Props) {
               width: 260,
               maxWidth: "calc(100vw - 24px)",
               boxSizing: "border-box",
-              background: "#111827",
-              color: "white",
-              border: "1px solid #374151",
+              background: "var(--app-elevated)",
+              color: "var(--app-text)",
+              border: "1px solid var(--app-border)",
               borderRadius: 12,
               padding: 12,
               zIndex: 9999,
-              boxShadow: "0 16px 36px rgba(0,0,0,0.4)",
+              boxShadow: "var(--app-shadow)",
             }}
           >
             <div style={{ fontWeight: 900 }}>{displayName}</div>
-            <div style={{ color: "#9ca3af", fontSize: 12, marginTop: 4 }}>
+            <div style={{ color: "var(--app-muted)", fontSize: 12, marginTop: 4 }}>
               {profile?.email}
             </div>
 
             <div style={roleBoxStyle}>
-              <div style={{ fontSize: 12, color: "#9ca3af" }}>Role</div>
+              <div style={{ fontSize: 12, color: "var(--app-muted)" }}>Role</div>
               <div style={{ fontWeight: 800 }}>
                 {isLoadingProfile ? "Loading..." : roleLabel}
               </div>
@@ -204,6 +208,8 @@ export default function UserMenu({ variant = "topbar" }: Props) {
                 compact
               />
             )}
+
+            <ThemeSwitcher themeMode={themeMode} onChange={setThemeMode} />
 
             {canManageUsers && (
               <button
@@ -235,6 +241,28 @@ export default function UserMenu({ variant = "topbar" }: Props) {
 
       {userManagementPanel}
     </>
+  );
+}
+
+function ThemeSwitcher({
+  themeMode,
+  onChange,
+}: {
+  themeMode: "light" | "dark";
+  onChange: (mode: "light" | "dark") => void;
+}) {
+  return (
+    <div style={businessSwitcherStyle}>
+      <label style={businessSwitcherLabelStyle}>Appearance</label>
+      <select
+        value={themeMode}
+        onChange={(event) => onChange(event.target.value as "light" | "dark")}
+        style={businessSelectStyle}
+      >
+        <option value="light">Light mode</option>
+        <option value="dark">Dark mode</option>
+      </select>
+    </div>
   );
 }
 
@@ -311,9 +339,9 @@ const topbarAccountButtonStyle: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   gap: 8,
-  background: "rgba(15,23,42,0.92)",
-  color: "white",
-  border: "1px solid rgba(148,163,184,0.4)",
+  background: "var(--app-panel)",
+  color: "var(--app-heading)",
+  border: "1px solid var(--app-border)",
   borderRadius: 999,
   padding: "6px 10px 6px 6px",
   cursor: "pointer",
@@ -341,8 +369,8 @@ const topbarAccountTextStyle: React.CSSProperties = {
 const sidebarShellStyle: React.CSSProperties = {
   marginTop: 12,
   marginBottom: 12,
-  background: "#0f172a",
-  border: "1px solid #334155",
+  background: "var(--app-surface-muted)",
+  border: "1px solid var(--app-border)",
   borderRadius: 12,
   padding: 12,
 };
@@ -361,7 +389,7 @@ const avatarStyle: React.CSSProperties = {
   display: "grid",
   placeItems: "center",
   background: "#22c55e",
-  color: "white",
+  color: "var(--app-heading)",
   fontWeight: 900,
   boxShadow: "0 8px 20px rgba(34,197,94,0.25)",
 };
@@ -375,7 +403,7 @@ const sidebarNameStyle: React.CSSProperties = {
 };
 
 const sidebarEmailStyle: React.CSSProperties = {
-  color: "#94a3b8",
+  color: "var(--app-muted)",
   fontSize: 12,
   overflow: "hidden",
   textOverflow: "ellipsis",
@@ -387,21 +415,21 @@ const roleBoxStyle: React.CSSProperties = {
   marginTop: 10,
   padding: 10,
   borderRadius: 10,
-  background: "#1f2937",
-  border: "1px solid #374151",
+  background: "var(--app-surface)",
+  border: "1px solid var(--app-border)",
 };
 
 const businessSwitcherStyle: React.CSSProperties = {
   marginTop: 10,
   padding: 10,
   borderRadius: 10,
-  background: "#0f172a",
-  border: "1px solid #334155",
+  background: "var(--app-surface-muted)",
+  border: "1px solid var(--app-border)",
 };
 
 const businessSwitcherLabelStyle: React.CSSProperties = {
   display: "block",
-  color: "#bfdbfe",
+  color: "var(--app-primary)",
   fontSize: 11,
   fontWeight: 900,
   marginBottom: 6,
@@ -410,9 +438,9 @@ const businessSwitcherLabelStyle: React.CSSProperties = {
 const businessSelectStyle: React.CSSProperties = {
   width: "100%",
   boxSizing: "border-box",
-  border: "1px solid #4b5563",
-  background: "#111827",
-  color: "white",
+  border: "1px solid var(--app-border)",
+  background: "var(--app-surface)",
+  color: "var(--app-text)",
   borderRadius: 9,
   padding: "8px 9px",
   fontWeight: 800,
@@ -427,9 +455,9 @@ const businessCustomRowStyle = (compact: boolean): React.CSSProperties => ({
 
 const businessCustomInputStyle: React.CSSProperties = {
   minWidth: 0,
-  border: "1px solid #4b5563",
-  background: "#111827",
-  color: "white",
+  border: "1px solid var(--app-border)",
+  background: "var(--app-surface)",
+  color: "var(--app-text)",
   borderRadius: 9,
   padding: "8px 9px",
   fontWeight: 800,
@@ -449,9 +477,9 @@ const sidebarButtonStyle: React.CSSProperties = {
   width: "100%",
   boxSizing: "border-box",
   marginTop: 10,
-  border: "1px solid #374151",
-  background: "#1f2937",
-  color: "white",
+  border: "1px solid var(--app-border)",
+  background: "var(--app-surface)",
+  color: "var(--app-text)",
   borderRadius: 10,
   padding: "10px 12px",
   cursor: "pointer",
@@ -464,9 +492,9 @@ const menuButtonStyle: React.CSSProperties = {
   boxSizing: "border-box",
   display: "block",
   marginTop: 10,
-  border: "1px solid #374151",
-  background: "#1f2937",
-  color: "white",
+  border: "1px solid var(--app-border)",
+  background: "var(--app-surface)",
+  color: "var(--app-text)",
   borderRadius: 10,
   padding: "10px 12px",
   cursor: "pointer",

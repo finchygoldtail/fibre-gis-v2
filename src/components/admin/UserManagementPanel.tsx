@@ -853,9 +853,9 @@ const panelStyle: React.CSSProperties = {
   left: "50%",
   transform: "translateX(-50%)",
   width: "min(1120px, calc(100vw - 32px))",
-  background: "#fbfaf7",
-  color: "#1f2933",
-  border: "1px solid #ddd8cf",
+  background: "var(--app-bg-soft)",
+  color: "var(--app-text)",
+  border: "1px solid var(--app-border)",
   borderRadius: 16,
   padding: 16,
   overflow: "hidden",
@@ -919,7 +919,7 @@ const titleStyle: React.CSSProperties = {
 };
 
 const mutedStyle: React.CSSProperties = {
-  color: "#64748b",
+  color: "var(--app-muted)",
   fontSize: 12,
   marginTop: 3,
 };
@@ -929,15 +929,15 @@ const companyScopeStyle: React.CSSProperties = {
   gap: 4,
   minWidth: 220,
   marginLeft: "auto",
-  color: "#64748b",
+  color: "var(--app-muted)",
   fontSize: 11,
   fontWeight: 900,
 };
 
 const companySelectStyle: React.CSSProperties = {
-  border: "1px solid #d8d2c8",
-  background: "#ffffff",
-  color: "#1f2933",
+  border: "1px solid var(--app-border)",
+  background: "var(--app-surface)",
+  color: "var(--app-text)",
   borderRadius: 9,
   padding: "8px 10px",
   fontWeight: 900,
@@ -945,8 +945,8 @@ const companySelectStyle: React.CSSProperties = {
 };
 
 const cardStyle: React.CSSProperties = {
-  background: "#ffffff",
-  border: "1px solid #ddd8cf",
+  background: "var(--app-surface)",
+  border: "1px solid var(--app-border)",
   borderRadius: 12,
   padding: 12,
   overflowY: "auto",
@@ -974,7 +974,7 @@ const sectionTitleStyle: React.CSSProperties = {
 
 const labelStyle: React.CSSProperties = {
   display: "block",
-  color: "#334155",
+  color: "var(--app-muted-strong)",
   fontSize: 11,
   fontWeight: 900,
   marginTop: 9,
@@ -984,9 +984,9 @@ const labelStyle: React.CSSProperties = {
 const inputStyle: React.CSSProperties = {
   width: "100%",
   boxSizing: "border-box",
-  border: "1px solid #d8d2c8",
-  background: "#ffffff",
-  color: "#1f2933",
+  border: "1px solid var(--app-border)",
+  background: "var(--app-surface)",
+  color: "var(--app-text)",
   borderRadius: 9,
   padding: "9px 10px",
   marginTop: 3,
@@ -997,7 +997,7 @@ const primaryButtonStyle: React.CSSProperties = {
   marginTop: 12,
   border: "none",
   background: "#2563eb",
-  color: "white",
+  color: "#ffffff",
   borderRadius: 10,
   padding: "10px 12px",
   fontWeight: 900,
@@ -1006,7 +1006,7 @@ const primaryButtonStyle: React.CSSProperties = {
 
 const successStyle: React.CSSProperties = {
   marginTop: 10,
-  color: "#166534",
+  color: "var(--app-success)",
   background: "#dcfce7",
   border: "1px solid #86efac",
   borderRadius: 9,
@@ -1027,9 +1027,9 @@ const errorStyle: React.CSSProperties = {
 };
 
 const smallButtonStyle: React.CSSProperties = {
-  border: "1px solid #d8d2c8",
-  background: "#ffffff",
-  color: "#1f2933",
+  border: "1px solid var(--app-border)",
+  background: "var(--app-surface)",
+  color: "var(--app-text)",
   borderRadius: 9,
   padding: "7px 10px",
   fontWeight: 900,
@@ -1053,7 +1053,7 @@ const userRowStyle: React.CSSProperties = {
   padding: 12,
   border: "1px solid #e2ded7",
   borderRadius: 10,
-  background: "#fbfaf7",
+  background: "var(--app-bg-soft)",
   alignItems: "start",
 };
 
@@ -1067,7 +1067,7 @@ function getUserRowStyle(isNarrowViewport: boolean): React.CSSProperties {
 }
 
 const userMetaStyle: React.CSSProperties = {
-  color: "#64748b",
+  color: "var(--app-muted)",
   fontSize: 11,
   overflow: "hidden",
   textOverflow: "ellipsis",
@@ -1091,9 +1091,9 @@ const removeButtonStyle: React.CSSProperties = {
 
 const areaToggleButtonStyle: React.CSSProperties = {
   gridColumn: "1 / -1",
-  border: "1px solid #d8d2c8",
-  background: "#ffffff",
-  color: "#1f2933",
+  border: "1px solid var(--app-border)",
+  background: "var(--app-surface)",
+  color: "var(--app-text)",
   borderRadius: 9,
   padding: "9px 10px",
   fontWeight: 900,
@@ -1106,7 +1106,7 @@ const areaToggleButtonStyle: React.CSSProperties = {
 
 const areaCountPillStyle: React.CSSProperties = {
   color: "#1d4ed8",
-  background: "#eaf2ff",
+  background: "var(--app-primary-soft)",
   border: "1px solid #93c5fd",
   borderRadius: 999,
   padding: "2px 7px",
@@ -1117,7 +1117,7 @@ const areaCountPillStyle: React.CSSProperties = {
 const areaPanelStyle: React.CSSProperties = {
   gridColumn: "1 / -1",
   border: "1px solid #e2ded7",
-  background: "#ffffff",
+  background: "var(--app-surface)",
   borderRadius: 10,
   padding: 10,
 };
@@ -1131,9 +1131,9 @@ const areaActionRowStyle: React.CSSProperties = {
 };
 
 const miniButtonStyle: React.CSSProperties = {
-  border: "1px solid #d8d2c8",
-  background: "#ffffff",
-  color: "#1f2933",
+  border: "1px solid var(--app-border)",
+  background: "var(--app-surface)",
+  color: "var(--app-text)",
   borderRadius: 8,
   padding: "7px 8px",
   fontSize: 12,
@@ -1155,7 +1155,7 @@ const areaCheckboxRowStyle: React.CSSProperties = {
   alignItems: "center",
   gap: 8,
   border: "1px solid #e2ded7",
-  background: "#fbfaf7",
+  background: "var(--app-bg-soft)",
   borderRadius: 8,
   padding: "7px 8px",
   fontSize: 12,
