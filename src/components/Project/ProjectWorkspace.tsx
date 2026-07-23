@@ -227,7 +227,7 @@ const tabs: { id: WorkspaceTab; label: string }[] = [
   { id: "pia", label: "PIA" },
   { id: "build", label: "Build" },
   { id: "assets", label: "Assets" },
-  { id: "reports", label: "Templates" },
+  { id: "reports", label: "Reports" },
   { id: "commercial", label: "Commercial" },
   { id: "operations", label: "Operations" },
   { id: "delivery", label: "Delivery" },
@@ -3950,8 +3950,8 @@ export default function ProjectWorkspace({
       onClick: () => openOperationPanel("projectDetails", "assets"),
     },
     {
-      label: "Templates",
-      helper: "XLSX packs",
+      label: "Reports",
+      helper: "Progress / permits",
       active: activeTab === "reports",
       onClick: () => {
         setActiveTab("reports");
