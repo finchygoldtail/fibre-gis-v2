@@ -2,6 +2,7 @@ import React from "react";
 import DuplicateHomeResolutionPanel from "./DuplicateHomeResolutionPanel";
 import AddressSheetImportPanel from "./AddressSheetImportPanel";
 import FasSbRouteImportPanel from "./FasSbRouteImportPanel";
+import RouteProgressViewer from "./RouteProgressViewer";
 import type { DailyProgressTeam, SavedMapAsset } from "../../map/types";
 import type { WorkStatus } from "../../map/types";
 import {
@@ -215,6 +216,7 @@ type BuildToolKey =
   | "homes"
   | "joints"
   | "pia"
+  | "routes"
   | "daily"
   | "status"
   | "reset"
@@ -723,6 +725,13 @@ export default function WorkspaceBuild({
           onClick={() => setActiveTool((value) => value === "pia" ? null : "pia")}
         />
         <ToolButton
+          label="Route Progress"
+          description="View completed duct and cable metre ranges with green section progress."
+          active={activeTool === "routes"}
+          tone="good"
+          onClick={() => setActiveTool((value) => value === "routes" ? null : "routes")}
+        />
+        <ToolButton
           label="Daily Production"
           description="Record metres or splices done today and highlight them on the map."
           active={activeTool === "daily"}
@@ -753,6 +762,13 @@ export default function WorkspaceBuild({
         />
       </div>
     </section>
+
+    {activeTool === "routes" ? (
+      <RouteProgressViewer
+        projectAssets={projectAssets}
+        onSelectAsset={onSelectAsset}
+      />
+    ) : null}
 
     {activeTool === "fas" ? (
       <FasSbRouteImportPanel

@@ -1789,7 +1789,7 @@ export default function CableLinesLayer({
                       positions={segment}
                       interactive={false}
                       pathOptions={{
-                        color: getDailyProgressTeamColour(entry.team),
+                        color: "#22c55e",
                         weight: isDuct ? 10 : isSelected ? 11 : 8,
                         opacity: 0.98,
                       }}

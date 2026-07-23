@@ -1351,7 +1351,7 @@ export default function WorkspaceMap({
                     key={`workspace-duct-daily-${asset.id}-${entry.id}`}
                     positions={segment.map((point) => [point.lat, point.lng] as [number, number])}
                     pathOptions={{
-                      color: getDailyProgressTeamColour(entry.team),
+                      color: "#22c55e",
                       weight: selectedAssetId === asset.id ? 13 : 10,
                       opacity: 0.98,
                     }}
@@ -1470,7 +1470,7 @@ export default function WorkspaceMap({
                     key={`workspace-cable-daily-${asset.id}-${entry.id}`}
                     positions={segment.map((point) => [point.lat, point.lng] as [number, number])}
                     pathOptions={{
-                      color: getDailyProgressTeamColour(entry.team),
+                      color: "#22c55e",
                       weight: selectedAssetId === asset.id ? 13 : 10,
                       opacity: 0.98,
                     }}
