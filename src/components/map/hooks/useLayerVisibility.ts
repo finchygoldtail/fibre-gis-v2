@@ -7,6 +7,7 @@ export type LayerVisibility = {
   mmjJoints: boolean;
   lmjJoints: boolean;
   streetCabs: boolean;
+  dataCentres: boolean;
   poles: boolean;
   distributionPoints: boolean;
   ohDpJoints: boolean;
@@ -72,6 +73,7 @@ export const DEFAULT_VISIBLE_LAYERS: LayerVisibility = {
   mmjJoints: true,
   lmjJoints: true,
   streetCabs: false,
+  dataCentres: true,
   poles: false,
   distributionPoints: true,
   ohDpJoints: true,

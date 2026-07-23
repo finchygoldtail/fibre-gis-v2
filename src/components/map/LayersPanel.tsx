@@ -63,6 +63,11 @@ const layerGroups: LayerGroup[] = [
     options: [{ label: "Street Cabs", key: "streetCabs" }],
   },
   {
+    id: "dataCentres",
+    title: "Data Centres",
+    options: [{ label: "Data Centres", key: "dataCentres" }],
+  },
+  {
     id: "poles",
     title: "Poles",
     options: [

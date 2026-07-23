@@ -52,6 +52,7 @@ export type WorkspaceLayerVisibility = {
   poles: boolean;
   chambers: boolean;
   streetCabs: boolean;
+  dataCentres: boolean;
   homes: boolean;
   homesConnected: boolean;
   homesUnconnected: boolean;
@@ -668,6 +669,21 @@ function isStreetCabAsset(asset: SavedMapAsset): boolean {
   );
 }
 
+function isDataCentreAsset(asset: SavedMapAsset): boolean {
+  const item = asset as any;
+  const text = [item.assetType, item.type, item.name, item.label, item.category]
+    .map((value) => String(value ?? "").toLowerCase())
+    .join(" ");
+
+  return (
+    item.assetType === "data-centre" ||
+    text.includes("data centre") ||
+    text.includes("data center") ||
+    text.includes("datacentre") ||
+    text.includes("datacenter")
+  );
+}
+
 function getStreetCabLabel(asset: SavedMapAsset): string {
   const item = asset as any;
   const raw = String(
@@ -798,6 +814,7 @@ function getAssetMarkerIcon(
 ) {
   const type = getAssetType(asset);
   const streetCab = isStreetCabAsset(asset);
+  const dataCentre = isDataCentreAsset(asset);
   const traceColour = getTraceColour(traceKind);
   const dpCapacityState = getDpCapacityState(asset, allAssets);
   const colour = selected
@@ -814,6 +831,8 @@ function getAssetMarkerIcon(
           ? "#f97316"
           : streetCab
             ? "#38bdf8"
+            : dataCentre
+              ? "#22d3ee"
             : isHomeAssetForWorkspace(asset)
               ? homeStatus === "live"
                 ? "#16a34a"
@@ -828,9 +847,10 @@ function getAssetMarkerIcon(
     ? getDpFibreLabel(asset)
     : "";
   const streetCabLabel = showLabels && streetCab ? getStreetCabLabel(asset) : "";
-  const markerLabel = showLabels && dpFibreLabel ? `F${dpFibreLabel}` : streetCabLabel;
+  const dataCentreLabel = showLabels && dataCentre ? "DC" : "";
+  const markerLabel = showLabels && dpFibreLabel ? `F${dpFibreLabel}` : streetCabLabel || dataCentreLabel;
   const labelHtml = markerLabel
-    ? `<div style="position:absolute;left:50%;top:${hitSize - 2}px;transform:translateX(-50%);background:${streetCabLabel ? "#0f172a" : "#ffffff"};color:${streetCabLabel ? "#e0f2fe" : "#020617"};border:1px solid ${streetCabLabel ? "rgba(56,189,248,0.85)" : "rgba(2,6,23,0.55)"};border-radius:4px;padding:1px 4px;font-size:10px;font-weight:900;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,0.22);">${markerLabel}</div>`
+    ? `<div style="position:absolute;left:50%;top:${hitSize - 2}px;transform:translateX(-50%);background:${streetCabLabel || dataCentreLabel ? "#0f172a" : "#ffffff"};color:${streetCabLabel || dataCentreLabel ? "#e0f2fe" : "#020617"};border:1px solid ${dataCentreLabel ? "rgba(34,211,238,0.85)" : streetCabLabel ? "rgba(56,189,248,0.85)" : "rgba(2,6,23,0.55)"};border-radius:4px;padding:1px 4px;font-size:10px;font-weight:900;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,0.22);">${markerLabel}</div>`
     : "";
   const extraHeight = markerLabel ? 18 : 0;
 
@@ -899,6 +919,7 @@ function isLayerVisibleForAsset(asset: SavedMapAsset, visibleLayers: WorkspaceLa
   if (type.includes("pole")) return visibleLayers.poles;
   if (type.includes("chamber")) return visibleLayers.chambers;
   if (isStreetCabAsset(asset)) return visibleLayers.streetCabs;
+  if (isDataCentreAsset(asset)) return visibleLayers.dataCentres;
   if (type.includes("joint") || type.includes("ag") || type.includes("lmj") || type.includes("midj") || type.includes("cmj")) return visibleLayers.joints;
 
   return visibleLayers.other;
@@ -1015,6 +1036,7 @@ export default function WorkspaceMap({
     poles: false,
     chambers: false,
     streetCabs: true,
+    dataCentres: true,
     homes: false,
     homesConnected: true,
     homesUnconnected: true,

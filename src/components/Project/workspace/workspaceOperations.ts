@@ -90,6 +90,7 @@ export function getAssetTypeLabel(asset: SavedMapAsset): string {
   if (item.assetType === "duct" || raw.includes("duct")) return "Duct";
   if (item.assetType === "cable" || raw.includes("cable") || asset.geometry?.type === "LineString") return "Cable";
   if (item.assetType === "distribution-point" || raw.includes("distribution") || raw.includes("dp") || raw.includes("sb")) return "DP";
+  if (item.assetType === "data-centre" || raw.includes("data centre") || raw.includes("data center") || raw.includes("datacentre")) return "Data Centre";
   if (item.assetType === "chamber" || raw.includes("chamber")) return "Chamber";
   if (item.assetType === "pole" || raw.includes("pole")) return "Pole";
   if (item.assetType === "street-cab" || raw.includes("cab")) return "Street cab";
@@ -135,7 +136,7 @@ export function getDailyProgressTeamColour(team: DailyProgressTeam) {
 
 function isCloseoutAsset(asset: SavedMapAsset): boolean {
   if (asset.assetType === "home" || asset.assetType === "area") return false;
-  return ["Duct", "Cable", "DP", "Chamber", "Pole", "Street cab", "Joint"].includes(getAssetTypeLabel(asset));
+  return ["Duct", "Cable", "DP", "Data Centre", "Chamber", "Pole", "Street cab", "Joint"].includes(getAssetTypeLabel(asset));
 }
 
 function hasGps(asset: SavedMapAsset): boolean {

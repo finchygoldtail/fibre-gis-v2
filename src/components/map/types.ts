@@ -3,6 +3,7 @@ export type AssetType =
   | "ag-joint"
   | "joint"
   | "street-cab"
+  | "data-centre"
   | "pole"
   | "distribution-point"
   | "chamber"

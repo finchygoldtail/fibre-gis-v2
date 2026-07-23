@@ -237,6 +237,7 @@ const defaultWorkspaceLayers: WorkspaceLayerVisibility = {
   poles: false,
   chambers: false,
   streetCabs: false,
+  dataCentres: true,
   homes: false,
   homesConnected: true,
   homesUnconnected: true,
@@ -259,6 +260,7 @@ const workspaceLayerOptions: {
   { key: "poles", label: "Poles" },
   { key: "chambers", label: "Chambers" },
   { key: "streetCabs", label: "Street Cabs" },
+  { key: "dataCentres", label: "Data Centres" },
   { key: "homes", label: "Homes" },
   { key: "homesConnected", label: "Connected Homes" },
   { key: "homesUnconnected", label: "Unconnected Homes" },
@@ -1587,6 +1589,7 @@ export default function ProjectWorkspace({
       poles: true,
       chambers: true,
       streetCabs: false,
+      dataCentres: true,
       homes: false,
       other: false,
     });
@@ -3230,6 +3233,16 @@ export default function ProjectWorkspace({
         text.includes("cabinet")
       );
     });
+    const dataCentreAssets = workspaceAssets.filter((asset) => {
+      const text = getWorkspaceAssetLayerText(asset);
+      return (
+        hasPointGeometry(asset) &&
+        (text.includes("data centre") ||
+          text.includes("data center") ||
+          text.includes("datacentre") ||
+          text.includes("datacenter"))
+      );
+    });
 
     return {
       projectBoundary: projectArea ? 1 : 0,
@@ -3242,6 +3255,7 @@ export default function ProjectWorkspace({
       poles: poleAssets.length,
       chambers: chamberAssets.length,
       streetCabs: streetCabAssets.length,
+      dataCentres: dataCentreAssets.length,
       homes: homesByKey.size,
       homesConnected: connectedHomes.length,
       homesUnconnected: unconnectedHomes.length,
@@ -3259,6 +3273,7 @@ export default function ProjectWorkspace({
           poleAssets.length -
           chamberAssets.length -
           streetCabAssets.length -
+          dataCentreAssets.length -
           homesByKey.size,
       ),
     } as Record<keyof WorkspaceLayerVisibility, number>;
@@ -3343,6 +3358,7 @@ export default function ProjectWorkspace({
       poles: false,
       chambers: false,
       streetCabs: false,
+      dataCentres: false,
       homes: false,
       other: false,
     });
@@ -3369,6 +3385,7 @@ export default function ProjectWorkspace({
       poles: false,
       chambers: false,
       streetCabs: false,
+      dataCentres: false,
       homes: false,
       other: false,
     });
@@ -3401,6 +3418,9 @@ export default function ProjectWorkspace({
     (selectedAssetTypeText.includes("joint") ||
       selectedAssetTypeText.includes("cab") ||
       selectedAssetTypeText.includes("exchange") ||
+      selectedAssetTypeText.includes("data-centre") ||
+      selectedAssetTypeText.includes("data centre") ||
+      selectedAssetTypeText.includes("data center") ||
       selectedAssetTypeText.includes("cmj") ||
       selectedAssetTypeText.includes("midj") ||
       selectedAssetTypeText.includes("lmj")),
@@ -3690,6 +3710,7 @@ export default function ProjectWorkspace({
           cables: false,
           dropCables: false,
           streetCabs: false,
+          dataCentres: false,
           homes: false,
         }}
         networkState={networkState}

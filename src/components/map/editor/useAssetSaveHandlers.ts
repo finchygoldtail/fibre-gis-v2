@@ -500,6 +500,8 @@ export function useAssetSaveHandlers({
     if (!jointName.trim()) {
       if (assetType === "street-cab") {
         alert("Enter a street cab name.");
+      } else if (assetType === "data-centre") {
+        alert("Enter a data centre name.");
       } else if (assetType === "pole") {
         alert("Enter a pole name.");
       } else if (assetType === "distribution-point") {

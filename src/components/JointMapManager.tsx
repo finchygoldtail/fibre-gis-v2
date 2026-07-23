@@ -972,6 +972,15 @@ function FreeLeafletBaseLayer({
 function inferAssetTypeFromName(name: string): AssetType {
   const upper = String(name || "").toUpperCase();
   if (
+    upper.includes("DATA CENTRE") ||
+    upper.includes("DATA CENTER") ||
+    upper.includes("DATACENTRE") ||
+    upper.includes("DATACENTER") ||
+    upper.includes(" DC ")
+  ) {
+    return "data-centre";
+  }
+  if (
     upper.includes("-SC") ||
     upper.includes("STREET CAB") ||
     upper.includes("CAB")
@@ -5561,6 +5570,7 @@ export default function JointMapManager({
               >
                 <option value="ag-joint">AG Joint</option>
                 <option value="street-cab">Street Cab</option>
+                <option value="data-centre">Data Centre</option>
                 <option value="pole">Pole</option>
                 <option value="distribution-point">Distribution Point</option>
                 <option value="chamber">Chamber</option>

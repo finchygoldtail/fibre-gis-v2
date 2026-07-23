@@ -1,6 +1,7 @@
 export type NamedAssetType =
   | "ag-joint"
   | "street-cab"
+  | "data-centre"
   | "pole"
   | "distribution-point"
   | "duct"
@@ -12,6 +13,8 @@ export function getAssetLabel(assetType: NamedAssetType): string {
       return "AG Joint";
     case "street-cab":
       return "Street Cab";
+    case "data-centre":
+      return "Data Centre";
     case "pole":
       return "Pole";
     case "distribution-point":

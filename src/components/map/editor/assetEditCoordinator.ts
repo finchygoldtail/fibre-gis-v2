@@ -81,6 +81,7 @@ export function syncDpOperationalStatusOnAsset<T extends Record<string, any>>(
 
 export function getPointJointType(assetType: AssetType, fallbackJointType: string): string {
   if (assetType === "street-cab") return "Street Cab";
+  if (assetType === "data-centre") return "Data Centre";
   if (assetType === "pole") return "Pole";
   if (assetType === "distribution-point") return "Distribution Point";
   if (assetType === "chamber") return "Chamber";

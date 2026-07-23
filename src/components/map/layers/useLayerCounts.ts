@@ -152,6 +152,18 @@ export function useLayerCounts({
       );
     };
 
+    const isDataCentre = (asset: SavedMapAsset) => {
+      if (!hasPointGeometry(asset)) return false;
+      const text = textForAsset(asset);
+      return (
+        norm((asset as any).assetType) === "data-centre" ||
+        text.includes("data centre") ||
+        text.includes("data center") ||
+        text.includes("datacentre") ||
+        text.includes("datacenter")
+      );
+    };
+
     const isJointSubtype = (asset: SavedMapAsset, token: string) =>
       isJoint(asset) && textForAsset(asset).includes(token);
 
@@ -354,6 +366,7 @@ export function useLayerCounts({
       mmjJoints: visibleProjectAssets.filter((asset) => isJointSubtype(asset, "mmj")).length,
       lmjJoints: visibleProjectAssets.filter((asset) => isJointSubtype(asset, "lmj")).length,
       streetCabs: visibleProjectAssets.filter(isStreetCab).length,
+      dataCentres: visibleProjectAssets.filter(isDataCentre).length,
       poles: visibleProjectAssets.filter(isPole).length,
       newPoles: visibleProjectAssets.filter((asset) => {
         const text = textForAsset(asset);

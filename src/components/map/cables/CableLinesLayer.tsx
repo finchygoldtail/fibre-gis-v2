@@ -377,7 +377,7 @@ function getEndpointOptionPriority(asset: SavedMapAsset): number {
   if (text.includes("chamber") || text.includes("fw")) return 2;
   if (text.includes("pole")) return 3;
   if (text.includes("street") || text.includes("cab")) return 4;
-  if (text.includes("exchange")) return 5;
+  if (text.includes("exchange") || text.includes("data centre") || text.includes("data center") || text.includes("datacentre")) return 5;
   return 9;
 }
 

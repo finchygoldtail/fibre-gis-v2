@@ -47,6 +47,7 @@ type LayerVisibility = {
   mmjJoints?: boolean;
   lmjJoints?: boolean;
   streetCabs: boolean;
+  dataCentres?: boolean;
   poles: boolean;
   distributionPoints: boolean;
   ohDpJoints?: boolean;
@@ -283,6 +284,34 @@ function createHomeIcon(fill = "#94a3b8", border = "#111827", glow = "rgba(15, 2
   });
 }
 
+function createDataCentreIcon() {
+  return L.divIcon({
+    className: "",
+    html: `
+      <div style="
+        width: 28px;
+        height: 28px;
+        display: grid;
+        place-items: center;
+        filter: drop-shadow(0 0 9px rgba(34,211,238,0.75));
+      ">
+        <svg width="28" height="28" viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="4" y="3" width="20" height="22" rx="4" fill="#0f172a" stroke="#22d3ee" stroke-width="2.2"/>
+          <rect x="8" y="7" width="12" height="3.2" rx="1.2" fill="#38bdf8"/>
+          <rect x="8" y="12.4" width="12" height="3.2" rx="1.2" fill="#67e8f9"/>
+          <rect x="8" y="17.8" width="12" height="3.2" rx="1.2" fill="#38bdf8"/>
+          <circle cx="21.3" cy="8.6" r="1.2" fill="#a3e635"/>
+          <circle cx="21.3" cy="14" r="1.2" fill="#a3e635"/>
+          <circle cx="21.3" cy="19.4" r="1.2" fill="#a3e635"/>
+        </svg>
+      </div>
+    `,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+    popupAnchor: [0, -14],
+  });
+}
+
 
 function normaliseStatus(value?: string | null): string {
   return String(value || "")
@@ -442,6 +471,7 @@ function isEngineeringCableDrawTargetAsset(asset: SavedMapAsset): boolean {
   if (assetType === "pole") return true;
   if (assetType === "chamber") return true;
   if (assetType === "street-cab") return true;
+  if (assetType === "data-centre" || assetType === "data-center") return true;
   if (assetType === "ag-joint" || assetType === "joint" || assetType.includes("joint")) return true;
   if (jointType.includes("joint")) return true;
 
@@ -459,11 +489,15 @@ const streetCabIcon = createSquareIcon("#2563eb", "#ffffff");
 const chamberIcon = createSquareIcon("#6b7280", "#ffffff");
 const agJointIcon = createCircleIcon("#10b981", "#ffffff");
 const poleIcon = createCircleIcon("#8b5a2b", "#ffffff");
+const dataCentreIcon = createDataCentreIcon();
 
 function isVisible(asset: SavedMapAsset, visibleLayers: LayerVisibility): boolean {
   const layers = visibleLayers as any;
 
   switch (asset.assetType) {
+    case "data-centre":
+      return layers.dataCentres !== false;
+
     case "street-cab":
       return visibleLayers.streetCabs;
 
@@ -769,6 +803,7 @@ function getIconForAsset(
   if (asset.assetType === "distribution-point") {
     return createWifiSignalIcon(getDistributionPointColor(asset), "#ffffff");
   }
+  if (asset.assetType === "data-centre") return dataCentreIcon;
   if (asset.assetType === "street-cab") return streetCabIcon;
   if ((asset.assetType === "chamber" || asset.assetType === "pole") && isPiaQaModeEnabled(visibleLayers || {})) {
     return getPiaQaIconForAsset(asset);

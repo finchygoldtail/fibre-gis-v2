@@ -25,6 +25,7 @@ export function getAssetTypeLabel(asset: SavedMapAsset | null | undefined): stri
   const item = (asset || {}) as any;
 
   if (item.assetType === "street-cab") return "Street Cab";
+  if (item.assetType === "data-centre") return "Data Centre";
   if (item.assetType === "distribution-point") return "Distribution Point";
   if (item.assetType === "duct") {
     const count = Number(item.ductCount || 1);
