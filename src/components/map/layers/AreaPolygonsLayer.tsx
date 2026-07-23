@@ -46,46 +46,53 @@ const permitRoadworksIcon = L.divIcon({
   html: `
     <div style="
       position: relative;
-      width: 46px;
-      height: 42px;
+      width: 58px;
+      height: 50px;
       display: grid;
       place-items: center;
       filter: drop-shadow(0 8px 12px rgba(15, 23, 42, 0.38));
     ">
-      <svg width="46" height="42" viewBox="0 0 46 42" aria-hidden="true">
+      <svg width="58" height="50" viewBox="0 0 58 50" aria-hidden="true">
         <path
-          d="M23 3 L44 39 H2 Z"
+          d="M29 3 L55 47 H3 Z"
           fill="#ffffff"
           stroke="#e11d48"
-          stroke-width="5"
+          stroke-width="6"
           stroke-linejoin="round"
         />
         <path
-          d="M7.5 33.5 L16.5 22.5 C18 20.6 20.8 20.6 22.2 22.6 L29.8 33.5 Z"
+          d="M8.5 39 L19 28 C20.8 26.1 24 26.4 25.4 28.7 L31.8 39 Z"
           fill="#111827"
         />
-        <circle cx="21.6" cy="14.2" r="3.2" fill="#111827" />
+        <circle cx="25" cy="17" r="4" fill="#111827" />
         <path
-          d="M20.6 17.2 L18 26.5 M19.4 18.4 L25.4 22.8 M19 23.5 L14.5 30.8 M22 25 L27.6 32.8 M22.8 18.1 L27.7 14.7"
+          d="M24 21 L20.5 31 M22.8 23.5 L31.8 27.2 M21 30.5 L15.8 38 M22.6 31 L30.5 38.2"
           fill="none"
           stroke="#111827"
-          stroke-width="4"
+          stroke-width="5"
           stroke-linecap="round"
           stroke-linejoin="round"
         />
         <path
-          d="M23.3 12.6 C26 13.2 27.9 14.8 28.8 17.2"
+          d="M31.5 15.5 C35.4 16.6 38.2 19 39.4 22.8"
           fill="none"
           stroke="#111827"
-          stroke-width="2.8"
+          stroke-width="4"
+          stroke-linecap="round"
+        />
+        <path
+          d="M35.8 25.5 L41.5 39"
+          fill="none"
+          stroke="#111827"
+          stroke-width="3"
           stroke-linecap="round"
         />
       </svg>
     </div>
   `,
-  iconSize: [46, 42],
-  iconAnchor: [23, 39],
-  popupAnchor: [0, -30],
+  iconSize: [58, 50],
+  iconAnchor: [29, 47],
+  popupAnchor: [0, -38],
 });
 
 function getPermitDetails(asset: SavedMapAsset): PermitDetails {
