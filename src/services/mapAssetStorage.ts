@@ -259,31 +259,32 @@ function getAssetStableId(asset: any): string {
   return String(asset?.id ?? asset?.assetId ?? asset?.properties?.id ?? "").trim();
 }
 
-function isCableWipeCoveredByExplicitDeletes(
+function isBucketWipeCoveredByExplicitDeletes(
   previousAssets: any[],
   nextAssets: any[],
   explicitDeletedAssetIds: string[] | undefined,
+  bucket: keyof AssetInventory,
 ): boolean {
   const deletedIds = new Set(
     (explicitDeletedAssetIds ?? []).map((id) => String(id).trim()).filter(Boolean),
   );
   if (deletedIds.size === 0) return false;
 
-  const nextCableIds = new Set(
+  const nextBucketIds = new Set(
     nextAssets
-      .filter((asset) => getAssetBucket(asset) === "cables")
+      .filter((asset) => getAssetBucket(asset) === bucket)
       .map(getAssetStableId)
       .filter(Boolean),
   );
 
-  const missingCableIds = previousAssets
-    .filter((asset) => getAssetBucket(asset) === "cables")
+  const missingBucketIds = previousAssets
+    .filter((asset) => getAssetBucket(asset) === bucket)
     .map(getAssetStableId)
-    .filter((id) => id && !nextCableIds.has(id));
+    .filter((id) => id && !nextBucketIds.has(id));
 
   return (
-    missingCableIds.length > 0 &&
-    missingCableIds.every((id) => deletedIds.has(id))
+    missingBucketIds.length > 0 &&
+    missingBucketIds.every((id) => deletedIds.has(id))
   );
 }
 
@@ -310,16 +311,26 @@ function buildDestructiveSaveError(
   if (
     previous.cables > 0 &&
     next.cables === 0 &&
-    !isCableWipeCoveredByExplicitDeletes(
+    !isBucketWipeCoveredByExplicitDeletes(
       options.previousAssets,
       options.nextAssets,
       options.explicitDeletedAssetIds,
+      "cables",
     )
   ) {
     return `Refusing to wipe cable assets. Existing cables=${previous.cables}, next cables=0.`;
   }
 
-  if (previous.polygons > 0 && next.polygons === 0) {
+  if (
+    previous.polygons > 0 &&
+    next.polygons === 0 &&
+    !isBucketWipeCoveredByExplicitDeletes(
+      options.previousAssets,
+      options.nextAssets,
+      options.explicitDeletedAssetIds,
+      "polygons",
+    )
+  ) {
     return `Refusing to wipe polygon assets. Existing polygons=${previous.polygons}, next polygons=0.`;
   }
 
