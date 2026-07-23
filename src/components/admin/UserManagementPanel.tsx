@@ -52,11 +52,15 @@ const roleOptions: UserRole[] = [
 ];
 
 export default function UserManagementPanel({ visible, onClose }: Props) {
-  const { profile, activeBusinessId } = useUserRole();
+  const { profile, activeBusinessId, setActiveBusinessId } = useUserRole();
   const canManageUsers = profile?.permissions.manageUsers === true;
   const currentBusinessId = normaliseBusinessId(activeBusinessId || BUSINESS_ID);
 
   const [users, setUsers] = useState<AppUserProfile[]>([]);
+  const [businessOptions, setBusinessOptions] = useState<string[]>([
+    currentBusinessId,
+    BUSINESS_ID,
+  ]);
   const [areaOptions, setAreaOptions] = useState<AreaOption[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingAreas, setIsLoadingAreas] = useState(false);
@@ -80,6 +84,7 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
 
     try {
       const profileDocs = new Map<string, AppUserProfile>();
+      const businessIds = new Set<string>([currentBusinessId, BUSINESS_ID]);
 
       const readUserCollection = async (pathName: "business" | "root") => {
         const usersRef =
@@ -95,6 +100,8 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
           const data = item.data();
           const role = normaliseUserRole(data.role);
           const allowedAreas = normaliseAllowedAreasForRole(role, data.allowedAreas, []);
+          const businessId = normaliseBusinessId(data.businessId);
+          businessIds.add(businessId);
 
           profileDocs.set(item.id, {
             uid: item.id,
@@ -107,7 +114,7 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
             },
             active: data.active !== false,
             forcePasswordChange: data.forcePasswordChange === true,
-            businessId: normaliseBusinessId(data.businessId),
+            businessId,
             sector: normaliseSector(data.sector),
             allowedSectors: normaliseAllowedSectors(data.allowedSectors, [
               DEFAULT_SECTOR,
@@ -129,6 +136,15 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
         console.warn("Could not load root user profiles", err);
       }
 
+      try {
+        const businessesSnapshot = await getDocs(collection(db, "businesses"));
+        businessesSnapshot.docs.forEach((item) => {
+          businessIds.add(normaliseBusinessId(item.id));
+        });
+      } catch (err) {
+        console.warn("Could not load business ids", err);
+      }
+
       setUsers(
         Array.from(profileDocs.values()).sort((a, b) =>
           (a.email || a.name || a.uid).localeCompare(
@@ -136,6 +152,7 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
           ),
         ),
       );
+      setBusinessOptions(Array.from(businessIds).filter(Boolean).sort((a, b) => a.localeCompare(b)));
     } catch (err) {
       console.error("Failed to load users", err);
       setSaveError(
@@ -218,6 +235,24 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
         (user) => normaliseBusinessId(user.businessId) === currentBusinessId,
       ),
     [currentBusinessId, users],
+  );
+
+  const businessChoices = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [
+            currentBusinessId,
+            BUSINESS_ID,
+            profile?.businessId || "",
+            ...businessOptions,
+            ...users.map((user) => user.businessId),
+          ]
+            .map(normaliseBusinessId)
+            .filter(Boolean),
+        ),
+      ).sort((a, b) => a.localeCompare(b)),
+    [businessOptions, currentBusinessId, profile?.businessId, users],
   );
 
   if (!visible) return null;
@@ -493,6 +528,22 @@ export default function UserManagementPanel({ visible, onClose }: Props) {
               Add users and assign operational access.
             </div>
           </div>
+
+          <label style={companyScopeStyle}>
+            <span>Company</span>
+            <select
+              value={currentBusinessId}
+              onChange={(event) => setActiveBusinessId(event.target.value)}
+              style={companySelectStyle}
+              disabled={isSaving}
+            >
+              {businessChoices.map((businessId) => (
+                <option key={businessId} value={businessId}>
+                  {businessId}
+                </option>
+              ))}
+            </select>
+          </label>
 
           <button type="button" onClick={onClose} style={smallButtonStyle}>
             Close
@@ -802,16 +853,16 @@ const panelStyle: React.CSSProperties = {
   left: "50%",
   transform: "translateX(-50%)",
   width: "min(1120px, calc(100vw - 32px))",
-  background: "#111827",
-  color: "white",
-  border: "1px solid #334155",
+  background: "#fbfaf7",
+  color: "#1f2933",
+  border: "1px solid #ddd8cf",
   borderRadius: 16,
   padding: 16,
   overflow: "hidden",
   display: "flex",
   flexDirection: "column",
   zIndex: 20001,
-  boxShadow: "0 24px 80px rgba(0,0,0,0.65)",
+  boxShadow: "0 24px 80px rgba(15,23,42,0.22)",
   boxSizing: "border-box",
 };
 
@@ -868,14 +919,34 @@ const titleStyle: React.CSSProperties = {
 };
 
 const mutedStyle: React.CSSProperties = {
-  color: "#94a3b8",
+  color: "#64748b",
   fontSize: 12,
   marginTop: 3,
 };
 
+const companyScopeStyle: React.CSSProperties = {
+  display: "grid",
+  gap: 4,
+  minWidth: 220,
+  marginLeft: "auto",
+  color: "#64748b",
+  fontSize: 11,
+  fontWeight: 900,
+};
+
+const companySelectStyle: React.CSSProperties = {
+  border: "1px solid #d8d2c8",
+  background: "#ffffff",
+  color: "#1f2933",
+  borderRadius: 9,
+  padding: "8px 10px",
+  fontWeight: 900,
+  outline: "none",
+};
+
 const cardStyle: React.CSSProperties = {
-  background: "#1f2937",
-  border: "1px solid #374151",
+  background: "#ffffff",
+  border: "1px solid #ddd8cf",
   borderRadius: 12,
   padding: 12,
   overflowY: "auto",
@@ -903,7 +974,7 @@ const sectionTitleStyle: React.CSSProperties = {
 
 const labelStyle: React.CSSProperties = {
   display: "block",
-  color: "#cbd5e1",
+  color: "#334155",
   fontSize: 11,
   fontWeight: 900,
   marginTop: 9,
@@ -913,9 +984,9 @@ const labelStyle: React.CSSProperties = {
 const inputStyle: React.CSSProperties = {
   width: "100%",
   boxSizing: "border-box",
-  border: "1px solid #4b5563",
-  background: "#0f172a",
-  color: "white",
+  border: "1px solid #d8d2c8",
+  background: "#ffffff",
+  color: "#1f2933",
   borderRadius: 9,
   padding: "9px 10px",
   marginTop: 3,
@@ -935,9 +1006,9 @@ const primaryButtonStyle: React.CSSProperties = {
 
 const successStyle: React.CSSProperties = {
   marginTop: 10,
-  color: "#bbf7d0",
-  background: "#14532d",
-  border: "1px solid #16a34a",
+  color: "#166534",
+  background: "#dcfce7",
+  border: "1px solid #86efac",
   borderRadius: 9,
   padding: "8px 10px",
   fontSize: 12,
@@ -956,9 +1027,9 @@ const errorStyle: React.CSSProperties = {
 };
 
 const smallButtonStyle: React.CSSProperties = {
-  border: "1px solid #4b5563",
-  background: "#374151",
-  color: "white",
+  border: "1px solid #d8d2c8",
+  background: "#ffffff",
+  color: "#1f2933",
   borderRadius: 9,
   padding: "7px 10px",
   fontWeight: 900,
@@ -980,9 +1051,9 @@ const userRowStyle: React.CSSProperties = {
   gridTemplateColumns: "minmax(220px, 1fr) minmax(170px, 210px)",
   gap: 10,
   padding: 12,
-  border: "1px solid #374151",
+  border: "1px solid #e2ded7",
   borderRadius: 10,
-  background: "#0f172a",
+  background: "#fbfaf7",
   alignItems: "start",
 };
 
@@ -996,7 +1067,7 @@ function getUserRowStyle(isNarrowViewport: boolean): React.CSSProperties {
 }
 
 const userMetaStyle: React.CSSProperties = {
-  color: "#94a3b8",
+  color: "#64748b",
   fontSize: 11,
   overflow: "hidden",
   textOverflow: "ellipsis",
@@ -1020,9 +1091,9 @@ const removeButtonStyle: React.CSSProperties = {
 
 const areaToggleButtonStyle: React.CSSProperties = {
   gridColumn: "1 / -1",
-  border: "1px solid #334155",
-  background: "#111827",
-  color: "white",
+  border: "1px solid #d8d2c8",
+  background: "#ffffff",
+  color: "#1f2933",
   borderRadius: 9,
   padding: "9px 10px",
   fontWeight: 900,
@@ -1034,9 +1105,9 @@ const areaToggleButtonStyle: React.CSSProperties = {
 };
 
 const areaCountPillStyle: React.CSSProperties = {
-  color: "#bfdbfe",
-  background: "#1e3a8a",
-  border: "1px solid #2563eb",
+  color: "#1d4ed8",
+  background: "#eaf2ff",
+  border: "1px solid #93c5fd",
   borderRadius: 999,
   padding: "2px 7px",
   fontSize: 10,
@@ -1045,8 +1116,8 @@ const areaCountPillStyle: React.CSSProperties = {
 
 const areaPanelStyle: React.CSSProperties = {
   gridColumn: "1 / -1",
-  border: "1px solid #334155",
-  background: "#111827",
+  border: "1px solid #e2ded7",
+  background: "#ffffff",
   borderRadius: 10,
   padding: 10,
 };
@@ -1060,9 +1131,9 @@ const areaActionRowStyle: React.CSSProperties = {
 };
 
 const miniButtonStyle: React.CSSProperties = {
-  border: "1px solid #4b5563",
-  background: "#1f2937",
-  color: "white",
+  border: "1px solid #d8d2c8",
+  background: "#ffffff",
+  color: "#1f2933",
   borderRadius: 8,
   padding: "7px 8px",
   fontSize: 12,
@@ -1083,8 +1154,8 @@ const areaCheckboxRowStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: 8,
-  border: "1px solid #1f2937",
-  background: "#0f172a",
+  border: "1px solid #e2ded7",
+  background: "#fbfaf7",
   borderRadius: 8,
   padding: "7px 8px",
   fontSize: 12,
