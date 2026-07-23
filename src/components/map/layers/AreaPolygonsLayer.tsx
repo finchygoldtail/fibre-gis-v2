@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { Polygon, Popup, Tooltip, useMap, useMapEvents } from "react-leaflet";
-import type { LeafletMouseEvent } from "leaflet";
+import { Fragment, useState } from "react";
+import { Marker, Polygon, Popup, Tooltip, useMap, useMapEvents } from "react-leaflet";
+import L, { type LeafletMouseEvent } from "leaflet";
 import type { PermitDetails, SavedMapAsset } from "../types";
 
 type Props = {
@@ -41,6 +41,59 @@ function getColor(id: string) {
 
 const AREA_LABEL_MIN_ZOOM = 15;
 
+const permitRoadworksIcon = L.divIcon({
+  className: "",
+  html: `
+    <div style="
+      position: relative;
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      filter: drop-shadow(0 8px 12px rgba(15, 23, 42, 0.35));
+    ">
+      <div style="
+        width: 0;
+        height: 0;
+        border-left: 19px solid transparent;
+        border-right: 19px solid transparent;
+        border-bottom: 34px solid #f59e0b;
+      "></div>
+      <div style="
+        position: absolute;
+        top: 13px;
+        left: 12px;
+        right: 12px;
+        height: 4px;
+        border-radius: 999px;
+        background: #111827;
+        transform: rotate(-22deg);
+      "></div>
+      <div style="
+        position: absolute;
+        top: 19px;
+        left: 11px;
+        right: 11px;
+        height: 4px;
+        border-radius: 999px;
+        background: #111827;
+        transform: rotate(22deg);
+      "></div>
+      <div style="
+        position: absolute;
+        top: 21px;
+        color: #111827;
+        font-size: 13px;
+        font-weight: 900;
+        line-height: 1;
+      ">!</div>
+    </div>
+  `,
+  iconSize: [42, 42],
+  iconAnchor: [21, 34],
+  popupAnchor: [0, -30],
+});
+
 function getPermitDetails(asset: SavedMapAsset): PermitDetails {
   return {
     status: "draft",
@@ -80,6 +133,24 @@ function getPermitVisual(asset: SavedMapAsset) {
   return { color: "#14b8a6", fill: 0.2, label: daysLeft === null ? "Permit zone" : `${daysLeft} days left` };
 }
 
+function getPolygonMarkerPosition(positions: [number, number][]): [number, number] {
+  const validPositions = positions.filter(
+    ([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng),
+  );
+
+  if (!validPositions.length) return [0, 0];
+
+  const totals = validPositions.reduce(
+    (acc, [lat, lng]) => ({
+      lat: acc.lat + lat,
+      lng: acc.lng + lng,
+    }),
+    { lat: 0, lng: 0 },
+  );
+
+  return [totals.lat / validPositions.length, totals.lng / validPositions.length];
+}
+
 const labelButton: React.CSSProperties = {
   marginLeft: 6,
   border: "none",
@@ -106,6 +177,7 @@ export default function AreaPolygonsLayer({
 }: Props) {
   const map = useMap();
   const [mapZoom, setMapZoom] = useState(() => map.getZoom());
+  const [revealedPermitZoneId, setRevealedPermitZoneId] = useState<string | null>(null);
 
   useMapEvents({
     click() {
@@ -134,12 +206,22 @@ export default function AreaPolygonsLayer({
         const isActive = asset.id === activeProjectId;
         const isSecretEditing = asset.id === editingAreaId;
         const isBulkSelected = selectedAreaIds.includes(asset.id);
+        const isPermitZoneRevealed =
+          isPermitZone &&
+          (revealedPermitZoneId === asset.id ||
+            isSecretEditing ||
+            isBulkSelected ||
+            polygonBulkSelectEnabled);
         const isInteractive =
           isPermitZone ||
           polygonBulkSelectEnabled ||
           (polygonEditingEnabled && isSecretEditing);
         const shouldShowLabel =
-          isPermitZone || isActive || isSecretEditing || mapZoom >= AREA_LABEL_MIN_ZOOM;
+          (isPermitZone && isPermitZoneRevealed) ||
+          isActive ||
+          isSecretEditing ||
+          mapZoom >= AREA_LABEL_MIN_ZOOM;
+        const shouldShowPolygon = !isPermitZone || isPermitZoneRevealed;
 
         const unlock = (event?: LeafletMouseEvent | React.MouseEvent) => {
           event?.originalEvent?.stopPropagation?.();
@@ -153,9 +235,84 @@ export default function AreaPolygonsLayer({
           onUnlockPolygon?.(null);
         };
 
+        const renderPermitPopup = () =>
+          isPermitZone && permitDetails ? (
+            <Popup>
+              <div style={{ minWidth: 230 }}>
+                <b>{asset.name}</b>
+                <br />
+                <span style={{ color: permitVisual?.color, fontWeight: 900 }}>
+                  {permitVisual?.label}
+                </span>
+                <br />
+                Permit: {permitDetails.permitNumber || "Not loaded"}
+                <br />
+                Street: {permitDetails.streetName || "Not set"}
+                <br />
+                Dates: {permitDetails.startDate || "?"} to {permitDetails.endDate || "?"}
+                {permitDetails.issueNote ? (
+                  <>
+                    <br />
+                    Issue: {permitDetails.issueNote}
+                  </>
+                ) : null}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
+                  <button onClick={() => onEdit(asset)}>Edit permit</button>
+                  <button
+                    onClick={() => {
+                      const currentEnd = permitDetails.endDate || new Date().toISOString().slice(0, 10);
+                      const extension = window.prompt("New permit end date (YYYY-MM-DD)", currentEnd);
+                      if (!extension) return;
+                      onUpdatePermit?.(asset, {
+                        ...permitDetails,
+                        endDate: extension.slice(0, 10),
+                        status: "applied",
+                      });
+                    }}
+                  >
+                    Extend
+                  </button>
+                  <button
+                    onClick={() =>
+                      onUpdatePermit?.(asset, {
+                        ...permitDetails,
+                        status: "closed",
+                        endDate: permitDetails.endDate || new Date().toISOString().slice(0, 10),
+                      })
+                    }
+                  >
+                    Close now
+                  </button>
+                  <button onClick={() => setRevealedPermitZoneId(null)}>Hide zone</button>
+                  <button onClick={() => onDelete(asset.id)}>Delete</button>
+                </div>
+              </div>
+            </Popup>
+          ) : null;
+
         return (
+          <Fragment key={asset.id}>
+            {isPermitZone && permitDetails ? (
+              <Marker
+                position={getPolygonMarkerPosition(positions)}
+                icon={permitRoadworksIcon}
+                eventHandlers={{
+                  click: (event) => {
+                    event.originalEvent?.stopPropagation();
+                    setRevealedPermitZoneId(asset.id);
+                  },
+                }}
+              >
+                <Tooltip sticky>
+                  {asset.name} - {permitVisual?.label}
+                </Tooltip>
+                {renderPermitPopup()}
+              </Marker>
+            ) : null}
+
+            {shouldShowPolygon ? (
           <Polygon
-            key={asset.id}
+            key={`${asset.id}-polygon`}
             positions={positions}
             interactive={isInteractive}
             pathOptions={{
@@ -188,58 +345,7 @@ export default function AreaPolygonsLayer({
                 : undefined
             }
           >
-            {isPermitZone && permitDetails ? (
-              <Popup>
-                <div style={{ minWidth: 230 }}>
-                  <b>{asset.name}</b>
-                  <br />
-                  <span style={{ color: permitVisual?.color, fontWeight: 900 }}>
-                    {permitVisual?.label}
-                  </span>
-                  <br />
-                  Permit: {permitDetails.permitNumber || "Not loaded"}
-                  <br />
-                  Street: {permitDetails.streetName || "Not set"}
-                  <br />
-                  Dates: {permitDetails.startDate || "?"} to {permitDetails.endDate || "?"}
-                  {permitDetails.issueNote ? (
-                    <>
-                      <br />
-                      Issue: {permitDetails.issueNote}
-                    </>
-                  ) : null}
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
-                    <button onClick={() => onEdit(asset)}>Edit permit</button>
-                    <button
-                      onClick={() => {
-                        const currentEnd = permitDetails.endDate || new Date().toISOString().slice(0, 10);
-                        const extension = window.prompt("New permit end date (YYYY-MM-DD)", currentEnd);
-                        if (!extension) return;
-                        onUpdatePermit?.(asset, {
-                          ...permitDetails,
-                          endDate: extension.slice(0, 10),
-                          status: "applied",
-                        });
-                      }}
-                    >
-                      Extend
-                    </button>
-                    <button
-                      onClick={() =>
-                        onUpdatePermit?.(asset, {
-                          ...permitDetails,
-                          status: "closed",
-                          endDate: permitDetails.endDate || new Date().toISOString().slice(0, 10),
-                        })
-                      }
-                    >
-                      Close now
-                    </button>
-                    <button onClick={() => onDelete(asset.id)}>Delete</button>
-                  </div>
-                </div>
-              </Popup>
-            ) : null}
+            {renderPermitPopup()}
 
             {isSecretEditing && (
               <Popup>
@@ -358,6 +464,8 @@ export default function AreaPolygonsLayer({
               </Tooltip>
             )}
           </Polygon>
+            ) : null}
+          </Fragment>
         );
       })}
     </>
