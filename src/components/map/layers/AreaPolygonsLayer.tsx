@@ -85,9 +85,13 @@ export default function AreaPolygonsLayer({
         const isActive = asset.id === activeProjectId;
         const isSecretEditing = asset.id === editingAreaId;
         const isBulkSelected = selectedAreaIds.includes(asset.id);
-        const isInteractive = polygonEditingEnabled || polygonBulkSelectEnabled || isSecretEditing;
+        const isInteractive =
+          polygonEditingEnabled ||
+          polygonBulkSelectEnabled ||
+          isSecretEditing ||
+          (isActive && Boolean(onUnlockPolygon));
         const shouldShowLabel =
-          isSecretEditing || mapZoom >= AREA_LABEL_MIN_ZOOM;
+          isActive || isSecretEditing || mapZoom >= AREA_LABEL_MIN_ZOOM;
 
         const unlock = (event?: LeafletMouseEvent | React.MouseEvent) => {
           event?.originalEvent?.stopPropagation?.();
@@ -117,9 +121,15 @@ export default function AreaPolygonsLayer({
             eventHandlers={
               isInteractive
                 ? {
-                    click: () => {
+                    click: (event) => {
                       if (polygonBulkSelectEnabled) {
                         onToggleSelect?.(asset.id);
+                        return;
+                      }
+                      if (isActive && onUnlockPolygon && event.originalEvent?.ctrlKey) {
+                        onUnlockPolygon(asset.id);
+                        onSelect(asset.id);
+                        onEdit(asset);
                         return;
                       }
                       onSelect(asset.id);
@@ -181,6 +191,24 @@ export default function AreaPolygonsLayer({
                   {asset.name}
                   {isBulkSelected ? " ✅" : ""}
                   {isSecretEditing ? " 🔓" : ""}
+                  {isActive && !isSecretEditing && onUnlockPolygon && (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onUnlockPolygon(asset.id);
+                        onSelect(asset.id);
+                        onEdit(asset);
+                      }}
+                      style={{
+                        ...labelButton,
+                        background: "#2563eb",
+                        color: "white",
+                      }}
+                    >
+                      Edit
+                    </button>
+                  )}
                   {isSecretEditing && (
                     <>
                       <button
