@@ -77,6 +77,39 @@ function isGlobalDuctOrCableAsset(asset: SavedMapAsset): boolean {
   );
 }
 
+function isGlobalHarrellicommsEndpointAsset(asset: SavedMapAsset): boolean {
+  const item = asset as any;
+  const text = [
+    item.assetType,
+    item.type,
+    item.jointType,
+    item.name,
+    item.label,
+    item.properties?.assetType,
+    item.properties?.type,
+  ]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    asset.geometry?.type === "Point" &&
+    (text.includes("data-centre") ||
+      text.includes("data center") ||
+      text.includes("data centre") ||
+      text.includes("datacentre") ||
+      text.includes("datacenter"))
+  );
+}
+
+function isGlobalHarrellicommsMapAsset(asset: SavedMapAsset): boolean {
+  return (
+    isGlobalDuctOrCableAsset(asset) ||
+    isPermitZoneAsset(asset) ||
+    isGlobalHarrellicommsEndpointAsset(asset)
+  );
+}
+
 
 
 function getAreaAccessNames(area: SavedMapAsset): string[] {
@@ -148,7 +181,7 @@ export function useProjectAreaView({
   const visibleProjectAssets = useMemo(() => {
     if (!activeProjectArea) {
       return canShowGlobalDuctsAndCables
-        ? allMapAssets.filter((asset) => isGlobalDuctOrCableAsset(asset) || isPermitZoneAsset(asset))
+        ? allMapAssets.filter(isGlobalHarrellicommsMapAsset)
         : [];
     }
 

@@ -499,6 +499,31 @@ function isEngineeringDrawingStreetCabAsset(asset: SavedMapAsset): boolean {
   return assetType === "street-cab" || assetType === "street cab" || assetType === "cabinet";
 }
 
+function isEngineeringDrawingDataCentreAsset(asset: SavedMapAsset): boolean {
+  const item = asset as any;
+  const text = [
+    item.assetType,
+    item.type,
+    item.jointType,
+    item.name,
+    item.label,
+    item.properties?.assetType,
+    item.properties?.type,
+  ]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    asset.geometry?.type === "Point" &&
+    (text.includes("data-centre") ||
+      text.includes("data center") ||
+      text.includes("data centre") ||
+      text.includes("datacentre") ||
+      text.includes("datacenter"))
+  );
+}
+
 function getEngineeringDrawingCableFibreCount(asset: SavedMapAsset): number | null {
   const item = asset as any;
   const candidates = [
@@ -553,6 +578,7 @@ function isEngineeringDrawingVisibleAsset(asset: SavedMapAsset): boolean {
   if (isEngineeringDrawingPoleAsset(asset)) return true;
   if (isEngineeringDrawingChamberAsset(asset)) return true;
   if (isEngineeringDrawingStreetCabAsset(asset)) return true;
+  if (isEngineeringDrawingDataCentreAsset(asset)) return true;
   if (isEngineeringDrawingTrunkCableAsset(asset)) return true;
 
   return false;
@@ -2087,7 +2113,8 @@ export default function JointMapManager({
                 isEngineeringDrawingDistributionPointAsset(asset) ||
                 isEngineeringDrawingPoleAsset(asset) ||
                 isEngineeringDrawingChamberAsset(asset) ||
-                isEngineeringDrawingStreetCabAsset(asset)),
+                isEngineeringDrawingStreetCabAsset(asset) ||
+                isEngineeringDrawingDataCentreAsset(asset)),
           )
         : networkSnapCandidateAssets,
     [engineeringDrawingSourceAssets, mapMode, networkSnapCandidateAssets],
@@ -6875,12 +6902,8 @@ export default function JointMapManager({
               });
             }}
             onEditAsset={(asset) => {
-              if (String((asset as any).assetType || "").toLowerCase() === "duct") {
-                setOpenDuctAsset(asset);
-                return;
-              }
-
               handleEditAsset(asset);
+              setIsPanelOpen(true);
             }}
           />
 

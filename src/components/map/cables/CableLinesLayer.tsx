@@ -1726,7 +1726,7 @@ export default function CableLinesLayer({
                         onEditAsset(asset);
                       }}
                     >
-                      Edit details
+                      {isDuct ? "Duct details" : "Edit details"}
                     </button>
 
                     {canEditCables ? (
@@ -1861,7 +1861,7 @@ export default function CableLinesLayer({
 
                 <div style={mobileCableButtonGridStyle}>
                   <button type="button" style={mobilePrimaryButtonStyle} onClick={() => onEditAsset(asset)}>
-                    {isDuct ? "Open Duct Editor" : "View / Edit"}
+                    {isDuct ? "Duct Details" : "View / Edit"}
                   </button>
                   {canEditCables ? (
                     <button
