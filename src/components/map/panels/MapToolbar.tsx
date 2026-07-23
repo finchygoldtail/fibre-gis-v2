@@ -419,8 +419,11 @@ export default function MapToolbar({
       </div>
 
       <div style={mapTopBarBrandStyle}>
-        <strong>Alistra GIS</strong>
-        <span>{searchScopeLabel}</span>
+        <img src="/Alistra GIS Logo.png" alt="Alistra GIS" style={mapTopBarLogoStyle} />
+        <div style={mapTopBarBrandTextStyle}>
+          <strong>Alistra GIS</strong>
+          <span>{searchScopeLabel}</span>
+        </div>
       </div>
 
       {searchCard}
@@ -556,8 +559,8 @@ const mapTopBarStyle = (isLayersOpen: boolean, isTablet: boolean): React.CSSProp
   height: isTablet ? 64 : 68,
   display: "grid",
   gridTemplateColumns: isTablet
-    ? "150px minmax(170px, 230px) minmax(220px, 1fr) minmax(260px, auto)"
-    : "120px minmax(190px, 290px) minmax(220px, 1fr) minmax(0, auto)",
+    ? "166px minmax(160px, 220px) minmax(240px, 420px) minmax(250px, auto)"
+    : "170px minmax(180px, 270px) minmax(260px, 460px) minmax(0, 1fr)",
   alignItems: "center",
   gap: isLayersOpen ? 8 : isTablet ? 8 : 12,
   padding: isTablet ? "7px 14px" : isLayersOpen ? "7px 14px" : "7px 24px",
@@ -565,8 +568,8 @@ const mapTopBarStyle = (isLayersOpen: boolean, isTablet: boolean): React.CSSProp
   borderTop: "0",
   borderLeft: "0",
   borderRadius: 0,
-  background: "linear-gradient(90deg, rgba(8,12,19,0.98), rgba(13,20,32,0.98) 48%, rgba(18,27,43,0.98))",
-  boxShadow: "0 12px 30px rgba(2,6,23,0.24)",
+  background: "rgba(250,250,248,0.96)",
+  boxShadow: "0 10px 28px rgba(15,23,42,0.12)",
   backdropFilter: "blur(12px)",
   overflow: "visible",
 });
@@ -591,9 +594,9 @@ const areaSelectorShellStyle: React.CSSProperties = {
 };
 
 const areaFallbackStyle: React.CSSProperties = {
-  border: "1px solid rgba(148,163,184,0.34)",
-  background: "rgba(15,23,42,0.72)",
-  color: "#f8fafc",
+  border: "1px solid rgba(203,213,225,0.9)",
+  background: "#ffffff",
+  color: "#111827",
   borderRadius: 10,
   padding: "10px 12px",
   fontWeight: 900,
@@ -603,12 +606,26 @@ const areaFallbackStyle: React.CSSProperties = {
 };
 
 const mapTopBarBrandStyle: React.CSSProperties = {
-  display: "grid",
-  gap: 2,
-  minWidth: 118,
-  color: "#f8fafc",
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  minWidth: 0,
+  color: "#111827",
   whiteSpace: "nowrap",
   order: 1,
+};
+
+const mapTopBarLogoStyle: React.CSSProperties = {
+  width: 38,
+  height: 38,
+  objectFit: "contain",
+  borderRadius: 10,
+};
+
+const mapTopBarBrandTextStyle: React.CSSProperties = {
+  minWidth: 0,
+  display: "grid",
+  gap: 2,
 };
 
 const searchShellStyle = (isMobile = false, isOpen = false): React.CSSProperties => ({
@@ -617,9 +634,10 @@ const searchShellStyle = (isMobile = false, isOpen = false): React.CSSProperties
   top: isMobile ? 8 : undefined,
   left: isMobile ? 8 : undefined,
   right: isMobile ? 8 : undefined,
-  width: isMobile ? "auto" : "100%",
+  width: isMobile ? "auto" : "min(100%, 460px)",
   minWidth: isMobile ? 0 : 280,
   alignSelf: isMobile ? undefined : "center",
+  justifySelf: isMobile ? undefined : "start",
   display: isMobile && !isOpen ? "none" : undefined,
   order: isMobile ? undefined : 3,
 });
@@ -756,7 +774,7 @@ const desktopActionRailStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "flex-end",
-  gap: 16,
+  gap: 12,
   overflow: "visible",
   whiteSpace: "nowrap",
 };
@@ -764,22 +782,22 @@ const desktopActionRailStyle: React.CSSProperties = {
 const workspaceDockStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: 14,
+  gap: 10,
   minWidth: 0,
   flex: "0 1 auto",
-  height: 52,
-  padding: "0 14px 0 18px",
+  height: 48,
+  padding: "0 12px 0 14px",
   borderRadius: 999,
-  background: "#0b111b",
-  border: "1px solid rgba(42,58,82,0.86)",
-  boxShadow: "0 18px 38px rgba(2,6,23,0.26)",
+  background: "#ffffff",
+  border: "1px solid rgba(203,213,225,0.9)",
+  boxShadow: "0 12px 26px rgba(15,23,42,0.08)",
   whiteSpace: "nowrap",
 };
 
 const workspacePrimaryButtonStyle: React.CSSProperties = {
   border: "none",
   background: "transparent",
-  color: "#f8fafc",
+  color: "#111827",
   cursor: "pointer",
   fontSize: 13,
   fontWeight: 900,
@@ -789,7 +807,7 @@ const workspacePrimaryButtonStyle: React.CSSProperties = {
 const workspaceButtonStyle: React.CSSProperties = {
   border: "none",
   background: "transparent",
-  color: "#9aa7ba",
+  color: "#64748b",
   cursor: "pointer",
   fontSize: 13,
   fontWeight: 800,
@@ -835,7 +853,7 @@ const messageButtonWrapStyle: React.CSSProperties = {
 
 const messageButtonStyle: React.CSSProperties = {
   background: "transparent",
-  color: "#e6edf7",
+  color: "#111827",
   border: "none",
   padding: 0,
   borderRadius: 0,
@@ -1159,7 +1177,7 @@ const mobileUserMenuWrapStyle: React.CSSProperties = {
 
 const actionButtonStyle: React.CSSProperties = {
   background: "transparent",
-  color: "#e6edf7",
+  color: "#111827",
   border: "none",
   padding: 0,
   borderRadius: 0,
@@ -1171,9 +1189,9 @@ const actionButtonStyle: React.CSSProperties = {
 };
 
 const refreshButtonStyle = (isRefreshing: boolean): React.CSSProperties => ({
-  background: isRefreshing ? "rgba(148,163,184,0.18)" : "transparent",
-  color: isRefreshing ? "#cbd5e1" : "#e6edf7",
-  border: isRefreshing ? "1px solid rgba(148,163,184,0.35)" : "none",
+  background: isRefreshing ? "#eef2ff" : "transparent",
+  color: isRefreshing ? "#1d4ed8" : "#111827",
+  border: isRefreshing ? "1px solid rgba(147,197,253,0.75)" : "none",
   padding: isRefreshing ? "7px 10px" : 0,
   borderRadius: isRefreshing ? 999 : 0,
   cursor: isRefreshing ? "wait" : "pointer",
@@ -1188,7 +1206,7 @@ const locationButtonStyle = (
   hasError: boolean,
 ): React.CSSProperties => ({
   background: active ? "#dcfce7" : hasError ? "#fee2e2" : "transparent",
-  color: active ? "#14532d" : hasError ? "#991b1b" : "#e6edf7",
+  color: active ? "#14532d" : hasError ? "#991b1b" : "#111827",
   border: active || hasError ? "1px solid rgba(34,197,94,0.55)" : "none",
   padding: active || hasError ? "7px 10px" : 0,
   borderRadius: active || hasError ? 999 : 0,

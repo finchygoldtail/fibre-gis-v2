@@ -5515,19 +5515,20 @@ export default function JointMapManager({
           height: isMobile ? "calc(100% - env(safe-area-inset-top, 0px) - 78px)" : "100%",
           zIndex: 1500,
           overflowY: "auto",
-          background: "#1f2937",
+          background: "rgba(250,250,248,0.98)",
           boxSizing: "border-box",
-          borderRight: "1px solid #374151",
+          borderRight: "1px solid rgba(203,213,225,0.86)",
+          boxShadow: "18px 0 44px rgba(15,23,42,0.12)",
           transform: isPanelOpen ? "translateX(0)" : "translateX(-105%)",
           transition: "transform 0.3s ease",
         }}
       >
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: 11, color: "#60a5fa", fontWeight: 900, letterSpacing: 0.5, textTransform: "uppercase" }}>
+            <div style={{ fontSize: 11, color: "#2563eb", fontWeight: 900, letterSpacing: 0.5, textTransform: "uppercase" }}>
               Assets Panel
             </div>
-            <div style={{ fontSize: 13, color: "#cbd5e1", fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <div style={{ fontSize: 13, color: "#475569", fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {activeProjectArea ? activeProjectArea.name || "Selected area" : "Whole network"}
             </div>
           </div>
@@ -5596,7 +5597,7 @@ export default function JointMapManager({
           </button>
         )}
 
-        <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 10 }}>
+        <div style={{ fontSize: 11, color: "#64748b", marginBottom: 10 }}>
           Scope:{" "}
           {activeProjectArea
             ? activeProjectArea.name || "Selected area"
@@ -7739,8 +7740,8 @@ export default function JointMapManager({
 // STYLES: DRAWER / TOP MAP ACTIONS
 // =====================================================
 const drawerSection: React.CSSProperties = {
-  background: "#111827",
-  border: "1px solid #334155",
+  background: "#ffffff",
+  border: "1px solid rgba(203,213,225,0.85)",
   padding: "0.85rem",
   borderRadius: 10,
 };
@@ -7748,7 +7749,7 @@ const drawerSection: React.CSSProperties = {
 const sectionSummary: React.CSSProperties = {
   cursor: "pointer",
   fontWeight: 800,
-  color: "white",
+  color: "#111827",
   listStyle: "none",
 };
 
@@ -7767,29 +7768,33 @@ const panel: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
   gap: "1rem",
-  borderRight: "1px solid #374151",
+  borderRight: "1px solid rgba(203,213,225,0.86)",
+  color: "#111827",
 };
 
 const card: React.CSSProperties = {
-  background: "#374151",
+  background: "#ffffff",
   padding: "1rem",
   borderRadius: 10,
   display: "flex",
   flexDirection: "column",
   gap: 8,
+  border: "1px solid rgba(203,213,225,0.84)",
+  boxShadow: "0 8px 18px rgba(15,23,42,0.05)",
 };
 
 const label: React.CSSProperties = {
   fontSize: "0.9rem",
   fontWeight: 600,
+  color: "#334155",
 };
 
 const input: React.CSSProperties = {
   padding: "0.5rem",
   borderRadius: 6,
-  border: "1px solid #4b5563",
-  background: "#111827",
-  color: "white",
+  border: "1px solid #cbd5e1",
+  background: "#f8fafc",
+  color: "#111827",
   width: "100%",
   boxSizing: "border-box",
 };
@@ -7804,12 +7809,12 @@ const btnPrimary: React.CSSProperties = {
 };
 
 const btnSecondary: React.CSSProperties = {
-  background: "#374151",
-  color: "white",
+  background: "#f8fafc",
+  color: "#111827",
   padding: "0.5rem",
   borderRadius: 6,
   cursor: "pointer",
-  border: "1px solid #4b5563",
+  border: "1px solid #cbd5e1",
 };
 
 const btnDanger: React.CSSProperties = {

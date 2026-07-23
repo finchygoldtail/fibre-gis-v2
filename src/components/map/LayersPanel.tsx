@@ -164,30 +164,31 @@ const layerGroups: LayerGroup[] = [
 ];
 
 const panel: React.CSSProperties = {
-  width: 260,
+  width: 276,
   maxWidth: "78vw",
   height: "100vh",
-  color: "white",
+  color: "#111827",
   display: "flex",
   flexDirection: "column",
-  gap: 8,
+  gap: 10,
   overflowY: "auto",
-  padding: "10px 8px",
+  padding: "14px 12px",
   boxSizing: "border-box",
-  background: "#0b1220",
-  borderLeft: "1px solid rgba(96,165,250,0.28)",
+  background: "rgba(250,250,248,0.98)",
+  borderLeft: "1px solid rgba(203,213,225,0.86)",
+  boxShadow: "-18px 0 44px rgba(15,23,42,0.12)",
 };
 
 const card: React.CSSProperties = {
-  background: "#0f172a",
-  border: "1px solid #2563eb",
+  background: "#ffffff",
+  border: "1px solid rgba(203,213,225,0.92)",
   borderRadius: 12,
-  boxShadow: "0 10px 26px rgba(15,23,42,0.35)",
+  boxShadow: "0 8px 20px rgba(15,23,42,0.06)",
 };
 const label: React.CSSProperties = {
   fontSize: "0.8rem",
   fontWeight: 800,
-  color: "#bfdbfe",
+  color: "#334155",
 };
 
 const btnPrimary: React.CSSProperties = {
@@ -202,12 +203,12 @@ const btnPrimary: React.CSSProperties = {
 };
 
 const btnSecondary: React.CSSProperties = {
-  background: "#374151",
-  color: "white",
+  background: "#f8fafc",
+  color: "#111827",
   padding: "0.42rem",
   borderRadius: 6,
   cursor: "pointer",
-  border: "1px solid #4b5563",
+  border: "1px solid #cbd5e1",
   fontWeight: 700,
   fontSize: "0.82rem",
 };
@@ -223,18 +224,31 @@ const btnDanger: React.CSSProperties = {
   fontSize: "0.82rem",
 };
 
+const basemapSelectStyle: React.CSSProperties = {
+  width: "100%",
+  marginTop: 8,
+  minHeight: 38,
+  border: "1px solid #cbd5e1",
+  borderRadius: 8,
+  background: "#f8fafc",
+  color: "#111827",
+  padding: "0 10px",
+  fontWeight: 800,
+  outline: "none",
+};
+
 const layerGroupCard: React.CSSProperties = {
-  background: "#0f172a",
-  border: "1px solid rgba(37,99,235,0.6)",
-  borderRadius: 12,
+  background: "transparent",
+  border: "1px solid rgba(203,213,225,0.9)",
+  borderRadius: 10,
   overflow: "hidden",
-  boxShadow: "0 8px 20px rgba(15,23,42,0.28)",
+  boxShadow: "none",
 };
 
 const layerButton: React.CSSProperties = {
   width: "100%",
   background: "transparent",
-  color: "#f9fafb",
+  color: "#111827",
   border: "none",
   cursor: "pointer",
   padding: "0.62rem 0.75rem",
@@ -248,12 +262,12 @@ const layerButton: React.CSSProperties = {
 };
 
 const dropdown: React.CSSProperties = {
-  borderTop: "1px solid rgba(255,255,255,0.12)",
+  borderTop: "1px solid rgba(203,213,225,0.75)",
   padding: "0.5rem 0.75rem 0.65rem",
   display: "flex",
   flexDirection: "column",
   gap: 7,
-  background: "rgba(15,23,42,0.22)",
+  background: "#ffffff",
 };
 
 const layerRow: React.CSSProperties = {
@@ -290,7 +304,7 @@ function LayerCheckbox({
         {typeof count === "number" ? (
           <span
             style={{
-              color: "#93c5fd",
+              color: "#2563eb",
               fontSize: "0.75rem",
               fontWeight: 800,
               whiteSpace: "nowrap",
@@ -457,57 +471,18 @@ export default function LayersPanel({
 
   return (
     <div style={panel}>
-      <h3
-        style={{
-          margin: 0,
-          fontSize: "0.95rem",
-          color: "#60a5fa",
-          fontWeight: 900,
-          letterSpacing: 0.3,
-        }}
-      >
-        {qaMode === "piaQa" ? "PIA QA View" : "QA Map View"}
-      </h3>
-
       <div style={{ ...card, padding: "0.7rem" }}>
         <div style={label}>Basemap</div>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 6,
-            marginTop: 7,
-          }}
+        <select
+          value={basemap}
+          onChange={(event) => setBasemap(event.target.value as BasemapType)}
+          style={basemapSelectStyle}
         >
-          <button
-            type="button"
-            onClick={() => setBasemap("street")}
-            style={basemap === "street" ? btnPrimary : btnSecondary}
-          >
-            Street
-          </button>
-          <button
-            type="button"
-            onClick={() => setBasemap("satellite")}
-            style={basemap === "satellite" ? btnPrimary : btnSecondary}
-          >
-            Satellite
-          </button>
-          <button
-            type="button"
-            onClick={() => setBasemap("hybrid")}
-            style={basemap === "hybrid" ? btnPrimary : btnSecondary}
-          >
-            Hybrid
-          </button>
-          <button
-            type="button"
-            onClick={() => setBasemap("dark")}
-            style={basemap === "dark" ? btnPrimary : btnSecondary}
-          >
-            Dark
-          </button>
-        </div>
+          <option value="street">Street</option>
+          <option value="satellite">Satellite</option>
+          <option value="hybrid">Hybrid</option>
+          <option value="dark">Dark</option>
+        </select>
 
         <label style={{ ...layerRow, marginTop: 8 }}>
           <input
@@ -607,7 +582,7 @@ export default function LayersPanel({
         </div>
 
         {isDrivingToLocation ? (
-          <div style={{ marginTop: 8, color: "#cbd5e1", fontSize: "0.82rem" }}>
+          <div style={{ marginTop: 8, color: "#64748b", fontSize: "0.82rem" }}>
             Click a point on the map to open Google Maps directions.
           </div>
         ) : null}
@@ -655,7 +630,7 @@ export default function LayersPanel({
               </button>
             </div>
 
-            <div style={{ marginTop: 8, color: "#cbd5e1", fontSize: "0.82rem" }}>
+            <div style={{ marginTop: 8, color: "#64748b", fontSize: "0.82rem" }}>
               Click points on the map to measure distance.
             </div>
 
@@ -663,14 +638,14 @@ export default function LayersPanel({
               style={{
                 marginTop: 8,
                 fontWeight: 800,
-                color: "#93c5fd",
+                color: "#2563eb",
                 fontSize: "0.88rem",
               }}
             >
               Total: {formatDistance(measurementDistance)}
             </div>
 
-            <div style={{ marginTop: 3, color: "#cbd5e1", fontSize: "0.8rem" }}>
+            <div style={{ marginTop: 3, color: "#64748b", fontSize: "0.8rem" }}>
               Points: {measurementPointCount}
             </div>
 
