@@ -2525,7 +2525,6 @@ export default function ProjectWorkspace({
     const homeAssets = workspaceAssets.filter(
       (asset) => assetTypeBucket(asset) === "Home",
     );
-    const ductAssets = workspaceAssets.filter(isWorkspaceDuctAsset);
     const designCableAssets = workspaceAssets.filter(isDesignCableAsset);
     const dropCableAssets = workspaceAssets.filter(isHomeDropCableAsset);
 
@@ -3176,6 +3175,7 @@ export default function ProjectWorkspace({
       (asset) =>
         asset.geometry?.type === "Polygon" && asset.id !== projectArea?.id,
     );
+    const ductAssets = workspaceAssets.filter(isWorkspaceDuctAsset);
     const designCableAssets = workspaceAssets.filter(isDesignCableAsset);
     const dropCableAssets = workspaceAssets.filter(isHomeDropCableAsset);
 
